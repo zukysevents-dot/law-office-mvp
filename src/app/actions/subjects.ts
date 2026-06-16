@@ -14,6 +14,7 @@ import {
   optionalString,
   requiredString,
 } from "@/lib/form";
+import { assertCanEditRecord } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 export async function createSubject(formData: FormData) {
@@ -73,6 +74,7 @@ export async function updateSubject(formData: FormData) {
   const oldSubject = await prisma.subject.findUniqueOrThrow({
     where: { id: subjectId },
   });
+  assertCanEditRecord(currentUser, "Subject", oldSubject);
 
   const subject = await prisma.subject.update({
     where: { id: subjectId },
@@ -118,7 +120,7 @@ export async function updateSubject(formData: FormData) {
 export async function archiveSubject(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  assertCanArchiveRecords(currentUser.role);
+  assertCanArchiveRecords(currentUser);
   const subjectId = requiredString(formData, "id");
   const oldSubject = await prisma.subject.findUniqueOrThrow({
     where: { id: subjectId },
@@ -146,7 +148,7 @@ export async function archiveSubject(formData: FormData) {
 export async function restoreSubject(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  assertCanArchiveRecords(currentUser.role);
+  assertCanArchiveRecords(currentUser);
   const subjectId = requiredString(formData, "id");
   const oldSubject = await prisma.subject.findUniqueOrThrow({
     where: { id: subjectId },

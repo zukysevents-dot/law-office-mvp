@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
+import { getCurrentUser } from "@/lib/auth";
 import { formatDate } from "@/lib/format";
 import {
   options,
@@ -25,6 +26,12 @@ import {
   taskStatusLabels,
 } from "@/lib/labels";
 import { safeQuery } from "@/lib/db-safe";
+import {
+  andWhere,
+  canArchiveRecords,
+  canEditRecord,
+  taskVisibilityWhere,
+} from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import {
   taskDeadlineTypeTone,
@@ -39,9 +46,10 @@ type TaskDetailProps = {
 
 async function loadTask(id: string) {
   const prisma = getPrisma();
+  const currentUser = await getCurrentUser();
 
-  return prisma.task.findUnique({
-    where: { id },
+  const task = await prisma.task.findFirst({
+    where: andWhere({ id }, taskVisibilityWhere(currentUser)),
     include: {
       project: {
         select: {
@@ -77,19 +85,31 @@ async function loadTask(id: string) {
       },
     },
   });
+
+  return {
+    task,
+    canArchive: canArchiveRecords(currentUser),
+    canEdit: task ? canEditRecord(currentUser, "Task", task) : false,
+  };
 }
 
 type TaskDetailData = Awaited<ReturnType<typeof loadTask>>;
 
+const emptyTaskDetail: TaskDetailData = {
+  task: null,
+  canArchive: false,
+  canEdit: false,
+};
+
 export default async function TaskDetailPage({ params }: TaskDetailProps) {
   const { id } = await params;
-  const result = await safeQuery<TaskDetailData>(null, () => loadTask(id));
+  const result = await safeQuery<TaskDetailData>(emptyTaskDetail, () => loadTask(id));
 
-  if (result.databaseReady && !result.data) {
+  if (result.databaseReady && !result.data.task) {
     notFound();
   }
 
-  const task = result.data;
+  const { task, canArchive, canEdit } = result.data;
   const subject = task?.project?.mainSubject ?? task?.case?.project.mainSubject ?? null;
 
   return (
@@ -101,14 +121,18 @@ export default async function TaskDetailPage({ params }: TaskDetailProps) {
           <>
             {task ? (
               <>
-                <ButtonLink href={`/tasks/${task.id}/edit`}>
-                  Upravit úkol
-                </ButtonLink>
-                <ArchiveActionForm
-                  action={task.archivedAt ? restoreTask : archiveTask}
-                  id={task.id}
-                  mode={task.archivedAt ? "restore" : "archive"}
-                />
+                {canEdit ? (
+                  <ButtonLink href={`/tasks/${task.id}/edit`}>
+                    Upravit úkol
+                  </ButtonLink>
+                ) : null}
+                {canArchive ? (
+                  <ArchiveActionForm
+                    action={task.archivedAt ? restoreTask : archiveTask}
+                    id={task.id}
+                    mode={task.archivedAt ? "restore" : "archive"}
+                  />
+                ) : null}
               </>
             ) : null}
             <ButtonLink href="/tasks" variant="secondary">
@@ -213,27 +237,29 @@ export default async function TaskDetailPage({ params }: TaskDetailProps) {
               </div>
             </div>
           </Section>
-          <Section title="Změnit status">
-            <form action={updateTaskStatus} className="grid gap-4 md:grid-cols-[1fr_2fr_auto]">
-              <input type="hidden" name="taskId" value={task.id} />
-              <Field label="Nový status">
-                <SelectInput name="status" defaultValue={task.status}>
-                  {options.taskStatuses.map((status) => (
-                    <option key={status} value={status}>
-                      {taskStatusLabels[status]}
-                    </option>
-                  ))}
-                </SelectInput>
-              </Field>
-              <Field label="Komentář ke změně">
-                <TextArea name="note" className="min-h-10" />
-              </Field>
-              <Button type="submit" variant="secondary" className="self-end">
-                <Save className="h-4 w-4" aria-hidden="true" />
-                Uložit status
-              </Button>
-            </form>
-          </Section>
+          {canEdit ? (
+            <Section title="Změnit status">
+              <form action={updateTaskStatus} className="grid gap-4 md:grid-cols-[1fr_2fr_auto]">
+                <input type="hidden" name="taskId" value={task.id} />
+                <Field label="Nový status">
+                  <SelectInput name="status" defaultValue={task.status}>
+                    {options.taskStatuses.map((status) => (
+                      <option key={status} value={status}>
+                        {taskStatusLabels[status]}
+                      </option>
+                    ))}
+                  </SelectInput>
+                </Field>
+                <Field label="Komentář ke změně">
+                  <TextArea name="note" className="min-h-10" />
+                </Field>
+                <Button type="submit" variant="secondary" className="self-end">
+                  <Save className="h-4 w-4" aria-hidden="true" />
+                  Uložit status
+                </Button>
+              </form>
+            </Section>
+          ) : null}
           <Section title="Historie změn statusu">
             {task.statusHistory.length > 0 ? (
               <div className="overflow-x-auto">
@@ -273,18 +299,20 @@ export default async function TaskDetailPage({ params }: TaskDetailProps) {
             )}
           </Section>
           <Section title="Komentáře">
-            <form action={addTaskComment} className="mb-4 grid gap-3">
-              <input type="hidden" name="taskId" value={task.id} />
-              <Field label="Nový komentář">
-                <TextArea name="comment" required />
-              </Field>
-              <div>
-                <Button type="submit">
-                  <MessageSquare className="h-4 w-4" aria-hidden="true" />
-                  Přidat komentář
-                </Button>
-              </div>
-            </form>
+            {canEdit ? (
+              <form action={addTaskComment} className="mb-4 grid gap-3">
+                <input type="hidden" name="taskId" value={task.id} />
+                <Field label="Nový komentář">
+                  <TextArea name="comment" required />
+                </Field>
+                <div>
+                  <Button type="submit">
+                    <MessageSquare className="h-4 w-4" aria-hidden="true" />
+                    Přidat komentář
+                  </Button>
+                </div>
+              </form>
+            ) : null}
             {task.comments.length > 0 ? (
               <div className="grid gap-3">
                 {task.comments.map((comment) => (

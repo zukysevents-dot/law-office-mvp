@@ -6,9 +6,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
+import { getCurrentUser } from "@/lib/auth";
 import { formatDate } from "@/lib/format";
 import { options, userRoleLabels } from "@/lib/labels";
 import { safeQuery } from "@/lib/db-safe";
+import { canManageUsers } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -24,13 +26,20 @@ type SettingsData = {
     createdAt: Date;
   }>;
   auditLogCount: number;
+  allowed: boolean;
 };
 
 export default async function SettingsPage() {
   const result = await safeQuery<SettingsData>(
-    { users: [], auditLogCount: 0 },
+    { users: [], auditLogCount: 0, allowed: false },
     async () => {
       const prisma = getPrisma();
+      const currentUser = await getCurrentUser();
+
+      if (!canManageUsers(currentUser)) {
+        return { users: [], auditLogCount: 0, allowed: false };
+      }
+
       const [users, auditLogCount] = await Promise.all([
         prisma.user.findMany({
           orderBy: { createdAt: "asc" },
@@ -47,7 +56,7 @@ export default async function SettingsPage() {
         prisma.auditLog.count(),
       ]);
 
-      return { users, auditLogCount };
+      return { users, auditLogCount, allowed: true };
     },
   );
 
@@ -61,6 +70,15 @@ export default async function SettingsPage() {
         databaseReady={result.databaseReady}
         error={result.error}
       />
+      {result.databaseReady && !result.data.allowed ? (
+        <Section title="Přístup odepřen">
+          <p className="text-sm text-stone-600">
+            Nemáte oprávnění zobrazit nastavení uživatelů.
+          </p>
+        </Section>
+      ) : null}
+      {result.data.allowed ? (
+        <>
       <div className="grid gap-4 lg:grid-cols-[1fr_24rem]">
         <Section title="Uživatelé">
           {result.data.users.length > 0 ? (
@@ -149,6 +167,8 @@ export default async function SettingsPage() {
           </div>
         </div>
       </Section>
+        </>
+      ) : null}
     </>
   );
 }

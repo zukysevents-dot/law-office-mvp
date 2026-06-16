@@ -4,9 +4,11 @@ import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
+import { getCurrentUser } from "@/lib/auth";
 import { formatDate } from "@/lib/format";
 import { taskPriorityLabels, taskStatusLabels } from "@/lib/labels";
 import { safeQuery } from "@/lib/db-safe";
+import { andWhere, taskVisibilityWhere } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -28,11 +30,15 @@ export default async function CalendarPage() {
     { deadlines: [] },
     async () => {
       const prisma = getPrisma();
+      const currentUser = await getCurrentUser();
       const deadlines = await prisma.task.findMany({
-        where: {
-          archivedAt: null,
-          deadline: { not: null },
-        },
+        where: andWhere(
+          {
+            archivedAt: null,
+            deadline: { not: null },
+          },
+          taskVisibilityWhere(currentUser),
+        ),
         orderBy: { deadline: "asc" },
         take: 30,
         select: {

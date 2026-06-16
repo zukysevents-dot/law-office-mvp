@@ -18,6 +18,7 @@ import {
   requiredString,
 } from "@/lib/form";
 import { queueInternalNotification } from "@/lib/notifications/notification-service";
+import { assertCanEditRecord } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 export async function createTask(formData: FormData) {
@@ -92,6 +93,7 @@ export async function updateTask(formData: FormData) {
   const oldTask = await prisma.task.findUniqueOrThrow({
     where: { id: taskId },
   });
+  assertCanEditRecord(currentUser, "Task", oldTask);
 
   const statusChanged = oldTask.status !== newStatus;
   const completedAt =
@@ -189,8 +191,15 @@ export async function updateTaskStatus(formData: FormData) {
 
   const task = await prisma.task.findUniqueOrThrow({
     where: { id: taskId },
-    select: { id: true, status: true },
+    select: {
+      id: true,
+      status: true,
+      createdById: true,
+      assignedToId: true,
+      responsibleUserId: true,
+    },
   });
+  assertCanEditRecord(currentUser, "Task", task);
 
   if (task.status === newStatus) {
     return;
@@ -249,7 +258,7 @@ export async function updateTaskStatus(formData: FormData) {
 export async function archiveTask(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  assertCanArchiveRecords(currentUser.role);
+  assertCanArchiveRecords(currentUser);
   const taskId = requiredString(formData, "id");
   const oldTask = await prisma.task.findUniqueOrThrow({ where: { id: taskId } });
   const task = await prisma.task.update({
@@ -277,7 +286,7 @@ export async function archiveTask(formData: FormData) {
 export async function restoreTask(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  assertCanArchiveRecords(currentUser.role);
+  assertCanArchiveRecords(currentUser);
   const taskId = requiredString(formData, "id");
   const oldTask = await prisma.task.findUniqueOrThrow({ where: { id: taskId } });
   const task = await prisma.task.update({
@@ -307,6 +316,16 @@ export async function addTaskComment(formData: FormData) {
   const currentUser = await getCurrentUser();
   const taskId = requiredString(formData, "taskId");
   const comment = requiredString(formData, "comment");
+  const task = await prisma.task.findUniqueOrThrow({
+    where: { id: taskId },
+    select: {
+      id: true,
+      createdById: true,
+      assignedToId: true,
+      responsibleUserId: true,
+    },
+  });
+  assertCanEditRecord(currentUser, "Task", task);
 
   await prisma.taskComment.create({
     data: {

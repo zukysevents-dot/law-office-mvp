@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
+import { getCurrentUser } from "@/lib/auth";
 import { formatDate, formatHours, formatMoney } from "@/lib/format";
 import {
   options,
@@ -21,6 +22,17 @@ import {
   taskStatusLabels,
 } from "@/lib/labels";
 import { safeQuery } from "@/lib/db-safe";
+import {
+  andWhere,
+  canArchiveRecords,
+  canEditRecord,
+  caseVisibilityWhere,
+  projectVisibilityWhere,
+  referenceVisibilityWhere,
+  subjectVisibilityWhere,
+  taskVisibilityWhere,
+  workLogVisibilityWhere,
+} from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { subjectRoleTone } from "@/lib/status-tones";
 
@@ -32,10 +44,11 @@ type ProjectDetailProps = {
 
 async function loadProject(id: string) {
   const prisma = getPrisma();
+  const currentUser = await getCurrentUser();
 
   const [project, subjects] = await Promise.all([
-    prisma.project.findUnique({
-      where: { id },
+    prisma.project.findFirst({
+      where: andWhere({ id }, projectVisibilityWhere(currentUser)),
       include: {
         mainSubject: { select: { id: true, name: true, ico: true } },
         responsibleUser: { select: { name: true } },
@@ -48,7 +61,10 @@ async function loadProject(id: string) {
           },
         },
         references: {
-          where: { archivedAt: null },
+          where: andWhere(
+            { archivedAt: null },
+            referenceVisibilityWhere(currentUser),
+          ),
           orderBy: [{ endDate: "asc" }, { startDate: "desc" }],
           include: {
             case: { select: { id: true, name: true, fileNumber: true } },
@@ -56,12 +72,18 @@ async function loadProject(id: string) {
           },
         },
         cases: {
-          where: { archivedAt: null },
+          where: andWhere(
+            { archivedAt: null },
+            caseVisibilityWhere(currentUser),
+          ),
           orderBy: { createdAt: "desc" },
           select: { id: true, name: true, fileNumber: true, status: true },
         },
         tasks: {
-          where: { archivedAt: null },
+          where: andWhere(
+            { archivedAt: null },
+            taskVisibilityWhere(currentUser),
+          ),
           orderBy: { createdAt: "desc" },
           take: 10,
           select: {
@@ -73,7 +95,10 @@ async function loadProject(id: string) {
           },
         },
         workLogs: {
-          where: { archivedAt: null },
+          where: andWhere(
+            { archivedAt: null },
+            workLogVisibilityWhere(currentUser),
+          ),
           orderBy: { workDate: "desc" },
           take: 10,
           select: {
@@ -87,7 +112,10 @@ async function loadProject(id: string) {
       },
     }),
     prisma.subject.findMany({
-      where: { archivedAt: null },
+      where: andWhere(
+        { archivedAt: null },
+        subjectVisibilityWhere(currentUser),
+      ),
       orderBy: { name: "asc" },
       select: { id: true, name: true, ico: true },
     }),
@@ -96,6 +124,8 @@ async function loadProject(id: string) {
   return {
     project,
     subjects,
+    canArchive: canArchiveRecords(currentUser),
+    canEdit: project ? canEditRecord(currentUser, "Project", project) : false,
   };
 }
 
@@ -104,6 +134,8 @@ type ProjectDetailData = Awaited<ReturnType<typeof loadProject>>;
 const emptyProjectDetail: ProjectDetailData = {
   project: null,
   subjects: [],
+  canArchive: false,
+  canEdit: false,
 };
 
 export default async function ProjectDetailPage({ params }: ProjectDetailProps) {
@@ -117,7 +149,7 @@ export default async function ProjectDetailPage({ params }: ProjectDetailProps) 
     notFound();
   }
 
-  const { project, subjects } = result.data;
+  const { project, subjects, canArchive, canEdit } = result.data;
 
   return (
     <>
@@ -127,14 +159,18 @@ export default async function ProjectDetailPage({ params }: ProjectDetailProps) 
         action={
           project ? (
             <>
-              <ButtonLink href={`/projects/${project.id}/edit`}>
-                Upravit projekt
-              </ButtonLink>
-              <ArchiveActionForm
-                action={project.archivedAt ? restoreProject : archiveProject}
-                id={project.id}
-                mode={project.archivedAt ? "restore" : "archive"}
-              />
+              {canEdit ? (
+                <ButtonLink href={`/projects/${project.id}/edit`}>
+                  Upravit projekt
+                </ButtonLink>
+              ) : null}
+              {canArchive ? (
+                <ArchiveActionForm
+                  action={project.archivedAt ? restoreProject : archiveProject}
+                  id={project.id}
+                  mode={project.archivedAt ? "restore" : "archive"}
+                />
+              ) : null}
             </>
           ) : null
         }
@@ -240,39 +276,41 @@ export default async function ProjectDetailPage({ params }: ProjectDetailProps) 
               <EmptyState>Projekt zatím nemá další subjektové vazby.</EmptyState>
             )}
           </Section>
-          <Section title="Přidat subjekt k projektu">
-            <form action={addProjectSubjectRelation} className="grid gap-4">
-              <input type="hidden" name="projectId" value={project.id} />
-              <div className="grid gap-4 md:grid-cols-2">
-                <Field label="Subjekt">
-                  <SelectInput name="subjectId" required>
-                    <option value="">Vyberte subjekt</option>
-                    {subjects.map((subject) => (
-                      <option key={subject.id} value={subject.id}>
-                        {subject.name}
-                        {subject.ico ? `, IČO ${subject.ico}` : ""}
-                      </option>
-                    ))}
-                  </SelectInput>
+          {canEdit ? (
+            <Section title="Přidat subjekt k projektu">
+              <form action={addProjectSubjectRelation} className="grid gap-4">
+                <input type="hidden" name="projectId" value={project.id} />
+                <div className="grid gap-4 md:grid-cols-2">
+                  <Field label="Subjekt">
+                    <SelectInput name="subjectId" required>
+                      <option value="">Vyberte subjekt</option>
+                      {subjects.map((subject) => (
+                        <option key={subject.id} value={subject.id}>
+                          {subject.name}
+                          {subject.ico ? `, IČO ${subject.ico}` : ""}
+                        </option>
+                      ))}
+                    </SelectInput>
+                  </Field>
+                  <Field label="Role subjektu">
+                    <SelectInput name="role" defaultValue="CLIENT">
+                      {options.subjectRoles.map((role) => (
+                        <option key={role} value={role}>
+                          {subjectRoleLabels[role]}
+                        </option>
+                      ))}
+                    </SelectInput>
+                  </Field>
+                </div>
+                <Field label="Poznámka">
+                  <TextArea name="note" />
                 </Field>
-                <Field label="Role subjektu">
-                  <SelectInput name="role" defaultValue="CLIENT">
-                    {options.subjectRoles.map((role) => (
-                      <option key={role} value={role}>
-                        {subjectRoleLabels[role]}
-                      </option>
-                    ))}
-                  </SelectInput>
-                </Field>
-              </div>
-              <Field label="Poznámka">
-                <TextArea name="note" />
-              </Field>
-              <div>
-                <Button type="submit">Přidat vazbu</Button>
-              </div>
-            </form>
-          </Section>
+                <div>
+                  <Button type="submit">Přidat vazbu</Button>
+                </div>
+              </form>
+            </Section>
+          ) : null}
           <Section title="Reference projektu">
             {project.references.length > 0 ? (
               <div className="overflow-x-auto">
@@ -312,13 +350,15 @@ export default async function ProjectDetailPage({ params }: ProjectDetailProps) 
               <EmptyState>Projekt zatím nemá reference.</EmptyState>
             )}
           </Section>
-          <Section title="Přidat referenci k projektu">
-            <ReferenceForm
-              returnTo={`/projects/${project.id}`}
-              fixedProjectId={project.id}
-              fixedSubjectId={project.mainSubject.id}
-            />
-          </Section>
+          {canEdit ? (
+            <Section title="Přidat referenci k projektu">
+              <ReferenceForm
+                returnTo={`/projects/${project.id}`}
+                fixedProjectId={project.id}
+                fixedSubjectId={project.mainSubject.id}
+              />
+            </Section>
+          ) : null}
           <Section title="Případy">
             {project.cases.length > 0 ? (
               <div className="overflow-x-auto">

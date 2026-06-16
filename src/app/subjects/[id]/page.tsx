@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
+import { getCurrentUser } from "@/lib/auth";
 import { formatDate, formatMoney } from "@/lib/format";
 import {
   feeTypeLabels,
@@ -18,6 +19,12 @@ import {
   subjectTypeLabels,
 } from "@/lib/labels";
 import { safeQuery } from "@/lib/db-safe";
+import {
+  andWhere,
+  canArchiveRecords,
+  canEditRecord,
+  subjectVisibilityWhere,
+} from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { subjectRoleTone } from "@/lib/status-tones";
 
@@ -38,9 +45,10 @@ type SubjectDetailData = Awaited<ReturnType<typeof loadSubject>>;
 
 async function loadSubject(id: string) {
   const prisma = getPrisma();
+  const currentUser = await getCurrentUser();
 
-  return prisma.subject.findUnique({
-    where: { id },
+  const subject = await prisma.subject.findFirst({
+    where: andWhere({ id }, subjectVisibilityWhere(currentUser)),
     include: {
       mainProjects: {
         orderBy: { createdAt: "desc" },
@@ -63,9 +71,15 @@ async function loadSubject(id: string) {
       },
     },
   });
+
+  return {
+    subject,
+    canArchive: canArchiveRecords(currentUser),
+    canEdit: subject ? canEditRecord(currentUser, "Subject", subject) : false,
+  };
 }
 
-function projectGroups(subject: NonNullable<SubjectDetailData>) {
+function projectGroups(subject: NonNullable<SubjectDetailData["subject"]>) {
   const map = new Map<string, SubjectProject>();
 
   for (const project of subject.mainProjects) {
@@ -99,13 +113,16 @@ function icoLinks(ico: string) {
 
 export default async function SubjectDetailPage({ params }: SubjectDetailProps) {
   const { id } = await params;
-  const result = await safeQuery<SubjectDetailData>(null, () => loadSubject(id));
+  const result = await safeQuery<SubjectDetailData>(
+    { subject: null, canArchive: false, canEdit: false },
+    () => loadSubject(id),
+  );
 
-  if (result.databaseReady && !result.data) {
+  if (result.databaseReady && !result.data.subject) {
     notFound();
   }
 
-  const subject = result.data;
+  const { subject, canArchive, canEdit } = result.data;
   const projects = subject ? projectGroups(subject) : { active: [], inactive: [] };
   const links = subject?.ico ? icoLinks(subject.ico) : null;
 
@@ -117,14 +134,18 @@ export default async function SubjectDetailPage({ params }: SubjectDetailProps) 
         action={
           subject ? (
             <>
-              <ButtonLink href={`/subjects/${subject.id}/edit`}>
-                Upravit subjekt
-              </ButtonLink>
-              <ArchiveActionForm
-                action={subject.archivedAt ? restoreSubject : archiveSubject}
-                id={subject.id}
-                mode={subject.archivedAt ? "restore" : "archive"}
-              />
+              {canEdit ? (
+                <ButtonLink href={`/subjects/${subject.id}/edit`}>
+                  Upravit subjekt
+                </ButtonLink>
+              ) : null}
+              {canArchive ? (
+                <ArchiveActionForm
+                  action={subject.archivedAt ? restoreSubject : archiveSubject}
+                  id={subject.id}
+                  mode={subject.archivedAt ? "restore" : "archive"}
+                />
+              ) : null}
             </>
           ) : null
         }

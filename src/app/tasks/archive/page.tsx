@@ -4,9 +4,11 @@ import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
+import { getCurrentUser } from "@/lib/auth";
 import { formatDate } from "@/lib/format";
 import { safeQuery } from "@/lib/db-safe";
 import { taskStatusLabels } from "@/lib/labels";
+import { andWhere, taskVisibilityWhere } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { taskStatusTone } from "@/lib/status-tones";
 
@@ -34,8 +36,12 @@ export default async function TaskArchivePage() {
     { tasks: [] },
     async () => {
       const prisma = getPrisma();
+      const currentUser = await getCurrentUser();
       const tasks = await prisma.task.findMany({
-        where: { archivedAt: { not: null } },
+        where: andWhere(
+          { archivedAt: { not: null } },
+          taskVisibilityWhere(currentUser),
+        ),
         orderBy: [{ completedAt: "desc" }, { updatedAt: "desc" }],
         include: {
           project: { select: { name: true } },

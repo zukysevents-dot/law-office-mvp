@@ -12,6 +12,7 @@ import {
 import { auditJson } from "@/lib/audit";
 import { assertCanArchiveRecords } from "@/lib/archive-permissions";
 import { getCurrentUser } from "@/lib/auth";
+import { assertCanEditRecord } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 export async function createReference(formData: FormData) {
@@ -77,6 +78,7 @@ export async function updateReference(formData: FormData) {
   const oldReference = await prisma.reference.findUniqueOrThrow({
     where: { id: referenceId },
   });
+  assertCanEditRecord(currentUser, "Reference", oldReference);
 
   const reference = await prisma.reference.update({
     where: { id: referenceId },
@@ -124,7 +126,7 @@ export async function updateReference(formData: FormData) {
 export async function archiveReference(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  assertCanArchiveRecords(currentUser.role);
+  assertCanArchiveRecords(currentUser);
   const referenceId = requiredString(formData, "id");
   const oldReference = await prisma.reference.findUniqueOrThrow({
     where: { id: referenceId },
@@ -152,7 +154,7 @@ export async function archiveReference(formData: FormData) {
 export async function restoreReference(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  assertCanArchiveRecords(currentUser.role);
+  assertCanArchiveRecords(currentUser);
   const referenceId = requiredString(formData, "id");
   const oldReference = await prisma.reference.findUniqueOrThrow({
     where: { id: referenceId },

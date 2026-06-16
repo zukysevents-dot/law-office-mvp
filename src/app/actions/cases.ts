@@ -8,6 +8,7 @@ import { auditJson } from "@/lib/audit";
 import { assertCanArchiveRecords } from "@/lib/archive-permissions";
 import { getCurrentUser } from "@/lib/auth";
 import { enumValue, optionalString, requiredString } from "@/lib/form";
+import { assertCanEditRecord } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 export async function createCase(formData: FormData) {
@@ -75,6 +76,7 @@ export async function updateCase(formData: FormData) {
   const oldCase = await prisma.case.findUniqueOrThrow({
     where: { id: caseId },
   });
+  assertCanEditRecord(currentUser, "Case", oldCase);
 
   const legalCase = await prisma.case.update({
     where: { id: caseId },
@@ -109,7 +111,7 @@ export async function updateCase(formData: FormData) {
 export async function archiveCase(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  assertCanArchiveRecords(currentUser.role);
+  assertCanArchiveRecords(currentUser);
   const caseId = requiredString(formData, "id");
   const oldCase = await prisma.case.findUniqueOrThrow({ where: { id: caseId } });
   const legalCase = await prisma.case.update({
@@ -136,7 +138,7 @@ export async function archiveCase(formData: FormData) {
 export async function restoreCase(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  assertCanArchiveRecords(currentUser.role);
+  assertCanArchiveRecords(currentUser);
   const caseId = requiredString(formData, "id");
   const oldCase = await prisma.case.findUniqueOrThrow({ where: { id: caseId } });
   const legalCase = await prisma.case.update({

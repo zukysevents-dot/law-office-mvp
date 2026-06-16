@@ -13,6 +13,7 @@ import { Section } from "@/components/section";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
+import { getCurrentUser } from "@/lib/auth";
 import { dateInputValue, numberInputValue } from "@/lib/form-values";
 import {
   approvalStatusLabels,
@@ -21,6 +22,15 @@ import {
   options,
 } from "@/lib/labels";
 import { safeQuery } from "@/lib/db-safe";
+import {
+  andWhere,
+  canArchiveRecords,
+  canEditRecord,
+  caseVisibilityWhere,
+  projectVisibilityWhere,
+  subjectVisibilityWhere,
+  taskVisibilityWhere,
+} from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -31,31 +41,54 @@ type WorkLogEditProps = {
 
 async function loadWorkLogEdit(id: string) {
   const prisma = getPrisma();
+  const currentUser = await getCurrentUser();
   const [workLog, subjects, projects, cases, tasks] = await Promise.all([
     prisma.workLog.findUnique({ where: { id } }),
     prisma.subject.findMany({
-      where: { archivedAt: null },
+      where: andWhere(
+        { archivedAt: null },
+        subjectVisibilityWhere(currentUser),
+      ),
       orderBy: { name: "asc" },
       select: { id: true, name: true, ico: true },
     }),
     prisma.project.findMany({
-      where: { archivedAt: null },
+      where: andWhere(
+        { archivedAt: null },
+        projectVisibilityWhere(currentUser),
+      ),
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
     prisma.case.findMany({
-      where: { archivedAt: null },
+      where: andWhere(
+        { archivedAt: null },
+        caseVisibilityWhere(currentUser),
+      ),
       orderBy: { name: "asc" },
       select: { id: true, name: true, project: { select: { name: true } } },
     }),
     prisma.task.findMany({
-      where: { archivedAt: null },
+      where: andWhere(
+        { archivedAt: null },
+        taskVisibilityWhere(currentUser),
+      ),
       orderBy: { createdAt: "desc" },
       select: { id: true, title: true },
     }),
   ]);
 
-  return { workLog, subjects, projects, cases, tasks };
+  return {
+    workLog:
+      workLog && canEditRecord(currentUser, "WorkLog", workLog)
+        ? workLog
+        : null,
+    subjects,
+    projects,
+    cases,
+    tasks,
+    canArchive: canArchiveRecords(currentUser),
+  };
 }
 
 type WorkLogEditData = Awaited<ReturnType<typeof loadWorkLogEdit>>;
@@ -66,6 +99,7 @@ const emptyWorkLogEdit: WorkLogEditData = {
   projects: [],
   cases: [],
   tasks: [],
+  canArchive: false,
 };
 
 export default async function WorkLogEditPage({ params }: WorkLogEditProps) {
@@ -79,7 +113,7 @@ export default async function WorkLogEditPage({ params }: WorkLogEditProps) {
     notFound();
   }
 
-  const { workLog, subjects, projects, cases, tasks } = result.data;
+  const { workLog, subjects, projects, cases, tasks, canArchive } = result.data;
 
   return (
     <>
@@ -89,11 +123,13 @@ export default async function WorkLogEditPage({ params }: WorkLogEditProps) {
         action={
           <>
             {workLog ? (
-              <ArchiveActionForm
-                action={workLog.archivedAt ? restoreWorkLog : archiveWorkLog}
-                id={workLog.id}
-                mode={workLog.archivedAt ? "restore" : "archive"}
-              />
+              canArchive ? (
+                <ArchiveActionForm
+                  action={workLog.archivedAt ? restoreWorkLog : archiveWorkLog}
+                  id={workLog.id}
+                  mode={workLog.archivedAt ? "restore" : "archive"}
+                />
+              ) : null
             ) : null}
             <ButtonLink href="/work-logs" variant="secondary">
               Zpět na výkazy

@@ -45,6 +45,15 @@ import {
 } from "@/lib/labels";
 import { safeQuery } from "@/lib/db-safe";
 import { getCurrentUser } from "@/lib/auth";
+import {
+  andWhere,
+  caseVisibilityWhere,
+  projectVisibilityWhere,
+  referenceVisibilityWhere,
+  subjectVisibilityWhere,
+  taskVisibilityWhere,
+  workLogVisibilityWhere,
+} from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { billingStatusTone, taskStatusTone } from "@/lib/status-tones";
 
@@ -740,10 +749,18 @@ export default async function DashboardPage() {
 
     await ensureDefaultDashboardWidgets(currentUser.id);
 
-    const activeTaskWhere = {
-      archivedAt: null,
-      status: { not: TaskStatus.COMPLETED },
-    };
+    const taskAccessWhere = taskVisibilityWhere(currentUser);
+    const activeTaskWhere = andWhere(
+      {
+        archivedAt: null,
+        status: { not: TaskStatus.COMPLETED },
+      },
+      taskAccessWhere,
+    );
+    const activeWorkLogWhere = andWhere(
+      { archivedAt: null },
+      workLogVisibilityWhere(currentUser),
+    );
 
     const [
       widgets,
@@ -778,31 +795,36 @@ export default async function DashboardPage() {
       }),
       prisma.task.count({ where: activeTaskWhere }),
       prisma.task.count({
-        where: {
-          ...activeTaskWhere,
-          deadline: { lt: now },
-        },
+        where: andWhere(activeTaskWhere, { deadline: { lt: now } }),
       }),
       prisma.task.count({
-        where: { archivedAt: null, status: TaskStatus.FOR_REVIEW },
+        where: andWhere(
+          { archivedAt: null, status: TaskStatus.FOR_REVIEW },
+          taskAccessWhere,
+        ),
       }),
       prisma.task.count({
-        where: { archivedAt: null, status: TaskStatus.WAITING_FOR_CLIENT },
+        where: andWhere(
+          { archivedAt: null, status: TaskStatus.WAITING_FOR_CLIENT },
+          taskAccessWhere,
+        ),
       }),
       prisma.task.count({
-        where: {
-          archivedAt: null,
-          status: TaskStatus.WAITING_FOR_COUNTERPARTY,
-        },
+        where: andWhere(
+          {
+            archivedAt: null,
+            status: TaskStatus.WAITING_FOR_COUNTERPARTY,
+          },
+          taskAccessWhere,
+        ),
       }),
       prisma.workLog.aggregate({
-        where: {
-          archivedAt: null,
+        where: andWhere(activeWorkLogWhere, {
           workDate: {
             gte: monthStart,
             lt: nextMonthStart,
           },
-        },
+        }),
         _sum: { hours: true },
       }),
       prisma.task.findMany({
@@ -847,7 +869,7 @@ export default async function DashboardPage() {
         },
       }),
       prisma.workLog.findMany({
-        where: { archivedAt: null },
+        where: activeWorkLogWhere,
         orderBy: [{ workDate: "desc" }, { createdAt: "desc" }],
         take: 8,
         select: {
@@ -868,7 +890,10 @@ export default async function DashboardPage() {
         },
       }),
       prisma.subject.findMany({
-        where: { archivedAt: null },
+        where: andWhere(
+          { archivedAt: null },
+          subjectVisibilityWhere(currentUser),
+        ),
         orderBy: { createdAt: "desc" },
         take: 8,
         select: {
@@ -882,7 +907,10 @@ export default async function DashboardPage() {
         },
       }),
       prisma.project.findMany({
-        where: { archivedAt: null },
+        where: andWhere(
+          { archivedAt: null },
+          projectVisibilityWhere(currentUser),
+        ),
         orderBy: { createdAt: "desc" },
         take: 8,
         select: {
@@ -895,7 +923,10 @@ export default async function DashboardPage() {
         },
       }),
       prisma.case.findMany({
-        where: { archivedAt: null },
+        where: andWhere(
+          { archivedAt: null },
+          caseVisibilityWhere(currentUser),
+        ),
         orderBy: { createdAt: "desc" },
         take: 8,
         select: {
@@ -909,7 +940,10 @@ export default async function DashboardPage() {
         },
       }),
       prisma.reference.findMany({
-        where: { archivedAt: null },
+        where: andWhere(
+          { archivedAt: null },
+          referenceVisibilityWhere(currentUser),
+        ),
         orderBy: [{ endDate: "asc" }, { createdAt: "desc" }],
         take: 8,
         select: {
@@ -937,10 +971,7 @@ export default async function DashboardPage() {
         },
       }),
       prisma.task.findMany({
-        where: {
-          ...activeTaskWhere,
-          deadline: { gte: now },
-        },
+        where: andWhere(activeTaskWhere, { deadline: { gte: now } }),
         orderBy: { deadline: "asc" },
         take: 6,
         select: {

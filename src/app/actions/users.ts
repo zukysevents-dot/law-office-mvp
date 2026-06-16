@@ -3,11 +3,15 @@
 import { revalidatePath } from "next/cache";
 
 import { UserRole } from "@/generated/prisma/enums";
+import { getCurrentUser } from "@/lib/auth";
 import { checkboxValue, enumValue, optionalString, requiredString } from "@/lib/form";
+import { assertCanManageUsers } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 export async function createUser(formData: FormData) {
   const prisma = getPrisma();
+  const currentUser = await getCurrentUser();
+  assertCanManageUsers(currentUser);
 
   await prisma.user.create({
     data: {

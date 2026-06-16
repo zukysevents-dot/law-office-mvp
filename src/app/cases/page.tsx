@@ -15,9 +15,11 @@ import {
   archivedWhere,
   archiveFilterValue,
 } from "@/lib/archive-filter";
+import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import { formatDate } from "@/lib/format";
 import { caseStatusLabels, options } from "@/lib/labels";
+import { andWhere, caseVisibilityWhere, projectVisibilityWhere } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import {
   getCurrentTableView,
@@ -61,10 +63,14 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
     },
     async () => {
       const prisma = getPrisma();
+      const currentUser = await getCurrentUser();
       const tableView = await getCurrentTableView("cases");
       const [cases, projects, users] = await Promise.all([
         prisma.case.findMany({
-          where: archivedWhere(archive),
+          where: andWhere(
+            archivedWhere(archive),
+            caseVisibilityWhere(currentUser),
+          ),
           orderBy: { createdAt: "desc" },
           include: {
             project: { select: { id: true, name: true } },
@@ -72,7 +78,10 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
           },
         }),
         prisma.project.findMany({
-          where: { archivedAt: null },
+          where: andWhere(
+            { archivedAt: null },
+            projectVisibilityWhere(currentUser),
+          ),
           orderBy: { name: "asc" },
           select: { id: true, name: true },
         }),

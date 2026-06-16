@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
+import { getCurrentUser } from "@/lib/auth";
 import { formatDate, formatMoney } from "@/lib/format";
 import {
   caseStatusLabels,
@@ -21,6 +22,15 @@ import {
   taskStatusLabels,
 } from "@/lib/labels";
 import { safeQuery } from "@/lib/db-safe";
+import {
+  andWhere,
+  canArchiveRecords,
+  canEditRecord,
+  caseVisibilityWhere,
+  referenceVisibilityWhere,
+  subjectVisibilityWhere,
+  taskVisibilityWhere,
+} from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { subjectRoleTone } from "@/lib/status-tones";
 
@@ -32,10 +42,11 @@ type CaseDetailProps = {
 
 async function loadCase(id: string) {
   const prisma = getPrisma();
+  const currentUser = await getCurrentUser();
 
   const [legalCase, subjects] = await Promise.all([
-    prisma.case.findUnique({
-      where: { id },
+    prisma.case.findFirst({
+      where: andWhere({ id }, caseVisibilityWhere(currentUser)),
       include: {
         project: {
           select: {
@@ -53,7 +64,10 @@ async function loadCase(id: string) {
           },
         },
         references: {
-          where: { archivedAt: null },
+          where: andWhere(
+            { archivedAt: null },
+            referenceVisibilityWhere(currentUser),
+          ),
           orderBy: [{ endDate: "asc" }, { startDate: "desc" }],
           include: {
             project: { select: { id: true, name: true } },
@@ -61,7 +75,10 @@ async function loadCase(id: string) {
           },
         },
         tasks: {
-          where: { archivedAt: null },
+          where: andWhere(
+            { archivedAt: null },
+            taskVisibilityWhere(currentUser),
+          ),
           orderBy: { createdAt: "desc" },
           select: {
             id: true,
@@ -74,7 +91,10 @@ async function loadCase(id: string) {
       },
     }),
     prisma.subject.findMany({
-      where: { archivedAt: null },
+      where: andWhere(
+        { archivedAt: null },
+        subjectVisibilityWhere(currentUser),
+      ),
       orderBy: { name: "asc" },
       select: { id: true, name: true, ico: true },
     }),
@@ -83,6 +103,8 @@ async function loadCase(id: string) {
   return {
     legalCase,
     subjects,
+    canArchive: canArchiveRecords(currentUser),
+    canEdit: legalCase ? canEditRecord(currentUser, "Case", legalCase) : false,
   };
 }
 
@@ -91,6 +113,8 @@ type CaseDetailData = Awaited<ReturnType<typeof loadCase>>;
 const emptyCaseDetail: CaseDetailData = {
   legalCase: null,
   subjects: [],
+  canArchive: false,
+  canEdit: false,
 };
 
 export default async function CaseDetailPage({ params }: CaseDetailProps) {
@@ -104,7 +128,7 @@ export default async function CaseDetailPage({ params }: CaseDetailProps) {
     notFound();
   }
 
-  const { legalCase, subjects } = result.data;
+  const { legalCase, subjects, canArchive, canEdit } = result.data;
 
   return (
     <>
@@ -114,14 +138,18 @@ export default async function CaseDetailPage({ params }: CaseDetailProps) {
         action={
           legalCase ? (
             <>
-              <ButtonLink href={`/cases/${legalCase.id}/edit`}>
-                Upravit případ
-              </ButtonLink>
-              <ArchiveActionForm
-                action={legalCase.archivedAt ? restoreCase : archiveCase}
-                id={legalCase.id}
-                mode={legalCase.archivedAt ? "restore" : "archive"}
-              />
+              {canEdit ? (
+                <ButtonLink href={`/cases/${legalCase.id}/edit`}>
+                  Upravit případ
+                </ButtonLink>
+              ) : null}
+              {canArchive ? (
+                <ArchiveActionForm
+                  action={legalCase.archivedAt ? restoreCase : archiveCase}
+                  id={legalCase.id}
+                  mode={legalCase.archivedAt ? "restore" : "archive"}
+                />
+              ) : null}
             </>
           ) : null
         }
@@ -234,40 +262,42 @@ export default async function CaseDetailPage({ params }: CaseDetailProps) {
               <EmptyState>Případ zatím nemá role subjektů.</EmptyState>
             )}
           </Section>
-          <Section title="Přidat subjekt k případu">
-            <form action={addCaseSubjectRelation} className="grid gap-4">
-              <input type="hidden" name="caseId" value={legalCase.id} />
-              <input type="hidden" name="projectId" value={legalCase.project.id} />
-              <div className="grid gap-4 md:grid-cols-2">
-                <Field label="Subjekt">
-                  <SelectInput name="subjectId" required>
-                    <option value="">Vyberte subjekt</option>
-                    {subjects.map((subject) => (
-                      <option key={subject.id} value={subject.id}>
-                        {subject.name}
-                        {subject.ico ? `, IČO ${subject.ico}` : ""}
-                      </option>
-                    ))}
-                  </SelectInput>
+          {canEdit ? (
+            <Section title="Přidat subjekt k případu">
+              <form action={addCaseSubjectRelation} className="grid gap-4">
+                <input type="hidden" name="caseId" value={legalCase.id} />
+                <input type="hidden" name="projectId" value={legalCase.project.id} />
+                <div className="grid gap-4 md:grid-cols-2">
+                  <Field label="Subjekt">
+                    <SelectInput name="subjectId" required>
+                      <option value="">Vyberte subjekt</option>
+                      {subjects.map((subject) => (
+                        <option key={subject.id} value={subject.id}>
+                          {subject.name}
+                          {subject.ico ? `, IČO ${subject.ico}` : ""}
+                        </option>
+                      ))}
+                    </SelectInput>
+                  </Field>
+                  <Field label="Role subjektu">
+                    <SelectInput name="role" defaultValue="CLIENT">
+                      {options.subjectRoles.map((role) => (
+                        <option key={role} value={role}>
+                          {subjectRoleLabels[role]}
+                        </option>
+                      ))}
+                    </SelectInput>
+                  </Field>
+                </div>
+                <Field label="Poznámka">
+                  <TextArea name="note" />
                 </Field>
-                <Field label="Role subjektu">
-                  <SelectInput name="role" defaultValue="CLIENT">
-                    {options.subjectRoles.map((role) => (
-                      <option key={role} value={role}>
-                        {subjectRoleLabels[role]}
-                      </option>
-                    ))}
-                  </SelectInput>
-                </Field>
-              </div>
-              <Field label="Poznámka">
-                <TextArea name="note" />
-              </Field>
-              <div>
-                <Button type="submit">Přidat vazbu</Button>
-              </div>
-            </form>
-          </Section>
+                <div>
+                  <Button type="submit">Přidat vazbu</Button>
+                </div>
+              </form>
+            </Section>
+          ) : null}
           <Section title="Reference případu">
             {legalCase.references.length > 0 ? (
               <div className="overflow-x-auto">
@@ -307,14 +337,16 @@ export default async function CaseDetailPage({ params }: CaseDetailProps) {
               <EmptyState>Případ zatím nemá reference.</EmptyState>
             )}
           </Section>
-          <Section title="Přidat referenci k případu">
-            <ReferenceForm
-              returnTo={`/cases/${legalCase.id}`}
-              fixedProjectId={legalCase.project.id}
-              fixedCaseId={legalCase.id}
-              fixedSubjectId={legalCase.project.mainSubject.id}
-            />
-          </Section>
+          {canEdit ? (
+            <Section title="Přidat referenci k případu">
+              <ReferenceForm
+                returnTo={`/cases/${legalCase.id}`}
+                fixedProjectId={legalCase.project.id}
+                fixedCaseId={legalCase.id}
+                fixedSubjectId={legalCase.project.mainSubject.id}
+              />
+            </Section>
+          ) : null}
           <Section title="Úkoly případu">
             {legalCase.tasks.length > 0 ? (
               <div className="overflow-x-auto">
