@@ -1,0 +1,359 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+
+import { archiveCase, restoreCase } from "@/app/actions/cases";
+import { addCaseSubjectRelation } from "@/app/actions/subject-relations";
+import { ArchiveActionForm } from "@/components/archive-action-form";
+import { ArchiveNotice } from "@/components/archive-notice";
+import { Field, SelectInput, TextArea } from "@/components/form-field";
+import { PageHeader } from "@/components/page-header";
+import { ReferenceForm } from "@/components/reference-form";
+import { Section } from "@/components/section";
+import { Badge } from "@/components/ui/badge";
+import { Button, ButtonLink } from "@/components/ui/button";
+import { DatabaseNotice } from "@/components/ui/database-notice";
+import { EmptyState } from "@/components/ui/empty-state";
+import { formatDate, formatMoney } from "@/lib/format";
+import {
+  caseStatusLabels,
+  options,
+  subjectRoleLabels,
+  taskStatusLabels,
+} from "@/lib/labels";
+import { safeQuery } from "@/lib/db-safe";
+import { getPrisma } from "@/lib/prisma";
+import { subjectRoleTone } from "@/lib/status-tones";
+
+export const dynamic = "force-dynamic";
+
+type CaseDetailProps = {
+  params: Promise<{ id: string }>;
+};
+
+async function loadCase(id: string) {
+  const prisma = getPrisma();
+
+  const [legalCase, subjects] = await Promise.all([
+    prisma.case.findUnique({
+      where: { id },
+      include: {
+        project: {
+          select: {
+            id: true,
+            name: true,
+            mainSubject: { select: { id: true, name: true } },
+          },
+        },
+        responsibleUser: { select: { name: true } },
+        subjectRelations: {
+          orderBy: { createdAt: "desc" },
+          include: {
+            subject: { select: { id: true, name: true, ico: true } },
+            createdBy: { select: { name: true } },
+          },
+        },
+        references: {
+          where: { archivedAt: null },
+          orderBy: [{ endDate: "asc" }, { startDate: "desc" }],
+          include: {
+            project: { select: { id: true, name: true } },
+            subject: { select: { id: true, name: true } },
+          },
+        },
+        tasks: {
+          where: { archivedAt: null },
+          orderBy: { createdAt: "desc" },
+          select: {
+            id: true,
+            title: true,
+            status: true,
+            deadline: true,
+            assignedTo: { select: { name: true } },
+          },
+        },
+      },
+    }),
+    prisma.subject.findMany({
+      where: { archivedAt: null },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, ico: true },
+    }),
+  ]);
+
+  return {
+    legalCase,
+    subjects,
+  };
+}
+
+type CaseDetailData = Awaited<ReturnType<typeof loadCase>>;
+
+const emptyCaseDetail: CaseDetailData = {
+  legalCase: null,
+  subjects: [],
+};
+
+export default async function CaseDetailPage({ params }: CaseDetailProps) {
+  const { id } = await params;
+  const result = await safeQuery<CaseDetailData>(
+    emptyCaseDetail,
+    () => loadCase(id),
+  );
+
+  if (result.databaseReady && !result.data.legalCase) {
+    notFound();
+  }
+
+  const { legalCase, subjects } = result.data;
+
+  return (
+    <>
+      <PageHeader
+        title={legalCase?.name ?? "Detail případu"}
+        description="Případový kontext, role subjektů, reference a související úkoly."
+        action={
+          legalCase ? (
+            <>
+              <ButtonLink href={`/cases/${legalCase.id}/edit`}>
+                Upravit případ
+              </ButtonLink>
+              <ArchiveActionForm
+                action={legalCase.archivedAt ? restoreCase : archiveCase}
+                id={legalCase.id}
+                mode={legalCase.archivedAt ? "restore" : "archive"}
+              />
+            </>
+          ) : null
+        }
+      />
+      <DatabaseNotice
+        databaseReady={result.databaseReady}
+        error={result.error}
+      />
+      <ArchiveNotice archivedAt={legalCase?.archivedAt ?? null} />
+      {legalCase ? (
+        <>
+          <Section>
+            <div className="grid gap-4 md:grid-cols-3">
+              <div>
+                <p className="text-xs font-semibold uppercase text-stone-500">Stav</p>
+                <Badge tone="green">{caseStatusLabels[legalCase.status]}</Badge>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase text-stone-500">
+                  Projekt
+                </p>
+                <Link
+                  href={`/projects/${legalCase.project.id}`}
+                  className="font-medium text-emerald-950 hover:underline"
+                >
+                  {legalCase.project.name}
+                </Link>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase text-stone-500">
+                  Spisová značka
+                </p>
+                <p>{legalCase.fileNumber ?? "—"}</p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase text-stone-500">
+                  Hlavní subjekt projektu
+                </p>
+                <Link
+                  href={`/subjects/${legalCase.project.mainSubject.id}`}
+                  className="font-medium text-emerald-950 hover:underline"
+                >
+                  {legalCase.project.mainSubject.name}
+                </Link>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase text-stone-500">
+                  Odpovědný
+                </p>
+                <p>{legalCase.responsibleUser?.name ?? "—"}</p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase text-stone-500">
+                  Vytvořeno
+                </p>
+                <p>{formatDate(legalCase.createdAt)}</p>
+              </div>
+              <div className="md:col-span-3">
+                <p className="text-xs font-semibold uppercase text-stone-500">
+                  SharePoint URL
+                </p>
+                <p className="break-all">{legalCase.sharepointUrl ?? "—"}</p>
+              </div>
+              <div className="md:col-span-3">
+                <p className="text-xs font-semibold uppercase text-stone-500">
+                  Poznámka
+                </p>
+                <p className="whitespace-pre-wrap">{legalCase.note ?? "—"}</p>
+              </div>
+            </div>
+          </Section>
+          <Section title="Role subjektů">
+            {legalCase.subjectRelations.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Subjekt</th>
+                      <th>IČO</th>
+                      <th>Role</th>
+                      <th>Poznámka</th>
+                      <th>Datum</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {legalCase.subjectRelations.map((relation) => (
+                      <tr key={relation.id}>
+                        <td>
+                          <Link
+                            href={`/subjects/${relation.subject.id}`}
+                            className="font-medium text-emerald-950 hover:underline"
+                          >
+                            {relation.subject.name}
+                          </Link>
+                        </td>
+                        <td>{relation.subject.ico ?? "—"}</td>
+                        <td>
+                          <Badge tone={subjectRoleTone(relation.role)}>
+                            {subjectRoleLabels[relation.role]}
+                          </Badge>
+                        </td>
+                        <td>{relation.note ?? "—"}</td>
+                        <td>{formatDate(relation.createdAt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <EmptyState>Případ zatím nemá role subjektů.</EmptyState>
+            )}
+          </Section>
+          <Section title="Přidat subjekt k případu">
+            <form action={addCaseSubjectRelation} className="grid gap-4">
+              <input type="hidden" name="caseId" value={legalCase.id} />
+              <input type="hidden" name="projectId" value={legalCase.project.id} />
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Subjekt">
+                  <SelectInput name="subjectId" required>
+                    <option value="">Vyberte subjekt</option>
+                    {subjects.map((subject) => (
+                      <option key={subject.id} value={subject.id}>
+                        {subject.name}
+                        {subject.ico ? `, IČO ${subject.ico}` : ""}
+                      </option>
+                    ))}
+                  </SelectInput>
+                </Field>
+                <Field label="Role subjektu">
+                  <SelectInput name="role" defaultValue="CLIENT">
+                    {options.subjectRoles.map((role) => (
+                      <option key={role} value={role}>
+                        {subjectRoleLabels[role]}
+                      </option>
+                    ))}
+                  </SelectInput>
+                </Field>
+              </div>
+              <Field label="Poznámka">
+                <TextArea name="note" />
+              </Field>
+              <div>
+                <Button type="submit">Přidat vazbu</Button>
+              </div>
+            </form>
+          </Section>
+          <Section title="Reference případu">
+            {legalCase.references.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Název</th>
+                      <th>Právní odvětví</th>
+                      <th>Hodnota</th>
+                      <th>Období</th>
+                      <th>Subjekt</th>
+                      <th>Popis</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {legalCase.references.map((reference) => (
+                      <tr key={reference.id}>
+                        <td className="font-medium text-stone-950">
+                          {reference.title}
+                        </td>
+                        <td>{reference.legalArea ?? "—"}</td>
+                        <td>{formatMoney(reference.valueCzk)}</td>
+                        <td>
+                          {formatDate(reference.startDate)} –{" "}
+                          {reference.endDate
+                            ? formatDate(reference.endDate)
+                            : "Probíhající"}
+                        </td>
+                        <td>{reference.subject?.name ?? "—"}</td>
+                        <td className="max-w-md">{reference.description ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <EmptyState>Případ zatím nemá reference.</EmptyState>
+            )}
+          </Section>
+          <Section title="Přidat referenci k případu">
+            <ReferenceForm
+              returnTo={`/cases/${legalCase.id}`}
+              fixedProjectId={legalCase.project.id}
+              fixedCaseId={legalCase.id}
+              fixedSubjectId={legalCase.project.mainSubject.id}
+            />
+          </Section>
+          <Section title="Úkoly případu">
+            {legalCase.tasks.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Úkol</th>
+                      <th>Řešitel</th>
+                      <th>Stav</th>
+                      <th>Deadline</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {legalCase.tasks.map((task) => (
+                      <tr key={task.id}>
+                        <td>
+                          <Link
+                            href={`/tasks/${task.id}`}
+                            className="font-medium text-emerald-950 hover:underline"
+                          >
+                            {task.title}
+                          </Link>
+                        </td>
+                        <td>{task.assignedTo?.name ?? "—"}</td>
+                        <td>{taskStatusLabels[task.status]}</td>
+                        <td>{formatDate(task.deadline)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <EmptyState>Případ zatím nemá úkoly.</EmptyState>
+            )}
+          </Section>
+        </>
+      ) : (
+        <EmptyState>Detail případu není dostupný bez databáze.</EmptyState>
+      )}
+    </>
+  );
+}

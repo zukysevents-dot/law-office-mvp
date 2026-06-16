@@ -1,0 +1,91 @@
+@import "tailwindcss";
+
+:root {
+  --brand-dark: #072924;
+  --brand-mint: #b9dcc6;
+  --brand-bg: #eef5f1;
+  --background: var(--brand-bg);
+  --foreground: var(--brand-dark);
+  --panel: #ffffff;
+  --muted: #5f756e;
+  --line: #d4e2dc;
+  --primary: var(--brand-dark);
+  --accent: var(--brand-mint);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-panel: var(--panel);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-primary: var(--primary);
+  --color-accent: var(--accent);
+  --color-brand-dark: var(--brand-dark);
+  --color-brand-mint: var(--brand-mint);
+  --color-brand-bg: var(--brand-bg);
+  --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, SFMono-Regular,
+    Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
+  text-rendering: optimizeLegibility;
+}
+
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+input,
+select,
+textarea {
+  color: var(--foreground);
+}
+
+::selection {
+  background: var(--brand-mint);
+  color: var(--brand-dark);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  overflow: hidden;
+}
+
+.table-scroll {
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  contain: layout paint inline-size;
+}
+
+th {
+  background: #eef5f1;
+  color: var(--brand-dark);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+td,
+th {
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--line);
+}
+
+tbody tr {
+  transition: background-color 150ms ease;
+}
+
+tbody tr:hover {
+  background: rgba(185, 220, 198, 0.18);
+}

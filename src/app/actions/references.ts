@@ -1,0 +1,178 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+
+import {
+  optionalDate,
+  optionalNumber,
+  optionalString,
+  requiredString,
+} from "@/lib/form";
+import { auditJson } from "@/lib/audit";
+import { assertCanArchiveRecords } from "@/lib/archive-permissions";
+import { getCurrentUser } from "@/lib/auth";
+import { getPrisma } from "@/lib/prisma";
+
+export async function createReference(formData: FormData) {
+  const prisma = getPrisma();
+  const currentUser = await getCurrentUser();
+  const projectId = optionalString(formData, "projectId");
+  const caseId = optionalString(formData, "caseId");
+  const subjectId = optionalString(formData, "subjectId");
+  const returnTo = optionalString(formData, "returnTo") ?? "/references";
+
+  const reference = await prisma.reference.create({
+    data: {
+      title: requiredString(formData, "title"),
+      projectId,
+      caseId,
+      subjectId,
+      legalArea: optionalString(formData, "legalArea"),
+      valueCzk: optionalNumber(formData, "valueCzk"),
+      startDate: optionalDate(formData, "startDate"),
+      endDate: optionalDate(formData, "endDate"),
+      description: optionalString(formData, "description"),
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      entityType: "Reference",
+      entityId: reference.id,
+      action: "CREATE",
+      changedById: currentUser.id,
+      newValue: {
+        title: reference.title,
+        projectId,
+        caseId,
+        subjectId,
+        legalArea: reference.legalArea,
+      },
+    },
+  });
+
+  revalidatePath("/references");
+
+  if (projectId) {
+    revalidatePath(`/projects/${projectId}`);
+  }
+
+  if (caseId) {
+    revalidatePath(`/cases/${caseId}`);
+  }
+
+  if (subjectId) {
+    revalidatePath(`/subjects/${subjectId}`);
+  }
+
+  redirect(returnTo);
+}
+
+export async function updateReference(formData: FormData) {
+  const prisma = getPrisma();
+  const currentUser = await getCurrentUser();
+  const referenceId = requiredString(formData, "id");
+
+  const oldReference = await prisma.reference.findUniqueOrThrow({
+    where: { id: referenceId },
+  });
+
+  const reference = await prisma.reference.update({
+    where: { id: referenceId },
+    data: {
+      title: requiredString(formData, "title"),
+      projectId: optionalString(formData, "projectId"),
+      caseId: optionalString(formData, "caseId"),
+      subjectId: optionalString(formData, "subjectId"),
+      legalArea: optionalString(formData, "legalArea"),
+      valueCzk: optionalNumber(formData, "valueCzk"),
+      startDate: optionalDate(formData, "startDate"),
+      endDate: optionalDate(formData, "endDate"),
+      description: optionalString(formData, "description"),
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      entityType: "Reference",
+      entityId: reference.id,
+      action: "UPDATE",
+      changedById: currentUser.id,
+      oldValue: auditJson(oldReference),
+      newValue: auditJson(reference),
+    },
+  });
+
+  revalidatePath("/references");
+
+  if (reference.projectId) {
+    revalidatePath(`/projects/${reference.projectId}`);
+  }
+
+  if (reference.caseId) {
+    revalidatePath(`/cases/${reference.caseId}`);
+  }
+
+  if (reference.subjectId) {
+    revalidatePath(`/subjects/${reference.subjectId}`);
+  }
+
+  redirect("/references");
+}
+
+export async function archiveReference(formData: FormData) {
+  const prisma = getPrisma();
+  const currentUser = await getCurrentUser();
+  assertCanArchiveRecords(currentUser.role);
+  const referenceId = requiredString(formData, "id");
+  const oldReference = await prisma.reference.findUniqueOrThrow({
+    where: { id: referenceId },
+  });
+  const reference = await prisma.reference.update({
+    where: { id: referenceId },
+    data: { archivedAt: new Date() },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      entityType: "Reference",
+      entityId: reference.id,
+      action: "ARCHIVE",
+      changedById: currentUser.id,
+      oldValue: auditJson(oldReference),
+      newValue: auditJson(reference),
+    },
+  });
+
+  revalidatePath("/references");
+  revalidatePath(`/references/${reference.id}/edit`);
+}
+
+export async function restoreReference(formData: FormData) {
+  const prisma = getPrisma();
+  const currentUser = await getCurrentUser();
+  assertCanArchiveRecords(currentUser.role);
+  const referenceId = requiredString(formData, "id");
+  const oldReference = await prisma.reference.findUniqueOrThrow({
+    where: { id: referenceId },
+  });
+  const reference = await prisma.reference.update({
+    where: { id: referenceId },
+    data: { archivedAt: null },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      entityType: "Reference",
+      entityId: reference.id,
+      action: "RESTORE",
+      changedById: currentUser.id,
+      oldValue: auditJson(oldReference),
+      newValue: auditJson(reference),
+    },
+  });
+
+  revalidatePath("/references");
+  revalidatePath(`/references/${reference.id}/edit`);
+}
