@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { SubjectRole } from "@/generated/prisma/enums";
 import { getCurrentUser } from "@/lib/auth";
 import { enumValue, optionalString, requiredString } from "@/lib/form";
+import { assertCanEditRecord } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 export async function addProjectSubjectRelation(formData: FormData) {
@@ -13,6 +14,10 @@ export async function addProjectSubjectRelation(formData: FormData) {
   const projectId = requiredString(formData, "projectId");
   const subjectId = requiredString(formData, "subjectId");
   const role = enumValue(SubjectRole, formData.get("role"), SubjectRole.CLIENT);
+  const project = await prisma.project.findUniqueOrThrow({
+    where: { id: projectId },
+  });
+  assertCanEditRecord(currentUser, "Project", project);
 
   await prisma.subjectRelation.create({
     data: {
@@ -51,6 +56,10 @@ export async function addCaseSubjectRelation(formData: FormData) {
   const projectId = requiredString(formData, "projectId");
   const subjectId = requiredString(formData, "subjectId");
   const role = enumValue(SubjectRole, formData.get("role"), SubjectRole.CLIENT);
+  const legalCase = await prisma.case.findUniqueOrThrow({
+    where: { id: caseId },
+  });
+  assertCanEditRecord(currentUser, "Case", legalCase);
 
   await prisma.subjectRelation.create({
     data: {

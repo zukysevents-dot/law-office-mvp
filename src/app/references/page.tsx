@@ -20,6 +20,7 @@ import {
   archivedWhere,
   archiveFilterValue,
 } from "@/lib/archive-filter";
+import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import { formatDate, formatMoney } from "@/lib/format";
 import { legalAreaOptions } from "@/lib/labels";
@@ -29,6 +30,14 @@ import {
   getDefaultTableView,
 } from "@/lib/table-view-preference-service";
 import type { TableViewState } from "@/lib/table-view-preferences";
+import {
+  andWhere,
+  canArchiveRecords,
+  caseVisibilityWhere,
+  projectVisibilityWhere,
+  referenceVisibilityWhere,
+  subjectVisibilityWhere,
+} from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -65,6 +74,7 @@ type ReferencesData = {
   cases: Array<{ id: string; name: string; project: { name: string } }>;
   subjects: Array<{ id: string; name: string; ico: string | null }>;
   tableView: TableViewState;
+  canArchive: boolean;
 };
 
 function numberParam(value: string | undefined) {
@@ -107,56 +117,61 @@ export default async function ReferencesPage({ searchParams }: ReferencesProps) 
       cases: [],
       subjects: [],
       tableView: getDefaultTableView("references"),
+      canArchive: false,
     },
     async () => {
       const prisma = getPrisma();
+      const currentUser = await getCurrentUser();
       const tableView = await getCurrentTableView("references");
       const [references, projects, cases, subjects] = await Promise.all([
         prisma.reference.findMany({
-          where: {
-            ...archivedWhere(archive),
-            ...(query
-              ? {
-                  OR: [
-                    { title: { contains: query, mode: "insensitive" } },
-                    { description: { contains: query, mode: "insensitive" } },
-                    { legalArea: { contains: query, mode: "insensitive" } },
-                    {
-                      project: {
-                        is: {
-                          name: { contains: query, mode: "insensitive" },
+          where: andWhere(
+            archivedWhere(archive),
+            referenceVisibilityWhere(currentUser),
+            {
+              ...(query
+                ? {
+                    OR: [
+                      { title: { contains: query, mode: "insensitive" } },
+                      { description: { contains: query, mode: "insensitive" } },
+                      { legalArea: { contains: query, mode: "insensitive" } },
+                      {
+                        project: {
+                          is: {
+                            name: { contains: query, mode: "insensitive" },
+                          },
                         },
                       },
-                    },
-                    {
-                      case: {
-                        is: {
-                          name: { contains: query, mode: "insensitive" },
+                      {
+                        case: {
+                          is: {
+                            name: { contains: query, mode: "insensitive" },
+                          },
                         },
                       },
-                    },
-                    {
-                      subject: {
-                        is: {
-                          name: { contains: query, mode: "insensitive" },
+                      {
+                        subject: {
+                          is: {
+                            name: { contains: query, mode: "insensitive" },
+                          },
                         },
                       },
+                    ],
+                  }
+                : {}),
+              ...(legalArea ? { legalArea } : {}),
+              ...(minValue !== null || maxValue !== null
+                ? {
+                    valueCzk: {
+                      ...(minValue !== null ? { gte: minValue } : {}),
+                      ...(maxValue !== null ? { lte: maxValue } : {}),
                     },
-                  ],
-                }
-              : {}),
-            ...(legalArea ? { legalArea } : {}),
-            ...(minValue !== null || maxValue !== null
-              ? {
-                  valueCzk: {
-                    ...(minValue !== null ? { gte: minValue } : {}),
-                    ...(maxValue !== null ? { lte: maxValue } : {}),
-                  },
-                }
-              : {}),
-            ...(period === "ongoing" ? { endDate: null } : {}),
-            ...(period === "finished" ? { endDate: { not: null } } : {}),
-          },
+                  }
+                : {}),
+              ...(period === "ongoing" ? { endDate: null } : {}),
+              ...(period === "finished" ? { endDate: { not: null } } : {}),
+            },
+          ),
           orderBy: [{ endDate: "asc" }, { startDate: "desc" }],
           include: {
             project: { select: { id: true, name: true } },
@@ -165,23 +180,39 @@ export default async function ReferencesPage({ searchParams }: ReferencesProps) 
           },
         }),
         prisma.project.findMany({
-          where: { archivedAt: null },
+          where: andWhere(
+            { archivedAt: null },
+            projectVisibilityWhere(currentUser),
+          ),
           orderBy: { name: "asc" },
           select: { id: true, name: true },
         }),
         prisma.case.findMany({
-          where: { archivedAt: null },
+          where: andWhere(
+            { archivedAt: null },
+            caseVisibilityWhere(currentUser),
+          ),
           orderBy: { name: "asc" },
           select: { id: true, name: true, project: { select: { name: true } } },
         }),
         prisma.subject.findMany({
-          where: { archivedAt: null },
+          where: andWhere(
+            { archivedAt: null },
+            subjectVisibilityWhere(currentUser),
+          ),
           orderBy: { name: "asc" },
           select: { id: true, name: true, ico: true },
         }),
       ]);
 
-      return { references, projects, cases, subjects, tableView };
+      return {
+        references,
+        projects,
+        cases,
+        subjects,
+        tableView,
+        canArchive: canArchiveRecords(currentUser),
+      };
     },
   );
   const visibleColumnSet = new Set(result.data.tableView.visibleColumns);
@@ -358,23 +389,27 @@ export default async function ReferencesPage({ searchParams }: ReferencesProps) 
                       ) : null}
                       <td>
                         <div className="flex flex-wrap gap-2">
-                          <ButtonLink
-                            href={`/references/${reference.id}/edit`}
-                            variant="ghost"
-                            className="h-8 px-3"
-                          >
-                            Upravit
-                          </ButtonLink>
-                          <ArchiveActionForm
-                            action={
-                              reference.archivedAt
-                                ? restoreReference
-                                : archiveReference
-                            }
-                            id={reference.id}
-                            mode={reference.archivedAt ? "restore" : "archive"}
-                            buttonClassName="h-8 px-3"
-                          />
+                          {result.data.canArchive ? (
+                            <ButtonLink
+                              href={`/references/${reference.id}/edit`}
+                              variant="ghost"
+                              className="h-8 px-3"
+                            >
+                              Upravit
+                            </ButtonLink>
+                          ) : null}
+                          {result.data.canArchive ? (
+                            <ArchiveActionForm
+                              action={
+                                reference.archivedAt
+                                  ? restoreReference
+                                  : archiveReference
+                              }
+                              id={reference.id}
+                              mode={reference.archivedAt ? "restore" : "archive"}
+                              buttonClassName="h-8 px-3"
+                            />
+                          ) : null}
                         </div>
                       </td>
                     </tr>

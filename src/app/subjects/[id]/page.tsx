@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import type { Prisma } from "@/generated/prisma/client";
 import { archiveSubject, restoreSubject } from "@/app/actions/subjects";
 import { ArchiveActionForm } from "@/components/archive-action-form";
 import { ArchiveNotice } from "@/components/archive-notice";
@@ -10,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
+import { getCurrentUser } from "@/lib/auth";
 import { formatDate, formatMoney } from "@/lib/format";
 import {
   feeTypeLabels,
@@ -18,6 +20,15 @@ import {
   subjectTypeLabels,
 } from "@/lib/labels";
 import { safeQuery } from "@/lib/db-safe";
+import {
+  andWhere,
+  canArchiveRecords,
+  canEditRecord,
+  canViewAllLegalData,
+  caseVisibilityWhere,
+  projectVisibilityWhere,
+  subjectVisibilityWhere,
+} from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { subjectRoleTone } from "@/lib/status-tones";
 
@@ -36,17 +47,50 @@ type SubjectProject = {
 
 type SubjectDetailData = Awaited<ReturnType<typeof loadSubject>>;
 
+function subjectRelationVisibilityWhere(
+  user: Awaited<ReturnType<typeof getCurrentUser>>,
+): Prisma.SubjectRelationWhereInput {
+  if (canViewAllLegalData(user)) {
+    return {};
+  }
+
+  const projectWhere = projectVisibilityWhere(user);
+  const caseWhere = caseVisibilityWhere(user);
+
+  return {
+    AND: [
+      {
+        OR: [
+          { project: { is: projectWhere } },
+          { case: { is: caseWhere } },
+        ],
+      },
+      {
+        OR: [{ projectId: null }, { project: { is: projectWhere } }],
+      },
+      {
+        OR: [{ caseId: null }, { case: { is: caseWhere } }],
+      },
+    ],
+  };
+}
+
 async function loadSubject(id: string) {
   const prisma = getPrisma();
+  const currentUser = await getCurrentUser();
+  const projectWhere = projectVisibilityWhere(currentUser);
+  const relationWhere = subjectRelationVisibilityWhere(currentUser);
 
-  return prisma.subject.findUnique({
-    where: { id },
+  const subject = await prisma.subject.findFirst({
+    where: andWhere({ id }, subjectVisibilityWhere(currentUser)),
     include: {
       mainProjects: {
+        where: projectWhere,
         orderBy: { createdAt: "desc" },
         select: { id: true, name: true, status: true, archivedAt: true },
       },
       relations: {
+        where: relationWhere,
         orderBy: { createdAt: "desc" },
         include: {
           project: {
@@ -63,9 +107,15 @@ async function loadSubject(id: string) {
       },
     },
   });
+
+  return {
+    subject,
+    canArchive: canArchiveRecords(currentUser),
+    canEdit: subject ? canEditRecord(currentUser, "Subject", subject) : false,
+  };
 }
 
-function projectGroups(subject: NonNullable<SubjectDetailData>) {
+function projectGroups(subject: NonNullable<SubjectDetailData["subject"]>) {
   const map = new Map<string, SubjectProject>();
 
   for (const project of subject.mainProjects) {
@@ -99,13 +149,16 @@ function icoLinks(ico: string) {
 
 export default async function SubjectDetailPage({ params }: SubjectDetailProps) {
   const { id } = await params;
-  const result = await safeQuery<SubjectDetailData>(null, () => loadSubject(id));
+  const result = await safeQuery<SubjectDetailData>(
+    { subject: null, canArchive: false, canEdit: false },
+    () => loadSubject(id),
+  );
 
-  if (result.databaseReady && !result.data) {
+  if (result.databaseReady && !result.data.subject) {
     notFound();
   }
 
-  const subject = result.data;
+  const { subject, canArchive, canEdit } = result.data;
   const projects = subject ? projectGroups(subject) : { active: [], inactive: [] };
   const links = subject?.ico ? icoLinks(subject.ico) : null;
 
@@ -117,14 +170,18 @@ export default async function SubjectDetailPage({ params }: SubjectDetailProps) 
         action={
           subject ? (
             <>
-              <ButtonLink href={`/subjects/${subject.id}/edit`}>
-                Upravit subjekt
-              </ButtonLink>
-              <ArchiveActionForm
-                action={subject.archivedAt ? restoreSubject : archiveSubject}
-                id={subject.id}
-                mode={subject.archivedAt ? "restore" : "archive"}
-              />
+              {canEdit ? (
+                <ButtonLink href={`/subjects/${subject.id}/edit`}>
+                  Upravit subjekt
+                </ButtonLink>
+              ) : null}
+              {canArchive ? (
+                <ArchiveActionForm
+                  action={subject.archivedAt ? restoreSubject : archiveSubject}
+                  id={subject.id}
+                  mode={subject.archivedAt ? "restore" : "archive"}
+                />
+              ) : null}
             </>
           ) : null
         }

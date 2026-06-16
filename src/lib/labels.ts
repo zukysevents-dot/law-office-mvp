@@ -13,10 +13,11 @@ import {
 } from "@/generated/prisma/enums";
 
 export const userRoleLabels: Record<UserRole, string> = {
+  ADMIN: "Admin",
   PARTNER: "Partner",
   LAWYER: "Advokát",
   TRAINEE: "Koncipient",
-  INTERN: "Stážista",
+  INTERN: "Praktikant",
 };
 
 export const subjectTypeLabels: Record<SubjectType, string> = {

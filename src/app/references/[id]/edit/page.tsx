@@ -13,9 +13,18 @@ import { Section } from "@/components/section";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
+import { getCurrentUser } from "@/lib/auth";
 import { dateInputValue, numberInputValue } from "@/lib/form-values";
 import { legalAreaOptions } from "@/lib/labels";
 import { safeQuery } from "@/lib/db-safe";
+import {
+  andWhere,
+  canArchiveRecords,
+  canEditRecord,
+  caseVisibilityWhere,
+  projectVisibilityWhere,
+  subjectVisibilityWhere,
+} from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -26,26 +35,45 @@ type ReferenceEditProps = {
 
 async function loadReferenceEdit(id: string) {
   const prisma = getPrisma();
+  const currentUser = await getCurrentUser();
   const [reference, projects, cases, subjects] = await Promise.all([
     prisma.reference.findUnique({ where: { id } }),
     prisma.project.findMany({
-      where: { archivedAt: null },
+      where: andWhere(
+        { archivedAt: null },
+        projectVisibilityWhere(currentUser),
+      ),
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
     prisma.case.findMany({
-      where: { archivedAt: null },
+      where: andWhere(
+        { archivedAt: null },
+        caseVisibilityWhere(currentUser),
+      ),
       orderBy: { name: "asc" },
       select: { id: true, name: true, project: { select: { name: true } } },
     }),
     prisma.subject.findMany({
-      where: { archivedAt: null },
+      where: andWhere(
+        { archivedAt: null },
+        subjectVisibilityWhere(currentUser),
+      ),
       orderBy: { name: "asc" },
       select: { id: true, name: true, ico: true },
     }),
   ]);
 
-  return { reference, projects, cases, subjects };
+  return {
+    reference:
+      reference && canEditRecord(currentUser, "Reference", reference)
+        ? reference
+        : null,
+    projects,
+    cases,
+    subjects,
+    canArchive: canArchiveRecords(currentUser),
+  };
 }
 
 type ReferenceEditData = Awaited<ReturnType<typeof loadReferenceEdit>>;
@@ -55,6 +83,7 @@ const emptyReferenceEdit: ReferenceEditData = {
   projects: [],
   cases: [],
   subjects: [],
+  canArchive: false,
 };
 
 export default async function ReferenceEditPage({ params }: ReferenceEditProps) {
@@ -68,7 +97,7 @@ export default async function ReferenceEditPage({ params }: ReferenceEditProps) 
     notFound();
   }
 
-  const { reference, projects, cases, subjects } = result.data;
+  const { reference, projects, cases, subjects, canArchive } = result.data;
 
   return (
     <>
@@ -78,13 +107,15 @@ export default async function ReferenceEditPage({ params }: ReferenceEditProps) 
         action={
           <>
             {reference ? (
-              <ArchiveActionForm
-                action={
-                  reference.archivedAt ? restoreReference : archiveReference
-                }
-                id={reference.id}
-                mode={reference.archivedAt ? "restore" : "archive"}
-              />
+              canArchive ? (
+                <ArchiveActionForm
+                  action={
+                    reference.archivedAt ? restoreReference : archiveReference
+                  }
+                  id={reference.id}
+                  mode={reference.archivedAt ? "restore" : "archive"}
+                />
+              ) : null
             ) : null}
             <ButtonLink href="/references" variant="secondary">
               Zpět na reference

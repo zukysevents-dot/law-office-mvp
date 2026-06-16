@@ -7,9 +7,15 @@ import { Section } from "@/components/section";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
+import { getCurrentUser } from "@/lib/auth";
 import { numberInputValue } from "@/lib/form-values";
 import { options, projectStatusLabels } from "@/lib/labels";
 import { safeQuery } from "@/lib/db-safe";
+import {
+  andWhere,
+  canEditRecord,
+  subjectVisibilityWhere,
+} from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -20,10 +26,14 @@ type ProjectEditProps = {
 
 async function loadProjectEdit(id: string) {
   const prisma = getPrisma();
+  const currentUser = await getCurrentUser();
   const [project, subjects, users] = await Promise.all([
     prisma.project.findUnique({ where: { id } }),
     prisma.subject.findMany({
-      where: { archivedAt: null },
+      where: andWhere(
+        { archivedAt: null },
+        subjectVisibilityWhere(currentUser),
+      ),
       orderBy: { name: "asc" },
       select: { id: true, name: true, ico: true },
     }),
@@ -34,7 +44,12 @@ async function loadProjectEdit(id: string) {
     }),
   ]);
 
-  return { project, subjects, users };
+  return {
+    project:
+      project && canEditRecord(currentUser, "Project", project) ? project : null,
+    subjects,
+    users,
+  };
 }
 
 type ProjectEditData = Awaited<ReturnType<typeof loadProjectEdit>>;

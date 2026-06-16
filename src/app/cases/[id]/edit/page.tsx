@@ -7,8 +7,10 @@ import { Section } from "@/components/section";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
+import { getCurrentUser } from "@/lib/auth";
 import { caseStatusLabels, options } from "@/lib/labels";
 import { safeQuery } from "@/lib/db-safe";
+import { andWhere, canEditRecord, projectVisibilityWhere } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -19,10 +21,14 @@ type CaseEditProps = {
 
 async function loadCaseEdit(id: string) {
   const prisma = getPrisma();
+  const currentUser = await getCurrentUser();
   const [legalCase, projects, users] = await Promise.all([
     prisma.case.findUnique({ where: { id } }),
     prisma.project.findMany({
-      where: { archivedAt: null },
+      where: andWhere(
+        { archivedAt: null },
+        projectVisibilityWhere(currentUser),
+      ),
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
@@ -33,7 +39,14 @@ async function loadCaseEdit(id: string) {
     }),
   ]);
 
-  return { legalCase, projects, users };
+  return {
+    legalCase:
+      legalCase && canEditRecord(currentUser, "Case", legalCase)
+        ? legalCase
+        : null,
+    projects,
+    users,
+  };
 }
 
 type CaseEditData = Awaited<ReturnType<typeof loadCaseEdit>>;

@@ -15,9 +15,11 @@ import {
   archivedWhere,
   archiveFilterValue,
 } from "@/lib/archive-filter";
+import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import { formatDate, formatMoney } from "@/lib/format";
 import { feeTypeLabels, options, subjectTypeLabels } from "@/lib/labels";
+import { andWhere, subjectVisibilityWhere } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import {
   getCurrentTableView,
@@ -64,19 +66,23 @@ export default async function SubjectsPage({ searchParams }: SubjectsPageProps) 
     { subjects: [], tableView: getDefaultTableView("subjects") },
     async () => {
       const prisma = getPrisma();
+      const currentUser = await getCurrentUser();
       const tableView = await getCurrentTableView("subjects");
       const subjects = await prisma.subject.findMany({
-        where: {
-          ...archivedWhere(archive),
-          ...(query
-            ? {
-                OR: [
-                  { name: { contains: query, mode: "insensitive" } },
-                  { ico: { contains: query, mode: "insensitive" } },
-                ],
-              }
-            : {}),
-        },
+        where: andWhere(
+          archivedWhere(archive),
+          subjectVisibilityWhere(currentUser),
+          {
+            ...(query
+              ? {
+                  OR: [
+                    { name: { contains: query, mode: "insensitive" } },
+                    { ico: { contains: query, mode: "insensitive" } },
+                  ],
+                }
+              : {}),
+          },
+        ),
         orderBy: { name: "asc" },
       });
 

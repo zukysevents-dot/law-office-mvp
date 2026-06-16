@@ -14,6 +14,7 @@ import {
   LibraryBig,
   ListChecks,
   ListTodo,
+  ScrollText,
   Settings,
   ShieldCheck,
 } from "lucide-react";
@@ -32,11 +33,12 @@ const navItems = [
   { href: "/work-logs", label: "Výkazy práce", icon: Clock3 },
   { href: "/references", label: "Reference", icon: LibraryBig },
   { href: "/calendar", label: "Kalendář", icon: CalendarDays },
+  { href: "/audit-log", label: "Audit log", icon: ScrollText },
   { href: "/settings", label: "Nastavení", icon: Settings },
 ];
 
-function getActiveHref(pathname: string) {
-  const match = navItems
+function getActiveHref(pathname: string, items: typeof navItems) {
+  const match = items
     .filter((item) => {
       if (item.href === "/") {
         return pathname === "/";
@@ -49,9 +51,12 @@ function getActiveHref(pathname: string) {
   return match?.href ?? "/";
 }
 
-export function AppSidebar() {
+export function AppSidebar({ showAuditLog }: { showAuditLog?: boolean }) {
   const pathname = usePathname();
-  const activeHref = getActiveHref(pathname);
+  const visibleNavItems = showAuditLog
+    ? navItems
+    : navItems.filter((item) => item.href !== "/audit-log");
+  const activeHref = getActiveHref(pathname, visibleNavItems);
 
   return (
     <aside className="w-full max-w-full shrink-0 overflow-x-hidden bg-[#072924] text-white lg:sticky lg:top-0 lg:flex lg:h-screen lg:w-20 lg:flex-col xl:w-72">
@@ -80,7 +85,7 @@ export function AppSidebar() {
         </Link>
       </div>
       <nav className="flex max-w-full flex-wrap gap-2 overflow-x-hidden border-b border-white/10 p-3 lg:min-w-0 lg:flex-1 lg:flex-col lg:flex-nowrap lg:items-center lg:overflow-x-hidden lg:overflow-y-auto lg:border-b-0 xl:items-stretch">
-        {navItems.map((item) => {
+        {visibleNavItems.map((item) => {
           const Icon = item.icon;
           const active = item.href === activeHref;
 

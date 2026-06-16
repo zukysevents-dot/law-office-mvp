@@ -15,6 +15,7 @@ import {
   requiredNumber,
   requiredString,
 } from "@/lib/form";
+import { assertCanEditRecord } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 export async function createWorkLog(formData: FormData) {
@@ -117,6 +118,7 @@ export async function updateWorkLog(formData: FormData) {
   const oldWorkLog = await prisma.workLog.findUniqueOrThrow({
     where: { id: workLogId },
   });
+  assertCanEditRecord(currentUser, "WorkLog", oldWorkLog);
 
   const hoursChanged = !sameNumber(hours, oldWorkLog.hours);
   const rateChanged = !sameNumber(hourlyRate, oldWorkLog.hourlyRate);
@@ -171,7 +173,7 @@ export async function updateWorkLog(formData: FormData) {
 export async function archiveWorkLog(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  assertCanArchiveRecords(currentUser.role);
+  assertCanArchiveRecords(currentUser);
   const workLogId = requiredString(formData, "id");
   const oldWorkLog = await prisma.workLog.findUniqueOrThrow({
     where: { id: workLogId },
@@ -199,7 +201,7 @@ export async function archiveWorkLog(formData: FormData) {
 export async function restoreWorkLog(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  assertCanArchiveRecords(currentUser.role);
+  assertCanArchiveRecords(currentUser);
   const workLogId = requiredString(formData, "id");
   const oldWorkLog = await prisma.workLog.findUniqueOrThrow({
     where: { id: workLogId },

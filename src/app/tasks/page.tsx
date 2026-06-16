@@ -28,6 +28,7 @@ import {
   archivedWhere,
   archiveFilterValue,
 } from "@/lib/archive-filter";
+import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import { formatDate } from "@/lib/format";
 import {
@@ -36,6 +37,13 @@ import {
   taskPriorityLabels,
   taskStatusLabels,
 } from "@/lib/labels";
+import {
+  andWhere,
+  canEditRecord,
+  caseVisibilityWhere,
+  projectVisibilityWhere,
+  taskVisibilityWhere,
+} from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import {
   taskDeadlineTypeTone,
@@ -73,6 +81,9 @@ type TaskRow = {
   deadline: Date | null;
   sharepointUrl: string | null;
   archivedAt: Date | null;
+  createdById: string | null;
+  assignedToId: string | null;
+  responsibleUserId: string | null;
   createdAt: Date;
   updatedAt: Date;
   project: { name: string; mainSubject: { name: string } } | null;
@@ -84,6 +95,7 @@ type TaskRow = {
   createdBy: { name: string } | null;
   assignedTo: { name: string } | null;
   responsibleUser: { name: string } | null;
+  canEdit: boolean;
 };
 
 type TasksPageData = {
@@ -179,21 +191,26 @@ export default async function TasksPage({ searchParams }: TasksProps) {
     },
     async () => {
       const prisma = getPrisma();
+      const currentUser = await getCurrentUser();
       const tableView = await getCurrentTableView("tasks");
       const baseWhere = archivedWhere(archive);
-      const activeWhere = { archivedAt: null };
-      const where = {
-        ...baseWhere,
-        ...(status ? { status: status as TaskStatus } : {}),
-        ...(priority ? { priority: priority as TaskPriority } : {}),
-        ...(deadlineType
-          ? { deadlineType: deadlineType as TaskDeadlineType }
-          : {}),
-        ...(assignedToId ? { assignedToId } : {}),
-        ...(responsibleUserId ? { responsibleUserId } : {}),
-        ...(projectId ? { projectId } : {}),
-        ...(caseId ? { caseId } : {}),
-      };
+      const taskAccessWhere = taskVisibilityWhere(currentUser);
+      const activeWhere = andWhere({ archivedAt: null }, taskAccessWhere);
+      const where = andWhere(
+        baseWhere,
+        taskAccessWhere,
+        {
+          ...(status ? { status: status as TaskStatus } : {}),
+          ...(priority ? { priority: priority as TaskPriority } : {}),
+          ...(deadlineType
+            ? { deadlineType: deadlineType as TaskDeadlineType }
+            : {}),
+          ...(assignedToId ? { assignedToId } : {}),
+          ...(responsibleUserId ? { responsibleUserId } : {}),
+          ...(projectId ? { projectId } : {}),
+          ...(caseId ? { caseId } : {}),
+        },
+      );
 
       const [
         tasks,
@@ -237,12 +254,18 @@ export default async function TasksPage({ searchParams }: TasksProps) {
           select: { id: true, name: true },
         }),
         prisma.project.findMany({
-          where: { archivedAt: null },
+          where: andWhere(
+            { archivedAt: null },
+            projectVisibilityWhere(currentUser),
+          ),
           orderBy: { name: "asc" },
           select: { id: true, name: true },
         }),
         prisma.case.findMany({
-          where: { archivedAt: null },
+          where: andWhere(
+            { archivedAt: null },
+            caseVisibilityWhere(currentUser),
+          ),
           orderBy: { name: "asc" },
           select: { id: true, name: true, project: { select: { name: true } } },
         }),
@@ -265,7 +288,10 @@ export default async function TasksPage({ searchParams }: TasksProps) {
       ]);
 
       return {
-        tasks,
+        tasks: tasks.map((task) => ({
+          ...task,
+          canEdit: canEditRecord(currentUser, "Task", task),
+        })),
         users,
         projects,
         cases,
@@ -473,36 +499,41 @@ export default async function TasksPage({ searchParams }: TasksProps) {
                     ) : null}
                     {visibleColumnSet.has("status") ? (
                       <td className="min-w-80">
-                        <form action={updateTaskStatus} className="grid min-w-0 gap-2">
-                          <input type="hidden" name="taskId" value={task.id} />
-                          <div className="grid min-w-0 gap-2 xl:grid-cols-[minmax(0,1fr)_auto]">
-                            <SelectInput
-                              name="status"
-                              defaultValue={task.status}
+                        {task.canEdit ? (
+                          <form action={updateTaskStatus} className="grid min-w-0 gap-2">
+                            <input type="hidden" name="taskId" value={task.id} />
+                            <div className="grid min-w-0 gap-2 xl:grid-cols-[minmax(0,1fr)_auto]">
+                              <SelectInput
+                                name="status"
+                                defaultValue={task.status}
+                                className="min-w-0"
+                              >
+                                {options.taskStatuses.map((taskStatus) => (
+                                  <option key={taskStatus} value={taskStatus}>
+                                    {taskStatusLabels[taskStatus]}
+                                  </option>
+                                ))}
+                              </SelectInput>
+                              <Button
+                                type="submit"
+                                variant="secondary"
+                                className="h-10 px-3"
+                              >
+                                <Save className="h-4 w-4" aria-hidden="true" />
+                                <span className="sr-only">Uložit status</span>
+                              </Button>
+                            </div>
+                            <TextInput
+                              name="note"
+                              placeholder="Komentář ke změně statusu"
                               className="min-w-0"
-                            >
-                              {options.taskStatuses.map((taskStatus) => (
-                                <option key={taskStatus} value={taskStatus}>
-                                  {taskStatusLabels[taskStatus]}
-                                </option>
-                              ))}
-                            </SelectInput>
-                            <Button
-                              type="submit"
-                              variant="secondary"
-                              className="h-10 px-3"
-                            >
-                              <Save className="h-4 w-4" aria-hidden="true" />
-                              <span className="sr-only">Uložit status</span>
-                            </Button>
-                          </div>
-                          <TextInput
-                            name="note"
-                            placeholder="Komentář ke změně statusu"
-                            className="min-w-0"
-                          />
-                        </form>
-                        <Badge tone={taskStatusTone(task.status)} className="mt-2">
+                            />
+                          </form>
+                        ) : null}
+                        <Badge
+                          tone={taskStatusTone(task.status)}
+                          className={task.canEdit ? "mt-2" : undefined}
+                        >
                           {taskStatusLabels[task.status]}
                         </Badge>
                       </td>

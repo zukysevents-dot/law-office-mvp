@@ -7,9 +7,11 @@ import { Section } from "@/components/section";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
+import { getCurrentUser } from "@/lib/auth";
 import { numberInputValue } from "@/lib/form-values";
 import { feeTypeLabels, options, subjectTypeLabels } from "@/lib/labels";
 import { safeQuery } from "@/lib/db-safe";
+import { canEditRecord } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +22,12 @@ type SubjectEditProps = {
 
 async function loadSubject(id: string) {
   const prisma = getPrisma();
-  return prisma.subject.findUnique({ where: { id } });
+  const currentUser = await getCurrentUser();
+  const subject = await prisma.subject.findUnique({ where: { id } });
+
+  return subject && canEditRecord(currentUser, "Subject", subject)
+    ? subject
+    : null;
 }
 
 export default async function SubjectEditPage({ params }: SubjectEditProps) {

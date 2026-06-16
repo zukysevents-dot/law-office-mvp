@@ -20,10 +20,27 @@ cp .env.example .env
 docker compose up -d
 npm run db:generate
 npm run db:migrate
+npm run db:seed
 npm run dev
 ```
 
-Aplikace poběží na `http://localhost:3000`.
+Aplikace poběží na `http://127.0.0.1:3001`.
+
+Ve Windows PowerShellu lze `.env` vytvořit příkazem:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Pro ověření čistého lokálního checkoutu spusťte:
+
+```bash
+npm run db:generate
+npm run db:migrate
+npm run db:seed
+npm run lint
+npm run build
+```
 
 ## Prisma
 

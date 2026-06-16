@@ -13,6 +13,7 @@ import {
   optionalString,
   requiredString,
 } from "@/lib/form";
+import { assertCanEditRecord } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 export async function createProject(formData: FormData) {
@@ -83,6 +84,7 @@ export async function updateProject(formData: FormData) {
   const oldProject = await prisma.project.findUniqueOrThrow({
     where: { id: projectId },
   });
+  assertCanEditRecord(currentUser, "Project", oldProject);
 
   const project = await prisma.project.update({
     where: { id: projectId },
@@ -116,7 +118,7 @@ export async function updateProject(formData: FormData) {
 export async function archiveProject(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  assertCanArchiveRecords(currentUser.role);
+  assertCanArchiveRecords(currentUser);
   const projectId = requiredString(formData, "id");
   const oldProject = await prisma.project.findUniqueOrThrow({
     where: { id: projectId },
@@ -144,7 +146,7 @@ export async function archiveProject(formData: FormData) {
 export async function restoreProject(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  assertCanArchiveRecords(currentUser.role);
+  assertCanArchiveRecords(currentUser);
   const projectId = requiredString(formData, "id");
   const oldProject = await prisma.project.findUniqueOrThrow({
     where: { id: projectId },

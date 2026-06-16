@@ -128,6 +128,21 @@ async function ensureCaseRelation(input: {
 }
 
 async function main() {
+  const admin = await prisma.user.upsert({
+    where: { email: "admin.demo@example.local" },
+    update: {
+      name: "Admin Demo",
+      role: UserRole.ADMIN,
+      active: true,
+    },
+    create: {
+      name: "Admin Demo",
+      email: "admin.demo@example.local",
+      role: UserRole.ADMIN,
+      active: true,
+    },
+  });
+
   const partner = await prisma.user.upsert({
     where: { email: "partner.demo@example.local" },
     update: {
@@ -169,6 +184,21 @@ async function main() {
       name: "Koncipient Demo",
       email: "koncipient.demo@example.local",
       role: UserRole.TRAINEE,
+      active: true,
+    },
+  });
+
+  const intern = await prisma.user.upsert({
+    where: { email: "praktikant.demo@example.local" },
+    update: {
+      name: "Praktikant Demo",
+      role: UserRole.INTERN,
+      active: true,
+    },
+    create: {
+      name: "Praktikant Demo",
+      email: "praktikant.demo@example.local",
+      role: UserRole.INTERN,
       active: true,
     },
   });
@@ -230,6 +260,7 @@ async function main() {
 
   void janNovak;
   void lawyer;
+  void intern;
 
   const project =
     (await prisma.project.findFirst({
@@ -392,27 +423,31 @@ async function main() {
     });
   }
 
-  const existingDashboardWidgets = await prisma.dashboardWidget.count({
-    where: { userId: partner.id },
-  });
+  const demoUsers = [admin, partner, lawyer, trainee, intern];
 
-  if (existingDashboardWidgets === 0) {
-    await prisma.dashboardWidget.createMany({
-      data: defaultDashboardWidgetData(partner.id),
+  for (const demoUser of demoUsers) {
+    const existingDashboardWidgets = await prisma.dashboardWidget.count({
+      where: { userId: demoUser.id },
     });
-  }
 
-  for (const preference of defaultTableViewPreferenceData(partner.id)) {
-    await prisma.tableViewPreference.upsert({
-      where: {
-        userId_tableKey: {
-          userId: partner.id,
-          tableKey: preference.tableKey,
+    if (existingDashboardWidgets === 0) {
+      await prisma.dashboardWidget.createMany({
+        data: defaultDashboardWidgetData(demoUser.id),
+      });
+    }
+
+    for (const preference of defaultTableViewPreferenceData(demoUser.id)) {
+      await prisma.tableViewPreference.upsert({
+        where: {
+          userId_tableKey: {
+            userId: demoUser.id,
+            tableKey: preference.tableKey,
+          },
         },
-      },
-      update: {},
-      create: preference,
-    });
+        update: {},
+        create: preference,
+      });
+    }
   }
 
   console.log("Seed data created.");

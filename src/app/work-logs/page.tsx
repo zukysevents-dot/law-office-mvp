@@ -19,6 +19,7 @@ import {
   archivedWhere,
   archiveFilterValue,
 } from "@/lib/archive-filter";
+import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import { formatDate, formatHours, formatMoney } from "@/lib/format";
 import {
@@ -34,6 +35,16 @@ import {
   getDefaultTableView,
 } from "@/lib/table-view-preference-service";
 import type { TableViewState } from "@/lib/table-view-preferences";
+import {
+  andWhere,
+  canArchiveRecords,
+  canEditRecord,
+  caseVisibilityWhere,
+  projectVisibilityWhere,
+  subjectVisibilityWhere,
+  taskVisibilityWhere,
+  workLogVisibilityWhere,
+} from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +55,7 @@ type WorkLogsProps = {
 type WorkLogsPageData = {
   workLogs: Array<{
     id: string;
+    userId: string | null;
     workDate: Date;
     hours: unknown;
     hourlyRate: unknown;
@@ -60,6 +72,7 @@ type WorkLogsPageData = {
     case: { name: string; fileNumber: string | null } | null;
     task: { title: string } | null;
     user: { name: string } | null;
+    canEdit: boolean;
   }>;
   subjects: Array<{ id: string; name: string; ico: string | null }>;
   projects: Array<{ id: string; name: string }>;
@@ -67,6 +80,7 @@ type WorkLogsPageData = {
   tasks: Array<{ id: string; title: string }>;
   users: Array<{ id: string; name: string }>;
   tableView: TableViewState;
+  canArchive: boolean;
 };
 
 function firstParam(params: Record<string, string | string[] | undefined>, key: string) {
@@ -108,39 +122,44 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
       tasks: [],
       users: [],
       tableView: getDefaultTableView("workLogs"),
+      canArchive: false,
     },
     async () => {
       const prisma = getPrisma();
+      const currentUser = await getCurrentUser();
       const tableView = await getCurrentTableView("workLogs");
       const [workLogs, subjects, projects, cases, tasks, users] = await Promise.all([
         prisma.workLog.findMany({
-          where: {
-            ...archivedWhere(archive),
-            ...(subjectId ? { subjectId } : {}),
-            ...(projectId ? { projectId } : {}),
-            ...(caseId ? { caseId } : {}),
-            ...(taskId ? { taskId } : {}),
-            ...(userId ? { userId } : {}),
-            ...(billingStatus ? { billingStatus: billingStatus as never } : {}),
-            ...(approvalStatus ? { approvalStatus: approvalStatus as never } : {}),
-            ...(legalArea ? { legalArea } : {}),
-            ...(dateFrom || dateTo
-              ? {
-                  workDate: {
-                    ...(dateFrom ? { gte: new Date(`${dateFrom}T00:00:00.000Z`) } : {}),
-                    ...(dateTo ? { lte: new Date(`${dateTo}T23:59:59.999Z`) } : {}),
-                  },
-                }
-              : {}),
-            ...(minAmount !== null || maxAmount !== null
-              ? {
-                  amountCzk: {
-                    ...(minAmount !== null ? { gte: minAmount } : {}),
-                    ...(maxAmount !== null ? { lte: maxAmount } : {}),
-                  },
-                }
-              : {}),
-          },
+          where: andWhere(
+            archivedWhere(archive),
+            workLogVisibilityWhere(currentUser),
+            {
+              ...(subjectId ? { subjectId } : {}),
+              ...(projectId ? { projectId } : {}),
+              ...(caseId ? { caseId } : {}),
+              ...(taskId ? { taskId } : {}),
+              ...(userId ? { userId } : {}),
+              ...(billingStatus ? { billingStatus: billingStatus as never } : {}),
+              ...(approvalStatus ? { approvalStatus: approvalStatus as never } : {}),
+              ...(legalArea ? { legalArea } : {}),
+              ...(dateFrom || dateTo
+                ? {
+                    workDate: {
+                      ...(dateFrom ? { gte: new Date(`${dateFrom}T00:00:00.000Z`) } : {}),
+                      ...(dateTo ? { lte: new Date(`${dateTo}T23:59:59.999Z`) } : {}),
+                    },
+                  }
+                : {}),
+              ...(minAmount !== null || maxAmount !== null
+                ? {
+                    amountCzk: {
+                      ...(minAmount !== null ? { gte: minAmount } : {}),
+                      ...(maxAmount !== null ? { lte: maxAmount } : {}),
+                    },
+                  }
+                : {}),
+            },
+          ),
           orderBy: [{ workDate: "desc" }, { createdAt: "desc" }],
           take: 100,
           include: {
@@ -152,22 +171,34 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
           },
         }),
         prisma.subject.findMany({
-          where: { archivedAt: null },
+          where: andWhere(
+            { archivedAt: null },
+            subjectVisibilityWhere(currentUser),
+          ),
           orderBy: { name: "asc" },
           select: { id: true, name: true, ico: true },
         }),
         prisma.project.findMany({
-          where: { archivedAt: null },
+          where: andWhere(
+            { archivedAt: null },
+            projectVisibilityWhere(currentUser),
+          ),
           orderBy: { name: "asc" },
           select: { id: true, name: true },
         }),
         prisma.case.findMany({
-          where: { archivedAt: null },
+          where: andWhere(
+            { archivedAt: null },
+            caseVisibilityWhere(currentUser),
+          ),
           orderBy: { name: "asc" },
           select: { id: true, name: true, project: { select: { name: true } } },
         }),
         prisma.task.findMany({
-          where: { archivedAt: null },
+          where: andWhere(
+            { archivedAt: null },
+            taskVisibilityWhere(currentUser),
+          ),
           orderBy: { createdAt: "desc" },
           select: { id: true, title: true },
         }),
@@ -178,7 +209,19 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
         }),
       ]);
 
-      return { workLogs, subjects, projects, cases, tasks, users, tableView };
+      return {
+        workLogs: workLogs.map((workLog) => ({
+          ...workLog,
+          canEdit: canEditRecord(currentUser, "WorkLog", workLog),
+        })),
+        subjects,
+        projects,
+        cases,
+        tasks,
+        users,
+        tableView,
+        canArchive: canArchiveRecords(currentUser),
+      };
     },
   );
   const visibleColumnSet = new Set(result.data.tableView.visibleColumns);
@@ -395,19 +438,23 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
                     ) : null}
                     <td>
                       <div className="flex flex-wrap gap-2">
-                        <ButtonLink
-                          href={`/work-logs/${log.id}/edit`}
-                          variant="ghost"
-                          className="h-8 px-3"
-                        >
-                          Upravit
-                        </ButtonLink>
-                        <ArchiveActionForm
-                          action={log.archivedAt ? restoreWorkLog : archiveWorkLog}
-                          id={log.id}
-                          mode={log.archivedAt ? "restore" : "archive"}
-                          buttonClassName="h-8 px-3"
-                        />
+                        {log.canEdit ? (
+                          <ButtonLink
+                            href={`/work-logs/${log.id}/edit`}
+                            variant="ghost"
+                            className="h-8 px-3"
+                          >
+                            Upravit
+                          </ButtonLink>
+                        ) : null}
+                        {result.data.canArchive ? (
+                          <ArchiveActionForm
+                            action={log.archivedAt ? restoreWorkLog : archiveWorkLog}
+                            id={log.id}
+                            mode={log.archivedAt ? "restore" : "archive"}
+                            buttonClassName="h-8 px-3"
+                          />
+                        ) : null}
                       </div>
                     </td>
                   </tr>

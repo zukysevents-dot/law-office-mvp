@@ -7,6 +7,7 @@ import { Section } from "@/components/section";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
+import { getCurrentUser } from "@/lib/auth";
 import { dateInputValue } from "@/lib/form-values";
 import {
   options,
@@ -15,6 +16,12 @@ import {
   taskStatusLabels,
 } from "@/lib/labels";
 import { safeQuery } from "@/lib/db-safe";
+import {
+  andWhere,
+  canEditRecord,
+  caseVisibilityWhere,
+  projectVisibilityWhere,
+} from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -25,15 +32,22 @@ type TaskEditProps = {
 
 async function loadTaskEdit(id: string) {
   const prisma = getPrisma();
+  const currentUser = await getCurrentUser();
   const [task, projects, cases, users] = await Promise.all([
     prisma.task.findUnique({ where: { id } }),
     prisma.project.findMany({
-      where: { archivedAt: null },
+      where: andWhere(
+        { archivedAt: null },
+        projectVisibilityWhere(currentUser),
+      ),
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
     prisma.case.findMany({
-      where: { archivedAt: null },
+      where: andWhere(
+        { archivedAt: null },
+        caseVisibilityWhere(currentUser),
+      ),
       orderBy: { name: "asc" },
       select: {
         id: true,
@@ -49,7 +63,12 @@ async function loadTaskEdit(id: string) {
     }),
   ]);
 
-  return { task, projects, cases, users };
+  return {
+    task: task && canEditRecord(currentUser, "Task", task) ? task : null,
+    projects,
+    cases,
+    users,
+  };
 }
 
 type TaskEditData = Awaited<ReturnType<typeof loadTaskEdit>>;
