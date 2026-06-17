@@ -1,5 +1,6 @@
 import type { BadgeTone } from "@/components/ui/badge";
 import type {
+  ApprovalStatus,
   BillingStatus,
   SubjectRole,
   TaskDeadlineType,
@@ -27,6 +28,18 @@ export function billingStatusTone(status: BillingStatus): BadgeTone {
     BILLABLE: "dark",
     NEEDS_APPROVAL: "amber",
     INTERNAL_NON_BILLABLE: "neutral",
+  };
+
+  return tones[status];
+}
+
+export function approvalStatusTone(status: ApprovalStatus): BadgeTone {
+  const tones: Record<ApprovalStatus, BadgeTone> = {
+    DRAFT: "neutral",
+    SUBMITTED: "amber",
+    APPROVED: "green",
+    REJECTED: "red",
+    ADJUSTED: "blue",
   };
 
   return tones[status];

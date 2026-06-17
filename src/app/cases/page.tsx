@@ -257,6 +257,9 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
               </SelectInput>
             </Field>
           </div>
+          <Field label="Hodinová sazba">
+            <TextInput name="hourlyRate" type="number" min="0" step="0.01" />
+          </Field>
           <Field label="SharePoint URL">
             <TextInput name="sharepointUrl" type="url" />
           </Field>

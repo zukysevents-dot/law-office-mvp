@@ -10,6 +10,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { getCurrentUser } from "@/lib/auth";
 import { caseStatusLabels, options } from "@/lib/labels";
 import { safeQuery } from "@/lib/db-safe";
+import { numberInputValue } from "@/lib/form-values";
 import { andWhere, canEditRecord, projectVisibilityWhere } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
@@ -137,6 +138,15 @@ export default async function CaseEditPage({ params }: CaseEditProps) {
                 </SelectInput>
               </Field>
             </div>
+            <Field label="Hodinová sazba">
+              <TextInput
+                name="hourlyRate"
+                type="number"
+                min="0"
+                step="0.01"
+                defaultValue={numberInputValue(legalCase.hourlyRate)}
+              />
+            </Field>
             <Field label="SharePoint URL">
               <TextInput
                 name="sharepointUrl"
