@@ -448,6 +448,22 @@ async function main() {
         create: preference,
       });
     }
+
+    await prisma.notificationPreference.upsert({
+      where: { userId: demoUser.id },
+      update: {},
+      create: {
+        userId: demoUser.id,
+        emailEnabled: true,
+        taskCreatedEmail: true,
+        taskStatusChangedEmail: true,
+        taskForReviewEmail: true,
+        taskDeadlineSoonEmail: true,
+        taskFiledFollowupEmail: true,
+        deadlineReminderDays: 1,
+        filedFollowupDays: 5,
+      },
+    });
   }
 
   console.log("Seed data created.");

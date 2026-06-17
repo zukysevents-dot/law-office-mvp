@@ -17,7 +17,10 @@ import {
   optionalString,
   requiredString,
 } from "@/lib/form";
-import { queueInternalNotification } from "@/lib/notifications/notification-service";
+import {
+  queueTaskCreatedNotifications,
+  queueTaskStatusNotifications,
+} from "@/lib/notifications/notification-service";
 import { assertCanEditRecord } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
@@ -25,6 +28,7 @@ export async function createTask(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
   const assignedToId = optionalString(formData, "assignedToId");
+  const responsibleUserId = optionalString(formData, "responsibleUserId");
 
   const task = await prisma.task.create({
     data: {
@@ -33,7 +37,7 @@ export async function createTask(formData: FormData) {
       caseId: optionalString(formData, "caseId"),
       createdById: currentUser.id,
       assignedToId,
-      responsibleUserId: optionalString(formData, "responsibleUserId"),
+      responsibleUserId,
       status: TaskStatus.CREATED,
       priority: enumValue(
         TaskPriority,
@@ -68,12 +72,9 @@ export async function createTask(formData: FormData) {
     },
   });
 
-  await queueInternalNotification({
-    toUserId: assignedToId,
-    subject: `Nový úkol: ${task.title}`,
-    body: task.shortDescription ?? "",
-    entityType: "Task",
-    entityId: task.id,
+  await queueTaskCreatedNotifications({
+    task,
+    actorUserId: currentUser.id,
   });
 
   revalidatePath("/tasks");
@@ -175,6 +176,15 @@ export async function updateTask(formData: FormData) {
     revalidatePath(`/cases/${task.caseId}`);
   }
 
+  if (statusChanged) {
+    await queueTaskStatusNotifications({
+      task,
+      oldStatus: oldTask.status,
+      newStatus,
+      actorUserId: currentUser.id,
+    });
+  }
+
   redirect(`/tasks/${task.id}`);
 }
 
@@ -194,6 +204,7 @@ export async function updateTaskStatus(formData: FormData) {
     select: {
       id: true,
       status: true,
+      title: true,
       createdById: true,
       assignedToId: true,
       responsibleUserId: true,
@@ -253,6 +264,13 @@ export async function updateTaskStatus(formData: FormData) {
   revalidatePath("/tasks/archive");
   revalidatePath("/tasks/my");
   revalidatePath(`/tasks/${task.id}`);
+
+  await queueTaskStatusNotifications({
+    task,
+    oldStatus: task.status,
+    newStatus,
+    actorUserId: currentUser.id,
+  });
 }
 
 export async function archiveTask(formData: FormData) {
