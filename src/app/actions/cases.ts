@@ -7,7 +7,12 @@ import { CaseStatus, SubjectRole } from "@/generated/prisma/enums";
 import { auditJson } from "@/lib/audit";
 import { assertCanArchiveRecords } from "@/lib/archive-permissions";
 import { getCurrentUser } from "@/lib/auth";
-import { enumValue, optionalString, requiredString } from "@/lib/form";
+import {
+  enumValue,
+  optionalNumber,
+  optionalString,
+  requiredString,
+} from "@/lib/form";
 import { assertCanEditRecord } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
@@ -29,6 +34,7 @@ export async function createCase(formData: FormData) {
         fileNumber: optionalString(formData, "fileNumber"),
         responsibleUserId: optionalString(formData, "responsibleUserId"),
         status,
+        hourlyRate: optionalNumber(formData, "hourlyRate"),
         sharepointUrl: optionalString(formData, "sharepointUrl"),
         note: optionalString(formData, "note"),
       },
@@ -86,6 +92,7 @@ export async function updateCase(formData: FormData) {
       fileNumber: optionalString(formData, "fileNumber"),
       responsibleUserId: optionalString(formData, "responsibleUserId"),
       status,
+      hourlyRate: optionalNumber(formData, "hourlyRate"),
       sharepointUrl: optionalString(formData, "sharepointUrl"),
       note: optionalString(formData, "note"),
     },

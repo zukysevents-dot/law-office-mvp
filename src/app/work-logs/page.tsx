@@ -21,7 +21,14 @@ import {
 } from "@/lib/archive-filter";
 import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
-import { formatDate, formatHours, formatMoney } from "@/lib/format";
+import {
+  formatCaseLabel,
+  formatDate,
+  formatDateUtc,
+  formatHours,
+  formatMoney,
+} from "@/lib/format";
+import { firstParam } from "@/lib/search-params";
 import {
   approvalStatusLabels,
   billingStatusLabels,
@@ -82,11 +89,6 @@ type WorkLogsPageData = {
   tableView: TableViewState;
   canArchive: boolean;
 };
-
-function firstParam(params: Record<string, string | string[] | undefined>, key: string) {
-  const value = params[key];
-  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
-}
 
 function numberParam(value: string) {
   if (!value) {
@@ -378,7 +380,7 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
                 {result.data.workLogs.map((log) => (
                   <tr key={log.id}>
                     {visibleColumnSet.has("date") ? (
-                      <td>{formatDate(log.workDate)}</td>
+                      <td>{formatDateUtc(log.workDate)}</td>
                     ) : null}
                     {visibleColumnSet.has("subject") ? (
                       <td>{log.subject?.name ?? "—"}</td>
@@ -387,13 +389,7 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
                       <td>{log.project?.name ?? "—"}</td>
                     ) : null}
                     {visibleColumnSet.has("case") ? (
-                      <td>
-                        {log.case
-                          ? `${log.case.name}${
-                              log.case.fileNumber ? `, ${log.case.fileNumber}` : ""
-                            }`
-                          : "—"}
-                      </td>
+                      <td>{formatCaseLabel(log.case)}</td>
                     ) : null}
                     {visibleColumnSet.has("task") ? (
                       <td className="max-w-xs">{log.task?.title ?? "—"}</td>

@@ -269,6 +269,7 @@ model Case {
   fileNumber        String?
   responsibleUserId String?
   status            CaseStatus @default(ACTIVE)
+  hourlyRate        Decimal?   @db.Decimal(12, 2)
   sharepointUrl     String?
   note              String?
   createdAt         DateTime   @default(now())

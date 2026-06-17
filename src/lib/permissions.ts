@@ -143,6 +143,16 @@ export function assertCanManageUsers(user: PermissionInput) {
   }
 }
 
+export function canApproveBilling(user: PermissionInput) {
+  return canViewAllLegalData(user);
+}
+
+export function assertCanApproveBilling(user: PermissionInput) {
+  if (!canApproveBilling(user)) {
+    throw new Error("Nemáte oprávnění schvalovat fakturační podklady.");
+  }
+}
+
 export function taskVisibilityWhere(user: PermissionInput): Prisma.TaskWhereInput {
   if (canViewAllLegalData(user)) {
     return {};

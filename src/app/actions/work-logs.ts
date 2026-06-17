@@ -18,15 +18,33 @@ import {
 import { assertCanEditRecord } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
+type RateInput = {
+  caseRate?: number | string | { toString(): string } | null;
+  projectRate?: number | string | { toString(): string } | null;
+  subjectRate?: number | string | { toString(): string } | null;
+};
+
+// Rate priority for billing basis: case > project > subject.
+function resolveHourlyRate({ caseRate, projectRate, subjectRate }: RateInput) {
+  return Number(caseRate ?? projectRate ?? subjectRate ?? 0);
+}
+
 export async function createWorkLog(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
   const subjectId = optionalString(formData, "subjectId");
   const projectId = optionalString(formData, "projectId");
+  const caseId = optionalString(formData, "caseId");
   const hours = requiredNumber(formData, "hours");
   const manualHourlyRate = optionalNumber(formData, "hourlyRate");
 
-  const [project, subject] = await Promise.all([
+  const [legalCase, project, subject] = await Promise.all([
+    caseId
+      ? prisma.case.findUnique({
+          where: { id: caseId },
+          select: { hourlyRate: true },
+        })
+      : null,
     projectId
       ? prisma.project.findUnique({
           where: { id: projectId },
@@ -42,7 +60,12 @@ export async function createWorkLog(formData: FormData) {
   ]);
 
   const derivedHourlyRate =
-    manualHourlyRate ?? Number(project?.hourlyRate ?? subject?.hourlyRate ?? 0);
+    manualHourlyRate ??
+    resolveHourlyRate({
+      caseRate: legalCase?.hourlyRate,
+      projectRate: project?.hourlyRate,
+      subjectRate: subject?.hourlyRate,
+    });
   const hourlyRate = derivedHourlyRate > 0 ? derivedHourlyRate : null;
   const amountCzk = hourlyRate ? hours * hourlyRate : null;
 
@@ -50,7 +73,7 @@ export async function createWorkLog(formData: FormData) {
     data: {
       subjectId,
       projectId,
-      caseId: optionalString(formData, "caseId"),
+      caseId,
       taskId: optionalString(formData, "taskId"),
       userId: currentUser.id,
       workDate: requiredDate(formData, "workDate"),
