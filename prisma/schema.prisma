@@ -116,6 +116,21 @@ enum DashboardWidgetSize {
   FULL
 }
 
+enum NotificationType {
+  TASK_CREATED
+  TASK_STATUS_CHANGED
+  TASK_FOR_REVIEW
+  TASK_DEADLINE_SOON
+  TASK_FILED_FOLLOWUP
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+}
+
 model User {
   id          String   @id @default(cuid())
   name        String
@@ -139,6 +154,8 @@ model User {
   auditLogs               AuditLog[]          @relation("AuditLogChangedBy")
   dashboardWidgets        DashboardWidget[]
   tableViewPreferences    TableViewPreference[]
+  notificationPreference  NotificationPreference?
+  notifications           Notification[]      @relation("NotificationRecipient")
 
   @@map("users")
 }
@@ -460,4 +477,51 @@ model TableViewPreference {
   @@index([userId])
   @@index([tableKey])
   @@map("tableViewPreferences")
+}
+
+model NotificationPreference {
+  id                     String   @id @default(cuid())
+  userId                 String   @unique
+  emailEnabled           Boolean  @default(true)
+  taskCreatedEmail       Boolean  @default(true)
+  taskStatusChangedEmail Boolean  @default(true)
+  taskForReviewEmail     Boolean  @default(true)
+  taskDeadlineSoonEmail  Boolean  @default(true)
+  taskFiledFollowupEmail Boolean  @default(true)
+  deadlineReminderDays   Int      @default(1)
+  filedFollowupDays      Int      @default(5)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notificationPreferences")
+}
+
+model Notification {
+  id              String             @id @default(cuid())
+  recipientUserId String
+  type            NotificationType
+  status          NotificationStatus @default(PENDING)
+  subject         String
+  body            String
+  entityType      String?
+  entityId        String?
+  dedupeKey       String?            @unique
+  emailTo         String?
+  sentAt          DateTime?
+  attempts        Int                @default(0)
+  lastError       String?
+  lockedAt        DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  recipient User @relation("NotificationRecipient", fields: [recipientUserId], references: [id], onDelete: Cascade)
+
+  @@index([recipientUserId, status])
+  @@index([status, lockedAt])
+  @@index([type])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("notifications")
 }

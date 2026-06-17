@@ -109,7 +109,7 @@ export default async function SubjectsPage({ searchParams }: SubjectsPageProps) 
       />
       <Section>
         <form className="grid gap-3 md:grid-cols-[1fr_220px_auto]">
-          <div className="relative flex-1">
+          <div className="relative flex-1 md:self-end">
             <Search
               className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-stone-400"
               aria-hidden="true"
@@ -130,7 +130,7 @@ export default async function SubjectsPage({ searchParams }: SubjectsPageProps) 
               ))}
             </SelectInput>
           </Field>
-          <Button type="submit" variant="secondary">
+          <Button type="submit" variant="secondary" className="md:self-end">
             Hledat
           </Button>
         </form>
