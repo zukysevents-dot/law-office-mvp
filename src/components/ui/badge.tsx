@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 
-const tones = {
+export const badgeToneClasses = {
   neutral: "border-stone-200 bg-stone-50 text-stone-700",
   mint: "border-[#B9DCC6] bg-[#B9DCC6]/45 text-[#072924]",
   dark: "border-[#072924] bg-[#072924] text-white",
@@ -11,7 +11,7 @@ const tones = {
   purple: "border-violet-200 bg-violet-50 text-violet-900",
 };
 
-export type BadgeTone = keyof typeof tones;
+export type BadgeTone = keyof typeof badgeToneClasses;
 
 export function Badge({
   children,
@@ -19,14 +19,14 @@ export function Badge({
   className,
 }: {
   children: React.ReactNode;
-  tone?: keyof typeof tones;
+  tone?: BadgeTone;
   className?: string;
 }) {
   return (
     <span
       className={cn(
         "inline-flex items-center rounded-md border px-2 py-1 text-xs font-medium",
-        tones[tone],
+        badgeToneClasses[tone],
         className,
       )}
     >
