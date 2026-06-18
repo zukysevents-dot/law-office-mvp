@@ -6,6 +6,7 @@ import { ColumnVisibilityPanel } from "@/components/column-visibility-panel";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
+import { SubjectAresFields } from "@/components/subject-ares-fields";
 import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
@@ -237,39 +238,7 @@ export default async function SubjectsPage({ searchParams }: SubjectsPageProps) 
       </Section>
       <Section title="Nový subjekt" className="scroll-mt-6" id="new-subject">
         <form action={createSubject} className="grid gap-4">
-          <div className="grid gap-4 md:grid-cols-3">
-            <Field label="Typ">
-              <SelectInput name="type" defaultValue="COMPANY">
-                {options.subjectTypes.map((type) => (
-                  <option key={type} value={type}>
-                    {subjectTypeLabels[type]}
-                  </option>
-                ))}
-              </SelectInput>
-            </Field>
-            <Field label="Název" className="md:col-span-2">
-              <TextInput name="name" required />
-            </Field>
-          </div>
-          <div className="grid gap-4 md:grid-cols-3">
-            <Field label="IČO">
-              <TextInput name="ico" />
-            </Field>
-            <Field label="DIČ">
-              <TextInput name="dic" />
-            </Field>
-            <Field label="Právní forma">
-              <TextInput name="legalForm" />
-            </Field>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Adresa">
-              <TextInput name="address" />
-            </Field>
-            <Field label="Statutární orgán">
-              <TextInput name="statutoryBody" />
-            </Field>
-          </div>
+          <SubjectAresFields />
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="E-mail">
               <TextInput name="email" type="email" />
@@ -278,22 +247,6 @@ export default async function SubjectsPage({ searchParams }: SubjectsPageProps) 
               <TextInput name="sharepointUrl" type="url" />
             </Field>
           </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Stav">
-              <TextInput name="status" defaultValue="ACTIVE" />
-            </Field>
-            <Field label="Insolvenční stav">
-              <TextInput name="insolvencyStatus" />
-            </Field>
-          </div>
-          <label className="flex items-center gap-2 text-sm font-medium text-stone-700">
-            <input
-              type="checkbox"
-              name="riskFlag"
-              className="h-4 w-4 rounded border-stone-300 text-emerald-950"
-            />
-            Rizikový subjekt
-          </label>
           <Field label="Interní poznámka">
             <TextArea name="internalNote" />
           </Field>

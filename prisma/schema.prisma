@@ -180,6 +180,7 @@ model Subject {
   hourlyRate       Decimal?    @db.Decimal(12, 2)
   flatFee          Decimal?    @db.Decimal(12, 2)
   feeNote          String?
+  aresVerifiedAt   DateTime?
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
   archivedAt       DateTime?
