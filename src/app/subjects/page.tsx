@@ -271,6 +271,14 @@ export default async function SubjectsPage({ searchParams }: SubjectsPageProps) 
             </Field>
           </div>
           <div className="grid gap-4 md:grid-cols-2">
+            <Field label="E-mail">
+              <TextInput name="email" type="email" />
+            </Field>
+            <Field label="SharePoint URL">
+              <TextInput name="sharepointUrl" type="url" />
+            </Field>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
             <Field label="Stav">
               <TextInput name="status" defaultValue="ACTIVE" />
             </Field>

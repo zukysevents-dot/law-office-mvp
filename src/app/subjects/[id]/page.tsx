@@ -5,8 +5,11 @@ import type { Prisma } from "@/generated/prisma/client";
 import { archiveSubject, restoreSubject } from "@/app/actions/subjects";
 import { ArchiveActionForm } from "@/components/archive-action-form";
 import { ArchiveNotice } from "@/components/archive-notice";
+import { ComposeEmailButton } from "@/components/compose-email-button";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
+import { SharepointFolderField } from "@/components/sharepoint-folder-field";
+import { SharepointNotice } from "@/components/sharepoint-notice";
 import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
@@ -36,6 +39,7 @@ export const dynamic = "force-dynamic";
 
 type SubjectDetailProps = {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ sharepoint?: string }>;
 };
 
 type SubjectProject = {
@@ -147,8 +151,12 @@ function icoLinks(ico: string) {
   };
 }
 
-export default async function SubjectDetailPage({ params }: SubjectDetailProps) {
+export default async function SubjectDetailPage({
+  params,
+  searchParams,
+}: SubjectDetailProps) {
   const { id } = await params;
+  const { sharepoint } = await searchParams;
   const result = await safeQuery<SubjectDetailData>(
     { subject: null, canArchive: false, canEdit: false },
     () => loadSubject(id),
@@ -170,6 +178,9 @@ export default async function SubjectDetailPage({ params }: SubjectDetailProps) 
         action={
           subject ? (
             <>
+              {subject.email ? (
+                <ComposeEmailButton email={subject.email} subject={subject.name} />
+              ) : null}
               {canEdit ? (
                 <ButtonLink href={`/subjects/${subject.id}/edit`}>
                   Upravit subjekt
@@ -191,6 +202,7 @@ export default async function SubjectDetailPage({ params }: SubjectDetailProps) 
         error={result.error}
       />
       <ArchiveNotice archivedAt={subject?.archivedAt ?? null} />
+      <SharepointNotice status={sharepoint} />
       {subject ? (
         <>
           <Section>
@@ -237,6 +249,21 @@ export default async function SubjectDetailPage({ params }: SubjectDetailProps) 
                 <p className="font-mono">{subject.dic ?? "—"}</p>
               </div>
               <div>
+                <p className="text-xs font-semibold uppercase text-stone-500">
+                  E-mail
+                </p>
+                {subject.email ? (
+                  <a
+                    href={`mailto:${encodeURIComponent(subject.email)}`}
+                    className="break-all font-medium text-emerald-950 hover:underline"
+                  >
+                    {subject.email}
+                  </a>
+                ) : (
+                  <p>—</p>
+                )}
+              </div>
+              <div>
                 <p className="text-xs font-semibold uppercase text-stone-500">Stav</p>
                 <p>{subject.status}</p>
               </div>
@@ -260,6 +287,12 @@ export default async function SubjectDetailPage({ params }: SubjectDetailProps) 
                 </p>
                 <p>{subject.address ?? "—"}</p>
               </div>
+              <SharepointFolderField
+                entityType="Subject"
+                id={subject.id}
+                url={subject.sharepointUrl}
+                canEdit={canEdit}
+              />
               <div className="md:col-span-3">
                 <p className="text-xs font-semibold uppercase text-stone-500">
                   Interní poznámka

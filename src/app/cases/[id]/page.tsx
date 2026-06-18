@@ -9,6 +9,8 @@ import { Field, SelectInput, TextArea } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
 import { ReferenceForm } from "@/components/reference-form";
 import { Section } from "@/components/section";
+import { SharepointFolderField } from "@/components/sharepoint-folder-field";
+import { SharepointNotice } from "@/components/sharepoint-notice";
 import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
@@ -38,6 +40,7 @@ export const dynamic = "force-dynamic";
 
 type CaseDetailProps = {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ sharepoint?: string }>;
 };
 
 async function loadCase(id: string) {
@@ -117,8 +120,12 @@ const emptyCaseDetail: CaseDetailData = {
   canEdit: false,
 };
 
-export default async function CaseDetailPage({ params }: CaseDetailProps) {
+export default async function CaseDetailPage({
+  params,
+  searchParams,
+}: CaseDetailProps) {
   const { id } = await params;
+  const { sharepoint } = await searchParams;
   const result = await safeQuery<CaseDetailData>(
     emptyCaseDetail,
     () => loadCase(id),
@@ -159,6 +166,7 @@ export default async function CaseDetailPage({ params }: CaseDetailProps) {
         error={result.error}
       />
       <ArchiveNotice archivedAt={legalCase?.archivedAt ?? null} />
+      <SharepointNotice status={sharepoint} />
       {legalCase ? (
         <>
           <Section>
@@ -207,12 +215,12 @@ export default async function CaseDetailPage({ params }: CaseDetailProps) {
                 </p>
                 <p>{formatDate(legalCase.createdAt)}</p>
               </div>
-              <div className="md:col-span-3">
-                <p className="text-xs font-semibold uppercase text-stone-500">
-                  SharePoint URL
-                </p>
-                <p className="break-all">{legalCase.sharepointUrl ?? "—"}</p>
-              </div>
+              <SharepointFolderField
+                entityType="Case"
+                id={legalCase.id}
+                url={legalCase.sharepointUrl}
+                canEdit={canEdit}
+              />
               <div className="md:col-span-3">
                 <p className="text-xs font-semibold uppercase text-stone-500">
                   Poznámka
