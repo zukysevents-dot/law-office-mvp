@@ -63,3 +63,12 @@ export function getGraphConfig(): GraphConfig | null {
 export function isGraphConfigured(): boolean {
   return getGraphConfig() !== null;
 }
+
+/**
+ * Whether interactive Microsoft sign-in (Entra ID SSO) is enabled. Reserved for
+ * a future phase and currently off by default — it gates user-delegated features
+ * such as Outlook calendar sync (see `src/lib/microsoft/outlook.ts`).
+ */
+export function isMicrosoftLoginEnabled(): boolean {
+  return env("MICROSOFT_LOGIN_ENABLED") === "true";
+}
