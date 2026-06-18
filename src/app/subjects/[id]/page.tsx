@@ -3,8 +3,11 @@ import { notFound } from "next/navigation";
 
 import type { Prisma } from "@/generated/prisma/client";
 import { archiveSubject, restoreSubject } from "@/app/actions/subjects";
+import { AresNotice } from "@/components/ares-notice";
+import { AresVerifyButton } from "@/components/ares-verify-button";
 import { ArchiveActionForm } from "@/components/archive-action-form";
 import { ArchiveNotice } from "@/components/archive-notice";
+import { CompanyRiskNotice } from "@/components/company-risk-notice";
 import { ComposeEmailButton } from "@/components/compose-email-button";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
@@ -39,7 +42,7 @@ export const dynamic = "force-dynamic";
 
 type SubjectDetailProps = {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ sharepoint?: string }>;
+  searchParams: Promise<{ sharepoint?: string; ares?: string }>;
 };
 
 type SubjectProject = {
@@ -148,6 +151,8 @@ function icoLinks(ico: string) {
   return {
     ares: `https://ares.gov.cz/ekonomicke-subjekty?ico=${encodeURIComponent(ico)}`,
     obchodniRejstrik: `https://or.justice.cz/ias/ui/rejstrik-$firma?ico=${encodeURIComponent(ico)}`,
+    // ISIR has no stable IČO querystring; link to the official insolvency search.
+    isir: "https://isir.justice.cz/isir/common/index.do",
   };
 }
 
@@ -156,7 +161,7 @@ export default async function SubjectDetailPage({
   searchParams,
 }: SubjectDetailProps) {
   const { id } = await params;
-  const { sharepoint } = await searchParams;
+  const { sharepoint, ares } = await searchParams;
   const result = await safeQuery<SubjectDetailData>(
     { subject: null, canArchive: false, canEdit: false },
     () => loadSubject(id),
@@ -203,6 +208,14 @@ export default async function SubjectDetailPage({
       />
       <ArchiveNotice archivedAt={subject?.archivedAt ?? null} />
       <SharepointNotice status={sharepoint} />
+      <AresNotice status={ares} />
+      {subject ? (
+        <CompanyRiskNotice
+          riskFlag={subject.riskFlag}
+          insolvencyStatus={subject.insolvencyStatus}
+          isirUrl={links?.isir}
+        />
+      ) : null}
       {subject ? (
         <>
           <Section>
@@ -214,31 +227,49 @@ export default async function SubjectDetailPage({
               <div>
                 <p className="text-xs font-semibold uppercase text-stone-500">IČO</p>
                 {subject.ico && links ? (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <a
-                      href={links.ares}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="font-mono font-medium text-emerald-950 hover:underline"
-                    >
-                      {subject.ico}
-                    </a>
-                    <a
-                      href={links.ares}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-sm text-emerald-950 hover:underline"
-                    >
-                      ARES
-                    </a>
-                    <a
-                      href={links.obchodniRejstrik}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-sm text-emerald-950 hover:underline"
-                    >
-                      Obchodní rejstřík
-                    </a>
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <a
+                        href={links.ares}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="font-mono font-medium text-emerald-950 hover:underline"
+                      >
+                        {subject.ico}
+                      </a>
+                      <a
+                        href={links.ares}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-sm text-emerald-950 hover:underline"
+                      >
+                        ARES
+                      </a>
+                      <a
+                        href={links.obchodniRejstrik}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-sm text-emerald-950 hover:underline"
+                      >
+                        Obchodní rejstřík
+                      </a>
+                      <a
+                        href={links.isir}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-sm text-emerald-950 hover:underline"
+                      >
+                        Insolvenční rejstřík
+                      </a>
+                    </div>
+                    {canEdit && subject.type !== "PERSON" ? (
+                      <AresVerifyButton subjectId={subject.id} />
+                    ) : null}
+                    {subject.aresVerifiedAt ? (
+                      <p className="text-xs text-stone-500">
+                        Ověřeno z ARES: {formatDate(subject.aresVerifiedAt)}
+                      </p>
+                    ) : null}
                   </div>
                 ) : (
                   <p className="font-mono">—</p>
