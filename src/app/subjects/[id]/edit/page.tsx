@@ -99,6 +99,22 @@ export default async function SubjectEditPage({ params }: SubjectEditProps) {
               </Field>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
+              <Field label="E-mail">
+                <TextInput
+                  name="email"
+                  type="email"
+                  defaultValue={subject.email ?? ""}
+                />
+              </Field>
+              <Field label="SharePoint URL">
+                <TextInput
+                  name="sharepointUrl"
+                  type="url"
+                  defaultValue={subject.sharepointUrl ?? ""}
+                />
+              </Field>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
               <Field label="Stav">
                 <TextInput name="status" defaultValue={subject.status} />
               </Field>

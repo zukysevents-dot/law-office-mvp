@@ -9,6 +9,8 @@ import { Field, SelectInput, TextArea } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
 import { ReferenceForm } from "@/components/reference-form";
 import { Section } from "@/components/section";
+import { SharepointFolderField } from "@/components/sharepoint-folder-field";
+import { SharepointNotice } from "@/components/sharepoint-notice";
 import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
@@ -40,6 +42,7 @@ export const dynamic = "force-dynamic";
 
 type ProjectDetailProps = {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ sharepoint?: string }>;
 };
 
 async function loadProject(id: string) {
@@ -138,8 +141,12 @@ const emptyProjectDetail: ProjectDetailData = {
   canEdit: false,
 };
 
-export default async function ProjectDetailPage({ params }: ProjectDetailProps) {
+export default async function ProjectDetailPage({
+  params,
+  searchParams,
+}: ProjectDetailProps) {
   const { id } = await params;
+  const { sharepoint } = await searchParams;
   const result = await safeQuery<ProjectDetailData>(
     emptyProjectDetail,
     () => loadProject(id),
@@ -180,6 +187,7 @@ export default async function ProjectDetailPage({ params }: ProjectDetailProps) 
         error={result.error}
       />
       <ArchiveNotice archivedAt={project?.archivedAt ?? null} />
+      <SharepointNotice status={sharepoint} />
       {project ? (
         <>
           <Section>
@@ -211,12 +219,12 @@ export default async function ProjectDetailPage({ params }: ProjectDetailProps) 
                 </p>
                 <p>{formatMoney(project.hourlyRate)}</p>
               </div>
-              <div className="md:col-span-3">
-                <p className="text-xs font-semibold uppercase text-stone-500">
-                  SharePoint URL
-                </p>
-                <p className="break-all">{project.sharepointUrl ?? "—"}</p>
-              </div>
+              <SharepointFolderField
+                entityType="Project"
+                id={project.id}
+                url={project.sharepointUrl}
+                canEdit={canEdit}
+              />
               <div className="md:col-span-3">
                 <p className="text-xs font-semibold uppercase text-stone-500">
                   Poznámka

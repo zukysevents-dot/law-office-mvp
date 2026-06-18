@@ -166,6 +166,7 @@ model Subject {
   name             String
   ico              String?     @unique
   dic              String?
+  email            String?
   address          String?
   legalForm        String?
   statutoryBody    String?
@@ -174,6 +175,7 @@ model Subject {
   riskFlag         Boolean     @default(false)
   internalNote     String?
   legalServicesContractUrl String?
+  sharepointUrl    String?
   feeType          FeeType?
   hourlyRate       Decimal?    @db.Decimal(12, 2)
   flatFee          Decimal?    @db.Decimal(12, 2)
