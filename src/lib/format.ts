@@ -18,6 +18,15 @@ export const utcDateFormatter = new Intl.DateTimeFormat("cs-CZ", {
   timeZone: "UTC",
 });
 
+export const dateTimeFormatter = new Intl.DateTimeFormat("cs-CZ", {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  timeZone: "Europe/Prague",
+});
+
 export const numberFormatter = new Intl.NumberFormat("cs-CZ", {
   maximumFractionDigits: 2,
 });
@@ -34,6 +43,14 @@ export function formatDate(value: Date | string | null | undefined) {
   }
 
   return dateFormatter.format(new Date(value));
+}
+
+export function formatDateTime(value: Date | string | null | undefined) {
+  if (!value) {
+    return "—";
+  }
+
+  return dateTimeFormatter.format(new Date(value));
 }
 
 // Use for date-only fields so the calendar date is stable regardless of the
