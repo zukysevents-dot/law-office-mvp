@@ -128,6 +128,12 @@ export function CalendarView() {
           nowIndicator
           stickyHeaderDates
           expandRows
+          slotLabelFormat={{
+            hour: "numeric",
+            minute: "2-digit",
+            omitZeroMinute: false,
+            hour12: false,
+          }}
         />
       </div>
     </section>
