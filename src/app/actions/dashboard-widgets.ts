@@ -19,7 +19,7 @@ import { checkboxValue, enumValue, optionalString, requiredString } from "@/lib/
 import { getPrisma } from "@/lib/prisma";
 
 function revalidateDashboard() {
-  revalidatePath("/");
+  revalidatePath("/dashboard");
   revalidatePath("/dashboard/settings");
 }
 
