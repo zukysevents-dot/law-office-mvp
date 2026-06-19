@@ -1,0 +1,37 @@
+{
+  "pkg": "law-office-mvp",
+  "globalName": "LawOfficeUI",
+  "shape": "package",
+  "tsconfig": "tsconfig.json",
+  "cssEntry": "dist/ds.css",
+  "readmeHeader": ".design-sync/conventions.md",
+  "buildCmd": "node .design-sync/lib-src/build-dist.mjs && node .ds-sync/node_modules/@tailwindcss/cli/dist/index.mjs -i .design-sync/lib-src/styles.in.css -o dist/ds.css",
+  "componentSrcMap": {
+    "Button": "src/components/ui/button.tsx",
+    "ButtonLink": "src/components/ui/button.tsx",
+    "Badge": "src/components/ui/badge.tsx",
+    "EmptyState": "src/components/ui/empty-state.tsx",
+    "DatabaseNotice": "src/components/ui/database-notice.tsx",
+    "PageHeader": "src/components/page-header.tsx",
+    "Section": "src/components/section.tsx",
+    "StatCard": "src/components/stat-card.tsx",
+    "Field": "src/components/form-field.tsx",
+    "TextInput": "src/components/form-field.tsx",
+    "SelectInput": "src/components/form-field.tsx",
+    "TextArea": "src/components/form-field.tsx"
+  },
+  "dtsPropsFor": {
+    "Button": "/** Visual style. */ variant?: 'primary' | 'secondary' | 'ghost' | 'danger'; className?: string; children?: React.ReactNode; disabled?: boolean; type?: 'button' | 'submit' | 'reset'; onClick?: React.MouseEventHandler<HTMLButtonElement>;",
+    "ButtonLink": "/** Destination URL. */ href: string; variant?: 'primary' | 'secondary' | 'ghost' | 'danger'; className?: string; children?: React.ReactNode;",
+    "Badge": "children: React.ReactNode; /** Color tone. */ tone?: 'neutral' | 'mint' | 'dark' | 'green' | 'amber' | 'red' | 'blue' | 'purple'; className?: string;",
+    "EmptyState": "children: React.ReactNode;",
+    "DatabaseNotice": "/** When true the component renders nothing. */ databaseReady: boolean; error?: string;",
+    "PageHeader": "title: string; description?: string; /** Right-aligned actions, e.g. a Button. */ action?: React.ReactNode;",
+    "Section": "/** Optional heading rendered above the content. */ title?: string; children: React.ReactNode; className?: string;",
+    "StatCard": "label: string; value: string | number; /** Lucide icon component. */ icon: React.ComponentType<{ className?: string }>; tone?: 'mint' | 'danger';",
+    "Field": "/** Field label text. */ label: string; children: React.ReactNode; className?: string;",
+    "TextInput": "className?: string; placeholder?: string; value?: string | number; defaultValue?: string | number; type?: string; name?: string; disabled?: boolean; required?: boolean; onChange?: React.ChangeEventHandler<HTMLInputElement>;",
+    "SelectInput": "className?: string; children?: React.ReactNode; value?: string; defaultValue?: string; name?: string; disabled?: boolean; onChange?: React.ChangeEventHandler<HTMLSelectElement>;",
+    "TextArea": "className?: string; placeholder?: string; value?: string; defaultValue?: string; name?: string; rows?: number; disabled?: boolean; onChange?: React.ChangeEventHandler<HTMLTextAreaElement>;"
+  }
+}

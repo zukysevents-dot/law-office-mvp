@@ -52,3 +52,12 @@ dev-server*.log
 next-env.d.ts
 
 /src/generated/prisma
+
+# design-sync (staged scripts, build output, machine state)
+.ds-sync/
+ds-bundle/
+dist/ds.es.js
+dist/ds.css
+.design-sync/.cache/
+.design-sync/learnings/
+.design-sync/node_modules
