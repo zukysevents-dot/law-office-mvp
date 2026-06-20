@@ -1,6 +1,15 @@
+import { timingSafeEqual } from "node:crypto";
+
 import { NextResponse, type NextRequest } from "next/server";
 
 import { runScheduledNotifications } from "@/lib/notifications/notification-service";
+
+function safeEqual(a: string, b: string): boolean {
+  const aBuf = Buffer.from(a);
+  const bBuf = Buffer.from(b);
+  if (aBuf.length !== bBuf.length) return false;
+  return timingSafeEqual(aBuf, bBuf);
+}
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,9 +31,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const authorization = request.headers.get("authorization");
+  const authorization = request.headers.get("authorization") ?? "";
 
-  if (authorization !== `Bearer ${secret}`) {
+  if (!safeEqual(authorization, `Bearer ${secret}`)) {
     return unauthorized();
   }
 

@@ -21,7 +21,12 @@ import {
   queueTaskCreatedNotifications,
   queueTaskStatusNotifications,
 } from "@/lib/notifications/notification-service";
-import { assertCanEditRecord } from "@/lib/permissions";
+import {
+  andWhere,
+  assertCanEditRecord,
+  caseVisibilityWhere,
+  projectVisibilityWhere,
+} from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 export async function createTask(formData: FormData) {
@@ -29,12 +34,34 @@ export async function createTask(formData: FormData) {
   const currentUser = await getCurrentUser();
   const assignedToId = optionalString(formData, "assignedToId");
   const responsibleUserId = optionalString(formData, "responsibleUserId");
+  const projectId = optionalString(formData, "projectId");
+  const caseId = optionalString(formData, "caseId");
+
+  // A task can't be filed under a project/case the user can't see.
+  if (projectId) {
+    const project = await prisma.project.findFirst({
+      where: andWhere({ id: projectId }, projectVisibilityWhere(currentUser)),
+      select: { id: true },
+    });
+    if (!project) {
+      throw new Error("Projekt nenalezen nebo k němu nemáte oprávnění.");
+    }
+  }
+  if (caseId) {
+    const legalCase = await prisma.case.findFirst({
+      where: andWhere({ id: caseId }, caseVisibilityWhere(currentUser)),
+      select: { id: true },
+    });
+    if (!legalCase) {
+      throw new Error("Případ nenalezen nebo k němu nemáte oprávnění.");
+    }
+  }
 
   const task = await prisma.task.create({
     data: {
       title: requiredString(formData, "title"),
-      projectId: optionalString(formData, "projectId"),
-      caseId: optionalString(formData, "caseId"),
+      projectId,
+      caseId,
       createdById: currentUser.id,
       assignedToId,
       responsibleUserId,

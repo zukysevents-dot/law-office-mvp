@@ -13,7 +13,11 @@ import {
   optionalString,
   requiredString,
 } from "@/lib/form";
-import { assertCanEditRecord } from "@/lib/permissions";
+import {
+  andWhere,
+  assertCanEditRecord,
+  projectVisibilityWhere,
+} from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 export async function createCase(formData: FormData) {
@@ -23,10 +27,15 @@ export async function createCase(formData: FormData) {
   const projectId = requiredString(formData, "projectId");
 
   const legalCase = await prisma.$transaction(async (tx) => {
-    const project = await tx.project.findUniqueOrThrow({
-      where: { id: projectId },
+    // Scope by visibility so a case can't be grafted onto a project the user
+    // can't see (the ethics wall must hold on writes, not just reads).
+    const project = await tx.project.findFirst({
+      where: andWhere({ id: projectId }, projectVisibilityWhere(currentUser)),
       select: { mainSubjectId: true },
     });
+    if (!project) {
+      throw new Error("Projekt nenalezen nebo k němu nemáte oprávnění.");
+    }
     const created = await tx.case.create({
       data: {
         projectId,

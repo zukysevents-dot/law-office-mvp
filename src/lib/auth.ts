@@ -1,38 +1,25 @@
-import { UserRole } from "@/generated/prisma/enums";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+
 import { getPrisma } from "@/lib/prisma";
+import { SESSION_COOKIE, verifySession } from "@/lib/session";
 
+// Resolves the signed-in user from the session cookie. Route access is gated by
+// src/proxy.ts, so by the time this runs a valid cookie is normally present;
+// the redirect here is a defense-in-depth fallback (e.g. user deactivated or
+// deleted after the cookie was issued).
 export async function getCurrentUser() {
-  const prisma = getPrisma();
-  const demoUserEmail = process.env.DEMO_USER_EMAIL?.trim();
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+  const userId = await verifySession(token);
 
-  if (demoUserEmail) {
-    const demoUser = await prisma.user.findFirst({
-      where: {
-        email: demoUserEmail,
-        active: true,
-      },
+  if (userId) {
+    const user = await getPrisma().user.findFirst({
+      where: { id: userId, active: true },
     });
-
-    if (demoUser) {
-      return demoUser;
+    if (user) {
+      return user;
     }
   }
 
-  const user = await prisma.user.findFirst({
-    where: { active: true },
-    orderBy: { createdAt: "asc" },
-  });
-
-  if (user) {
-    return user;
-  }
-
-  return prisma.user.create({
-    data: {
-      name: "Interní uživatel",
-      email: "internal@example.local",
-      role: UserRole.PARTNER,
-      active: true,
-    },
-  });
+  redirect("/login");
 }
