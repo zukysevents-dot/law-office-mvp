@@ -133,6 +133,26 @@ export function assertCanViewAuditLog(user: PermissionInput) {
   }
 }
 
+export function canViewPersonReports(user: PermissionInput) {
+  return canViewAllLegalData(user);
+}
+
+export function assertCanViewPersonReports(user: PermissionInput) {
+  if (!canViewPersonReports(user)) {
+    throw new Error("Nemáte oprávnění zobrazit reporting podle lidí.");
+  }
+}
+
+export function canViewBillabilityKpi(user: PermissionInput) {
+  return canViewAllLegalData(user);
+}
+
+export function assertCanViewBillabilityKpi(user: PermissionInput) {
+  if (!canViewBillabilityKpi(user)) {
+    throw new Error("Nemáte oprávnění zobrazit KPI fakturovatelnosti.");
+  }
+}
+
 export function canManageUsers(user: PermissionInput) {
   return canViewAllLegalData(user);
 }

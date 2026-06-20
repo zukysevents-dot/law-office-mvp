@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  BarChart3,
   BriefcaseBusiness,
   Building2,
   CalendarDays,
@@ -33,6 +34,7 @@ const navItems = [
   { href: "/tasks/archive", label: "Archiv úkolů", icon: Archive },
   { href: "/work-logs", label: "Výkazy práce", icon: Clock3 },
   { href: "/billing", label: "Fakturace", icon: Receipt },
+  { href: "/reports", label: "Reporty", icon: BarChart3 },
   { href: "/references", label: "Reference", icon: LibraryBig },
   { href: "/calendar", label: "Kalendář", icon: CalendarDays },
   { href: "/audit-log", label: "Audit log", icon: ScrollText },
