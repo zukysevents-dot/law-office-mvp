@@ -12,6 +12,11 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // design-sync tooling & build artifacts (gitignored, not app source):
+    "ds-bundle/**",
+    ".ds-sync/**",
+    ".design-sync/**",
+    "dist/**",
   ]),
 ]);
 

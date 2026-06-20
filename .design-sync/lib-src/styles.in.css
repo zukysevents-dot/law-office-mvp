@@ -1,0 +1,59 @@
+/* Tailwind v4 input for the design-system stylesheet.
+   Compiled to dist/ds.css by build-css.mjs, then consumed by the converter as cssEntry.
+   Scans the real component sources + authored previews so only used utilities ship. */
+@import "tailwindcss" source(none);
+@source "../../src/components/ui/button.tsx";
+@source "../../src/components/ui/badge.tsx";
+@source "../../src/components/ui/empty-state.tsx";
+@source "../../src/components/ui/database-notice.tsx";
+@source "../../src/components/page-header.tsx";
+@source "../../src/components/section.tsx";
+@source "../../src/components/stat-card.tsx";
+@source "../../src/components/form-field.tsx";
+@source "../previews/**/*.tsx";
+
+/* Geist is loaded by the app via next/font/google; ship it as a runtime webfont
+   so the design-system font renders on-brand outside Next. */
+@import url("https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Geist+Mono:wght@100..900&display=swap");
+
+/* Brand tokens — mirrored from src/app/globals.css */
+:root {
+  --brand-dark: #072924;
+  --brand-mint: #b9dcc6;
+  --brand-bg: #eef5f1;
+  --background: var(--brand-bg);
+  --foreground: var(--brand-dark);
+  --panel: #ffffff;
+  --muted: #5f756e;
+  --line: #d4e2dc;
+  --primary: var(--brand-dark);
+  --accent: var(--brand-mint);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-panel: var(--panel);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-primary: var(--primary);
+  --color-accent: var(--accent);
+  --color-brand-dark: var(--brand-dark);
+  --color-brand-mint: var(--brand-mint);
+  --color-brand-bg: var(--brand-bg);
+  --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, SFMono-Regular,
+    Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--brand-mint);
+  color: var(--brand-dark);
+}

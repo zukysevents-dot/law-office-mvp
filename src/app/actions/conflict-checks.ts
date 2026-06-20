@@ -48,7 +48,7 @@ export async function saveConflictCheck(
 
   if (existingCheck) {
     revalidatePath("/conflict-check");
-    revalidatePath("/");
+    revalidatePath("/dashboard");
 
     return {
       saved: true,
@@ -81,7 +81,7 @@ export async function saveConflictCheck(
   });
 
   revalidatePath("/conflict-check");
-  revalidatePath("/");
+  revalidatePath("/dashboard");
 
   return {
     saved: true,

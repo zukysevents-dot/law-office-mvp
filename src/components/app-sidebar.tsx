@@ -23,7 +23,7 @@ import {
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/subjects", label: "Subjekty", icon: Building2 },
   { href: "/conflict-check", label: "Conflict check", icon: ShieldCheck },
   { href: "/projects", label: "Projekty", icon: BriefcaseBusiness },
@@ -42,15 +42,15 @@ const navItems = [
 function getActiveHref(pathname: string, items: typeof navItems) {
   const match = items
     .filter((item) => {
-      if (item.href === "/") {
-        return pathname === "/";
+      if (item.href === "/dashboard") {
+        return pathname === "/dashboard";
       }
 
       return pathname === item.href || pathname.startsWith(`${item.href}/`);
     })
     .sort((a, b) => b.href.length - a.href.length)[0];
 
-  return match?.href ?? "/";
+  return match?.href ?? "/dashboard";
 }
 
 export function AppSidebar({ showAuditLog }: { showAuditLog?: boolean }) {
@@ -65,7 +65,7 @@ export function AppSidebar({ showAuditLog }: { showAuditLog?: boolean }) {
       <div className="lg:fixed lg:top-0 lg:flex lg:h-screen lg:w-20 lg:flex-col xl:w-72">
         <div className="flex h-20 min-w-0 items-center border-b border-white/10 px-4 xl:px-5">
           <Link
-            href="/"
+            href="/dashboard"
             className="block min-w-0 max-w-full overflow-hidden"
             aria-label="syndikat.legal"
           >

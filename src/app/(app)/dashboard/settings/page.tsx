@@ -87,7 +87,7 @@ export default async function DashboardSettingsPage() {
             : "Konfigurace widgetů pro aktuálního uživatele."
         }
         action={
-          <ButtonLink href="/" variant="ghost">
+          <ButtonLink href="/dashboard" variant="ghost">
             <ArrowLeft className="h-4 w-4" aria-hidden="true" />
             Zpět na dashboard
           </ButtonLink>
@@ -283,7 +283,7 @@ export default async function DashboardSettingsPage() {
         </div>
       </Section>
       <p className="text-xs text-[#5f756e]">
-        <Link href="/" className="text-[#072924] underline">
+        <Link href="/dashboard" className="text-[#072924] underline">
           Dashboard
         </Link>{" "}
         se po uložení automaticky aktualizuje.
