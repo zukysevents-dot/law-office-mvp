@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -15,10 +16,12 @@ import {
   LibraryBig,
   ListChecks,
   ListTodo,
+  Menu,
   Receipt,
   ScrollText,
   Settings,
   ShieldCheck,
+  X,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -57,14 +60,84 @@ function getActiveHref(pathname: string, items: typeof navItems) {
 
 export function AppSidebar({ showAuditLog }: { showAuditLog?: boolean }) {
   const pathname = usePathname();
+  const [open, setOpen] = useState(false);
   const visibleNavItems = showAuditLog
     ? navItems
     : navItems.filter((item) => item.href !== "/audit-log");
   const activeHref = getActiveHref(pathname, visibleNavItems);
 
+  const navLinks = visibleNavItems.map((item) => {
+    const Icon = item.icon;
+    const active = item.href === activeHref;
+
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        title={item.label}
+        onClick={() => setOpen(false)}
+        className={cn(
+          "flex h-11 max-w-full min-w-0 items-center gap-3 rounded-md px-3 text-sm font-medium transition lg:h-10 lg:w-11 lg:justify-center lg:px-0 xl:w-auto xl:justify-start xl:px-3",
+          active
+            ? "bg-[#B9DCC6] text-[#072924]"
+            : "text-[#d8eee0] hover:bg-[#B9DCC6]/15 hover:text-white",
+        )}
+      >
+        <Icon className="h-5 w-5 shrink-0 lg:h-4 lg:w-4" aria-hidden="true" />
+        <span className="min-w-0 truncate lg:sr-only xl:not-sr-only">
+          {item.label}
+        </span>
+      </Link>
+    );
+  });
+
   return (
     <aside className="w-full max-w-full shrink-0 overflow-x-hidden bg-[#072924] text-white lg:min-h-screen lg:w-20 lg:self-stretch lg:overflow-visible xl:w-72">
-      <div className="lg:fixed lg:top-0 lg:flex lg:h-screen lg:w-20 lg:flex-col xl:w-72">
+      {/* Mobile top bar (fixed) — hidden from lg up where the rail takes over. */}
+      <div className="fixed inset-x-0 top-0 z-40 flex h-16 items-center justify-between gap-3 bg-[#072924] px-4 lg:hidden">
+        <Link
+          href="/dashboard"
+          className="block min-w-0 overflow-hidden"
+          aria-label="syndikat.legal"
+        >
+          <Image
+            src="/brand/logo-square.jpeg"
+            alt="syndikat.legal"
+            width={220}
+            height={220}
+            priority
+            className="h-10 w-10 rounded-md object-cover"
+          />
+        </Link>
+        <button
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          aria-expanded={open}
+          aria-controls="mobile-nav"
+          aria-label={open ? "Zavřít menu" : "Otevřít menu"}
+          className="inline-flex h-11 w-11 items-center justify-center rounded-md text-[#d8eee0] transition hover:bg-[#B9DCC6]/15 hover:text-white"
+        >
+          {open ? (
+            <X className="h-6 w-6" aria-hidden="true" />
+          ) : (
+            <Menu className="h-6 w-6" aria-hidden="true" />
+          )}
+        </button>
+      </div>
+      {/* Spacer so page content clears the fixed mobile bar. */}
+      <div className="h-16 lg:hidden" aria-hidden="true" />
+      {/* Mobile drawer — full-height panel below the bar, only when open. */}
+      {open ? (
+        <nav
+          id="mobile-nav"
+          className="fixed inset-x-0 top-16 bottom-0 z-40 flex flex-col gap-1 overflow-y-auto border-t border-white/10 bg-[#072924] p-3 lg:hidden"
+        >
+          {navLinks}
+        </nav>
+      ) : null}
+
+      {/* Desktop rail — unchanged from lg up. */}
+      <div className="hidden lg:fixed lg:top-0 lg:flex lg:h-screen lg:w-20 lg:flex-col xl:w-72">
         <div className="flex h-20 min-w-0 items-center border-b border-white/10 px-4 xl:px-5">
           <Link
             href="/dashboard"
@@ -89,30 +162,8 @@ export function AppSidebar({ showAuditLog }: { showAuditLog?: boolean }) {
             />
           </Link>
         </div>
-        <nav className="flex max-w-full flex-wrap gap-2 overflow-x-hidden border-b border-white/10 p-3 lg:min-w-0 lg:flex-1 lg:flex-col lg:flex-nowrap lg:items-center lg:overflow-x-hidden lg:overflow-y-auto lg:border-b-0 xl:items-stretch">
-          {visibleNavItems.map((item) => {
-            const Icon = item.icon;
-            const active = item.href === activeHref;
-
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                title={item.label}
-                className={cn(
-                  "flex h-10 max-w-full min-w-0 items-center gap-3 rounded-md px-3 text-sm font-medium transition lg:w-11 lg:justify-center lg:px-0 xl:w-auto xl:justify-start xl:px-3",
-                  active
-                    ? "bg-[#B9DCC6] text-[#072924]"
-                    : "text-[#d8eee0] hover:bg-[#B9DCC6]/15 hover:text-white",
-                )}
-              >
-                <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                <span className="min-w-0 truncate lg:sr-only xl:not-sr-only">
-                  {item.label}
-                </span>
-              </Link>
-            );
-          })}
+        <nav className="flex min-w-0 flex-1 flex-col flex-nowrap items-center gap-2 overflow-x-hidden overflow-y-auto p-3 xl:items-stretch">
+          {navLinks}
         </nav>
       </div>
     </aside>
