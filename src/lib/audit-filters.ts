@@ -28,6 +28,7 @@ export const AUDIT_ACTIONS = [
   "SHAREPOINT_FOLDER",
   "CREATE_PROJECT_RELATION",
   "CREATE_CASE_RELATION",
+  "EXPORT",
 ] as const;
 
 export const auditEntityTypeLabels: Record<string, string> = {
@@ -55,6 +56,7 @@ export const auditActionLabels: Record<string, string> = {
   SHAREPOINT_FOLDER: "SharePoint složka",
   CREATE_PROJECT_RELATION: "Vazba na projekt",
   CREATE_CASE_RELATION: "Vazba na případ",
+  EXPORT: "Export",
 };
 
 export function auditActionLabel(value: string) {
