@@ -48,7 +48,7 @@ export function Reveal({
   return (
     <div
       ref={ref}
-      className={cn("reveal", visible && "is-visible", className)}
+      className={cn("landing-reveal", visible && "is-visible", className)}
       style={delay ? { animationDelay: `${delay}ms` } : undefined}
     >
       {children}

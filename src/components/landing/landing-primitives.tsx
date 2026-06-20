@@ -51,10 +51,24 @@ export function SectionShell({
 }
 
 /** Small uppercase eyebrow label used above section headings. */
-export function Eyebrow({ children }: { children: React.ReactNode }) {
+export function Eyebrow({
+  children,
+  tone = "dark",
+}: {
+  children: React.ReactNode;
+  tone?: "dark" | "light";
+}) {
   return (
-    <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-[#072924]">
-      <span aria-hidden className="h-px w-6 bg-[#B9DCC6]" />
+    <span
+      className={cn(
+        "inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em]",
+        tone === "dark" ? "text-[#072924]" : "text-[#B9DCC6]",
+      )}
+    >
+      <span
+        aria-hidden
+        className={cn("h-px w-6", tone === "dark" ? "bg-[#B9DCC6]" : "bg-[#B9DCC6]/60")}
+      />
       {children}
     </span>
   );

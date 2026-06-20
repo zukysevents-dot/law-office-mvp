@@ -29,7 +29,7 @@ export default function LandingPage() {
   return (
     <>
       <MarketingHeader />
-      <main id="main">
+      <main id="main" className="landing-root">
         <Hero />
         <ProductPreview />
         <Problem />

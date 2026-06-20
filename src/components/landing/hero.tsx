@@ -30,13 +30,13 @@ export function Hero() {
       />
 
       <Container className="flex flex-col items-center py-20 text-center sm:py-28 lg:py-32">
-        <div className="rise-in">
+        <div className="landing-rise-in">
           <Eyebrow>Interní právní systém</Eyebrow>
         </div>
 
         <h1
           id="hero-heading"
-          className="rise-in mt-6 max-w-4xl text-balance text-4xl font-semibold leading-[1.05] tracking-tight text-[#072924] sm:text-5xl lg:text-6xl"
+          className="landing-rise-in mt-6 max-w-4xl text-balance text-4xl font-semibold leading-[1.05] tracking-tight text-[#072924] sm:text-5xl lg:text-6xl"
           style={{ animationDelay: "80ms" }}
         >
           Celá advokátní kancelář
@@ -44,7 +44,7 @@ export function Hero() {
         </h1>
 
         <p
-          className="rise-in mt-6 max-w-2xl text-pretty text-lg leading-relaxed text-[#5f756e]"
+          className="landing-rise-in mt-6 max-w-2xl text-pretty text-lg leading-relaxed text-[#5f756e]"
           style={{ animationDelay: "160ms" }}
         >
           Evidence subjektů, kontrola střetu zájmů, lhůty, výkazy práce
@@ -53,7 +53,7 @@ export function Hero() {
         </p>
 
         <div
-          className="rise-in mt-9 flex flex-col gap-3 sm:flex-row sm:items-center"
+          className="landing-rise-in mt-9 flex flex-col gap-3 sm:flex-row sm:items-center"
           style={{ animationDelay: "240ms" }}
         >
           <ButtonLink href="/dashboard" variant="primary" className="px-6">
@@ -65,7 +65,7 @@ export function Hero() {
         </div>
 
         <ul
-          className="rise-in mt-10 flex flex-wrap items-center justify-center gap-x-6 gap-y-3"
+          className="landing-rise-in mt-10 flex flex-wrap items-center justify-center gap-x-6 gap-y-3"
           style={{ animationDelay: "320ms" }}
         >
           {trustChips.map((chip) => (

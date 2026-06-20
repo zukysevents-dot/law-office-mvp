@@ -3,7 +3,7 @@ import { CheckCircle2 } from "lucide-react";
 import { Reveal } from "@/components/landing/reveal";
 import {
   SectionShell,
-  Eyebrow,
+  SectionHeading,
 } from "@/components/landing/landing-primitives";
 
 const benefits = [
@@ -30,17 +30,12 @@ export function Benefits() {
     <SectionShell id="prinosy" labelledBy="prinosy-heading">
       <div className="grid grid-cols-1 gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
         <div className="lg:sticky lg:top-28 lg:self-start">
-          <Eyebrow>Přínosy</Eyebrow>
-          <h2
+          <SectionHeading
             id="prinosy-heading"
-            className="mt-4 text-balance text-3xl font-semibold tracking-tight text-[#072924] sm:text-4xl"
-          >
-            Méně režie, víc prostoru na samotnou práci.
-          </h2>
-          <p className="mt-4 max-w-md text-pretty text-base leading-relaxed text-[#5f756e] sm:text-lg">
-            Cílem není další nástroj navíc, ale jedno místo, které ušetří čas
-            a sníží riziko chyb v každodenním provozu kanceláře.
-          </p>
+            eyebrow="Přínosy"
+            title="Méně režie, víc prostoru na samotnou práci."
+            lead="Cílem není další nástroj navíc, ale jedno místo, které ušetří čas a sníží riziko chyb v každodenním provozu kanceláře."
+          />
         </div>
 
         <ul className="flex flex-col gap-4">

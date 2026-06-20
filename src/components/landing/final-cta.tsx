@@ -1,5 +1,5 @@
 import { ButtonLink } from "@/components/ui/button";
-import { Container } from "@/components/landing/landing-primitives";
+import { Container, Eyebrow } from "@/components/landing/landing-primitives";
 
 export function FinalCta() {
   return (
@@ -15,9 +15,7 @@ export function FinalCta() {
             className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(50%_70%_at_50%_0%,rgba(185,220,198,0.18),transparent_70%)]"
           />
           <div className="mx-auto flex max-w-2xl flex-col items-center text-center">
-            <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[#B9DCC6]">
-              Začněte hned
-            </span>
+            <Eyebrow tone="light">Začněte hned</Eyebrow>
             <h2
               id="demo-heading"
               className="mt-4 text-balance text-3xl font-semibold tracking-tight text-white sm:text-4xl"
