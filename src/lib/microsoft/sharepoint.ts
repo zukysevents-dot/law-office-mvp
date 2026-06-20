@@ -1,8 +1,6 @@
 /**
  * Deterministic SharePoint folder URLs from a naming convention — no API call.
- *
- * The same path segments feed both the plain URL builder (`buildSharepointFolderUrl`)
- * and the optional Graph folder creation (`ensureFolderPath` in `graph-client.ts`).
+ * The path segments feed the URL builder (`buildSharepointFolderUrl`).
  */
 
 import { getSharepointConfig } from "@/lib/microsoft/config";

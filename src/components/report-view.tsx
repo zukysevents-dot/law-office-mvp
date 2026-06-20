@@ -20,7 +20,6 @@ import {
 } from "@/lib/reporting/aggregations";
 import {
   readReportFilters,
-  reportFilterQuery,
   workLogReportWhere,
   type ReportFilters,
 } from "@/lib/reporting/filters";
@@ -28,7 +27,7 @@ import {
   loadReportFilterOptions,
   type ReportFilterOptions,
 } from "@/lib/reporting/options";
-import { firstParam } from "@/lib/search-params";
+import { filterQuery, firstParam } from "@/lib/search-params";
 
 type GateUser = Parameters<typeof canViewAllLegalData>[0];
 
@@ -107,7 +106,7 @@ export async function ReportView({
   );
 
   const { allowed } = result.data;
-  const query = reportFilterQuery(filters);
+  const query = filterQuery(filters);
   const exportSuffix = query ? `&${query}` : "";
 
   return (

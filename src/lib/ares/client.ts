@@ -1,7 +1,6 @@
 /**
- * Outbound ARES REST client. Mirrors the resilience patterns in
- * `src/lib/microsoft/graph-client.ts`: a hard timeout, explicit HTTP-status
- * handling, typed-shape validation, and Czech messages.
+ * Outbound ARES REST client: a hard timeout, explicit HTTP-status handling,
+ * typed-shape validation, and Czech messages.
  *
  * Returns a discriminated union instead of throwing for expected outcomes
  * (not found / transient error) so Server Actions can surface a real message —
@@ -73,7 +72,7 @@ export async function fetchAresSubject(ico: string): Promise<AresFetchResult> {
     return { status: "error", message: "Neplatná odpověď z ARES." };
   }
 
-  // Shape-validate before trusting the payload (cf. graph-client.ts).
+  // Shape-validate before trusting the payload.
   if (typeof data.ico !== "string" || typeof data.obchodniJmeno !== "string") {
     return { status: "error", message: "Neplatná odpověď z ARES." };
   }

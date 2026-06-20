@@ -16,7 +16,7 @@ import { safeQuery } from "@/lib/db-safe";
 import { formatDate } from "@/lib/format";
 import { options, userRoleLabels } from "@/lib/labels";
 import { getNotificationPreference } from "@/lib/notifications/notification-service";
-import { canManageUsers } from "@/lib/permissions";
+import { canViewAllLegalData } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -75,7 +75,7 @@ export default async function SettingsPage() {
     async () => {
       const prisma = getPrisma();
       const currentUser = await getCurrentUser();
-      const allowed = canManageUsers(currentUser);
+      const allowed = canViewAllLegalData(currentUser);
       const [notificationPreference, users, auditLogCount] = await Promise.all([
         getNotificationPreference(currentUser.id),
         allowed

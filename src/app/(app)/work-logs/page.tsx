@@ -44,7 +44,7 @@ import {
 import type { TableViewState } from "@/lib/table-view-preferences";
 import {
   andWhere,
-  canArchiveRecords,
+  canViewAllLegalData,
   canEditRecord,
   caseVisibilityWhere,
   projectVisibilityWhere,
@@ -222,7 +222,7 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
         tasks,
         users,
         tableView,
-        canArchive: canArchiveRecords(currentUser),
+        canArchive: canViewAllLegalData(currentUser),
       };
     },
   );

@@ -10,10 +10,10 @@ import {
   requiredString,
 } from "@/lib/form";
 import { auditJson } from "@/lib/audit";
-import { assertCanArchiveRecords } from "@/lib/archive-permissions";
 import { getCurrentUser } from "@/lib/auth";
 import {
   andWhere,
+  assertCanArchiveRecords,
   assertCanEditRecord,
   caseVisibilityWhere,
   projectVisibilityWhere,

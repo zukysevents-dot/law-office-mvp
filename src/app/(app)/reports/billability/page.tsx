@@ -6,7 +6,7 @@ import { DatabaseNotice } from "@/components/ui/database-notice";
 import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import { formatHours, formatMoney } from "@/lib/format";
-import { andWhere, canViewBillabilityKpi, workLogVisibilityWhere } from "@/lib/permissions";
+import { andWhere, canViewAllLegalData, workLogVisibilityWhere } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import {
   REPORT_ROW_LIMIT,
@@ -16,14 +16,13 @@ import {
 } from "@/lib/reporting/aggregations";
 import {
   readReportFilters,
-  reportFilterQuery,
   workLogReportWhere,
 } from "@/lib/reporting/filters";
 import {
   loadReportFilterOptions,
   type ReportFilterOptions,
 } from "@/lib/reporting/options";
-import { firstParam } from "@/lib/search-params";
+import { filterQuery, firstParam } from "@/lib/search-params";
 
 export const dynamic = "force-dynamic";
 
@@ -91,7 +90,7 @@ export default async function BillabilityReportPage({ searchParams }: PageProps)
       const prisma = getPrisma();
       const currentUser = await getCurrentUser();
 
-      if (!canViewBillabilityKpi(currentUser)) {
+      if (!canViewAllLegalData(currentUser)) {
         return {
           allowed: false,
           kpi: EMPTY_KPI,
@@ -122,7 +121,7 @@ export default async function BillabilityReportPage({ searchParams }: PageProps)
   );
 
   const { allowed, kpi } = result.data;
-  const query = reportFilterQuery(filters);
+  const query = filterQuery(filters);
   const exportSuffix = query ? `&${query}` : "";
 
   return (

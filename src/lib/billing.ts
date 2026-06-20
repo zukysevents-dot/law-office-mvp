@@ -1,5 +1,6 @@
 import type { Prisma } from "@/generated/prisma/client";
 import { ApprovalStatus, BillingStatus } from "@/generated/prisma/enums";
+import { parseDateBoundary } from "@/lib/search-params";
 
 export type BillingFilters = {
   subjectId: string;
@@ -65,34 +66,20 @@ export function readBillingFilters(
 export function billingFilterWhere(
   filters: BillingFilters,
 ): Prisma.WorkLogWhereInput {
+  const gte = parseDateBoundary(filters.dateFrom, false);
+  const lte = parseDateBoundary(filters.dateTo, true);
   return {
     ...(filters.subjectId ? { subjectId: filters.subjectId } : {}),
     ...(filters.projectId ? { projectId: filters.projectId } : {}),
     ...(filters.caseId ? { caseId: filters.caseId } : {}),
     ...(filters.userId ? { userId: filters.userId } : {}),
-    ...(filters.dateFrom || filters.dateTo
+    ...(gte || lte
       ? {
           workDate: {
-            ...(filters.dateFrom
-              ? { gte: new Date(`${filters.dateFrom}T00:00:00.000Z`) }
-              : {}),
-            ...(filters.dateTo
-              ? { lte: new Date(`${filters.dateTo}T23:59:59.999Z`) }
-              : {}),
+            ...(gte ? { gte } : {}),
+            ...(lte ? { lte } : {}),
           },
         }
       : {}),
   };
-}
-
-// Serialize the active filters into a query string so export links and
-// navigation can carry the current selection.
-export function billingFilterQuery(filters: BillingFilters): string {
-  const params = new URLSearchParams();
-  for (const [key, value] of Object.entries(filters)) {
-    if (value) {
-      params.set(key, value);
-    }
-  }
-  return params.toString();
 }

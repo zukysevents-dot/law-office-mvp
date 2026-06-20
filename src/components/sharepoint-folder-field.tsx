@@ -2,7 +2,7 @@ import { FolderOpen, FolderPlus } from "lucide-react";
 
 import { provisionSharepointFolder } from "@/app/actions/sharepoint";
 import { Button } from "@/components/ui/button";
-import { isGraphConfigured, isSharepointUrlConfigured } from "@/lib/microsoft/config";
+import { isSharepointUrlConfigured } from "@/lib/microsoft/config";
 import type { SharepointEntityType } from "@/lib/microsoft/sharepoint";
 import { cn, isSafeHttpUrl } from "@/lib/utils";
 
@@ -25,7 +25,7 @@ export function SharepointFolderField({
   canEdit,
   className,
 }: SharepointFolderFieldProps) {
-  const configured = isSharepointUrlConfigured() || isGraphConfigured();
+  const configured = isSharepointUrlConfigured();
   const showProvision = canEdit && configured && !url;
   // Only ever render a stored value as a live link when it's an http(s) URL,
   // so a manually-entered javascript:/data: value can't execute on click.

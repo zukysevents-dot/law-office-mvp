@@ -23,7 +23,7 @@ import { approvalStatusLabels, billingStatusLabels } from "@/lib/labels";
 import { getPrisma } from "@/lib/prisma";
 import {
   andWhere,
-  canApproveBilling,
+  canViewAllLegalData,
   workLogVisibilityWhere,
 } from "@/lib/permissions";
 import { approvalStatusTone, billingStatusTone } from "@/lib/status-tones";
@@ -55,7 +55,7 @@ export default async function BillingApprovalsPage() {
       return {
         rows,
         capped: rows.length >= BILLING_ROW_LIMIT,
-        canApprove: canApproveBilling(currentUser),
+        canApprove: canViewAllLegalData(currentUser),
       };
     },
   );

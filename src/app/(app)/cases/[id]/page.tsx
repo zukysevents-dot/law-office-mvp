@@ -26,7 +26,7 @@ import {
 import { safeQuery } from "@/lib/db-safe";
 import {
   andWhere,
-  canArchiveRecords,
+  canViewAllLegalData,
   canEditRecord,
   caseVisibilityWhere,
   referenceVisibilityWhere,
@@ -106,7 +106,7 @@ async function loadCase(id: string) {
   return {
     legalCase,
     subjects,
-    canArchive: canArchiveRecords(currentUser),
+    canArchive: canViewAllLegalData(currentUser),
     canEdit: legalCase ? canEditRecord(currentUser, "Case", legalCase) : false,
   };
 }

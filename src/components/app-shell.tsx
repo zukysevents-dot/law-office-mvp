@@ -1,13 +1,13 @@
 import { AppSidebar } from "@/components/app-sidebar";
 import { getCurrentUser } from "@/lib/auth";
 import { userRoleLabels } from "@/lib/labels";
-import { canViewAuditLog } from "@/lib/permissions";
+import { canViewAllLegalData } from "@/lib/permissions";
 
 export async function AppShell({ children }: { children: React.ReactNode }) {
   // Middleware guarantees a valid session on (app) routes, so this resolves a
   // real user (or redirects to /login as a fallback).
   const currentUser = await getCurrentUser();
-  const showAuditLog = canViewAuditLog(currentUser);
+  const showAuditLog = canViewAllLegalData(currentUser);
 
   return (
     <div className="app-shell min-h-screen w-full max-w-full overflow-x-hidden bg-background text-foreground lg:flex">

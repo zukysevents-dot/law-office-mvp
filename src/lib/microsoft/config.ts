@@ -36,39 +36,3 @@ export function isSharepointUrlConfigured(): boolean {
   return getSharepointConfig() !== null;
 }
 
-export type GraphConfig = {
-  tenantId: string;
-  clientId: string;
-  clientSecret: string;
-  driveId: string;
-};
-
-/**
- * Microsoft Graph (app-only) config for real folder creation. Returns null
- * unless all four values are present.
- */
-export function getGraphConfig(): GraphConfig | null {
-  const tenantId = env("MICROSOFT_TENANT_ID");
-  const clientId = env("MICROSOFT_CLIENT_ID");
-  const clientSecret = env("MICROSOFT_CLIENT_SECRET");
-  const driveId = env("SHAREPOINT_DRIVE_ID");
-
-  if (!tenantId || !clientId || !clientSecret || !driveId) {
-    return null;
-  }
-
-  return { tenantId, clientId, clientSecret, driveId };
-}
-
-export function isGraphConfigured(): boolean {
-  return getGraphConfig() !== null;
-}
-
-/**
- * Whether interactive Microsoft sign-in (Entra ID SSO) is enabled. Reserved for
- * a future phase and currently off by default — it gates user-delegated features
- * such as Outlook calendar sync (see `src/lib/microsoft/outlook.ts`).
- */
-export function isMicrosoftLoginEnabled(): boolean {
-  return env("MICROSOFT_LOGIN_ENABLED") === "true";
-}

@@ -13,18 +13,14 @@ import type {
   TaskStatus,
   UserRole,
 } from "@/generated/prisma/enums";
-import { getOutlookCalendarEvents } from "@/lib/microsoft/outlook";
 import { andWhere, taskVisibilityWhere } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { taskDeadlineTypeTone } from "@/lib/status-tones";
 
-export type CalendarEventSource = "task" | "outlook";
-
-/** Minimal user shape the calendar needs: visibility (`id`/`role`) + Outlook identity. */
+/** Minimal user shape the calendar needs: visibility (`id`/`role`). */
 export type CalendarUser = {
   id: string;
   role: UserRole;
-  microsoftId?: string | null;
 };
 
 export type CalendarRange = { start: Date; end: Date };
@@ -36,7 +32,6 @@ const TASK_EVENT_LIMIT = 500;
 
 export type CalendarEvent = {
   id: string;
-  source: CalendarEventSource;
   title: string;
   date: Date;
   allDay: boolean;
@@ -95,7 +90,6 @@ async function getTaskDeadlineEvents(
     )
     .map((task) => ({
       id: `task:${task.id}`,
-      source: "task" as const,
       title: task.title,
       date: task.deadline,
       allDay: true,
@@ -114,12 +108,7 @@ export async function getCalendarEvents(
   user: CalendarUser,
   range: CalendarRange,
 ): Promise<CalendarEvent[]> {
-  const [taskEvents, outlookEvents] = await Promise.all([
-    getTaskDeadlineEvents(user, range),
-    getOutlookCalendarEvents(user, range),
-  ]);
-
-  return [...taskEvents, ...outlookEvents].sort(
-    (a, b) => a.date.getTime() - b.date.getTime(),
-  );
+  // Only task deadlines today; getTaskDeadlineEvents already returns them
+  // ordered by deadline asc. Future sources (Outlook, meetings) merge in here.
+  return getTaskDeadlineEvents(user, range);
 }

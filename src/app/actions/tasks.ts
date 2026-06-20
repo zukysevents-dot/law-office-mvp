@@ -9,7 +9,6 @@ import {
   TaskStatus,
 } from "@/generated/prisma/enums";
 import { auditJson } from "@/lib/audit";
-import { assertCanArchiveRecords } from "@/lib/archive-permissions";
 import { getCurrentUser } from "@/lib/auth";
 import {
   enumValue,
@@ -23,6 +22,7 @@ import {
 } from "@/lib/notifications/notification-service";
 import {
   andWhere,
+  assertCanArchiveRecords,
   assertCanEditRecord,
   caseVisibilityWhere,
   projectVisibilityWhere,

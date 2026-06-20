@@ -28,7 +28,6 @@ import {
 import { safeQuery } from "@/lib/db-safe";
 import {
   andWhere,
-  canArchiveRecords,
   canEditRecord,
   canViewAllLegalData,
   caseVisibilityWhere,
@@ -117,7 +116,7 @@ async function loadSubject(id: string) {
 
   return {
     subject,
-    canArchive: canArchiveRecords(currentUser),
+    canArchive: canViewAllLegalData(currentUser),
     canEdit: subject ? canEditRecord(currentUser, "Subject", subject) : false,
   };
 }

@@ -207,17 +207,6 @@ export function normalizeVisibleColumns(
   return orderedColumns.length > 0 ? orderedColumns : fallback;
 }
 
-export function getVisibleTableColumns(
-  tableKey: TableKey,
-  visibleColumns: unknown,
-) {
-  return normalizeVisibleColumns(
-    visibleColumns,
-    tableViewConfigs[tableKey].columns,
-    getDefaultTableColumns(tableKey),
-  );
-}
-
 export function defaultTableViewPreferenceData(userId: string) {
   return Object.entries(tableViewConfigs).map(([tableKey, config]) => ({
     userId,
