@@ -48,6 +48,15 @@ textarea {
   color: var(--foreground);
 }
 
+/* App-only mobile rules. Scoped to .app-shell so the landing page (which shares
+   globals.css + some leaf components) is never affected. */
+@media (max-width: 640px) {
+  /* 16px font on form controls stops iOS from auto-zooming on focus. */
+  .app-shell :is(input, select, textarea) {
+    font-size: 16px;
+  }
+}
+
 ::selection {
   background: var(--brand-mint);
   color: var(--brand-dark);
@@ -145,6 +154,25 @@ tbody tr:hover {
 
 .calendar-shell .fc-event {
   cursor: pointer;
+}
+
+/* On phones the single-row toolbar overflows (the view switcher runs off the
+   right edge). Stack the three chunks and let the buttons wrap into view. */
+@media (max-width: 640px) {
+  .calendar-shell .fc-header-toolbar.fc-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.6rem;
+  }
+  .calendar-shell .fc-toolbar-chunk {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.4rem;
+  }
+  .calendar-shell .fc-toolbar-title {
+    text-align: center;
+  }
 }
 
 .calendar-shell .fc-event-done {
