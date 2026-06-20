@@ -132,14 +132,15 @@ enum NotificationStatus {
 }
 
 model User {
-  id          String   @id @default(cuid())
-  name        String
-  email       String   @unique
-  role        UserRole @default(LAWYER)
-  microsoftId String?  @unique
-  active      Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  role         UserRole @default(LAWYER)
+  microsoftId  String?  @unique
+  passwordHash String?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   createdSubjectRelations SubjectRelation[]   @relation("SubjectRelationCreatedBy")
   checkedConflictChecks   ConflictCheck[]     @relation("ConflictCheckCheckedBy")

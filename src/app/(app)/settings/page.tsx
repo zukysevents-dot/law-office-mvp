@@ -1,5 +1,7 @@
 import {
+  changeOwnPassword,
   createUser,
+  setUserPassword,
   updateNotificationPreference,
 } from "@/app/actions/users";
 import { Field, SelectInput, TextInput } from "@/components/form-field";
@@ -175,6 +177,30 @@ export default async function SettingsPage() {
           </form>
         </Section>
       ) : null}
+      <Section title="Změna hesla">
+        <form action={changeOwnPassword} className="grid max-w-sm gap-4">
+          <Field label="Stávající heslo">
+            <TextInput
+              name="currentPassword"
+              type="password"
+              autoComplete="current-password"
+              required
+            />
+          </Field>
+          <Field label="Nové heslo (min. 8 znaků)">
+            <TextInput
+              name="newPassword"
+              type="password"
+              autoComplete="new-password"
+              minLength={8}
+              required
+            />
+          </Field>
+          <div>
+            <Button type="submit">Změnit heslo</Button>
+          </div>
+        </form>
+      </Section>
       {result.data.allowed ? (
         <>
           <div className="grid gap-4 lg:grid-cols-[1fr_24rem]">
@@ -226,6 +252,15 @@ export default async function SettingsPage() {
                 <Field label="E-mail">
                   <TextInput name="email" type="email" required />
                 </Field>
+                <Field label="Počáteční heslo (min. 8 znaků)">
+                  <TextInput
+                    name="password"
+                    type="password"
+                    autoComplete="new-password"
+                    minLength={8}
+                    required
+                  />
+                </Field>
                 <Field label="Role">
                   <SelectInput name="role" defaultValue="LAWYER">
                     {options.userRoles.map((role) => (
@@ -251,6 +286,33 @@ export default async function SettingsPage() {
               </form>
             </Section>
           </div>
+          {result.data.users.length > 0 ? (
+            <Section title="Reset hesla uživatele">
+              <form action={setUserPassword} className="grid max-w-sm gap-4">
+                <Field label="Uživatel">
+                  <SelectInput name="userId">
+                    {result.data.users.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.name} ({user.email})
+                      </option>
+                    ))}
+                  </SelectInput>
+                </Field>
+                <Field label="Nové heslo (min. 8 znaků)">
+                  <TextInput
+                    name="password"
+                    type="password"
+                    autoComplete="new-password"
+                    minLength={8}
+                    required
+                  />
+                </Field>
+                <div>
+                  <Button type="submit">Nastavit heslo</Button>
+                </div>
+              </form>
+            </Section>
+          ) : null}
           <Section title="Audit">
             <div className="grid gap-4 md:grid-cols-3">
               <div>

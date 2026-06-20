@@ -15,7 +15,13 @@ import {
   requiredNumber,
   requiredString,
 } from "@/lib/form";
-import { assertCanEditRecord } from "@/lib/permissions";
+import {
+  andWhere,
+  assertCanEditRecord,
+  caseVisibilityWhere,
+  projectVisibilityWhere,
+  taskVisibilityWhere,
+} from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 type RateInput = {
@@ -35,19 +41,22 @@ export async function createWorkLog(formData: FormData) {
   const subjectId = optionalString(formData, "subjectId");
   const projectId = optionalString(formData, "projectId");
   const caseId = optionalString(formData, "caseId");
+  const taskId = optionalString(formData, "taskId");
   const hours = requiredNumber(formData, "hours");
   const manualHourlyRate = optionalNumber(formData, "hourlyRate");
 
-  const [legalCase, project, subject] = await Promise.all([
+  // Case/project/task lookups are scoped by visibility — a user can't log work
+  // against a matter they can't see. subjectId is the shared registry.
+  const [legalCase, project, subject, task] = await Promise.all([
     caseId
-      ? prisma.case.findUnique({
-          where: { id: caseId },
+      ? prisma.case.findFirst({
+          where: andWhere({ id: caseId }, caseVisibilityWhere(currentUser)),
           select: { hourlyRate: true },
         })
       : null,
     projectId
-      ? prisma.project.findUnique({
-          where: { id: projectId },
+      ? prisma.project.findFirst({
+          where: andWhere({ id: projectId }, projectVisibilityWhere(currentUser)),
           select: { hourlyRate: true },
         })
       : null,
@@ -57,7 +66,23 @@ export async function createWorkLog(formData: FormData) {
           select: { hourlyRate: true },
         })
       : null,
+    taskId
+      ? prisma.task.findFirst({
+          where: andWhere({ id: taskId }, taskVisibilityWhere(currentUser)),
+          select: { id: true },
+        })
+      : null,
   ]);
+
+  if (caseId && !legalCase) {
+    throw new Error("Případ nenalezen nebo k němu nemáte oprávnění.");
+  }
+  if (projectId && !project) {
+    throw new Error("Projekt nenalezen nebo k němu nemáte oprávnění.");
+  }
+  if (taskId && !task) {
+    throw new Error("Úkol nenalezen nebo k němu nemáte oprávnění.");
+  }
 
   const derivedHourlyRate =
     manualHourlyRate ??
@@ -74,7 +99,7 @@ export async function createWorkLog(formData: FormData) {
       subjectId,
       projectId,
       caseId,
-      taskId: optionalString(formData, "taskId"),
+      taskId,
       userId: currentUser.id,
       workDate: requiredDate(formData, "workDate"),
       hours,

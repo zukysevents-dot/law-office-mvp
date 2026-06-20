@@ -14,6 +14,7 @@ export const AUDIT_ENTITY_TYPES = [
   "Reference",
   "ConflictCheck",
   "NotificationPreference",
+  "User",
 ] as const;
 
 export const AUDIT_ACTIONS = [
@@ -29,6 +30,8 @@ export const AUDIT_ACTIONS = [
   "CREATE_PROJECT_RELATION",
   "CREATE_CASE_RELATION",
   "EXPORT",
+  "PASSWORD_RESET",
+  "PASSWORD_CHANGE",
 ] as const;
 
 export const auditEntityTypeLabels: Record<string, string> = {
@@ -42,6 +45,7 @@ export const auditEntityTypeLabels: Record<string, string> = {
   Reference: "Reference",
   ConflictCheck: "Kontrola konfliktu",
   NotificationPreference: "Nastavení notifikací",
+  User: "Uživatel",
 };
 
 export const auditActionLabels: Record<string, string> = {
@@ -57,6 +61,8 @@ export const auditActionLabels: Record<string, string> = {
   CREATE_PROJECT_RELATION: "Vazba na projekt",
   CREATE_CASE_RELATION: "Vazba na případ",
   EXPORT: "Export",
+  PASSWORD_RESET: "Reset hesla",
+  PASSWORD_CHANGE: "Změna hesla",
 };
 
 export function auditActionLabel(value: string) {

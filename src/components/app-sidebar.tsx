@@ -16,6 +16,7 @@ import {
   LibraryBig,
   ListChecks,
   ListTodo,
+  LogOut,
   Menu,
   Receipt,
   ScrollText,
@@ -24,6 +25,7 @@ import {
   X,
 } from "lucide-react";
 
+import { logoutAction } from "@/app/actions/auth";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -58,13 +60,42 @@ function getActiveHref(pathname: string, items: typeof navItems) {
   return match?.href ?? "/dashboard";
 }
 
-export function AppSidebar({ showAuditLog }: { showAuditLog?: boolean }) {
+export function AppSidebar({
+  showAuditLog,
+  userName,
+  userRole,
+}: {
+  showAuditLog?: boolean;
+  userName?: string;
+  userRole?: string;
+}) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const visibleNavItems = showAuditLog
     ? navItems
     : navItems.filter((item) => item.href !== "/audit-log");
   const activeHref = getActiveHref(pathname, visibleNavItems);
+
+  const accountFooter = (
+    <div className="mt-auto border-t border-white/10 pt-3">
+      <div className="hidden min-w-0 px-3 pb-2 xl:block">
+        <p className="truncate text-sm font-medium text-white">{userName}</p>
+        <p className="truncate text-xs text-[#9cc6ad]">{userRole}</p>
+      </div>
+      <form action={logoutAction}>
+        <button
+          type="submit"
+          title="Odhlásit se"
+          className="flex h-11 w-full min-w-0 items-center gap-3 rounded-md px-3 text-sm font-medium text-[#d8eee0] transition hover:bg-[#B9DCC6]/15 hover:text-white lg:h-10 lg:w-11 lg:justify-center lg:px-0 xl:w-auto xl:justify-start xl:px-3"
+        >
+          <LogOut className="h-5 w-5 shrink-0 lg:h-4 lg:w-4" aria-hidden="true" />
+          <span className="min-w-0 truncate lg:sr-only xl:not-sr-only">
+            Odhlásit se
+          </span>
+        </button>
+      </form>
+    </div>
+  );
 
   const navLinks = visibleNavItems.map((item) => {
     const Icon = item.icon;
@@ -133,6 +164,7 @@ export function AppSidebar({ showAuditLog }: { showAuditLog?: boolean }) {
           className="fixed inset-x-0 top-16 bottom-0 z-40 flex flex-col gap-1 overflow-y-auto border-t border-white/10 bg-[#072924] p-3 lg:hidden"
         >
           {navLinks}
+          {accountFooter}
         </nav>
       ) : null}
 
@@ -164,6 +196,7 @@ export function AppSidebar({ showAuditLog }: { showAuditLog?: boolean }) {
         </div>
         <nav className="flex min-w-0 flex-1 flex-col flex-nowrap items-center gap-2 overflow-x-hidden overflow-y-auto p-3 xl:items-stretch">
           {navLinks}
+          {accountFooter}
         </nav>
       </div>
     </aside>

@@ -12,7 +12,12 @@ import {
 import { auditJson } from "@/lib/audit";
 import { assertCanArchiveRecords } from "@/lib/archive-permissions";
 import { getCurrentUser } from "@/lib/auth";
-import { assertCanEditRecord } from "@/lib/permissions";
+import {
+  andWhere,
+  assertCanEditRecord,
+  caseVisibilityWhere,
+  projectVisibilityWhere,
+} from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 export async function createReference(formData: FormData) {
@@ -22,6 +27,26 @@ export async function createReference(formData: FormData) {
   const caseId = optionalString(formData, "caseId");
   const subjectId = optionalString(formData, "subjectId");
   const returnTo = optionalString(formData, "returnTo") ?? "/references";
+
+  // Scope to a matter the user can see; subjectId is the shared registry.
+  if (projectId) {
+    const project = await prisma.project.findFirst({
+      where: andWhere({ id: projectId }, projectVisibilityWhere(currentUser)),
+      select: { id: true },
+    });
+    if (!project) {
+      throw new Error("Projekt nenalezen nebo k němu nemáte oprávnění.");
+    }
+  }
+  if (caseId) {
+    const legalCase = await prisma.case.findFirst({
+      where: andWhere({ id: caseId }, caseVisibilityWhere(currentUser)),
+      select: { id: true },
+    });
+    if (!legalCase) {
+      throw new Error("Případ nenalezen nebo k němu nemáte oprávnění.");
+    }
+  }
 
   const reference = await prisma.reference.create({
     data: {

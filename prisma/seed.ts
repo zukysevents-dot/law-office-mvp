@@ -3,6 +3,7 @@ import "dotenv/config";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 import { PrismaClient } from "../src/generated/prisma/client";
+import { hashPassword } from "../src/lib/password";
 import { defaultTableViewPreferenceData } from "../src/lib/table-view-preferences";
 import {
   BillingStatus,
@@ -128,18 +129,25 @@ async function ensureCaseRelation(input: {
 }
 
 async function main() {
+  // All demo users share one known password (override with SEED_USER_PASSWORD).
+  const demoPasswordHash = await hashPassword(
+    process.env.SEED_USER_PASSWORD?.trim() || "demo1234",
+  );
+
   const admin = await prisma.user.upsert({
     where: { email: "admin.demo@example.local" },
     update: {
       name: "Admin Demo",
       role: UserRole.ADMIN,
       active: true,
+      passwordHash: demoPasswordHash,
     },
     create: {
       name: "Admin Demo",
       email: "admin.demo@example.local",
       role: UserRole.ADMIN,
       active: true,
+      passwordHash: demoPasswordHash,
     },
   });
 
@@ -149,12 +157,14 @@ async function main() {
       name: "Partner Demo",
       role: UserRole.PARTNER,
       active: true,
+      passwordHash: demoPasswordHash,
     },
     create: {
       name: "Partner Demo",
       email: "partner.demo@example.local",
       role: UserRole.PARTNER,
       active: true,
+      passwordHash: demoPasswordHash,
     },
   });
 
@@ -164,12 +174,14 @@ async function main() {
       name: "Advokát Demo",
       role: UserRole.LAWYER,
       active: true,
+      passwordHash: demoPasswordHash,
     },
     create: {
       name: "Advokát Demo",
       email: "advokat.demo@example.local",
       role: UserRole.LAWYER,
       active: true,
+      passwordHash: demoPasswordHash,
     },
   });
 
@@ -179,12 +191,14 @@ async function main() {
       name: "Koncipient Demo",
       role: UserRole.TRAINEE,
       active: true,
+      passwordHash: demoPasswordHash,
     },
     create: {
       name: "Koncipient Demo",
       email: "koncipient.demo@example.local",
       role: UserRole.TRAINEE,
       active: true,
+      passwordHash: demoPasswordHash,
     },
   });
 
@@ -194,12 +208,14 @@ async function main() {
       name: "Praktikant Demo",
       role: UserRole.INTERN,
       active: true,
+      passwordHash: demoPasswordHash,
     },
     create: {
       name: "Praktikant Demo",
       email: "praktikant.demo@example.local",
       role: UserRole.INTERN,
       active: true,
+      passwordHash: demoPasswordHash,
     },
   });
 
