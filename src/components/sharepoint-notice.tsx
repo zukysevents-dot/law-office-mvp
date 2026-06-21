@@ -3,13 +3,7 @@ import { AlertTriangle } from "lucide-react";
 const messages: Record<string, { title: string; detail: string }> = {
   failed: {
     title: "Složku se nepodařilo založit.",
-    detail:
-      "Zkontrolujte nastavení Microsoft 365 / SharePointu (SHAREPOINT_SITE_URL nebo MICROSOFT_*).",
-  },
-  graphFailed: {
-    title: "Vytvoření složky přes Microsoft Graph selhalo.",
-    detail:
-      "Uložili jsme odkaz podle konvence; složku může být potřeba vytvořit v SharePointu ručně.",
+    detail: "Zkontrolujte nastavení SharePointu (SHAREPOINT_SITE_URL).",
   },
 };
 

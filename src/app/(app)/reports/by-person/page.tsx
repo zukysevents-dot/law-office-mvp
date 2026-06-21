@@ -1,5 +1,5 @@
 import { ReportView } from "@/components/report-view";
-import { canViewPersonReports } from "@/lib/permissions";
+import { canViewAllLegalData } from "@/lib/permissions";
 import { byUser } from "@/lib/reporting/aggregations";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +16,7 @@ export default function ByPersonReportPage({ searchParams }: PageProps) {
       labelHeader="Pracovník"
       aggregate={byUser}
       searchParams={searchParams}
-      canView={canViewPersonReports}
+      canView={canViewAllLegalData}
       deniedMessage="Nemáte oprávnění zobrazit reporting podle lidí."
     />
   );

@@ -5,7 +5,6 @@ import { redirect } from "next/navigation";
 
 import { ProjectStatus, SubjectRole } from "@/generated/prisma/enums";
 import { auditJson } from "@/lib/audit";
-import { assertCanArchiveRecords } from "@/lib/archive-permissions";
 import { getCurrentUser } from "@/lib/auth";
 import {
   enumValue,
@@ -13,7 +12,7 @@ import {
   optionalString,
   requiredString,
 } from "@/lib/form";
-import { assertCanEditRecord } from "@/lib/permissions";
+import { assertCanArchiveRecords, assertCanEditRecord } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 export async function createProject(formData: FormData) {

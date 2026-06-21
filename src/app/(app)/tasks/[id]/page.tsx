@@ -28,7 +28,7 @@ import {
 import { safeQuery } from "@/lib/db-safe";
 import {
   andWhere,
-  canArchiveRecords,
+  canViewAllLegalData,
   canEditRecord,
   taskVisibilityWhere,
 } from "@/lib/permissions";
@@ -88,7 +88,7 @@ async function loadTask(id: string) {
 
   return {
     task,
-    canArchive: canArchiveRecords(currentUser),
+    canArchive: canViewAllLegalData(currentUser),
     canEdit: task ? canEditRecord(currentUser, "Task", task) : false,
   };
 }

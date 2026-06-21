@@ -5,7 +5,6 @@ import { redirect } from "next/navigation";
 
 import { ApprovalStatus, BillingStatus } from "@/generated/prisma/enums";
 import { auditJson } from "@/lib/audit";
-import { assertCanArchiveRecords } from "@/lib/archive-permissions";
 import { getCurrentUser } from "@/lib/auth";
 import {
   enumValue,
@@ -17,6 +16,7 @@ import {
 } from "@/lib/form";
 import {
   andWhere,
+  assertCanArchiveRecords,
   assertCanEditRecord,
   caseVisibilityWhere,
   projectVisibilityWhere,

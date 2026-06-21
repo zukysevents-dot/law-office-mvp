@@ -16,7 +16,7 @@ import {
 import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import { formatDateTime } from "@/lib/format";
-import { canViewAuditLog } from "@/lib/permissions";
+import { canViewAllLegalData } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { firstParam } from "@/lib/search-params";
 
@@ -76,7 +76,7 @@ export default async function AuditLogPage({ searchParams }: AuditLogPageProps) 
     async () => {
       const currentUser = await getCurrentUser();
 
-      if (!canViewAuditLog(currentUser)) {
+      if (!canViewAllLegalData(currentUser)) {
         return { allowed: false, logs: [], total: 0, users: [] };
       }
 

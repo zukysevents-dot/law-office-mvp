@@ -9,7 +9,6 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { getCurrentUser } from "@/lib/auth";
 import {
   BILLING_ROW_LIMIT,
-  billingFilterQuery,
   billingFilterWhere,
   billingWorkLogInclude,
   invoiceableWorkLogWhere,
@@ -24,7 +23,7 @@ import {
   formatMoney,
 } from "@/lib/format";
 import { getPrisma } from "@/lib/prisma";
-import { firstParam } from "@/lib/search-params";
+import { filterQuery, firstParam } from "@/lib/search-params";
 import {
   andWhere,
   caseVisibilityWhere,
@@ -147,7 +146,7 @@ export default async function BillingPage({ searchParams }: BillingProps) {
     },
   );
 
-  const query = billingFilterQuery(filters);
+  const query = filterQuery(filters);
   const exportSuffix = query ? `&${query}` : "";
 
   return (

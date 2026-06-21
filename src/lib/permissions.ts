@@ -113,62 +113,20 @@ export function canViewAllLegalData(user: PermissionInput) {
   return isAdmin(user) || isPartner(user);
 }
 
-export function canArchiveRecords(user: PermissionInput) {
-  return canViewAllLegalData(user);
-}
-
 export function assertCanArchiveRecords(user: PermissionInput) {
-  if (!canArchiveRecords(user)) {
+  if (!canViewAllLegalData(user)) {
     throw new Error("Nemáte oprávnění archivovat ani obnovovat záznamy.");
   }
 }
 
-export function canViewAuditLog(user: PermissionInput) {
-  return canViewAllLegalData(user);
-}
-
-export function assertCanViewAuditLog(user: PermissionInput) {
-  if (!canViewAuditLog(user)) {
-    throw new Error("Nemáte oprávnění zobrazit audit log.");
-  }
-}
-
-export function canViewPersonReports(user: PermissionInput) {
-  return canViewAllLegalData(user);
-}
-
-export function assertCanViewPersonReports(user: PermissionInput) {
-  if (!canViewPersonReports(user)) {
-    throw new Error("Nemáte oprávnění zobrazit reporting podle lidí.");
-  }
-}
-
-export function canViewBillabilityKpi(user: PermissionInput) {
-  return canViewAllLegalData(user);
-}
-
-export function assertCanViewBillabilityKpi(user: PermissionInput) {
-  if (!canViewBillabilityKpi(user)) {
-    throw new Error("Nemáte oprávnění zobrazit KPI fakturovatelnosti.");
-  }
-}
-
-export function canManageUsers(user: PermissionInput) {
-  return canViewAllLegalData(user);
-}
-
 export function assertCanManageUsers(user: PermissionInput) {
-  if (!canManageUsers(user)) {
+  if (!canViewAllLegalData(user)) {
     throw new Error("Nemáte oprávnění spravovat uživatele.");
   }
 }
 
-export function canApproveBilling(user: PermissionInput) {
-  return canViewAllLegalData(user);
-}
-
 export function assertCanApproveBilling(user: PermissionInput) {
-  if (!canApproveBilling(user)) {
+  if (!canViewAllLegalData(user)) {
     throw new Error("Nemáte oprávnění schvalovat fakturační podklady.");
   }
 }

@@ -8,7 +8,7 @@ import {
 } from "@/lib/audit-filters";
 import { getCurrentUser } from "@/lib/auth";
 import { formatDateTime } from "@/lib/format";
-import { canViewAuditLog } from "@/lib/permissions";
+import { canViewAllLegalData } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -75,7 +75,7 @@ function buildCsv(rows: AuditLogRow[]) {
 export async function GET(request: NextRequest) {
   const currentUser = await getCurrentUser();
 
-  if (!canViewAuditLog(currentUser)) {
+  if (!canViewAllLegalData(currentUser)) {
     return new Response("Přístup odepřen", { status: 403 });
   }
 

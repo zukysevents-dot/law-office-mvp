@@ -6,8 +6,6 @@ import { redirect } from "next/navigation";
 import { writeAuditLog } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
 import { requiredString } from "@/lib/form";
-import { isGraphConfigured } from "@/lib/microsoft/config";
-import { ensureFolderPath } from "@/lib/microsoft/graph-client";
 import {
   buildSharepointFolderUrl,
   sharepointFolderSegments,
@@ -20,12 +18,11 @@ import { getPrisma } from "@/lib/prisma";
 const ENTITY_TYPES: SharepointEntityType[] = ["Subject", "Project", "Case"];
 
 /**
- * Derive (and, when Graph is configured, really create) the SharePoint folder
- * for a Subject / Project / Case, then store its URL on the record.
+ * Derive the SharePoint folder URL (from the naming convention) for a Subject /
+ * Project / Case and store it on the record.
  *
- * Without any Microsoft config this is a safe no-op; with only the SharePoint
- * site URL it stores the convention URL; with Graph credentials it provisions
- * the folder and stores the real `webUrl`.
+ * Without SharePoint config this is a safe no-op; with the SharePoint site URL
+ * configured it stores the convention URL.
  */
 export async function provisionSharepointFolder(formData: FormData) {
   const prisma = getPrisma();
@@ -93,30 +90,11 @@ export async function provisionSharepointFolder(formData: FormData) {
   const segments = sharepointFolderSegments(input);
   const conventionUrl = buildSharepointFolderUrl(segments);
 
-  let graphWebUrl: string | null = null;
-  let graphFailed = false;
-  if (isGraphConfigured()) {
-    try {
-      graphWebUrl = await ensureFolderPath(segments);
-    } catch {
-      // Don't swallow silently — record the failure so the user is told (below).
-      graphFailed = true;
-    }
-  }
+  // Only fill in a convention URL when nothing is stored yet — never overwrite
+  // an existing URL on a stale resubmit.
+  const sharepointUrl = oldUrl ?? conventionUrl;
 
-  // A real Graph webUrl always wins. Otherwise only fill in a convention URL when
-  // nothing is stored yet — never downgrade an existing (possibly real) URL on a
-  // stale resubmit or a transient Graph outage.
-  let sharepointUrl: string | null;
-  if (graphWebUrl) {
-    sharepointUrl = graphWebUrl;
-  } else if (oldUrl) {
-    sharepointUrl = oldUrl;
-  } else {
-    sharepointUrl = conventionUrl;
-  }
-
-  // Nothing could be derived or created (e.g. Graph-only config and Graph failed).
+  // Nothing could be derived (SharePoint site URL not configured).
   if (!sharepointUrl) {
     redirect(`${detailPath}?sharepoint=failed`);
   }
@@ -143,5 +121,5 @@ export async function provisionSharepointFolder(formData: FormData) {
     revalidatePath(detailPath);
   }
 
-  redirect(`${detailPath}${graphFailed ? "?sharepoint=graphFailed" : ""}`);
+  redirect(detailPath);
 }
