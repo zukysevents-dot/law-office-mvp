@@ -22,8 +22,10 @@ export async function saveConflictCheck(
   const subjectId = optionalString(formData, "subjectId");
 
   const subject = subjectId
-    ? await prisma.subject.findUnique({
-        where: { id: subjectId },
+    ? await prisma.subject.findFirst({
+        // Org-scoped (tenant isolation), but firm-wide within the org — conflict
+        // checks must see counterparties on matters the user can't personally see.
+        where: { id: subjectId, organizationId: currentUser.organizationId },
         include: { relations: true },
       })
     : null;
@@ -38,6 +40,7 @@ export async function saveConflictCheck(
   const duplicateWindowStart = new Date(Date.now() - 60_000);
   const existingCheck = await prisma.conflictCheck.findFirst({
     where: {
+      organizationId: currentUser.organizationId,
       searchedQuery,
       subjectId: subject?.id ?? null,
       checkedById: currentUser.id,
@@ -58,6 +61,7 @@ export async function saveConflictCheck(
 
   await prisma.conflictCheck.create({
     data: {
+      organizationId: currentUser.organizationId,
       searchedQuery,
       subjectId: subject?.id ?? null,
       resultStatus,

@@ -48,6 +48,7 @@ export default async function MyTasksPage() {
       const currentUser = await getCurrentUser();
       const tasks = await prisma.task.findMany({
         where: {
+          organizationId: currentUser.organizationId,
           archivedAt: null,
           OR: [
             { assignedToId: currentUser.id },

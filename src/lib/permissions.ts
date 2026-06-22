@@ -4,6 +4,10 @@ import { UserRole } from "@/generated/prisma/enums";
 type PermissionUser = {
   id: string;
   role: UserRole;
+  // Present on users resolved via getCurrentUser(); absent when only a role is
+  // passed. Visibility helpers DENY when it's missing (fail closed).
+  organizationId?: string | null;
+  isPlatformAdmin?: boolean;
 };
 
 type PermissionInput = PermissionUser | UserRole | null | undefined;
@@ -35,6 +39,8 @@ type WorkLogRecord = {
   userId?: string | null;
 };
 
+type OrgScoped = { organizationId?: string | null };
+
 type ViewRecord =
   | (AssignmentRecord & {
       project?: ProjectRecord | null;
@@ -53,6 +59,24 @@ function roleOf(user: PermissionInput) {
 
 function userIdOf(user: PermissionInput) {
   return typeof user === "string" ? null : user?.id ?? null;
+}
+
+function orgIdOf(user: PermissionInput): string | null {
+  return typeof user === "string" ? null : user?.organizationId ?? null;
+}
+
+// Org filter for a user's visibility query, or null when they have no org
+// (caller should then deny). Prepended to every *VisibilityWhere via andWhere.
+function orgClause(user: PermissionInput): { organizationId: string } | null {
+  const orgId = orgIdOf(user);
+  return orgId ? { organizationId: orgId } : null;
+}
+
+// True when the record carries an organizationId that differs from the user's.
+// Records without an org (UI prefs, role-only callers) are not blocked here.
+function orgMismatch(user: PermissionInput, record: ViewRecord): boolean {
+  const recordOrg = (record as OrgScoped | null | undefined)?.organizationId;
+  return Boolean(recordOrg) && recordOrg !== orgIdOf(user);
 }
 
 function denyWhere<T extends object>() {
@@ -131,9 +155,46 @@ export function assertCanApproveBilling(user: PermissionInput) {
   }
 }
 
+// Platform/developer super-admin over all organizations (the /admin panel).
+export function assertPlatformAdmin(user: PermissionInput) {
+  const ok = typeof user === "string" ? false : Boolean(user?.isPlatformAdmin);
+  if (!ok) {
+    throw new Error("Přístup pouze pro správce platformy.");
+  }
+}
+
+// Authorizes administering a SPECIFIC org: platform admin (any org) OR an
+// ADMIN/PARTNER acting within their own org. Used by the shared org actions so
+// /admin and /settings/organization can reuse them safely.
+export function assertCanAdministerOrg(
+  user: PermissionInput,
+  organizationId: string,
+) {
+  if (typeof user !== "string" && user?.isPlatformAdmin) {
+    return;
+  }
+  if (canViewAllLegalData(user) && orgIdOf(user) === organizationId) {
+    return;
+  }
+  throw new Error("Nemáte oprávnění spravovat tuto kancelář.");
+}
+
+// Throws if the record belongs to a different organization than the user. Used
+// by archive/restore actions (which gate on role, not on canEditRecord).
+export function assertSameOrg(user: PermissionInput, record: ViewRecord) {
+  if (orgMismatch(user, record)) {
+    throw new Error("Záznam patří jiné kanceláři.");
+  }
+}
+
 export function taskVisibilityWhere(user: PermissionInput): Prisma.TaskWhereInput {
+  const org = orgClause(user);
+  if (!org) {
+    return denyWhere<Prisma.TaskWhereInput>();
+  }
+
   if (canViewAllLegalData(user)) {
-    return {};
+    return org;
   }
 
   const userId = userIdOf(user);
@@ -146,7 +207,7 @@ export function taskVisibilityWhere(user: PermissionInput): Prisma.TaskWhereInpu
   const directWhere = directTaskUserWhere(userId);
 
   if (role === UserRole.LAWYER) {
-    return {
+    return andWhere(org, {
       OR: [
         directWhere,
         { project: { is: { responsibleUserId: userId } } },
@@ -157,11 +218,11 @@ export function taskVisibilityWhere(user: PermissionInput): Prisma.TaskWhereInpu
           },
         },
       ],
-    };
+    });
   }
 
   if (role === UserRole.TRAINEE || role === UserRole.INTERN) {
-    return directWhere;
+    return andWhere(org, directWhere);
   }
 
   return denyWhere<Prisma.TaskWhereInput>();
@@ -170,8 +231,13 @@ export function taskVisibilityWhere(user: PermissionInput): Prisma.TaskWhereInpu
 export function projectVisibilityWhere(
   user: PermissionInput,
 ): Prisma.ProjectWhereInput {
+  const org = orgClause(user);
+  if (!org) {
+    return denyWhere<Prisma.ProjectWhereInput>();
+  }
+
   if (canViewAllLegalData(user)) {
-    return {};
+    return org;
   }
 
   const userId = userIdOf(user);
@@ -182,31 +248,36 @@ export function projectVisibilityWhere(
   }
 
   if (role === UserRole.LAWYER) {
-    return {
+    return andWhere(org, {
       OR: [
         { responsibleUserId: userId },
         { cases: { some: { responsibleUserId: userId } } },
         { tasks: { some: directTaskUserWhere(userId) } },
         { workLogs: { some: { userId } } },
       ],
-    };
+    });
   }
 
   if (role === UserRole.TRAINEE) {
-    return {
+    return andWhere(org, {
       OR: [
         { tasks: { some: directTaskUserWhere(userId) } },
         { workLogs: { some: { userId } } },
       ],
-    };
+    });
   }
 
   return denyWhere<Prisma.ProjectWhereInput>();
 }
 
 export function caseVisibilityWhere(user: PermissionInput): Prisma.CaseWhereInput {
+  const org = orgClause(user);
+  if (!org) {
+    return denyWhere<Prisma.CaseWhereInput>();
+  }
+
   if (canViewAllLegalData(user)) {
-    return {};
+    return org;
   }
 
   const userId = userIdOf(user);
@@ -217,23 +288,23 @@ export function caseVisibilityWhere(user: PermissionInput): Prisma.CaseWhereInpu
   }
 
   if (role === UserRole.LAWYER) {
-    return {
+    return andWhere(org, {
       OR: [
         { responsibleUserId: userId },
         { project: { is: { responsibleUserId: userId } } },
         { tasks: { some: directTaskUserWhere(userId) } },
         { workLogs: { some: { userId } } },
       ],
-    };
+    });
   }
 
   if (role === UserRole.TRAINEE) {
-    return {
+    return andWhere(org, {
       OR: [
         { tasks: { some: directTaskUserWhere(userId) } },
         { workLogs: { some: { userId } } },
       ],
-    };
+    });
   }
 
   return denyWhere<Prisma.CaseWhereInput>();
@@ -242,8 +313,13 @@ export function caseVisibilityWhere(user: PermissionInput): Prisma.CaseWhereInpu
 export function workLogVisibilityWhere(
   user: PermissionInput,
 ): Prisma.WorkLogWhereInput {
+  const org = orgClause(user);
+  if (!org) {
+    return denyWhere<Prisma.WorkLogWhereInput>();
+  }
+
   if (canViewAllLegalData(user)) {
-    return {};
+    return org;
   }
 
   const userId = userIdOf(user);
@@ -254,7 +330,7 @@ export function workLogVisibilityWhere(
   }
 
   if (role === UserRole.LAWYER) {
-    return {
+    return andWhere(org, {
       OR: [
         { userId },
         { task: { is: directTaskUserWhere(userId) } },
@@ -266,11 +342,11 @@ export function workLogVisibilityWhere(
           },
         },
       ],
-    };
+    });
   }
 
   if (role === UserRole.TRAINEE || role === UserRole.INTERN) {
-    return { userId };
+    return andWhere(org, { userId });
   }
 
   return denyWhere<Prisma.WorkLogWhereInput>();
@@ -279,8 +355,13 @@ export function workLogVisibilityWhere(
 export function referenceVisibilityWhere(
   user: PermissionInput,
 ): Prisma.ReferenceWhereInput {
+  const org = orgClause(user);
+  if (!org) {
+    return denyWhere<Prisma.ReferenceWhereInput>();
+  }
+
   if (canViewAllLegalData(user)) {
-    return {};
+    return org;
   }
 
   const userId = userIdOf(user);
@@ -291,7 +372,7 @@ export function referenceVisibilityWhere(
   }
 
   if (role === UserRole.LAWYER) {
-    return {
+    return andWhere(org, {
       OR: [
         { project: { is: { responsibleUserId: userId } } },
         { case: { is: { responsibleUserId: userId } } },
@@ -305,7 +386,7 @@ export function referenceVisibilityWhere(
         { project: { is: { workLogs: { some: { userId } } } } },
         { case: { is: { workLogs: { some: { userId } } } } },
       ],
-    };
+    });
   }
 
   return denyWhere<Prisma.ReferenceWhereInput>();
@@ -314,8 +395,13 @@ export function referenceVisibilityWhere(
 export function subjectVisibilityWhere(
   user: PermissionInput,
 ): Prisma.SubjectWhereInput {
+  const org = orgClause(user);
+  if (!org) {
+    return denyWhere<Prisma.SubjectWhereInput>();
+  }
+
   if (canViewAllLegalData(user)) {
-    return {};
+    return org;
   }
 
   const userId = userIdOf(user);
@@ -326,14 +412,14 @@ export function subjectVisibilityWhere(
   }
 
   if (role === UserRole.INTERN) {
-    return { workLogs: { some: { userId } } };
+    return andWhere(org, { workLogs: { some: { userId } } });
   }
 
   const projectWhere = projectVisibilityWhere(user);
   const caseWhere = caseVisibilityWhere(user);
 
   if (role === UserRole.LAWYER) {
-    return {
+    return andWhere(org, {
       OR: [
         { mainProjects: { some: projectWhere } },
         { relations: { some: { project: { is: projectWhere } } } },
@@ -341,18 +427,18 @@ export function subjectVisibilityWhere(
         { workLogs: { some: workLogVisibilityWhere(user) } },
         { references: { some: referenceVisibilityWhere(user) } },
       ],
-    };
+    });
   }
 
   if (role === UserRole.TRAINEE) {
-    return {
+    return andWhere(org, {
       OR: [
         { mainProjects: { some: projectWhere } },
         { relations: { some: { project: { is: projectWhere } } } },
         { relations: { some: { case: { is: caseWhere } } } },
         { workLogs: { some: { userId } } },
       ],
-    };
+    });
   }
 
   return denyWhere<Prisma.SubjectWhereInput>();
@@ -364,6 +450,11 @@ export function canViewRecord(
   record: ViewRecord,
 ) {
   if (!record) {
+    return false;
+  }
+
+  // Org isolation first — applies to every role, including ADMIN/PARTNER.
+  if (orgMismatch(user, record)) {
     return false;
   }
 
@@ -421,6 +512,12 @@ export function canEditRecord(
   record: ViewRecord,
 ) {
   if (!record) {
+    return false;
+  }
+
+  // Org isolation first — a record from another org is never editable, even by
+  // ADMIN/PARTNER (who otherwise see everything in their own org).
+  if (orgMismatch(user, record)) {
     return false;
   }
 

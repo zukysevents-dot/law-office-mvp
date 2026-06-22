@@ -5,8 +5,9 @@ import { SESSION_COOKIE, verifySession } from "@/lib/session";
 // Front door for the whole app (Next 16 "proxy" convention, formerly
 // middleware). Everything matched below requires a valid session cookie;
 // without one the request is redirected to /login. The landing page (/),
-// /login, and /api/internal (own Bearer auth) are intentionally excluded from
-// the matcher and stay public.
+// /login, /register, and /api/internal (own Bearer auth) are intentionally
+// excluded from the matcher and stay public. /join-organization and /admin
+// require a session but NOT an org membership (checked at the page level).
 export async function proxy(request: NextRequest) {
   const token = request.cookies.get(SESSION_COOKIE)?.value;
   const userId = await verifySession(token);
@@ -36,5 +37,7 @@ export const config = {
     "/calendar/:path*",
     "/audit-log/:path*",
     "/settings/:path*",
+    "/join-organization/:path*",
+    "/admin/:path*",
   ],
 };

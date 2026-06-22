@@ -8,7 +8,7 @@ import {
 } from "@/lib/audit-filters";
 import { getCurrentUser } from "@/lib/auth";
 import { formatDateTime } from "@/lib/format";
-import { canViewAllLegalData } from "@/lib/permissions";
+import { andWhere, canViewAllLegalData } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -87,7 +87,11 @@ export async function GET(request: NextRequest) {
   try {
     const prisma = getPrisma();
     rows = await prisma.auditLog.findMany({
-      where: buildAuditWhere(filters),
+      where: andWhere(buildAuditWhere(filters), {
+        changedBy: {
+          is: { memberships: { some: { organizationId: currentUser.organizationId } } },
+        },
+      }),
       orderBy: { createdAt: "desc" },
       take: 10000,
       include: {

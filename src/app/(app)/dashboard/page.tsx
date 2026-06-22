@@ -829,6 +829,7 @@ export default async function DashboardPage() {
       }),
       prisma.task.findMany({
         where: {
+          organizationId: currentUser.organizationId,
           archivedAt: null,
           status: { not: TaskStatus.COMPLETED },
           OR: [
@@ -960,6 +961,7 @@ export default async function DashboardPage() {
         },
       }),
       prisma.conflictCheck.findMany({
+        where: { organizationId: currentUser.organizationId },
         orderBy: { createdAt: "desc" },
         take: 8,
         select: {

@@ -13,7 +13,11 @@ import {
   optionalString,
   requiredString,
 } from "@/lib/form";
-import { assertCanArchiveRecords, assertCanEditRecord } from "@/lib/permissions";
+import {
+  assertCanArchiveRecords,
+  assertCanEditRecord,
+  assertSameOrg,
+} from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 export async function createSubject(formData: FormData) {
@@ -23,6 +27,7 @@ export async function createSubject(formData: FormData) {
 
   const subject = await prisma.subject.create({
     data: {
+      organizationId: currentUser.organizationId,
       type,
       name: requiredString(formData, "name"),
       ico: optionalString(formData, "ico"),
@@ -128,6 +133,7 @@ export async function archiveSubject(formData: FormData) {
   const oldSubject = await prisma.subject.findUniqueOrThrow({
     where: { id: subjectId },
   });
+  assertSameOrg(currentUser, oldSubject);
   const subject = await prisma.subject.update({
     where: { id: subjectId },
     data: { archivedAt: new Date() },
@@ -156,6 +162,7 @@ export async function restoreSubject(formData: FormData) {
   const oldSubject = await prisma.subject.findUniqueOrThrow({
     where: { id: subjectId },
   });
+  assertSameOrg(currentUser, oldSubject);
   const subject = await prisma.subject.update({
     where: { id: subjectId },
     data: { archivedAt: null },

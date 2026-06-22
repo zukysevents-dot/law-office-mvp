@@ -16,6 +16,7 @@ import {
   andWhere,
   assertCanArchiveRecords,
   assertCanEditRecord,
+  assertSameOrg,
   projectVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
@@ -38,6 +39,7 @@ export async function createCase(formData: FormData) {
     }
     const created = await tx.case.create({
       data: {
+        organizationId: currentUser.organizationId,
         projectId,
         name: requiredString(formData, "name"),
         fileNumber: optionalString(formData, "fileNumber"),
@@ -130,6 +132,7 @@ export async function archiveCase(formData: FormData) {
   assertCanArchiveRecords(currentUser);
   const caseId = requiredString(formData, "id");
   const oldCase = await prisma.case.findUniqueOrThrow({ where: { id: caseId } });
+  assertSameOrg(currentUser, oldCase);
   const legalCase = await prisma.case.update({
     where: { id: caseId },
     data: { archivedAt: new Date() },
@@ -157,6 +160,7 @@ export async function restoreCase(formData: FormData) {
   assertCanArchiveRecords(currentUser);
   const caseId = requiredString(formData, "id");
   const oldCase = await prisma.case.findUniqueOrThrow({ where: { id: caseId } });
+  assertSameOrg(currentUser, oldCase);
   const legalCase = await prisma.case.update({
     where: { id: caseId },
     data: { archivedAt: null },

@@ -18,6 +18,7 @@ import {
   andWhere,
   assertCanArchiveRecords,
   assertCanEditRecord,
+  assertSameOrg,
   caseVisibilityWhere,
   projectVisibilityWhere,
   taskVisibilityWhere,
@@ -96,6 +97,7 @@ export async function createWorkLog(formData: FormData) {
 
   const workLog = await prisma.workLog.create({
     data: {
+      organizationId: currentUser.organizationId,
       subjectId,
       projectId,
       caseId,
@@ -226,6 +228,7 @@ export async function archiveWorkLog(formData: FormData) {
   const oldWorkLog = await prisma.workLog.findUniqueOrThrow({
     where: { id: workLogId },
   });
+  assertSameOrg(currentUser, oldWorkLog);
   const workLog = await prisma.workLog.update({
     where: { id: workLogId },
     data: { archivedAt: new Date() },
@@ -254,6 +257,7 @@ export async function restoreWorkLog(formData: FormData) {
   const oldWorkLog = await prisma.workLog.findUniqueOrThrow({
     where: { id: workLogId },
   });
+  assertSameOrg(currentUser, oldWorkLog);
   const workLog = await prisma.workLog.update({
     where: { id: workLogId },
     data: { archivedAt: null },

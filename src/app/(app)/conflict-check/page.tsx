@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
+import { getCurrentUser } from "@/lib/auth";
 import { formatDate } from "@/lib/format";
 import { subjectRoleLabels, subjectTypeLabels } from "@/lib/labels";
 import { safeQuery } from "@/lib/db-safe";
@@ -63,8 +64,12 @@ export default async function ConflictCheckPage({
       }
 
       const prisma = getPrisma();
+      const currentUser = await getCurrentUser();
       const subjects = await prisma.subject.findMany({
+        // Conflict check is firm-wide by design — scope to the org (tenant
+        // isolation), not to personal visibility.
         where: {
+          organizationId: currentUser.organizationId,
           archivedAt: null,
           OR: [
             { name: { contains: query, mode: "insensitive" } },

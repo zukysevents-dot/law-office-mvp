@@ -24,6 +24,7 @@ import {
   andWhere,
   assertCanArchiveRecords,
   assertCanEditRecord,
+  assertSameOrg,
   caseVisibilityWhere,
   projectVisibilityWhere,
 } from "@/lib/permissions";
@@ -59,6 +60,7 @@ export async function createTask(formData: FormData) {
 
   const task = await prisma.task.create({
     data: {
+      organizationId: currentUser.organizationId,
       title: requiredString(formData, "title"),
       projectId,
       caseId,
@@ -230,6 +232,7 @@ export async function updateTaskStatus(formData: FormData) {
     where: { id: taskId },
     select: {
       id: true,
+      organizationId: true,
       status: true,
       title: true,
       createdById: true,
@@ -306,6 +309,7 @@ export async function archiveTask(formData: FormData) {
   assertCanArchiveRecords(currentUser);
   const taskId = requiredString(formData, "id");
   const oldTask = await prisma.task.findUniqueOrThrow({ where: { id: taskId } });
+  assertSameOrg(currentUser, oldTask);
   const task = await prisma.task.update({
     where: { id: taskId },
     data: { archivedAt: new Date() },
@@ -334,6 +338,7 @@ export async function restoreTask(formData: FormData) {
   assertCanArchiveRecords(currentUser);
   const taskId = requiredString(formData, "id");
   const oldTask = await prisma.task.findUniqueOrThrow({ where: { id: taskId } });
+  assertSameOrg(currentUser, oldTask);
   const task = await prisma.task.update({
     where: { id: taskId },
     data: { archivedAt: null },
@@ -365,6 +370,7 @@ export async function addTaskComment(formData: FormData) {
     where: { id: taskId },
     select: {
       id: true,
+      organizationId: true,
       createdById: true,
       assignedToId: true,
       responsibleUserId: true,

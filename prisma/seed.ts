@@ -3,6 +3,7 @@ import "dotenv/config";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 import { PrismaClient } from "../src/generated/prisma/client";
+import { hashCode } from "../src/lib/join-code";
 import { hashPassword } from "../src/lib/password";
 import { defaultTableViewPreferenceData } from "../src/lib/table-view-preferences";
 import {
@@ -11,6 +12,7 @@ import {
   DashboardWidgetSize,
   DashboardWidgetType,
   FeeType,
+  OrganizationMemberStatus,
   ProjectStatus,
   SubjectRole,
   SubjectType,
@@ -19,6 +21,11 @@ import {
   TaskStatus,
   UserRole,
 } from "../src/generated/prisma/enums";
+
+// Must match the migration + src/lib/organization.ts DEMO_ORG_ID.
+const DEMO_ORG_ID = "org-demo-syndikat-legal";
+// Known demo registration code (plaintext) for local testing of the join flow.
+const DEMO_JOIN_CODE = "DEMO-2026-CODE";
 
 const connectionString = process.env.DATABASE_URL;
 
@@ -134,6 +141,18 @@ async function main() {
     process.env.SEED_USER_PASSWORD?.trim() || "demo1234",
   );
 
+  const demoOrg = await prisma.organization.upsert({
+    where: { id: DEMO_ORG_ID },
+    update: { name: "syndikat.legal demo", status: "ACTIVE" },
+    create: {
+      id: DEMO_ORG_ID,
+      name: "syndikat.legal demo",
+      slug: "syndikat-legal-demo",
+      seatLimit: 10,
+      status: "ACTIVE",
+    },
+  });
+
   const admin = await prisma.user.upsert({
     where: { email: "admin.demo@example.local" },
     update: {
@@ -219,6 +238,53 @@ async function main() {
     },
   });
 
+  // Connect the five demo users to the demo org as ACTIVE members.
+  for (const member of [admin, partner, lawyer, trainee, intern]) {
+    await prisma.organizationMember.upsert({
+      where: {
+        organizationId_userId: { organizationId: demoOrg.id, userId: member.id },
+      },
+      update: { role: member.role, status: OrganizationMemberStatus.ACTIVE },
+      create: {
+        organizationId: demoOrg.id,
+        userId: member.id,
+        role: member.role,
+        status: OrganizationMemberStatus.ACTIVE,
+        approvedAt: new Date(),
+      },
+    });
+  }
+
+  // Developer / platform super-admin — no org membership, manages /admin.
+  await prisma.user.upsert({
+    where: { email: "developer.demo@example.local" },
+    update: {
+      name: "Developer Admin",
+      isPlatformAdmin: true,
+      active: true,
+      passwordHash: demoPasswordHash,
+    },
+    create: {
+      name: "Developer Admin",
+      email: "developer.demo@example.local",
+      role: UserRole.ADMIN,
+      isPlatformAdmin: true,
+      active: true,
+      passwordHash: demoPasswordHash,
+    },
+  });
+
+  // Known demo registration code so the join flow can be tested locally.
+  await prisma.organizationJoinCode.upsert({
+    where: { codeHash: hashCode(DEMO_JOIN_CODE) },
+    update: { label: "Demo onboarding", isActive: true },
+    create: {
+      organizationId: demoOrg.id,
+      codeHash: hashCode(DEMO_JOIN_CODE),
+      label: "Demo onboarding",
+    },
+  });
+
   const abc = await prisma.subject.upsert({
     where: { ico: "12345678" },
     update: {
@@ -232,6 +298,7 @@ async function main() {
       feeNote: "Demo hodinová sazba klienta.",
     },
     create: {
+      organizationId: demoOrg.id,
       name: "ABC s.r.o.",
       type: SubjectType.COMPANY,
       ico: "12345678",
@@ -253,6 +320,7 @@ async function main() {
       status: "ACTIVE",
     },
     create: {
+      organizationId: demoOrg.id,
       name: "XYZ s.r.o.",
       type: SubjectType.COMPANY,
       ico: "87654321",
@@ -268,6 +336,7 @@ async function main() {
     })) ??
     (await prisma.subject.create({
       data: {
+        organizationId: demoOrg.id,
         name: "Jan Novák",
         type: SubjectType.PERSON,
         status: "ACTIVE",
@@ -284,6 +353,7 @@ async function main() {
     })) ??
     (await prisma.project.create({
       data: {
+        organizationId: demoOrg.id,
         name: "Soudní spor ABC",
         mainSubjectId: abc.id,
         responsibleUserId: partner.id,
@@ -312,6 +382,7 @@ async function main() {
     })) ??
     (await prisma.case.create({
       data: {
+        organizationId: demoOrg.id,
         projectId: project.id,
         name: "Žaloba na zaplacení",
         fileNumber: "ABC-001/2026",
@@ -360,6 +431,7 @@ async function main() {
       })
     : await prisma.task.create({
         data: {
+          organizationId: demoOrg.id,
           title: "Připravit vyjádření k žalobě",
           projectId: project.id,
           caseId: legalCase.id,
@@ -401,6 +473,7 @@ async function main() {
   if (!existingReference) {
     await prisma.reference.create({
       data: {
+        organizationId: demoOrg.id,
         title: "Soudní spor o zaplacení pohledávky",
         projectId: project.id,
         caseId: legalCase.id,
@@ -423,6 +496,7 @@ async function main() {
   if (!existingWorkLog) {
     await prisma.workLog.create({
       data: {
+        organizationId: demoOrg.id,
         subjectId: abc.id,
         projectId: project.id,
         caseId: legalCase.id,
@@ -483,6 +557,11 @@ async function main() {
   }
 
   console.log("Seed data created.");
+  console.log(`Demo organization: ${demoOrg.name} (${demoOrg.id})`);
+  console.log(`Demo registration code: ${DEMO_JOIN_CODE}`);
+  console.log(
+    "Platform admin login: developer.demo@example.local (heslo viz SEED_USER_PASSWORD nebo demo1234)",
+  );
 }
 
 main()

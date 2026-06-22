@@ -16,7 +16,7 @@ import {
 import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import { formatDateTime } from "@/lib/format";
-import { canViewAllLegalData } from "@/lib/permissions";
+import { andWhere, canViewAllLegalData } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { firstParam } from "@/lib/search-params";
 
@@ -81,7 +81,16 @@ export default async function AuditLogPage({ searchParams }: AuditLogPageProps) 
       }
 
       const prisma = getPrisma();
-      const where = buildAuditWhere(filters);
+      // Tenant isolation for the audit log: a user belongs to exactly one org,
+      // so scope rows to those whose actor is a member of the current org.
+      // ponytail: no organizationId column on AuditLog — actor membership is the
+      // tenant key, so none of the ~35 audit-write sites need touching.
+      const orgScope = {
+        changedBy: {
+          is: { memberships: { some: { organizationId: currentUser.organizationId } } },
+        },
+      };
+      const where = andWhere(buildAuditWhere(filters), orgScope);
       const [logs, total, users] = await Promise.all([
         prisma.auditLog.findMany({
           where,
@@ -94,6 +103,9 @@ export default async function AuditLogPage({ searchParams }: AuditLogPageProps) 
         }),
         prisma.auditLog.count({ where }),
         prisma.user.findMany({
+          where: {
+            memberships: { some: { organizationId: currentUser.organizationId } },
+          },
           orderBy: { name: "asc" },
           select: { id: true, name: true },
         }),

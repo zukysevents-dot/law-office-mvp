@@ -131,16 +131,31 @@ enum NotificationStatus {
   SKIPPED
 }
 
+enum OrganizationStatus {
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+enum OrganizationMemberStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+}
+
 model User {
-  id           String   @id @default(cuid())
-  name         String
-  email        String   @unique
-  role         UserRole @default(LAWYER)
-  microsoftId  String?  @unique
-  passwordHash String?
-  active       Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id              String   @id @default(cuid())
+  name            String
+  email           String   @unique
+  role            UserRole @default(LAWYER)
+  microsoftId     String?  @unique
+  passwordHash    String?
+  active          Boolean  @default(true)
+  // Platform/developer super-admin over all organizations (the /admin panel).
+  // Orthogonal to the org-level role; such accounts have no org membership.
+  isPlatformAdmin Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   createdSubjectRelations SubjectRelation[]   @relation("SubjectRelationCreatedBy")
   checkedConflictChecks   ConflictCheck[]     @relation("ConflictCheckCheckedBy")
@@ -157,12 +172,14 @@ model User {
   tableViewPreferences    TableViewPreference[]
   notificationPreference  NotificationPreference?
   notifications           Notification[]      @relation("NotificationRecipient")
+  memberships             OrganizationMember[]
 
   @@map("users")
 }
 
 model Subject {
   id               String      @id @default(cuid())
+  organizationId   String
   type             SubjectType @default(COMPANY)
   name             String
   ico              String?     @unique
@@ -186,12 +203,14 @@ model Subject {
   updatedAt        DateTime    @updatedAt
   archivedAt       DateTime?
 
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   relations      SubjectRelation[]
   conflictChecks ConflictCheck[]
   mainProjects   Project[]         @relation("ProjectMainSubject")
   references     Reference[]
   workLogs       WorkLog[]
 
+  @@index([organizationId])
   @@index([name])
   @@index([ico])
   @@index([riskFlag])
@@ -222,17 +241,20 @@ model SubjectRelation {
 }
 
 model ConflictCheck {
-  id            String   @id @default(cuid())
-  searchedQuery String
-  subjectId     String?
-  resultStatus  String
-  checkedById   String?
-  note          String?
-  createdAt     DateTime @default(now())
+  id             String   @id @default(cuid())
+  organizationId String
+  searchedQuery  String
+  subjectId      String?
+  resultStatus   String
+  checkedById    String?
+  note           String?
+  createdAt      DateTime @default(now())
 
-  subject   Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
-  checkedBy User?    @relation("ConflictCheckCheckedBy", fields: [checkedById], references: [id], onDelete: SetNull)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  subject      Subject?     @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  checkedBy    User?        @relation("ConflictCheckCheckedBy", fields: [checkedById], references: [id], onDelete: SetNull)
 
+  @@index([organizationId])
   @@index([searchedQuery])
   @@index([subjectId])
   @@index([checkedById])
@@ -241,6 +263,7 @@ model ConflictCheck {
 
 model Project {
   id                String        @id @default(cuid())
+  organizationId    String
   name              String
   mainSubjectId     String
   responsibleUserId String?
@@ -252,6 +275,7 @@ model Project {
   updatedAt         DateTime      @updatedAt
   archivedAt        DateTime?
 
+  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   mainSubject      Subject           @relation("ProjectMainSubject", fields: [mainSubjectId], references: [id], onDelete: Restrict)
   responsibleUser  User?             @relation("ProjectResponsibleUser", fields: [responsibleUserId], references: [id], onDelete: SetNull)
   cases            Case[]
@@ -260,6 +284,7 @@ model Project {
   references       Reference[]
   workLogs         WorkLog[]
 
+  @@index([organizationId])
   @@index([mainSubjectId])
   @@index([responsibleUserId])
   @@index([status])
@@ -268,6 +293,7 @@ model Project {
 
 model Case {
   id                String     @id @default(cuid())
+  organizationId    String
   projectId         String
   name              String
   fileNumber        String?
@@ -280,6 +306,7 @@ model Case {
   updatedAt         DateTime   @updatedAt
   archivedAt        DateTime?
 
+  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   project          Project           @relation(fields: [projectId], references: [id], onDelete: Restrict)
   responsibleUser  User?             @relation("CaseResponsibleUser", fields: [responsibleUserId], references: [id], onDelete: SetNull)
   tasks            Task[]
@@ -288,6 +315,7 @@ model Case {
   workLogs         WorkLog[]
 
   @@unique([projectId, fileNumber])
+  @@index([organizationId])
   @@index([projectId])
   @@index([responsibleUserId])
   @@index([status])
@@ -296,6 +324,7 @@ model Case {
 
 model Task {
   id                  String       @id @default(cuid())
+  organizationId      String
   title               String
   projectId           String?
   caseId              String?
@@ -315,6 +344,7 @@ model Task {
   createdAt           DateTime     @default(now())
   updatedAt           DateTime     @updatedAt
 
+  organization  Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   project       Project?            @relation(fields: [projectId], references: [id], onDelete: SetNull)
   case          Case?               @relation(fields: [caseId], references: [id], onDelete: SetNull)
   createdBy     User?               @relation("TaskCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
@@ -324,6 +354,7 @@ model Task {
   comments      TaskComment[]
   workLogs      WorkLog[]
 
+  @@index([organizationId])
   @@index([projectId])
   @@index([caseId])
   @@index([assignedToId])
@@ -369,6 +400,7 @@ model TaskComment {
 
 model WorkLog {
   id             String         @id @default(cuid())
+  organizationId String
   subjectId      String?
   projectId      String?
   caseId         String?
@@ -386,12 +418,14 @@ model WorkLog {
   updatedAt      DateTime       @updatedAt
   archivedAt     DateTime?
 
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   subject Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
   project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
   case    Case?    @relation(fields: [caseId], references: [id], onDelete: SetNull)
   task    Task?    @relation(fields: [taskId], references: [id], onDelete: SetNull)
   user    User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
+  @@index([organizationId])
   @@index([subjectId])
   @@index([projectId])
   @@index([caseId])
@@ -403,9 +437,10 @@ model WorkLog {
 }
 
 model Reference {
-  id          String   @id @default(cuid())
-  title       String
-  projectId   String?
+  id             String   @id @default(cuid())
+  organizationId String
+  title          String
+  projectId      String?
   caseId      String?
   subjectId   String?
   legalArea   String?
@@ -417,10 +452,12 @@ model Reference {
   updatedAt   DateTime @updatedAt
   archivedAt  DateTime?
 
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
   case    Case?    @relation(fields: [caseId], references: [id], onDelete: SetNull)
   subject Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
 
+  @@index([organizationId])
   @@index([projectId])
   @@index([caseId])
   @@index([subjectId])
@@ -451,6 +488,10 @@ model AuditLog {
 
 model DashboardWidget {
   id        String              @id @default(cuid())
+  // Nullable: these are per-user UI prefs, already isolated by userId (a user
+  // belongs to one org). ponytail: column present for spec/future multi-org, not
+  // required for any query — no create-site churn.
+  organizationId String?
   userId    String
   type      DashboardWidgetType
   title     String
@@ -461,8 +502,10 @@ model DashboardWidget {
   createdAt DateTime            @default(now())
   updatedAt DateTime            @updatedAt
 
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([organizationId])
   @@index([userId, position])
   @@index([userId, visible])
   @@map("dashboardWidgets")
@@ -470,15 +513,20 @@ model DashboardWidget {
 
 model TableViewPreference {
   id             String   @id @default(cuid())
+  // Nullable for the same reason as DashboardWidget.organizationId — userId
+  // already isolates per-user UI prefs. ponytail: spec/future, no query churn.
+  organizationId String?
   userId         String
   tableKey       String
   visibleColumns Json
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, tableKey])
+  @@index([organizationId])
   @@index([userId])
   @@index([tableKey])
   @@map("tableViewPreferences")
@@ -529,4 +577,75 @@ model Notification {
   @@index([entityType, entityId])
   @@index([createdAt])
   @@map("notifications")
+}
+
+model Organization {
+  id                  String             @id @default(cuid())
+  name                String
+  slug                String             @unique
+  seatLimit           Int                @default(0)
+  status              OrganizationStatus @default(ACTIVE)
+  // Optional, unused this phase — email domain is NOT a join restriction.
+  allowedEmailDomains Json?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  archivedAt          DateTime?
+
+  members              OrganizationMember[]
+  joinCodes            OrganizationJoinCode[]
+  subjects             Subject[]
+  projects             Project[]
+  cases                Case[]
+  tasks                Task[]
+  workLogs             WorkLog[]
+  references           Reference[]
+  conflictChecks       ConflictCheck[]
+  dashboardWidgets     DashboardWidget[]
+  tableViewPreferences TableViewPreference[]
+
+  @@index([status])
+  @@map("organizations")
+}
+
+model OrganizationJoinCode {
+  id              String    @id @default(cuid())
+  organizationId  String
+  // Only the keyed hash of the code is stored — never the plaintext.
+  codeHash        String    @unique
+  label           String
+  maxUses         Int?
+  usedCount       Int       @default(0)
+  expiresAt       DateTime?
+  isActive        Boolean   @default(true)
+  createdByUserId String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  revokedAt       DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("organizationJoinCodes")
+}
+
+model OrganizationMember {
+  id               String                   @id @default(cuid())
+  organizationId   String
+  userId           String
+  role             UserRole                 @default(LAWYER)
+  status           OrganizationMemberStatus @default(ACTIVE)
+  joinedAt         DateTime                 @default(now())
+  approvedAt       DateTime?
+  approvedByUserId String?
+  deactivatedAt    DateTime?
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([organizationId])
+  @@index([userId])
+  @@map("organizationMembers")
 }
