@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BarChart3,
+  Briefcase,
   BriefcaseBusiness,
   Building2,
   CalendarDays,
@@ -42,7 +43,8 @@ const navItems = [
   { href: "/reports", label: "Reporty", icon: BarChart3 },
   { href: "/references", label: "Reference", icon: LibraryBig },
   { href: "/calendar", label: "Kalendář", icon: CalendarDays },
-  { href: "/audit-log", label: "Audit log", icon: ScrollText },
+  { href: "/audit-log", label: "Audit log", icon: ScrollText, adminOnly: true },
+  { href: "/settings/organization", label: "Kancelář", icon: Briefcase, adminOnly: true },
   { href: "/settings", label: "Nastavení", icon: Settings },
 ];
 
@@ -71,9 +73,11 @@ export function AppSidebar({
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  // showAuditLog === canViewAllLegalData (ADMIN/PARTNER); same gate covers the
+  // org-management link, so adminOnly items hide for everyone else.
   const visibleNavItems = showAuditLog
     ? navItems
-    : navItems.filter((item) => item.href !== "/audit-log");
+    : navItems.filter((item) => !item.adminOnly);
   const activeHref = getActiveHref(pathname, visibleNavItems);
 
   const accountFooter = (

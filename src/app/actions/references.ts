@@ -15,6 +15,7 @@ import {
   andWhere,
   assertCanArchiveRecords,
   assertCanEditRecord,
+  assertSameOrg,
   caseVisibilityWhere,
   projectVisibilityWhere,
 } from "@/lib/permissions";
@@ -50,6 +51,7 @@ export async function createReference(formData: FormData) {
 
   const reference = await prisma.reference.create({
     data: {
+      organizationId: currentUser.organizationId,
       title: requiredString(formData, "title"),
       projectId,
       caseId,
@@ -156,6 +158,7 @@ export async function archiveReference(formData: FormData) {
   const oldReference = await prisma.reference.findUniqueOrThrow({
     where: { id: referenceId },
   });
+  assertSameOrg(currentUser, oldReference);
   const reference = await prisma.reference.update({
     where: { id: referenceId },
     data: { archivedAt: new Date() },
@@ -184,6 +187,7 @@ export async function restoreReference(formData: FormData) {
   const oldReference = await prisma.reference.findUniqueOrThrow({
     where: { id: referenceId },
   });
+  assertSameOrg(currentUser, oldReference);
   const reference = await prisma.reference.update({
     where: { id: referenceId },
     data: { archivedAt: null },

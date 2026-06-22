@@ -200,6 +200,10 @@ export default async function SettingsPage() {
             <Button type="submit">Změnit heslo</Button>
           </div>
         </form>
+        <p className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          Dvoufaktorové ověření (2FA) zatím není k dispozici a bude doplněno
+          později. Zatím je účet chráněn e-mailem a heslem.
+        </p>
       </Section>
       {result.data.allowed ? (
         <>

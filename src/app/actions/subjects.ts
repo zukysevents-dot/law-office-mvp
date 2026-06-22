@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { Prisma } from "@/generated/prisma/client";
 import { FeeType, SubjectType } from "@/generated/prisma/enums";
 import { auditJson } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
@@ -13,8 +14,24 @@ import {
   optionalString,
   requiredString,
 } from "@/lib/form";
-import { assertCanArchiveRecords, assertCanEditRecord } from "@/lib/permissions";
+import {
+  assertCanArchiveRecords,
+  assertCanEditRecord,
+  assertSameOrg,
+} from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+
+// Map the per-org unique IČO violation to a readable Czech message instead of a
+// raw Prisma stack trace. Anything else rethrows unchanged.
+function rethrowDuplicateIco(error: unknown): never {
+  if (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === "P2002"
+  ) {
+    throw new Error("Subjekt s tímto IČO už ve vaší kanceláři existuje.");
+  }
+  throw error;
+}
 
 export async function createSubject(formData: FormData) {
   const prisma = getPrisma();
@@ -23,6 +40,7 @@ export async function createSubject(formData: FormData) {
 
   const subject = await prisma.subject.create({
     data: {
+      organizationId: currentUser.organizationId,
       type,
       name: requiredString(formData, "name"),
       ico: optionalString(formData, "ico"),
@@ -45,7 +63,7 @@ export async function createSubject(formData: FormData) {
       flatFee: optionalNumber(formData, "flatFee"),
       feeNote: optionalString(formData, "feeNote"),
     },
-  });
+  }).catch(rethrowDuplicateIco);
 
   await prisma.auditLog.create({
     data: {
@@ -102,7 +120,7 @@ export async function updateSubject(formData: FormData) {
       flatFee: optionalNumber(formData, "flatFee"),
       feeNote: optionalString(formData, "feeNote"),
     },
-  });
+  }).catch(rethrowDuplicateIco);
 
   await prisma.auditLog.create({
     data: {
@@ -128,6 +146,7 @@ export async function archiveSubject(formData: FormData) {
   const oldSubject = await prisma.subject.findUniqueOrThrow({
     where: { id: subjectId },
   });
+  assertSameOrg(currentUser, oldSubject);
   const subject = await prisma.subject.update({
     where: { id: subjectId },
     data: { archivedAt: new Date() },
@@ -156,6 +175,7 @@ export async function restoreSubject(formData: FormData) {
   const oldSubject = await prisma.subject.findUniqueOrThrow({
     where: { id: subjectId },
   });
+  assertSameOrg(currentUser, oldSubject);
   const subject = await prisma.subject.update({
     where: { id: subjectId },
     data: { archivedAt: null },

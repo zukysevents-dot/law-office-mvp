@@ -3,6 +3,8 @@ import {
   BillingStatus,
   CaseStatus,
   FeeType,
+  OrganizationMemberStatus,
+  OrganizationStatus,
   ProjectStatus,
   SubjectRole,
   SubjectType,
@@ -97,6 +99,21 @@ export const caseStatusLabels: Record<CaseStatus, string> = {
   ARCHIVED: "Archivovaný",
 };
 
+export const organizationStatusLabels: Record<OrganizationStatus, string> = {
+  ACTIVE: "Aktivní",
+  SUSPENDED: "Pozastavená",
+  ARCHIVED: "Archivovaná",
+};
+
+export const organizationMemberStatusLabels: Record<
+  OrganizationMemberStatus,
+  string
+> = {
+  PENDING: "Čeká na schválení",
+  ACTIVE: "Aktivní",
+  SUSPENDED: "Deaktivovaný",
+};
+
 export const legalAreaOptions = [
   "Civilní právo",
   "Obchodní právo",
@@ -110,8 +127,17 @@ export const legalAreaOptions = [
   "Jiné",
 ];
 
+// Roles assignable to org members (ADMIN is reserved/global, not assigned here).
+export const orgMemberRoleOptions: UserRole[] = [
+  UserRole.PARTNER,
+  UserRole.LAWYER,
+  UserRole.TRAINEE,
+  UserRole.INTERN,
+];
+
 export const options = {
   userRoles: Object.values(UserRole),
+  organizationStatuses: Object.values(OrganizationStatus),
   subjectTypes: Object.values(SubjectType),
   subjectRoles: Object.values(SubjectRole),
   feeTypes: Object.values(FeeType),
