@@ -182,7 +182,7 @@ model Subject {
   organizationId   String
   type             SubjectType @default(COMPANY)
   name             String
-  ico              String?     @unique
+  ico              String?
   dic              String?
   email            String?
   address          String?
@@ -210,6 +210,10 @@ model Subject {
   references     Reference[]
   workLogs       WorkLog[]
 
+  // IČO is unique PER organization, not globally — the same company can be a
+  // subject of more than one law office (multi-tenant). NULL ico is allowed
+  // and Postgres treats NULLs as distinct, so many no-IČO subjects are fine.
+  @@unique([organizationId, ico])
   @@index([organizationId])
   @@index([name])
   @@index([ico])

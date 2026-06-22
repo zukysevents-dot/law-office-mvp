@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { Prisma } from "@/generated/prisma/client";
 import { FeeType, SubjectType } from "@/generated/prisma/enums";
 import { auditJson } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
@@ -19,6 +20,18 @@ import {
   assertSameOrg,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+
+// Map the per-org unique IČO violation to a readable Czech message instead of a
+// raw Prisma stack trace. Anything else rethrows unchanged.
+function rethrowDuplicateIco(error: unknown): never {
+  if (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === "P2002"
+  ) {
+    throw new Error("Subjekt s tímto IČO už ve vaší kanceláři existuje.");
+  }
+  throw error;
+}
 
 export async function createSubject(formData: FormData) {
   const prisma = getPrisma();
@@ -50,7 +63,7 @@ export async function createSubject(formData: FormData) {
       flatFee: optionalNumber(formData, "flatFee"),
       feeNote: optionalString(formData, "feeNote"),
     },
-  });
+  }).catch(rethrowDuplicateIco);
 
   await prisma.auditLog.create({
     data: {
@@ -107,7 +120,7 @@ export async function updateSubject(formData: FormData) {
       flatFee: optionalNumber(formData, "flatFee"),
       feeNote: optionalString(formData, "feeNote"),
     },
-  });
+  }).catch(rethrowDuplicateIco);
 
   await prisma.auditLog.create({
     data: {

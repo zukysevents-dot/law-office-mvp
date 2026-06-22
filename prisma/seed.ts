@@ -286,7 +286,7 @@ async function main() {
   });
 
   const abc = await prisma.subject.upsert({
-    where: { ico: "12345678" },
+    where: { organizationId_ico: { organizationId: demoOrg.id, ico: "12345678" } },
     update: {
       name: "ABC s.r.o.",
       type: SubjectType.COMPANY,
@@ -312,7 +312,7 @@ async function main() {
   });
 
   const xyz = await prisma.subject.upsert({
-    where: { ico: "87654321" },
+    where: { organizationId_ico: { organizationId: demoOrg.id, ico: "87654321" } },
     update: {
       name: "XYZ s.r.o.",
       type: SubjectType.COMPANY,
