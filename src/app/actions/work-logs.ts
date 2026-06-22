@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { ApprovalStatus, BillingStatus } from "@/generated/prisma/enums";
+import { setArchived } from "@/lib/archive";
 import { auditJson } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
 import {
@@ -16,9 +17,7 @@ import {
 } from "@/lib/form";
 import {
   andWhere,
-  assertCanArchiveRecords,
   assertCanEditRecord,
-  assertSameOrg,
   caseVisibilityWhere,
   projectVisibilityWhere,
   taskVisibilityWhere,
@@ -220,60 +219,20 @@ export async function updateWorkLog(formData: FormData) {
   redirect("/work-logs");
 }
 
-export async function archiveWorkLog(formData: FormData) {
+async function setWorkLogArchived(formData: FormData, archived: boolean) {
   const prisma = getPrisma();
-  const currentUser = await getCurrentUser();
-  assertCanArchiveRecords(currentUser);
-  const workLogId = requiredString(formData, "id");
-  const oldWorkLog = await prisma.workLog.findUniqueOrThrow({
-    where: { id: workLogId },
+  const workLog = await setArchived(formData, "WorkLog", archived, {
+    find: (id) => prisma.workLog.findUniqueOrThrow({ where: { id } }),
+    update: (id, data) => prisma.workLog.update({ where: { id }, data }),
   });
-  assertSameOrg(currentUser, oldWorkLog);
-  const workLog = await prisma.workLog.update({
-    where: { id: workLogId },
-    data: { archivedAt: new Date() },
-  });
-
-  await prisma.auditLog.create({
-    data: {
-      entityType: "WorkLog",
-      entityId: workLog.id,
-      action: "ARCHIVE",
-      changedById: currentUser.id,
-      oldValue: auditJson(oldWorkLog),
-      newValue: auditJson(workLog),
-    },
-  });
-
   revalidatePath("/work-logs");
   revalidatePath(`/work-logs/${workLog.id}/edit`);
 }
 
+export async function archiveWorkLog(formData: FormData) {
+  await setWorkLogArchived(formData, true);
+}
+
 export async function restoreWorkLog(formData: FormData) {
-  const prisma = getPrisma();
-  const currentUser = await getCurrentUser();
-  assertCanArchiveRecords(currentUser);
-  const workLogId = requiredString(formData, "id");
-  const oldWorkLog = await prisma.workLog.findUniqueOrThrow({
-    where: { id: workLogId },
-  });
-  assertSameOrg(currentUser, oldWorkLog);
-  const workLog = await prisma.workLog.update({
-    where: { id: workLogId },
-    data: { archivedAt: null },
-  });
-
-  await prisma.auditLog.create({
-    data: {
-      entityType: "WorkLog",
-      entityId: workLog.id,
-      action: "RESTORE",
-      changedById: currentUser.id,
-      oldValue: auditJson(oldWorkLog),
-      newValue: auditJson(workLog),
-    },
-  });
-
-  revalidatePath("/work-logs");
-  revalidatePath(`/work-logs/${workLog.id}/edit`);
+  await setWorkLogArchived(formData, false);
 }

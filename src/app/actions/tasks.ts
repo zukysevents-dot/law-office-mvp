@@ -8,6 +8,7 @@ import {
   TaskPriority,
   TaskStatus,
 } from "@/generated/prisma/enums";
+import { setArchived } from "@/lib/archive";
 import { auditJson } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
 import {
@@ -22,9 +23,7 @@ import {
 } from "@/lib/notifications/notification-service";
 import {
   andWhere,
-  assertCanArchiveRecords,
   assertCanEditRecord,
-  assertSameOrg,
   caseVisibilityWhere,
   projectVisibilityWhere,
 } from "@/lib/permissions";
@@ -303,62 +302,24 @@ export async function updateTaskStatus(formData: FormData) {
   });
 }
 
-export async function archiveTask(formData: FormData) {
+async function setTaskArchived(formData: FormData, archived: boolean) {
   const prisma = getPrisma();
-  const currentUser = await getCurrentUser();
-  assertCanArchiveRecords(currentUser);
-  const taskId = requiredString(formData, "id");
-  const oldTask = await prisma.task.findUniqueOrThrow({ where: { id: taskId } });
-  assertSameOrg(currentUser, oldTask);
-  const task = await prisma.task.update({
-    where: { id: taskId },
-    data: { archivedAt: new Date() },
+  const task = await setArchived(formData, "Task", archived, {
+    find: (id) => prisma.task.findUniqueOrThrow({ where: { id } }),
+    update: (id, data) => prisma.task.update({ where: { id }, data }),
   });
-
-  await prisma.auditLog.create({
-    data: {
-      entityType: "Task",
-      entityId: task.id,
-      action: "ARCHIVE",
-      changedById: currentUser.id,
-      oldValue: auditJson(oldTask),
-      newValue: auditJson(task),
-    },
-  });
-
   revalidatePath("/tasks");
   revalidatePath("/tasks/archive");
   revalidatePath("/tasks/my");
   revalidatePath(`/tasks/${task.id}`);
 }
 
+export async function archiveTask(formData: FormData) {
+  await setTaskArchived(formData, true);
+}
+
 export async function restoreTask(formData: FormData) {
-  const prisma = getPrisma();
-  const currentUser = await getCurrentUser();
-  assertCanArchiveRecords(currentUser);
-  const taskId = requiredString(formData, "id");
-  const oldTask = await prisma.task.findUniqueOrThrow({ where: { id: taskId } });
-  assertSameOrg(currentUser, oldTask);
-  const task = await prisma.task.update({
-    where: { id: taskId },
-    data: { archivedAt: null },
-  });
-
-  await prisma.auditLog.create({
-    data: {
-      entityType: "Task",
-      entityId: task.id,
-      action: "RESTORE",
-      changedById: currentUser.id,
-      oldValue: auditJson(oldTask),
-      newValue: auditJson(task),
-    },
-  });
-
-  revalidatePath("/tasks");
-  revalidatePath("/tasks/archive");
-  revalidatePath("/tasks/my");
-  revalidatePath(`/tasks/${task.id}`);
+  await setTaskArchived(formData, false);
 }
 
 export async function addTaskComment(formData: FormData) {

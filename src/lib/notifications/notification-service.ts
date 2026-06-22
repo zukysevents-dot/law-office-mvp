@@ -57,10 +57,6 @@ const defaultPreference: NotificationPreferenceShape = {
   filedFollowupDays: DEFAULT_FILED_FOLLOWUP_DAYS,
 };
 
-function notificationPreferenceData() {
-  return defaultPreference;
-}
-
 function uniqueRecipients(
   ids: Array<string | null | undefined>,
   actorUserId?: string | null,
@@ -215,7 +211,7 @@ function lockCutoff(now: Date) {
 export function defaultNotificationPreferenceData(userId: string) {
   return {
     userId,
-    ...notificationPreferenceData(),
+    ...defaultPreference,
   };
 }
 
