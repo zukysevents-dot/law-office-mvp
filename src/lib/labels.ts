@@ -10,6 +10,7 @@ import {
   OrganizationStatus,
   PaymentMethod,
   ProjectStatus,
+  ReminderLevel,
   SubjectRole,
   SubjectType,
   SubscriptionStatus,
@@ -39,6 +40,12 @@ export const paymentMethodLabels: Record<PaymentMethod, string> = {
   CASH: "Hotovost",
   CARD: "Karta",
   OTHER: "Jiné",
+};
+
+export const reminderLevelLabels: Record<ReminderLevel, string> = {
+  FIRST: "Upozornění",
+  SECOND: "Upomínka",
+  THIRD: "Předžalobní výzva",
 };
 
 export const moduleKeyLabels: Record<ModuleKey, string> = {

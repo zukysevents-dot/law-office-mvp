@@ -1,5 +1,5 @@
 import type { Prisma } from "@/generated/prisma/client";
-import { VatMode } from "@/generated/prisma/enums";
+import { InvoiceStatus, VatMode } from "@/generated/prisma/enums";
 
 // CZ standard VAT rate used for auto-generated invoice lines.
 export const DEFAULT_VAT_RATE = 21;
@@ -23,6 +23,7 @@ export const invoiceDetailInclude = {
   case: { select: { id: true, name: true, fileNumber: true } },
   lines: { orderBy: { position: "asc" } },
   payments: { orderBy: { paidAt: "desc" } },
+  reminders: { orderBy: { sentAt: "desc" } },
   createdBy: { select: { name: true } },
   issuedBy: { select: { name: true } },
 } satisfies Prisma.InvoiceInclude;
@@ -56,4 +57,13 @@ export function formatInvoiceNumber(
   seq: number,
 ): string {
   return `${prefix}${year}${String(seq).padStart(4, "0")}`;
+}
+
+// Invoice status after recording a payment: fully covered → PAID, otherwise
+// PARTIALLY_PAID. (recordPayment only ever adds a positive amount.)
+export function resolvePaidStatus(
+  totalCzk: number,
+  paidCzk: number,
+): InvoiceStatus {
+  return paidCzk >= totalCzk ? InvoiceStatus.PAID : InvoiceStatus.PARTIALLY_PAID;
 }

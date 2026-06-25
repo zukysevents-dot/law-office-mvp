@@ -5,18 +5,25 @@ import {
   deleteDraftInvoice,
   issueInvoice,
 } from "@/app/actions/invoices";
-import { Field, TextArea, TextInput } from "@/components/form-field";
+import { recordPayment } from "@/app/actions/payments";
+import { markInvoiceSent, sendReminder } from "@/app/actions/reminders";
+import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
 import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
-import { ModuleKey } from "@/generated/prisma/enums";
+import { ModuleKey, PaymentMethod, ReminderLevel } from "@/generated/prisma/enums";
 import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import { assertModuleEnabled } from "@/lib/entitlements";
 import { formatCaseLabel, formatDate, formatHours, formatMoney } from "@/lib/format";
-import { invoiceStatusLabels, vatModeLabels } from "@/lib/labels";
+import {
+  invoiceStatusLabels,
+  paymentMethodLabels,
+  reminderLevelLabels,
+  vatModeLabels,
+} from "@/lib/labels";
 import {
   invoiceDetailInclude,
   type InvoiceDetail,
@@ -54,6 +61,10 @@ export default async function InvoiceDetailPage({
   const invoice = result.data;
   const isDraft = invoice?.status === "DRAFT";
   const isCancelled = invoice?.status === "CANCELLED";
+  const paidTotal = invoice
+    ? invoice.payments.reduce((sum, p) => sum + Number(p.amountCzk), 0)
+    : 0;
+  const remaining = invoice ? Number(invoice.totalCzk) - paidTotal : 0;
 
   return (
     <>
@@ -230,7 +241,166 @@ export default async function InvoiceDetailPage({
           ) : null}
 
           {!isDraft && !isCancelled ? (
-            <Section title="Storno faktury">
+            <>
+              {invoice.status === "ISSUED" ? (
+                <Section title="Odeslání klientovi">
+                  <form action={markInvoiceSent}>
+                    <input type="hidden" name="invoiceId" value={invoice.id} />
+                    <Button type="submit" variant="secondary">
+                      Označit jako odeslanou
+                    </Button>
+                  </form>
+                </Section>
+              ) : null}
+
+              <Section title="Úhrady">
+                <dl className="mb-4 grid gap-4 sm:grid-cols-3">
+                  <div>
+                    <dt className="text-xs font-medium text-stone-500">
+                      Uhrazeno
+                    </dt>
+                    <dd className="mt-1 text-sm font-medium text-[#072924]">
+                      {formatMoney(paidTotal)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-medium text-stone-500">
+                      Zbývá uhradit
+                    </dt>
+                    <dd className="mt-1 text-sm font-medium text-[#072924]">
+                      {formatMoney(Math.max(0, remaining))}
+                    </dd>
+                  </div>
+                </dl>
+                {invoice.payments.length > 0 ? (
+                  <div className="table-scroll">
+                    <table className="w-max min-w-full">
+                      <thead>
+                        <tr>
+                          <th>Datum</th>
+                          <th>Metoda</th>
+                          <th className="text-right">Částka</th>
+                          <th>Poznámka</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {invoice.payments.map((payment) => (
+                          <tr key={payment.id}>
+                            <td>{formatDate(payment.paidAt)}</td>
+                            <td>{paymentMethodLabels[payment.method]}</td>
+                            <td className="text-right">
+                              {formatMoney(payment.amountCzk)}
+                            </td>
+                            <td>{payment.note ?? "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-sm text-stone-600">
+                    Zatím bez evidované úhrady.
+                  </p>
+                )}
+                {invoice.status !== "PAID" ? (
+                  <form
+                    action={recordPayment}
+                    className="mt-4 grid gap-3 sm:max-w-lg"
+                  >
+                    <input type="hidden" name="invoiceId" value={invoice.id} />
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Field label="Částka (Kč)">
+                      <TextInput
+                        name="amountCzk"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        defaultValue={remaining > 0 ? remaining.toFixed(2) : ""}
+                        required
+                      />
+                    </Field>
+                    <Field label="Datum úhrady">
+                      <TextInput
+                        name="paidAt"
+                        type="date"
+                        defaultValue={todayInputValue()}
+                      />
+                    </Field>
+                    <Field label="Metoda">
+                      <SelectInput name="method" defaultValue="BANK_TRANSFER">
+                        {Object.values(PaymentMethod).map((method) => (
+                          <option key={method} value={method}>
+                            {paymentMethodLabels[method]}
+                          </option>
+                        ))}
+                      </SelectInput>
+                    </Field>
+                    <Field label="Poznámka (volitelné)">
+                      <TextInput name="note" />
+                    </Field>
+                  </div>
+                    <div>
+                      <Button type="submit">Zaznamenat úhradu</Button>
+                    </div>
+                  </form>
+                ) : null}
+              </Section>
+
+              {invoice.status !== "PAID" ? (
+                <Section title="Upomínky">
+                  {invoice.reminders.length > 0 ? (
+                    <div className="table-scroll">
+                      <table className="w-max min-w-full">
+                        <thead>
+                          <tr>
+                            <th>Datum</th>
+                            <th>Úroveň</th>
+                            <th>Poznámka</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {invoice.reminders.map((reminder) => (
+                            <tr key={reminder.id}>
+                              <td>{formatDate(reminder.sentAt)}</td>
+                              <td>{reminderLevelLabels[reminder.level]}</td>
+                              <td>{reminder.note ?? "—"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-stone-600">Zatím bez upomínky.</p>
+                  )}
+                  <form
+                    action={sendReminder}
+                    className="mt-4 grid gap-3 sm:max-w-lg"
+                  >
+                    <input type="hidden" name="invoiceId" value={invoice.id} />
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Field label="Úroveň">
+                        <SelectInput name="level" defaultValue="FIRST">
+                          {Object.values(ReminderLevel).map((level) => (
+                            <option key={level} value={level}>
+                              {reminderLevelLabels[level]}
+                            </option>
+                          ))}
+                        </SelectInput>
+                      </Field>
+                      <Field label="Poznámka (volitelné)">
+                        <TextInput name="note" />
+                      </Field>
+                    </div>
+                    <div>
+                      <Button type="submit" variant="secondary">
+                        Zaznamenat upomínku
+                      </Button>
+                    </div>
+                  </form>
+                </Section>
+              ) : null}
+
+              <Section title="Storno faktury">
               <form action={cancelInvoice} className="grid max-w-md gap-3">
                 <input type="hidden" name="invoiceId" value={invoice.id} />
                 <Field label="Důvod storna (volitelné)">
@@ -242,7 +412,8 @@ export default async function InvoiceDetailPage({
                   </Button>
                 </div>
               </form>
-            </Section>
+              </Section>
+            </>
           ) : null}
 
           {isCancelled ? (

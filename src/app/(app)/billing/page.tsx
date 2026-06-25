@@ -162,6 +162,9 @@ export default async function BillingPage({ searchParams }: BillingProps) {
             <ButtonLink href="/billing/approvals" variant="secondary">
               Ke schválení
             </ButtonLink>
+            <ButtonLink href="/billing/retainers" variant="secondary">
+              Paušály
+            </ButtonLink>
             <ButtonLink href="/billing/invoices">Faktury</ButtonLink>
           </div>
         }

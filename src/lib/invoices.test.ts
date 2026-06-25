@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { VatMode } from "@/generated/prisma/enums";
+import { InvoiceStatus, VatMode } from "@/generated/prisma/enums";
 
-import { formatInvoiceNumber, isDraft, vatModeForProfile } from "./invoices";
+import {
+  formatInvoiceNumber,
+  isDraft,
+  resolvePaidStatus,
+  vatModeForProfile,
+} from "./invoices";
 
 // --- formatInvoiceNumber -----------------------------------------------------
 
@@ -53,4 +58,26 @@ test("isDraft: later statuses and unknown values are not drafts", () => {
   assert.equal(isDraft("PAID"), false);
   assert.equal(isDraft("CANCELLED"), false);
   assert.equal(isDraft(""), false);
+});
+
+// --- resolvePaidStatus -------------------------------------------------------
+
+test("resolvePaidStatus: partial payment stays PARTIALLY_PAID", () => {
+  // 5000 paid out of 24200 owed — invoice is not yet covered.
+  assert.equal(resolvePaidStatus(24200, 5000), InvoiceStatus.PARTIALLY_PAID);
+});
+
+test("resolvePaidStatus: exact full amount flips to PAID (boundary)", () => {
+  // paidCzk === totalCzk must count as fully paid (>= boundary).
+  assert.equal(resolvePaidStatus(24200, 24200), InvoiceStatus.PAID);
+});
+
+test("resolvePaidStatus: overpayment is still PAID", () => {
+  // Overpayment (25000 > 24200) must not regress to PARTIALLY_PAID.
+  assert.equal(resolvePaidStatus(24200, 25000), InvoiceStatus.PAID);
+});
+
+test("resolvePaidStatus: tiny partial payment is PARTIALLY_PAID", () => {
+  // Smallest meaningful partial payment must not be rounded up to PAID.
+  assert.equal(resolvePaidStatus(100, 0.01), InvoiceStatus.PARTIALLY_PAID);
 });
