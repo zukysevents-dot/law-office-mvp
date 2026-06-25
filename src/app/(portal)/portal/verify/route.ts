@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { ModuleKey, PortalAccessStatus } from "@/generated/prisma/enums";
 import { auditJson } from "@/lib/audit";
 import { isModuleEnabled } from "@/lib/entitlements";
+import { parseClientIp } from "@/lib/portal/portal-rate-limit";
 import {
   PORTAL_SESSION_COOKIE,
   signPortalSession,
@@ -25,6 +26,10 @@ export async function GET(request: Request) {
 
   const prisma = getPrisma();
   const tokenHash = hashPortalToken(token);
+  const ip = parseClientIp(
+    request.headers.get("x-forwarded-for"),
+    request.headers.get("x-real-ip"),
+  );
 
   let sessionId: string | null = null;
 
@@ -71,6 +76,7 @@ export async function GET(request: Request) {
         data: {
           portalAccessId: row.portalAccessId,
           organizationId: row.organizationId,
+          ipAddress: ip,
           expiresAt: new Date(Date.now() + PORTAL_SESSION_TTL_SECONDS * 1000),
         },
         select: { id: true },
