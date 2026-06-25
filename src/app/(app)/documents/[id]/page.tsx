@@ -7,6 +7,7 @@ import {
   restoreDocument,
   updateDocument,
 } from "@/app/actions/documents";
+import { shareDocument } from "@/app/actions/portal";
 import { ArchiveActionForm } from "@/components/archive-action-form";
 import { ArchiveNotice } from "@/components/archive-notice";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
@@ -20,12 +21,13 @@ import type { Prisma } from "@/generated/prisma/client";
 import { DocumentKind, ModuleKey } from "@/generated/prisma/enums";
 import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
-import { assertModuleEnabled } from "@/lib/entitlements";
+import { assertModuleEnabled, isModuleEnabled } from "@/lib/entitlements";
 import { formatDateTime } from "@/lib/format";
 import { documentKindLabels } from "@/lib/labels";
 import {
   andWhere,
   canManageDocuments,
+  canManagePortal,
   canViewAllLegalData,
   documentVisibilityWhere,
 } from "@/lib/permissions";
@@ -45,13 +47,21 @@ const detailInclude = {
 
 type Detail = Prisma.DocumentGetPayload<{ include: typeof detailInclude }>;
 
+type PortalTarget = { id: string; subject: { name: string } };
+
 type Data = {
   document: Detail | null;
   canManage: boolean;
   canArchive: boolean;
+  portalTargets: PortalTarget[];
 };
 
-const emptyData: Data = { document: null, canManage: false, canArchive: false };
+const emptyData: Data = {
+  document: null,
+  canManage: false,
+  canArchive: false,
+  portalTargets: [],
+};
 
 export default async function DocumentDetailPage({
   params,
@@ -64,15 +74,35 @@ export default async function DocumentDetailPage({
     const currentUser = await getCurrentUser();
     await assertModuleEnabled(currentUser, ModuleKey.DOCUMENTS);
 
-    const document = await getPrisma().document.findFirst({
+    const prisma = getPrisma();
+    const document = await prisma.document.findFirst({
       where: andWhere({ id }, documentVisibilityWhere(currentUser)),
       include: detailInclude,
     });
+
+    const canShare =
+      document != null &&
+      canManagePortal(currentUser) &&
+      (await isModuleEnabled(
+        currentUser.organizationId,
+        ModuleKey.CLIENT_PORTAL,
+      ));
+    const portalTargets = canShare
+      ? await prisma.portalAccess.findMany({
+          where: {
+            organizationId: currentUser.organizationId ?? undefined,
+            status: "ACTIVE",
+          },
+          orderBy: { subject: { name: "asc" } },
+          select: { id: true, subject: { select: { name: true } } },
+        })
+      : [];
 
     return {
       document,
       canManage: canManageDocuments(currentUser),
       canArchive: canViewAllLegalData(currentUser),
+      portalTargets,
     };
   });
 
@@ -80,7 +110,7 @@ export default async function DocumentDetailPage({
     notFound();
   }
 
-  const { document, canManage, canArchive } = result.data;
+  const { document, canManage, canArchive, portalTargets } = result.data;
 
   return (
     <>
@@ -246,6 +276,30 @@ export default async function DocumentDetailPage({
                 </form>
               </Section>
             </>
+          ) : null}
+
+          {portalTargets.length > 0 && !document.archivedAt ? (
+            <Section title="Sdílet s klientem">
+              <form action={shareDocument} className="flex flex-wrap items-end gap-3">
+                <input type="hidden" name="documentId" value={document.id} />
+                <Field label="Klient (portálový přístup)">
+                  <SelectInput name="portalAccessId" defaultValue={portalTargets[0].id}>
+                    {portalTargets.map((target) => (
+                      <option key={target.id} value={target.id}>
+                        {target.subject.name}
+                      </option>
+                    ))}
+                  </SelectInput>
+                </Field>
+                <Button type="submit" variant="secondary">
+                  Sdílet dokument
+                </Button>
+              </form>
+              <p className="mt-2 text-xs text-stone-400">
+                Klient uvidí jen metadata dokumentu (název, typ, verze), ne odkaz
+                do SharePointu.
+              </p>
+            </Section>
           ) : null}
 
           {canArchive ? (

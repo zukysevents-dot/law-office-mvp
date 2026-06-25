@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { archiveCase, restoreCase } from "@/app/actions/cases";
+import { shareCase } from "@/app/actions/portal";
 import { addCaseSubjectRelation } from "@/app/actions/subject-relations";
 import { ArchiveActionForm } from "@/components/archive-action-form";
 import { ArchiveNotice } from "@/components/archive-notice";
@@ -32,6 +33,7 @@ import {
   andWhere,
   canManageDeadlines,
   canManageDocuments,
+  canManagePortal,
   canViewAllLegalData,
   canEditRecord,
   caseVisibilityWhere,
@@ -194,6 +196,21 @@ async function loadCase(id: string) {
       ])
     : [[], []];
 
+  const canShareToPortal =
+    legalCase != null &&
+    canManagePortal(currentUser) &&
+    (await isModuleEnabled(currentUser.organizationId, ModuleKey.CLIENT_PORTAL));
+  const portalTargets = canShareToPortal
+    ? await prisma.portalAccess.findMany({
+        where: {
+          organizationId: currentUser.organizationId ?? undefined,
+          status: "ACTIVE",
+        },
+        orderBy: { subject: { name: "asc" } },
+        select: { id: true, subject: { select: { name: true } } },
+      })
+    : [];
+
   return {
     legalCase,
     subjects,
@@ -208,6 +225,7 @@ async function loadCase(id: string) {
     documents,
     templates,
     canManageDocuments: canManageDocuments(currentUser),
+    portalTargets,
   };
 }
 
@@ -227,6 +245,7 @@ const emptyCaseDetail: CaseDetailData = {
   documents: [],
   templates: [],
   canManageDocuments: false,
+  portalTargets: [],
 };
 
 export default async function CaseDetailPage({
@@ -258,6 +277,7 @@ export default async function CaseDetailPage({
     documents,
     templates,
     canManageDocuments: canManageDocumentsFlag,
+    portalTargets,
   } = result.data;
 
   return (
@@ -529,6 +549,31 @@ export default async function CaseDetailPage({
               templates={templates}
               canManage={canManageDocumentsFlag}
             />
+          ) : null}
+          {portalTargets.length > 0 ? (
+            <Section title="Sdílet spis s klientem">
+              <form action={shareCase} className="flex flex-wrap items-end gap-3">
+                <input type="hidden" name="caseId" value={legalCase.id} />
+                <Field label="Klient (portálový přístup)">
+                  <SelectInput
+                    name="portalAccessId"
+                    defaultValue={portalTargets[0].id}
+                  >
+                    {portalTargets.map((target) => (
+                      <option key={target.id} value={target.id}>
+                        {target.subject.name}
+                      </option>
+                    ))}
+                  </SelectInput>
+                </Field>
+                <Button type="submit" variant="secondary">
+                  Sdílet spis
+                </Button>
+              </form>
+              <p className="mt-2 text-xs text-stone-400">
+                Klient uvidí jen stav a spisovou značku, ne interní poznámky.
+              </p>
+            </Section>
           ) : null}
         </>
       ) : (

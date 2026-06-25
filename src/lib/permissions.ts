@@ -580,6 +580,19 @@ export function documentTemplateVisibilityWhere(
   return org;
 }
 
+// Who may grant/revoke client portal access and share records with clients:
+// ADMIN, PARTNER, LAWYER (sharing confidential data with an external party is a
+// case-handling decision). TRAINEE/INTERN are excluded.
+export function canManagePortal(user: PermissionInput): boolean {
+  return canViewAllLegalData(user) || roleOf(user) === UserRole.LAWYER;
+}
+
+export function assertCanManagePortal(user: PermissionInput) {
+  if (!canManagePortal(user)) {
+    throw new Error("Nemáte oprávnění spravovat klientský portál.");
+  }
+}
+
 // Visibility for court hearings (F4) — same case-derived rules as deadlines.
 export function courtHearingVisibilityWhere(
   user: PermissionInput,

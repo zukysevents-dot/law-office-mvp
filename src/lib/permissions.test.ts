@@ -7,11 +7,13 @@ import {
   andWhere,
   assertCanManageAml,
   assertCanManageDeadlines,
+  assertCanManagePortal,
   canEditRecord,
   canManageAml,
   canManageDeadlines,
   canManageDocumentTemplates,
   canManageDocuments,
+  canManagePortal,
   canViewAllLegalData,
   canViewRecord,
   courtHearingVisibilityWhere,
@@ -425,4 +427,40 @@ test("canEditRecord: Task edit needs DIRECT access, not mere responsibility", ()
 
 test("canEditRecord: null record never editable", () => {
   assert.equal(canEditRecord(admin, "Task", null), false);
+});
+
+// --- canManagePortal / assertCanManagePortal (F6 CLIENT_PORTAL) ---
+// Granting an external party access to confidential case data is a case-handling
+// decision: ADMIN/PARTNER/LAWYER may do it, TRAINEE/INTERN may not. The gate is
+// role-only (no org dependency), so a missing/garbage role must fail closed —
+// otherwise a malformed caller could share privileged client data.
+test("canManagePortal: ADMIN/PARTNER/LAWYER true, TRAINEE/INTERN false", () => {
+  assert.equal(canManagePortal(admin), true);
+  assert.equal(canManagePortal(partner), true);
+  assert.equal(canManagePortal(lawyer), true);
+  assert.equal(canManagePortal(trainee), false);
+  assert.equal(canManagePortal(intern), false);
+});
+
+test("canManagePortal: no role / no org / null / undefined → false (fail closed)", () => {
+  // Caller with an id but no role must not be able to expose data to clients.
+  assert.equal(canManagePortal({ id: "u-x", role: undefined as never }), false);
+  // Role-less even when org-less: portal management depends on the role only.
+  assert.equal(canManagePortal({ id: "u-y", role: undefined as never }), false);
+  assert.equal(canManagePortal(null), false);
+  assert.equal(canManagePortal(undefined), false);
+});
+
+test("assertCanManagePortal: ADMIN/PARTNER/LAWYER do NOT throw", () => {
+  assert.doesNotThrow(() => assertCanManagePortal(admin));
+  assert.doesNotThrow(() => assertCanManagePortal(partner));
+  assert.doesNotThrow(() => assertCanManagePortal(lawyer));
+});
+
+test("assertCanManagePortal: TRAINEE/INTERN/null/undefined throw (data-exposure gate)", () => {
+  const expected = { message: "Nemáte oprávnění spravovat klientský portál." };
+  assert.throws(() => assertCanManagePortal(trainee), expected);
+  assert.throws(() => assertCanManagePortal(intern), expected);
+  assert.throws(() => assertCanManagePortal(null), expected);
+  assert.throws(() => assertCanManagePortal(undefined), expected);
 });

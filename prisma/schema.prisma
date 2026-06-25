@@ -90,6 +90,17 @@ enum DocumentKind {
   OTHER
 }
 
+// Klientský portál (F6 / CLIENT_PORTAL).
+enum PortalAccessStatus {
+  ACTIVE  // přístup platný, lze žádat o magic-link
+  REVOKED // ručně zrušený — žádné nové linky, existující session neplatné
+}
+
+enum PortalShareType {
+  DOCUMENT
+  CASE
+}
+
 enum BillingStatus {
   BILLABLE
   NEEDS_APPROVAL
@@ -309,6 +320,8 @@ model User {
   createdDocuments         Document[]         @relation("DocumentCreatedBy")
   uploadedDocumentVersions DocumentVersion[]  @relation("DocumentVersionUploadedBy")
   createdDocumentTemplates DocumentTemplate[] @relation("DocumentTemplateCreatedBy")
+  createdPortalAccesses    PortalAccess[]     @relation("PortalAccessCreatedBy")
+  sharedPortalShares       PortalShare[]      @relation("PortalShareSharedBy")
 
   @@map("users")
 }
@@ -354,6 +367,7 @@ model Subject {
   amlIdentifications AmlIdentification[]
   amlAssessment  AmlAssessment?
   documents      Document[]
+  portalAccess   PortalAccess?
 
   // IČO is unique PER organization, not globally — the same company can be a
   // subject of more than one law office (multi-tenant). NULL ico is allowed
@@ -469,6 +483,7 @@ model Case {
   deadlines        Deadline[]
   courtHearings    CourtHearing[]
   documents        Document[]
+  portalShares     PortalShare[]
 
   @@unique([projectId, fileNumber])
   @@index([organizationId])
@@ -790,6 +805,10 @@ model Organization {
   documents            Document[]
   documentVersions     DocumentVersion[]
   documentTemplates    DocumentTemplate[]
+  portalAccesses       PortalAccess[]
+  portalLoginTokens    PortalLoginToken[]
+  portalSessions       PortalSession[]
+  portalShares         PortalShare[]
 
   @@index([status])
   @@map("organizations")
@@ -1355,6 +1374,7 @@ model Document {
   sourceTemplate DocumentTemplate? @relation("DocumentSourceTemplate", fields: [sourceTemplateId], references: [id], onDelete: SetNull)
   createdBy      User?             @relation("DocumentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   versions       DocumentVersion[] @relation("DocumentVersions")
+  portalShares   PortalShare[]
 
   @@index([organizationId])
   @@index([caseId])
@@ -1415,4 +1435,103 @@ model DocumentTemplate {
   @@index([organizationId])
   @@index([kind])
   @@map("documentTemplates")
+}
+
+// --- Klientský portál models (F6 / CLIENT_PORTAL) ----------------------------
+
+// A client's portal identity (per Subject). email is the auth identity for magic
+// links. Org-scoped; access is granted/revoked by the firm. Whitelist sharing
+// lives in PortalShare — this row alone grants NO data visibility.
+model PortalAccess {
+  id             String             @id @default(cuid())
+  organizationId String
+  subjectId      String             @unique
+  email          String // normalized (lowercase); auth identity for magic links
+  status         PortalAccessStatus @default(ACTIVE)
+  createdById    String?
+  lastLoginAt    DateTime?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  revokedAt      DateTime?
+
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  subject      Subject            @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  createdBy    User?              @relation("PortalAccessCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  loginTokens  PortalLoginToken[]
+  sessions     PortalSession[]
+  shares       PortalShare[]
+
+  @@unique([organizationId, email])
+  @@index([organizationId])
+  @@index([email])
+  @@map("portalAccesses")
+}
+
+// Single-use, short-lived magic-link token. ONLY the HMAC hash is stored; the
+// plaintext lives only in the e-mailed URL. consumedAt enforces single use.
+model PortalLoginToken {
+  id             String    @id @default(cuid())
+  portalAccessId String
+  organizationId String
+  tokenHash      String    @unique // HMAC-SHA256(token) hex
+  expiresAt      DateTime
+  consumedAt     DateTime?
+  requestedIp    String?
+  createdAt      DateTime  @default(now())
+
+  portalAccess PortalAccess @relation(fields: [portalAccessId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([portalAccessId])
+  @@index([expiresAt])
+  @@map("portalLoginTokens")
+}
+
+// DB-tracked client session issued after a magic link is verified. The cookie
+// carries a signed reference to this row; deleting/revoking the row invalidates
+// the cookie (revocation that a stateless cookie alone can't give).
+model PortalSession {
+  id             String    @id @default(cuid())
+  portalAccessId String
+  organizationId String
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  lastSeenAt     DateTime?
+  ipAddress      String?
+  createdAt      DateTime  @default(now())
+
+  portalAccess PortalAccess @relation(fields: [portalAccessId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([portalAccessId])
+  @@index([expiresAt])
+  @@map("portalSessions")
+}
+
+// Whitelist: this client (portalAccess) may see this Document OR this Case.
+// Exactly one target (DB CHECK in migration). revokedAt = soft revoke (audit).
+model PortalShare {
+  id             String          @id @default(cuid())
+  organizationId String
+  portalAccessId String
+  shareType      PortalShareType
+  documentId     String?
+  caseId         String?
+  sharedById     String?
+  sharedAt       DateTime        @default(now())
+  revokedAt      DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  portalAccess PortalAccess @relation(fields: [portalAccessId], references: [id], onDelete: Cascade)
+  document     Document?    @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  case         Case?        @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  sharedBy     User?        @relation("PortalShareSharedBy", fields: [sharedById], references: [id], onDelete: SetNull)
+
+  @@unique([portalAccessId, documentId])
+  @@unique([portalAccessId, caseId])
+  @@index([organizationId])
+  @@index([portalAccessId])
+  @@index([documentId])
+  @@index([caseId])
+  @@map("portalShares")
 }

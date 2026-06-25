@@ -354,7 +354,7 @@ async function main() {
     });
   }
 
-  // Demo org entitlements: BILLING live, DEADLINES + DOCUMENTS on trial, rest disabled.
+  // Demo org entitlements: BILLING live, DEADLINES + DOCUMENTS + CLIENT_PORTAL on trial, rest disabled.
   await prisma.organizationModule.upsert({
     where: {
       organizationId_moduleKey: {
@@ -409,6 +409,28 @@ async function main() {
     create: {
       organizationId: demoOrg.id,
       moduleKey: ModuleKey.DOCUMENTS,
+      status: ModuleStatus.TRIAL,
+      trialEndsAt: new Date("2026-12-31T00:00:00.000Z"),
+      enabledAt: new Date(),
+    },
+  });
+
+  await prisma.organizationModule.upsert({
+    where: {
+      organizationId_moduleKey: {
+        organizationId: demoOrg.id,
+        moduleKey: ModuleKey.CLIENT_PORTAL,
+      },
+    },
+    update: {
+      status: ModuleStatus.TRIAL,
+      trialEndsAt: new Date("2026-12-31T00:00:00.000Z"),
+      enabledAt: new Date(),
+      disabledAt: null,
+    },
+    create: {
+      organizationId: demoOrg.id,
+      moduleKey: ModuleKey.CLIENT_PORTAL,
       status: ModuleStatus.TRIAL,
       trialEndsAt: new Date("2026-12-31T00:00:00.000Z"),
       enabledAt: new Date(),
@@ -605,6 +627,32 @@ async function main() {
       });
     }
   }
+
+  // Demo client-portal access for ABC s.r.o. (F6) — idempotent per subject.
+  const portalAccess = await prisma.portalAccess.upsert({
+    where: { subjectId: abc.id },
+    update: {},
+    create: {
+      organizationId: demoOrg.id,
+      subjectId: abc.id,
+      email: "klient.abc@example.com",
+      createdById: partner.id,
+    },
+  });
+  // Share the demo case with the client (whitelist).
+  await prisma.portalShare.upsert({
+    where: {
+      portalAccessId_caseId: { portalAccessId: portalAccess.id, caseId: legalCase.id },
+    },
+    update: { revokedAt: null },
+    create: {
+      organizationId: demoOrg.id,
+      portalAccessId: portalAccess.id,
+      shareType: "CASE",
+      caseId: legalCase.id,
+      sharedById: partner.id,
+    },
+  });
 
   const existingTask = await prisma.task.findFirst({
     where: {

@@ -159,7 +159,9 @@ function emailHtml(body: string) {
     .replaceAll("\n", "<br />");
 }
 
-function getSmtpTransporter() {
+// Exported so the client-portal mailer (F6) reuses the same SMTP configuration
+// and transporter cache — one source of truth for e-mail delivery.
+export function getSmtpTransporter() {
   if (!envFlag(process.env.EMAIL_NOTIFICATIONS_ENABLED)) {
     return null;
   }
