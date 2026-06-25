@@ -10,9 +10,12 @@ test("signSession/verifySession: round-trips a userId", async () => {
 
 test("verifySession: rejects a tampered signature", async () => {
   const token = await signSession("user-123");
-  const last = token.at(-1);
-  const tampered = token.slice(0, -1) + (last === "A" ? "B" : "A");
-  assert.equal(await verifySession(tampered), null);
+  const [userId, exp, sig] = token.split(".");
+  // Flip the FIRST signature char — its 6 bits are all meaningful. (The LAST
+  // base64url char of a 32-byte HMAC carries 2 unused bits, so flipping it can
+  // decode to the same bytes and still verify — which made this test flaky.)
+  const flipped = (sig[0] === "A" ? "B" : "A") + sig.slice(1);
+  assert.equal(await verifySession(`${userId}.${exp}.${flipped}`), null);
 });
 
 test("verifySession: rejects a tampered payload (userId swap)", async () => {
