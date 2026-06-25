@@ -2,7 +2,9 @@ import type { NextRequest } from "next/server";
 
 import ExcelJS from "exceljs";
 
+import { ModuleKey } from "@/generated/prisma/enums";
 import { getCurrentUser } from "@/lib/auth";
+import { assertModuleEnabled } from "@/lib/entitlements";
 import {
   billingFilterWhere,
   billingWorkLogInclude,
@@ -131,6 +133,7 @@ async function buildXlsx(rows: BillingWorkLog[]) {
 export async function GET(request: NextRequest) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
+  await assertModuleEnabled(currentUser, ModuleKey.BILLING);
   const searchParams = request.nextUrl.searchParams;
   const format = searchParams.get("format") === "csv" ? "csv" : "xlsx";
   const filters = readBillingFilters((key) => searchParams.get(key) ?? "");

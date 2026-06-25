@@ -2,9 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 
-import { ApprovalStatus } from "@/generated/prisma/enums";
+import { ApprovalStatus, ModuleKey } from "@/generated/prisma/enums";
 import { auditJson } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
+import { assertModuleEnabled } from "@/lib/entitlements";
 import { requiredString } from "@/lib/form";
 import { assertCanApproveBilling, canViewRecord } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
@@ -16,6 +17,7 @@ async function setApprovalStatus(
 ) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
+  await assertModuleEnabled(currentUser, ModuleKey.BILLING);
   assertCanApproveBilling(currentUser);
 
   const workLogId = requiredString(formData, "id");

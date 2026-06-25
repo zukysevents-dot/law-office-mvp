@@ -11,12 +11,15 @@ export type BillingFilters = {
   dateTo: string;
 };
 
-// A work log is part of the billing basis ("k fakturaci") when it is
-// billable and has been approved. See Fáze 2H plan.
+// A work log is part of the billing basis ("k fakturaci") when it is billable,
+// approved, and not yet invoiced. invoicedAt is set inside issueInvoice and
+// cleared on cancel (F1), so already-invoiced logs drop out of the basis and
+// can't be billed twice.
 export const invoiceableWorkLogWhere: Prisma.WorkLogWhereInput = {
   archivedAt: null,
   billingStatus: BillingStatus.BILLABLE,
   approvalStatus: ApprovalStatus.APPROVED,
+  invoicedAt: null,
 };
 
 // Work logs that still await an approval decision ("ke schválení").

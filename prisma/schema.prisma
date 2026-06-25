@@ -175,6 +175,35 @@ enum PlanInterval {
   YEARLY
 }
 
+// --- BILLING (F1 / modul Fakturace) ------------------------------------------
+
+enum InvoiceStatus {
+  DRAFT // rozpracovaná, bez čísla, editovatelná, lze smazat
+  ISSUED // vystavená, má číslo, neměnná; zdrojové výkazy zamčené
+  SENT // odeslaná klientovi
+  PARTIALLY_PAID // částečně uhrazená
+  PAID // plně uhrazená
+  CANCELLED // stornovaná (číslo se nerecykluje, výkazy uvolněny)
+}
+
+enum VatMode {
+  PAYER // vystavitel je plátce DPH → DPH dle vatRate řádků
+  NON_PAYER // neplátce → DPH = 0 + text na faktuře
+}
+
+enum PaymentMethod {
+  BANK_TRANSFER
+  CASH
+  CARD
+  OTHER
+}
+
+enum ReminderLevel {
+  FIRST // upozornění
+  SECOND // upomínka
+  THIRD // předžalobní výzva
+}
+
 model User {
   id              String   @id @default(cuid())
   name            String
@@ -205,6 +234,10 @@ model User {
   notificationPreference  NotificationPreference?
   notifications           Notification[]      @relation("NotificationRecipient")
   memberships             OrganizationMember[]
+  createdInvoices         Invoice[]           @relation("InvoiceCreatedBy")
+  issuedInvoices          Invoice[]           @relation("InvoiceIssuedBy")
+  recordedPayments        Payment[]           @relation("PaymentRecordedBy")
+  sentReminders           Reminder[]          @relation("ReminderSentBy")
 
   @@map("users")
 }
@@ -230,17 +263,22 @@ model Subject {
   hourlyRate       Decimal?    @db.Decimal(12, 2)
   flatFee          Decimal?    @db.Decimal(12, 2)
   feeNote          String?
+  // Informative: is this customer a VAT payer? Shown on invoices (their DIČ),
+  // does NOT drive our VAT calc — that follows the issuer (billing profile).
+  vatPayer         Boolean     @default(false)
   aresVerifiedAt   DateTime?
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
   archivedAt       DateTime?
 
-  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   relations      SubjectRelation[]
   conflictChecks ConflictCheck[]
-  mainProjects   Project[]         @relation("ProjectMainSubject")
+  mainProjects   Project[]           @relation("ProjectMainSubject")
   references     Reference[]
   workLogs       WorkLog[]
+  invoices       Invoice[]
+  retainerAgreements RetainerAgreement[]
 
   // IČO is unique PER organization, not globally — the same company can be a
   // subject of more than one law office (multi-tenant). NULL ico is allowed
@@ -319,6 +357,8 @@ model Project {
   subjectRelations SubjectRelation[]
   references       Reference[]
   workLogs         WorkLog[]
+  invoices         Invoice[]
+  retainerAgreements RetainerAgreement[]
 
   @@index([organizationId])
   @@index([mainSubjectId])
@@ -349,6 +389,7 @@ model Case {
   subjectRelations SubjectRelation[]
   references       Reference[]
   workLogs         WorkLog[]
+  invoices         Invoice[]
 
   @@unique([projectId, fileNumber])
   @@index([organizationId])
@@ -450,6 +491,12 @@ model WorkLog {
   billingStatus  BillingStatus  @default(BILLABLE)
   approvalStatus ApprovalStatus @default(DRAFT)
   legalArea      String?
+  // Set inside the issueInvoice transaction so a work-log can't be invoiced
+  // twice; cleared again when that invoice is cancelled. Orthogonal to
+  // approvalStatus/billingStatus (a separate dimension). invoicedInvoiceId is
+  // informative (no FK) — its lifecycle is managed by the invoice actions.
+  invoicedAt     DateTime?
+  invoicedInvoiceId String?
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   archivedAt     DateTime?
@@ -460,6 +507,7 @@ model WorkLog {
   case    Case?    @relation(fields: [caseId], references: [id], onDelete: SetNull)
   task    Task?    @relation(fields: [taskId], references: [id], onDelete: SetNull)
   user    User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  invoiceLines InvoiceLine[]
 
   @@index([organizationId])
   @@index([subjectId])
@@ -469,6 +517,7 @@ model WorkLog {
   @@index([userId])
   @@index([workDate])
   @@index([archivedAt])
+  @@index([invoicedAt])
   @@map("workLogs")
 }
 
@@ -640,6 +689,12 @@ model Organization {
   tableViewPreferences TableViewPreference[]
   modules              OrganizationModule[]
   subscription         Subscription?
+  billingProfile       OrganizationBillingProfile?
+  invoiceSequences     InvoiceNumberSequence[]
+  invoices             Invoice[]
+  payments             Payment[]
+  reminders            Reminder[]
+  retainerAgreements   RetainerAgreement[]
 
   @@index([status])
   @@map("organizations")
@@ -756,4 +811,200 @@ model OrganizationMember {
   @@index([organizationId])
   @@index([userId])
   @@map("organizationMembers")
+}
+
+// --- BILLING models (F1 / Fakturace klientům) --------------------------------
+
+// Issuer (law office) billing identity. 1:1 with Organization. vatPayer is the
+// source of truth for a new invoice's vatMode. Domain part of BILLING, kept
+// separate from the F0 Organization entity.
+model OrganizationBillingProfile {
+  id             String   @id @default(cuid())
+  organizationId String   @unique
+  legalName      String
+  ico            String?
+  dic            String?
+  address        String?
+  bankAccount    String?
+  iban           String?
+  vatPayer       Boolean  @default(false)
+  defaultDueDays Int      @default(14)
+  invoiceNote    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("organizationBillingProfiles")
+}
+
+// Gap-free invoice number series, unique per org+year. lastNumber is bumped
+// under a FOR UPDATE row lock inside the issueInvoice transaction (B-3).
+model InvoiceNumberSequence {
+  id             String   @id @default(cuid())
+  organizationId String
+  year           Int
+  prefix         String   @default("")
+  lastNumber     Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, year])
+  @@index([organizationId])
+  @@map("invoiceNumberSequences")
+}
+
+model Invoice {
+  id             String        @id @default(cuid())
+  organizationId String
+  subjectId      String
+  projectId      String?
+  caseId         String?
+
+  // number/VS are NULL in DRAFT; assigned under the sequence lock at ISSUE.
+  number         String?
+  numberSeq      Int?
+  numberYear     Int?
+  variableSymbol String?
+
+  status         InvoiceStatus @default(DRAFT)
+  vatMode        VatMode       @default(PAYER)
+  currency       String        @default("CZK")
+
+  issueDate      DateTime?
+  dueDate        DateTime?
+  taxDate        DateTime?
+
+  subtotalCzk    Decimal       @default(0) @db.Decimal(12, 2)
+  vatCzk         Decimal       @default(0) @db.Decimal(12, 2)
+  totalCzk       Decimal       @default(0) @db.Decimal(12, 2)
+
+  note           String?
+  pdfUrl         String?
+
+  // Frozen copies of issuer/customer details at ISSUE time (document immutability).
+  supplierSnapshot Json?
+  customerSnapshot Json?
+
+  createdById    String?
+  issuedById     String?
+  cancelledAt    DateTime?
+  cancelReason   String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  subject      Subject      @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  project      Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  case         Case?        @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  createdBy    User?        @relation("InvoiceCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  issuedBy     User?        @relation("InvoiceIssuedBy", fields: [issuedById], references: [id], onDelete: SetNull)
+  lines        InvoiceLine[]
+  payments     Payment[]
+  reminders    Reminder[]
+
+  // Number unique per org; NULL drafts don't collide (Postgres NULLs distinct).
+  @@unique([organizationId, number])
+  @@index([organizationId])
+  @@index([subjectId])
+  @@index([projectId])
+  @@index([caseId])
+  @@index([status])
+  @@index([issueDate])
+  @@map("invoices")
+}
+
+model InvoiceLine {
+  id           String   @id @default(cuid())
+  invoiceId    String
+  description  String
+  quantity     Decimal  @default(1) @db.Decimal(8, 2)
+  unit         String   @default("h")
+  unitPriceCzk Decimal  @db.Decimal(12, 2)
+  vatRate      Decimal  @default(21) @db.Decimal(5, 2)
+  // Computed by the pure billing-calc function; stored for immutability + totals.
+  lineBaseCzk  Decimal  @default(0) @db.Decimal(12, 2)
+  lineVatCzk   Decimal  @default(0) @db.Decimal(12, 2)
+  amountCzk    Decimal  @default(0) @db.Decimal(12, 2)
+  workLogId    String?
+  position     Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  invoice Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  workLog WorkLog? @relation(fields: [workLogId], references: [id], onDelete: SetNull)
+
+  @@index([invoiceId])
+  @@index([workLogId])
+  @@map("invoiceLines")
+}
+
+model Payment {
+  id             String        @id @default(cuid())
+  organizationId String
+  invoiceId      String
+  paidAt         DateTime
+  amountCzk      Decimal       @db.Decimal(12, 2)
+  method         PaymentMethod @default(BANK_TRANSFER)
+  note           String?
+  recordedById   String?
+  createdAt      DateTime      @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  invoice      Invoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  recordedBy   User?        @relation("PaymentRecordedBy", fields: [recordedById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([invoiceId])
+  @@index([paidAt])
+  @@map("payments")
+}
+
+model Reminder {
+  id             String        @id @default(cuid())
+  organizationId String
+  invoiceId      String
+  level          ReminderLevel @default(FIRST)
+  sentAt         DateTime      @default(now())
+  channel        String        @default("EMAIL")
+  sentById       String?
+  note           String?
+  createdAt      DateTime      @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  invoice      Invoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  sentBy       User?        @relation("ReminderSentBy", fields: [sentById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([invoiceId])
+  @@map("reminders")
+}
+
+// Retainer: recurring monthly fee for a subject. Generates an Invoice (manual
+// trigger in MVP).
+model RetainerAgreement {
+  id             String   @id @default(cuid())
+  organizationId String
+  subjectId      String
+  projectId      String?
+  monthlyFeeCzk  Decimal  @db.Decimal(12, 2)
+  includedHours  Decimal? @db.Decimal(8, 2)
+  vatRate        Decimal  @default(21) @db.Decimal(5, 2)
+  startDate      DateTime
+  endDate        DateTime?
+  active         Boolean  @default(true)
+  note           String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  archivedAt     DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  subject      Subject      @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  project      Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([subjectId])
+  @@map("retainerAgreements")
 }

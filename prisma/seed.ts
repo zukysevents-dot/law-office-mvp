@@ -404,6 +404,25 @@ async function main() {
     },
   });
 
+  // Demo billing profile (issuer identity) so invoices can be issued out of the
+  // box. VAT payer by default.
+  const demoBillingProfile = {
+    legalName: "syndikat.legal s.r.o., advokátní kancelář",
+    ico: "12345678",
+    dic: "CZ12345678",
+    address: "Příkladná 1, 110 00 Praha 1",
+    bankAccount: "123456789/0100",
+    iban: "CZ6501000000000123456789",
+    vatPayer: true,
+    defaultDueDays: 14,
+    invoiceNote: "Děkujeme za důvěru.",
+  };
+  await prisma.organizationBillingProfile.upsert({
+    where: { organizationId: demoOrg.id },
+    update: demoBillingProfile,
+    create: { organizationId: demoOrg.id, ...demoBillingProfile },
+  });
+
   const abc = await prisma.subject.upsert({
     where: { organizationId_ico: { organizationId: demoOrg.id, ico: "12345678" } },
     update: {

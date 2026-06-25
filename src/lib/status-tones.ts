@@ -2,10 +2,24 @@ import type { BadgeTone } from "@/components/ui/badge";
 import type {
   ApprovalStatus,
   BillingStatus,
+  InvoiceStatus,
   SubjectRole,
   TaskDeadlineType,
   TaskStatus,
 } from "@/generated/prisma/enums";
+
+export function invoiceStatusTone(status: InvoiceStatus): BadgeTone {
+  const tones: Record<InvoiceStatus, BadgeTone> = {
+    DRAFT: "neutral",
+    ISSUED: "blue",
+    SENT: "mint",
+    PARTIALLY_PAID: "amber",
+    PAID: "green",
+    CANCELLED: "red",
+  };
+
+  return tones[status];
+}
 
 export function taskStatusTone(status: TaskStatus): BadgeTone {
   const tones: Record<TaskStatus, BadgeTone> = {

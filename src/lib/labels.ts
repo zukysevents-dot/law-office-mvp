@@ -3,10 +3,12 @@ import {
   BillingStatus,
   CaseStatus,
   FeeType,
+  InvoiceStatus,
   ModuleKey,
   ModuleStatus,
   OrganizationMemberStatus,
   OrganizationStatus,
+  PaymentMethod,
   ProjectStatus,
   SubjectRole,
   SubjectType,
@@ -15,7 +17,29 @@ import {
   TaskPriority,
   TaskStatus,
   UserRole,
+  VatMode,
 } from "@/generated/prisma/enums";
+
+export const invoiceStatusLabels: Record<InvoiceStatus, string> = {
+  DRAFT: "Rozpracovaná",
+  ISSUED: "Vystavená",
+  SENT: "Odeslaná",
+  PARTIALLY_PAID: "Částečně uhrazená",
+  PAID: "Uhrazená",
+  CANCELLED: "Stornovaná",
+};
+
+export const vatModeLabels: Record<VatMode, string> = {
+  PAYER: "Plátce DPH",
+  NON_PAYER: "Neplátce DPH",
+};
+
+export const paymentMethodLabels: Record<PaymentMethod, string> = {
+  BANK_TRANSFER: "Bankovní převod",
+  CASH: "Hotovost",
+  CARD: "Karta",
+  OTHER: "Jiné",
+};
 
 export const moduleKeyLabels: Record<ModuleKey, string> = {
   CORE: "Jádro",

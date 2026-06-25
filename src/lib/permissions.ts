@@ -352,6 +352,50 @@ export function workLogVisibilityWhere(
   return denyWhere<Prisma.WorkLogWhereInput>();
 }
 
+export function invoiceVisibilityWhere(
+  user: PermissionInput,
+): Prisma.InvoiceWhereInput {
+  const org = orgClause(user);
+  if (!org) {
+    return denyWhere<Prisma.InvoiceWhereInput>();
+  }
+
+  if (canViewAllLegalData(user)) {
+    return org;
+  }
+
+  const userId = userIdOf(user);
+  const role = roleOf(user);
+
+  if (!userId || !role) {
+    return denyWhere<Prisma.InvoiceWhereInput>();
+  }
+
+  if (role === UserRole.LAWYER) {
+    return andWhere(org, {
+      OR: [
+        { createdById: userId },
+        { issuedById: userId },
+        { project: { is: { responsibleUserId: userId } } },
+        { case: { is: { responsibleUserId: userId } } },
+        { case: { is: { project: { is: { responsibleUserId: userId } } } } },
+      ],
+    });
+  }
+
+  // TRAINEE/INTERN don't manage invoices; only ones they created (≈ none).
+  return andWhere(org, { createdById: userId });
+}
+
+// Who may create/issue/cancel client invoices: ADMIN, PARTNER, LAWYER.
+// TRAINEE/INTERN are excluded. Org isolation is enforced separately per record.
+export function assertCanManageInvoices(user: PermissionInput) {
+  const ok = canViewAllLegalData(user) || roleOf(user) === UserRole.LAWYER;
+  if (!ok) {
+    throw new Error("Nemáte oprávnění spravovat faktury.");
+  }
+}
+
 export function referenceVisibilityWhere(
   user: PermissionInput,
 ): Prisma.ReferenceWhereInput {
