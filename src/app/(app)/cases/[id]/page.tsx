@@ -6,6 +6,7 @@ import { addCaseSubjectRelation } from "@/app/actions/subject-relations";
 import { ArchiveActionForm } from "@/components/archive-action-form";
 import { ArchiveNotice } from "@/components/archive-notice";
 import { CaseDeadlinesSection } from "@/components/case-deadlines-section";
+import { CaseDocumentsSection } from "@/components/case-documents-section";
 import { Field, SelectInput, TextArea } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
 import { ReferenceForm } from "@/components/reference-form";
@@ -30,11 +31,14 @@ import { safeQuery } from "@/lib/db-safe";
 import {
   andWhere,
   canManageDeadlines,
+  canManageDocuments,
   canViewAllLegalData,
   canEditRecord,
   caseVisibilityWhere,
   courtHearingVisibilityWhere,
   deadlineVisibilityWhere,
+  documentTemplateVisibilityWhere,
+  documentVisibilityWhere,
   referenceVisibilityWhere,
   subjectVisibilityWhere,
   taskVisibilityWhere,
@@ -157,6 +161,39 @@ async function loadCase(id: string) {
       ])
     : [[], [], []];
 
+  const documentsEnabled =
+    legalCase != null &&
+    (await isModuleEnabled(currentUser.organizationId, ModuleKey.DOCUMENTS));
+
+  const [documents, templates] = documentsEnabled
+    ? await Promise.all([
+        prisma.document.findMany({
+          where: andWhere(
+            { caseId: id, archivedAt: null },
+            documentVisibilityWhere(currentUser),
+          ),
+          orderBy: { createdAt: "desc" },
+          take: 200,
+          select: {
+            id: true,
+            kind: true,
+            name: true,
+            storageUrl: true,
+            currentVersion: { select: { version: true } },
+          },
+        }),
+        prisma.documentTemplate.findMany({
+          where: andWhere(
+            { archivedAt: null, active: true },
+            documentTemplateVisibilityWhere(currentUser),
+          ),
+          orderBy: { name: "asc" },
+          take: 200,
+          select: { id: true, name: true },
+        }),
+      ])
+    : [[], []];
+
   return {
     legalCase,
     subjects,
@@ -167,6 +204,10 @@ async function loadCase(id: string) {
     hearings,
     members: memberRows.map((row) => row.user),
     canManageDeadlines: canManageDeadlines(currentUser),
+    documentsEnabled,
+    documents,
+    templates,
+    canManageDocuments: canManageDocuments(currentUser),
   };
 }
 
@@ -182,6 +223,10 @@ const emptyCaseDetail: CaseDetailData = {
   hearings: [],
   members: [],
   canManageDeadlines: false,
+  documentsEnabled: false,
+  documents: [],
+  templates: [],
+  canManageDocuments: false,
 };
 
 export default async function CaseDetailPage({
@@ -209,6 +254,10 @@ export default async function CaseDetailPage({
     hearings,
     members,
     canManageDeadlines: canManageDeadlinesFlag,
+    documentsEnabled,
+    documents,
+    templates,
+    canManageDocuments: canManageDocumentsFlag,
   } = result.data;
 
   return (
@@ -471,6 +520,14 @@ export default async function CaseDetailPage({
               hearings={hearings}
               members={members}
               canManage={canManageDeadlinesFlag}
+            />
+          ) : null}
+          {documentsEnabled ? (
+            <CaseDocumentsSection
+              caseId={legalCase.id}
+              documents={documents}
+              templates={templates}
+              canManage={canManageDocumentsFlag}
             />
           ) : null}
         </>

@@ -7,6 +7,7 @@ import {
   DataMessageStatus,
   DeadlineStatus,
   DeadlineType,
+  DocumentKind,
   FeeType,
   InvoiceStatus,
   ModuleKey,
@@ -82,6 +83,15 @@ export const deadlineStatusLabels: Record<DeadlineStatus, string> = {
   OPEN: "Otevřená",
   COMPLETED: "Splněná",
   CANCELLED: "Zrušená",
+};
+
+export const documentKindLabels: Record<DocumentKind, string> = {
+  CONTRACT: "Smlouva",
+  SUBMISSION: "Podání",
+  POWER_OF_ATTORNEY: "Plná moc",
+  LETTER: "Dopis / výzva",
+  INTERNAL_NOTE: "Interní",
+  OTHER: "Jiný",
 };
 
 export const moduleKeyLabels: Record<ModuleKey, string> = {
@@ -238,6 +248,7 @@ export const options = {
   taskStatuses: Object.values(TaskStatus),
   taskDeadlineTypes: Object.values(TaskDeadlineType),
   deadlineTypes: Object.values(DeadlineType),
+  documentKinds: Object.values(DocumentKind),
   taskPriorities: Object.values(TaskPriority),
   billingStatuses: Object.values(BillingStatus),
   approvalStatuses: Object.values(ApprovalStatus),

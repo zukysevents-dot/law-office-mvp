@@ -10,11 +10,15 @@ import {
   canEditRecord,
   canManageAml,
   canManageDeadlines,
+  canManageDocumentTemplates,
+  canManageDocuments,
   canViewAllLegalData,
   canViewRecord,
   courtHearingVisibilityWhere,
   dataMessageVisibilityWhere,
   deadlineVisibilityWhere,
+  documentTemplateVisibilityWhere,
+  documentVisibilityWhere,
   taskVisibilityWhere,
   workLogVisibilityWhere,
 } from "./permissions";
@@ -295,6 +299,64 @@ test("courtHearingVisibilityWhere: ADMIN org-wide; LAWYER scoped", () => {
   };
   assert.deepEqual(lawyerWhere.AND?.[0], { organizationId: org });
   assert.equal(lawyerWhere.AND?.[1]?.OR?.length, 4);
+});
+
+// --- F5 documents: management gates + visibility ---
+test("canManageDocuments: ADMIN/PARTNER/LAWYER true, juniors/null false", () => {
+  assert.equal(canManageDocuments(admin), true);
+  assert.equal(canManageDocuments(partner), true);
+  assert.equal(canManageDocuments(lawyer), true);
+  assert.equal(canManageDocuments(trainee), false);
+  assert.equal(canManageDocuments(intern), false);
+  assert.equal(canManageDocuments(null), false);
+});
+
+test("canManageDocumentTemplates: only ADMIN/PARTNER (office-wide asset)", () => {
+  assert.equal(canManageDocumentTemplates(admin), true);
+  assert.equal(canManageDocumentTemplates(partner), true);
+  assert.equal(canManageDocumentTemplates(lawyer), false);
+  assert.equal(canManageDocumentTemplates(trainee), false);
+  assert.equal(canManageDocumentTemplates(null), false);
+});
+
+test("documentVisibilityWhere: missing org → fail-closed deny clause", () => {
+  assert.deepEqual(documentVisibilityWhere(null), { id: "__role_denied__" });
+  assert.deepEqual(
+    documentVisibilityWhere({ id: "u-x", role: UserRole.LAWYER }),
+    { id: "__role_denied__" },
+  );
+});
+
+test("documentVisibilityWhere: ADMIN/PARTNER org-wide; TRAINEE/INTERN own-only", () => {
+  assert.deepEqual(documentVisibilityWhere(admin), { organizationId: org });
+  assert.deepEqual(documentVisibilityWhere(partner), { organizationId: org });
+  assert.deepEqual(documentVisibilityWhere(trainee), {
+    AND: [{ organizationId: org }, { createdById: "u-trainee" }],
+  });
+  assert.deepEqual(documentVisibilityWhere(intern), {
+    AND: [{ organizationId: org }, { createdById: "u-intern" }],
+  });
+});
+
+test("documentVisibilityWhere: LAWYER OR covers created + case + subject branches", () => {
+  const where = documentVisibilityWhere(lawyer) as {
+    AND?: Array<{ organizationId?: string; OR?: unknown[] }>;
+  };
+  assert.deepEqual(where.AND?.[0], { organizationId: org });
+  // created + case-responsible + case-project-responsible + subject-visible
+  assert.equal(where.AND?.[1]?.OR?.length, 4);
+});
+
+test("documentTemplateVisibilityWhere: org-scoped read, fail-closed without org", () => {
+  assert.deepEqual(documentTemplateVisibilityWhere(admin), {
+    organizationId: org,
+  });
+  assert.deepEqual(documentTemplateVisibilityWhere(lawyer), {
+    organizationId: org,
+  });
+  assert.deepEqual(documentTemplateVisibilityWhere(null), {
+    id: "__role_denied__",
+  });
 });
 
 // --- canViewRecord: the per-record read gate ---

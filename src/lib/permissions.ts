@@ -506,6 +506,80 @@ export function deadlineVisibilityWhere(
   });
 }
 
+// Who may create/edit/version documents: ADMIN, PARTNER, LAWYER. Documents are
+// case/subject-bound work artifacts under attorney confidentiality, so junior
+// roles (TRAINEE/INTERN) don't author or version them in the MVP.
+export function canManageDocuments(user: PermissionInput): boolean {
+  return canViewAllLegalData(user) || roleOf(user) === UserRole.LAWYER;
+}
+
+export function assertCanManageDocuments(user: PermissionInput) {
+  if (!canManageDocuments(user)) {
+    throw new Error("Nemáte oprávnění spravovat dokumenty.");
+  }
+}
+
+// Templates are an office-wide asset (they change generation for everyone), so
+// managing them is restricted to ADMIN/PARTNER. LAWYER uses but doesn't edit.
+export function canManageDocumentTemplates(user: PermissionInput): boolean {
+  return canViewAllLegalData(user);
+}
+
+export function assertCanManageDocumentTemplates(user: PermissionInput) {
+  if (!canManageDocumentTemplates(user)) {
+    throw new Error("Nemáte oprávnění spravovat šablony dokumentů.");
+  }
+}
+
+// Visibility for documents (F5). Case/subject-bound and confidentiality-sensitive:
+// ADMIN/PARTNER see all org documents; a LAWYER sees ones they created, on a case
+// they're responsible for, or on a subject visible to them; TRAINEE/INTERN see
+// only ones they created (default-deny on confidential material). Fail-closed.
+export function documentVisibilityWhere(
+  user: PermissionInput,
+): Prisma.DocumentWhereInput {
+  const org = orgClause(user);
+  if (!org) {
+    return denyWhere<Prisma.DocumentWhereInput>();
+  }
+
+  if (canViewAllLegalData(user)) {
+    return org;
+  }
+
+  const userId = userIdOf(user);
+  const role = roleOf(user);
+
+  if (!userId || !role) {
+    return denyWhere<Prisma.DocumentWhereInput>();
+  }
+
+  if (role === UserRole.LAWYER) {
+    return andWhere(org, {
+      OR: [
+        { createdById: userId },
+        { case: { is: { responsibleUserId: userId } } },
+        { case: { is: { project: { is: { responsibleUserId: userId } } } } },
+        { subject: { is: subjectVisibilityWhere(user) } },
+      ],
+    });
+  }
+
+  return andWhere(org, { createdById: userId });
+}
+
+// Templates are office-wide: any org member who has the module may read them.
+// Fail-closed without an org.
+export function documentTemplateVisibilityWhere(
+  user: PermissionInput,
+): Prisma.DocumentTemplateWhereInput {
+  const org = orgClause(user);
+  if (!org) {
+    return denyWhere<Prisma.DocumentTemplateWhereInput>();
+  }
+  return org;
+}
+
 // Visibility for court hearings (F4) — same case-derived rules as deadlines.
 export function courtHearingVisibilityWhere(
   user: PermissionInput,

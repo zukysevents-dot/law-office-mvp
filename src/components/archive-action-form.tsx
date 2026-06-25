@@ -11,6 +11,9 @@ type ArchiveActionFormProps = {
   mode: "archive" | "restore";
   className?: string;
   buttonClassName?: string;
+  // Name of the hidden id field. Defaults to "id"; pass e.g. "documentId" when
+  // the target action reads a differently-named id.
+  idFieldName?: string;
 };
 
 const messages = {
@@ -25,6 +28,7 @@ export function ArchiveActionForm({
   mode,
   className,
   buttonClassName,
+  idFieldName = "id",
 }: ArchiveActionFormProps) {
   return (
     <form
@@ -36,7 +40,7 @@ export function ArchiveActionForm({
         }
       }}
     >
-      <input type="hidden" name="id" value={id} />
+      <input type="hidden" name={idFieldName} value={id} />
       <Button
         type="submit"
         variant={mode === "archive" ? "danger" : "secondary"}

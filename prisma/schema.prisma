@@ -79,6 +79,17 @@ enum DeadlineStatus {
   CANCELLED // zrušená/bezpředmětná — auditní stopa zůstává (NE tvrdé smazání)
 }
 
+// Dokumenty (F5 / DOCUMENTS). Malá uzavřená taxonomie pro filtrování a mapování
+// na šablony. Dokument nemá životní cyklus jako lhůta — archivace přes archivedAt.
+enum DocumentKind {
+  CONTRACT          // smlouva
+  SUBMISSION        // podání (soud/úřad)
+  POWER_OF_ATTORNEY // plná moc
+  LETTER            // dopis/výzva
+  INTERNAL_NOTE     // interní
+  OTHER
+}
+
 enum BillingStatus {
   BILLABLE
   NEEDS_APPROVAL
@@ -295,6 +306,9 @@ model User {
   createdDeadlines         Deadline[]         @relation("DeadlineCreatedBy")
   responsibleCourtHearings CourtHearing[]     @relation("CourtHearingResponsibleUser")
   createdCourtHearings     CourtHearing[]     @relation("CourtHearingCreatedBy")
+  createdDocuments         Document[]         @relation("DocumentCreatedBy")
+  uploadedDocumentVersions DocumentVersion[]  @relation("DocumentVersionUploadedBy")
+  createdDocumentTemplates DocumentTemplate[] @relation("DocumentTemplateCreatedBy")
 
   @@map("users")
 }
@@ -339,6 +353,7 @@ model Subject {
   dataMessages   DataMessage[]
   amlIdentifications AmlIdentification[]
   amlAssessment  AmlAssessment?
+  documents      Document[]
 
   // IČO is unique PER organization, not globally — the same company can be a
   // subject of more than one law office (multi-tenant). NULL ico is allowed
@@ -453,6 +468,7 @@ model Case {
   dataMessages     DataMessage[]
   deadlines        Deadline[]
   courtHearings    CourtHearing[]
+  documents        Document[]
 
   @@unique([projectId, fileNumber])
   @@index([organizationId])
@@ -771,6 +787,9 @@ model Organization {
   amlAssessments       AmlAssessment[]
   deadlines            Deadline[]
   courtHearings        CourtHearing[]
+  documents            Document[]
+  documentVersions     DocumentVersion[]
+  documentTemplates    DocumentTemplate[]
 
   @@index([status])
   @@map("organizations")
@@ -1304,4 +1323,96 @@ model CourtHearing {
   @@index([responsibleUserId])
   @@index([hearingAt])
   @@map("courtHearings")
+}
+
+// --- Dokumenty models (F5 / DOCUMENTS) ---------------------------------------
+
+// A document is a SharePoint-REFERENCE: we hold metadata + a storageUrl (link),
+// never the file bytes. It hangs on a case OR a subject (XOR — enforced by a DB
+// CHECK in the migration). currentVersion points at the latest DocumentVersion;
+// it is set inside the same transaction that creates the version (never dangling).
+model Document {
+  id               String       @id @default(cuid())
+  organizationId   String
+  caseId           String?
+  subjectId        String?
+  kind             DocumentKind @default(OTHER)
+  name             String
+  description      String?
+  storageUrl       String? // odkaz do SharePointu (http/https), žádný soubor u nás
+  mimeType         String? // volitelná uživatelská metadata
+  currentVersionId String?      @unique // pointer na aktuální verzi
+  sourceTemplateId String? // ze které šablony byl vygenerován (traceabilita)
+  createdById      String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  archivedAt       DateTime?
+
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  case           Case?             @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  subject        Subject?          @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  currentVersion DocumentVersion?  @relation("DocumentCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
+  sourceTemplate DocumentTemplate? @relation("DocumentSourceTemplate", fields: [sourceTemplateId], references: [id], onDelete: SetNull)
+  createdBy      User?             @relation("DocumentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  versions       DocumentVersion[] @relation("DocumentVersions")
+
+  @@index([organizationId])
+  @@index([caseId])
+  @@index([subjectId])
+  @@index([kind])
+  @@index([createdById])
+  @@index([sourceTemplateId])
+  @@map("documents")
+}
+
+// One revision of a document. version is gap-free per document (max+1 inside a
+// transaction, protected by the unique). storageUrl is the link to that revision.
+model DocumentVersion {
+  id             String   @id @default(cuid())
+  organizationId String // denormalized for direct org-scoped queries/audit
+  documentId     String
+  version        Int // 1,2,3… gap-free per document
+  storageUrl     String // odkaz do SharePointu na konkrétní verzi (povinný)
+  note           String? // popis změny verze
+  checksum       String? // volitelné, uživatelské (soubor nemáme)
+  uploadedById   String?
+  uploadedAt     DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  document     Document     @relation("DocumentVersions", fields: [documentId], references: [id], onDelete: Cascade)
+  uploadedBy   User?        @relation("DocumentVersionUploadedBy", fields: [uploadedById], references: [id], onDelete: SetNull)
+  currentOf    Document?    @relation("DocumentCurrentVersion")
+
+  @@unique([documentId, version])
+  @@index([organizationId])
+  @@index([documentId])
+  @@index([uploadedById])
+  @@map("documentVersions")
+}
+
+// Office-wide (org-scoped) template. bodyTemplate is text/markdown with {{tokens}}
+// substituted at generation time from case/client/counterparty/org. placeholders
+// is a JSON hint list for the UI; it is NOT a security boundary (data comes from
+// the DB, not the JSON).
+model DocumentTemplate {
+  id             String       @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?
+  kind           DocumentKind @default(OTHER)
+  bodyTemplate   String
+  placeholders   Json?
+  active         Boolean      @default(true)
+  createdById    String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  archivedAt     DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  createdBy    User?        @relation("DocumentTemplateCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  documents    Document[]   @relation("DocumentSourceTemplate")
+
+  @@index([organizationId])
+  @@index([kind])
+  @@map("documentTemplates")
 }

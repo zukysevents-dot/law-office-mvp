@@ -11,6 +11,7 @@ import {
   CaseStatus,
   DashboardWidgetSize,
   DashboardWidgetType,
+  DocumentKind,
   FeeType,
   ModuleKey,
   ModuleStatus,
@@ -353,7 +354,7 @@ async function main() {
     });
   }
 
-  // Demo org entitlements: BILLING live, DEADLINES on trial, rest disabled.
+  // Demo org entitlements: BILLING live, DEADLINES + DOCUMENTS on trial, rest disabled.
   await prisma.organizationModule.upsert({
     where: {
       organizationId_moduleKey: {
@@ -386,6 +387,28 @@ async function main() {
     create: {
       organizationId: demoOrg.id,
       moduleKey: ModuleKey.DEADLINES,
+      status: ModuleStatus.TRIAL,
+      trialEndsAt: new Date("2026-12-31T00:00:00.000Z"),
+      enabledAt: new Date(),
+    },
+  });
+
+  await prisma.organizationModule.upsert({
+    where: {
+      organizationId_moduleKey: {
+        organizationId: demoOrg.id,
+        moduleKey: ModuleKey.DOCUMENTS,
+      },
+    },
+    update: {
+      status: ModuleStatus.TRIAL,
+      trialEndsAt: new Date("2026-12-31T00:00:00.000Z"),
+      enabledAt: new Date(),
+      disabledAt: null,
+    },
+    create: {
+      organizationId: demoOrg.id,
+      moduleKey: ModuleKey.DOCUMENTS,
       status: ModuleStatus.TRIAL,
       trialEndsAt: new Date("2026-12-31T00:00:00.000Z"),
       enabledAt: new Date(),
@@ -546,6 +569,42 @@ async function main() {
     createdById: partner.id,
     note: "XYZ s.r.o. jako protistrana.",
   });
+
+  // Demo document templates (F5 / DOCUMENTS) — idempotent by org + name.
+  const demoTemplates = [
+    {
+      name: "Plná moc",
+      kind: DocumentKind.POWER_OF_ATTORNEY,
+      description: "Plná moc k zastupování klienta.",
+      bodyTemplate:
+        "PLNÁ MOC\n\nKlient: {{client.name}}, IČO {{client.ico}}, {{client.address}}\nuděluje plnou moc advokátovi {{lawyer.name}} ({{org.name}})\nve věci: {{case.name}} (sp. zn. {{case.fileNumber}}).\n\nV Praze dne {{today}}",
+    },
+    {
+      name: "Předžalobní výzva",
+      kind: DocumentKind.LETTER,
+      description: "Předžalobní výzva k úhradě.",
+      bodyTemplate:
+        "Věc: Předžalobní výzva — {{case.name}}\n\nVážení,\njménem klienta {{client.name}} Vás ve věci sp. zn. {{case.fileNumber}} vyzýváme k úhradě.\nProtistrana: {{counterparty.name}}.\n\nV Praze dne {{today}}\n{{lawyer.name}}, {{org.name}}",
+    },
+  ];
+  for (const tpl of demoTemplates) {
+    const exists = await prisma.documentTemplate.findFirst({
+      where: { organizationId: demoOrg.id, name: tpl.name },
+      select: { id: true },
+    });
+    if (!exists) {
+      await prisma.documentTemplate.create({
+        data: {
+          organizationId: demoOrg.id,
+          name: tpl.name,
+          kind: tpl.kind,
+          description: tpl.description,
+          bodyTemplate: tpl.bodyTemplate,
+          createdById: partner.id,
+        },
+      });
+    }
+  }
 
   const existingTask = await prisma.task.findFirst({
     where: {

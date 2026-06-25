@@ -6,6 +6,7 @@ import type {
   DataMessageStatus,
   DeadlineStatus,
   DeadlineType,
+  DocumentKind,
   InvoiceStatus,
   SubjectRole,
   TaskDeadlineType,
@@ -111,4 +112,17 @@ export function deadlineStatusTone(status: DeadlineStatus): BadgeTone {
   };
 
   return tones[status];
+}
+
+export function documentKindTone(kind: DocumentKind): BadgeTone {
+  const tones: Record<DocumentKind, BadgeTone> = {
+    CONTRACT: "blue",
+    SUBMISSION: "purple",
+    POWER_OF_ATTORNEY: "amber",
+    LETTER: "mint",
+    INTERNAL_NOTE: "neutral",
+    OTHER: "neutral",
+  };
+
+  return tones[kind];
 }
