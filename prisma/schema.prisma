@@ -101,6 +101,36 @@ enum PortalShareType {
   CASE
 }
 
+// HR / Docházka (F7 / HR_ATTENDANCE). Separate domain — does not touch legal
+// (Subject/Project/Case) entities.
+enum HrEmploymentType {
+  FULL_TIME
+  PART_TIME
+  AGREEMENT // DPP/DPČ
+  CONTRACTOR // OSVČ
+}
+
+enum HrAttendanceSource {
+  MANUAL
+  IMPORT
+}
+
+enum HrAbsenceType {
+  VACATION // dovolená — jediná čerpá saldo
+  SICK
+  HOME_OFFICE
+  DOCTOR
+  UNPAID
+  OTHER
+}
+
+enum HrAbsenceStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
 enum BillingStatus {
   BILLABLE
   NEEDS_APPROVAL
@@ -322,6 +352,10 @@ model User {
   createdDocumentTemplates DocumentTemplate[] @relation("DocumentTemplateCreatedBy")
   createdPortalAccesses    PortalAccess[]     @relation("PortalAccessCreatedBy")
   sharedPortalShares       PortalShare[]      @relation("PortalShareSharedBy")
+  hrEmployee               HrEmployee?        @relation("HrEmployeeUser")
+  createdHrEmployees       HrEmployee[]       @relation("HrEmployeeCreatedBy")
+  requestedHrAbsences      HrAbsenceRequest[] @relation("HrAbsenceRequestedBy")
+  decidedHrAbsences        HrAbsenceRequest[] @relation("HrAbsenceDecidedBy")
 
   @@map("users")
 }
@@ -809,6 +843,11 @@ model Organization {
   portalLoginTokens    PortalLoginToken[]
   portalSessions       PortalSession[]
   portalShares         PortalShare[]
+  hrEmployees          HrEmployee[]
+  hrWorkSchedules      HrWorkSchedule[]
+  hrAttendanceRecords  HrAttendanceRecord[]
+  hrAbsenceRequests    HrAbsenceRequest[]
+  hrLeaveBalances      HrLeaveBalance[]
 
   @@index([status])
   @@map("organizations")
@@ -1534,4 +1573,161 @@ model PortalShare {
   @@index([documentId])
   @@index([caseId])
   @@map("portalShares")
+}
+
+// Pre-auth, IP-keyed throttle ledger for the magic-link endpoint
+// (requestPortalLink). One row per request attempt, recorded BEFORE any account
+// lookup, so the anonymous surface — non-existent / REVOKED orgs & e-mails — is
+// rate-limited uniformly, not just resolved ACTIVE accounts. DB-backed on purpose:
+// an in-memory counter would not hold across serverless/multi-instance deploys.
+// No org/account FK: the attempt is counted before we know (or trust) which
+// org/e-mail was claimed. Rows self-prune per IP on each request.
+model PortalLoginAttempt {
+  id        String   @id @default(cuid())
+  ipAddress String
+  createdAt DateTime @default(now())
+
+  @@index([ipAddress, createdAt])
+  @@map("portalLoginAttempts")
+}
+
+// --- HR / Docházka models (F7 / HR_ATTENDANCE) -------------------------------
+// Separate domain. organizationId is denormalized on every row (repo convention)
+// so org isolation + visibility queries stay simple. userId links an employee to
+// a login account (nullable: an employee may have no account; unique: one account
+// maps to at most one employee, so "see only my own" is unambiguous).
+
+model HrEmployee {
+  id             String           @id @default(cuid())
+  organizationId String
+  userId         String?          @unique
+  firstName      String
+  lastName       String
+  personalNumber String? // osobní číslo (mzdy/import)
+  position       String?
+  employmentType HrEmploymentType @default(FULL_TIME)
+  weeklyHours    Decimal          @default(40) @db.Decimal(5, 2)
+  dailyHours     Decimal          @default(8) @db.Decimal(4, 2)
+  startDate      DateTime?
+  endDate        DateTime?
+  active         Boolean          @default(true)
+  createdById    String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  archivedAt     DateTime?
+
+  organization     Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user             User?                @relation("HrEmployeeUser", fields: [userId], references: [id], onDelete: SetNull)
+  createdBy        User?                @relation("HrEmployeeCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  workSchedules    HrWorkSchedule[]
+  attendanceRecords HrAttendanceRecord[]
+  absenceRequests  HrAbsenceRequest[]
+  leaveBalances    HrLeaveBalance[]
+
+  @@unique([organizationId, personalNumber])
+  @@index([organizationId])
+  @@index([userId])
+  @@index([active])
+  @@map("hrEmployees")
+}
+
+// History of working-time fund per employee (úvazek/fond pracovní doby).
+model HrWorkSchedule {
+  id             String    @id @default(cuid())
+  organizationId String
+  employeeId     String
+  validFrom      DateTime
+  validTo        DateTime?
+  weeklyHours    Decimal   @db.Decimal(5, 2)
+  dailyHours     Decimal   @db.Decimal(4, 2)
+  note           String?
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee     HrEmployee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([employeeId])
+  @@map("hrWorkSchedules")
+}
+
+// One attendance day per employee. Manual entry or import upsert on the unique.
+model HrAttendanceRecord {
+  id             String             @id @default(cuid())
+  organizationId String
+  employeeId     String
+  workDate       DateTime // date-only (UTC midnight)
+  checkIn        DateTime?
+  checkOut       DateTime?
+  workedHours    Decimal            @default(0) @db.Decimal(5, 2)
+  breakHours     Decimal            @default(0) @db.Decimal(4, 2)
+  source         HrAttendanceSource @default(MANUAL)
+  importBatchId  String?
+  note           String?
+  createdById    String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee     HrEmployee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, workDate])
+  @@index([organizationId])
+  @@index([employeeId])
+  @@index([workDate])
+  @@map("hrAttendanceRecords")
+}
+
+// Absence request with an approval workflow. requestedHours is a snapshot used to
+// debit/credit the leave balance (only for VACATION) when APPROVED/CANCELLED.
+model HrAbsenceRequest {
+  id             String          @id @default(cuid())
+  organizationId String
+  employeeId     String
+  type           HrAbsenceType
+  status         HrAbsenceStatus @default(PENDING)
+  startDate      DateTime // date-only
+  endDate        DateTime // date-only
+  halfDay        Boolean         @default(false)
+  requestedHours Decimal         @db.Decimal(7, 2)
+  leaveYear      Int?
+  note           String?
+  requestedById  String?
+  decidedById    String?
+  decidedAt      DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee     HrEmployee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  requestedBy  User?        @relation("HrAbsenceRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+  decidedBy    User?        @relation("HrAbsenceDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([employeeId])
+  @@index([status])
+  @@index([startDate])
+  @@map("hrAbsenceRequests")
+}
+
+// Leave balance per employee per year (in hours). usedHours is the single source
+// of truth; remaining is derived (computeRemainingHours). Updated under a row lock.
+model HrLeaveBalance {
+  id               String   @id @default(cuid())
+  organizationId   String
+  employeeId       String
+  year             Int
+  entitlementHours Decimal  @default(0) @db.Decimal(7, 2)
+  carryoverHours   Decimal  @default(0) @db.Decimal(7, 2)
+  usedHours        Decimal  @default(0) @db.Decimal(7, 2)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee     HrEmployee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, year])
+  @@index([organizationId])
+  @@index([employeeId])
+  @@map("hrLeaveBalances")
 }

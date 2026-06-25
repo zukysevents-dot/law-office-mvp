@@ -354,7 +354,7 @@ async function main() {
     });
   }
 
-  // Demo org entitlements: BILLING live, DEADLINES + DOCUMENTS + CLIENT_PORTAL on trial, rest disabled.
+  // Demo org entitlements: BILLING live, DEADLINES + DOCUMENTS + CLIENT_PORTAL + HR_ATTENDANCE on trial.
   await prisma.organizationModule.upsert({
     where: {
       organizationId_moduleKey: {
@@ -431,6 +431,28 @@ async function main() {
     create: {
       organizationId: demoOrg.id,
       moduleKey: ModuleKey.CLIENT_PORTAL,
+      status: ModuleStatus.TRIAL,
+      trialEndsAt: new Date("2026-12-31T00:00:00.000Z"),
+      enabledAt: new Date(),
+    },
+  });
+
+  await prisma.organizationModule.upsert({
+    where: {
+      organizationId_moduleKey: {
+        organizationId: demoOrg.id,
+        moduleKey: ModuleKey.HR_ATTENDANCE,
+      },
+    },
+    update: {
+      status: ModuleStatus.TRIAL,
+      trialEndsAt: new Date("2026-12-31T00:00:00.000Z"),
+      enabledAt: new Date(),
+      disabledAt: null,
+    },
+    create: {
+      organizationId: demoOrg.id,
+      moduleKey: ModuleKey.HR_ATTENDANCE,
       status: ModuleStatus.TRIAL,
       trialEndsAt: new Date("2026-12-31T00:00:00.000Z"),
       enabledAt: new Date(),
@@ -651,6 +673,33 @@ async function main() {
       shareType: "CASE",
       caseId: legalCase.id,
       sharedById: partner.id,
+    },
+  });
+
+  // Demo HR employee (F7) linked to the trainee account, with a leave balance.
+  const demoEmployee = await prisma.hrEmployee.upsert({
+    where: { userId: trainee.id },
+    update: {},
+    create: {
+      organizationId: demoOrg.id,
+      userId: trainee.id,
+      firstName: "Koncipient",
+      lastName: "Demo",
+      personalNumber: "1001",
+      position: "Advokátní koncipient",
+      weeklyHours: "40",
+      dailyHours: "8",
+      createdById: partner.id,
+    },
+  });
+  await prisma.hrLeaveBalance.upsert({
+    where: { employeeId_year: { employeeId: demoEmployee.id, year: 2026 } },
+    update: {},
+    create: {
+      organizationId: demoOrg.id,
+      employeeId: demoEmployee.id,
+      year: 2026,
+      entitlementHours: "160",
     },
   });
 

@@ -593,6 +593,74 @@ export function assertCanManagePortal(user: PermissionInput) {
   }
 }
 
+// HR / Docházka (F7). HR data are personal/sensitive (payroll, absences), so
+// management (employees, approvals, exports) is restricted to ADMIN/PARTNER (the
+// HR manager). Regular employees see and request only their OWN records.
+export function canManageHr(user: PermissionInput): boolean {
+  return canViewAllLegalData(user);
+}
+
+export function assertCanManageHr(user: PermissionInput) {
+  if (!canManageHr(user)) {
+    throw new Error("Nemáte oprávnění spravovat HR a docházku.");
+  }
+}
+
+// Employee visibility: ADMIN/PARTNER see all employees in the org; everyone else
+// sees only their own employee record (linked via userId). Fail-closed w/o org.
+export function hrEmployeeVisibilityWhere(
+  user: PermissionInput,
+): Prisma.HrEmployeeWhereInput {
+  const org = orgClause(user);
+  if (!org) {
+    return denyWhere<Prisma.HrEmployeeWhereInput>();
+  }
+  if (canManageHr(user)) {
+    return org;
+  }
+  const userId = userIdOf(user);
+  if (!userId) {
+    return denyWhere<Prisma.HrEmployeeWhereInput>();
+  }
+  return andWhere(org, { userId });
+}
+
+// Attendance/absence visibility derives from the employee: managers see all org
+// records, others only rows for their own employee (employee.userId === me).
+export function hrAttendanceVisibilityWhere(
+  user: PermissionInput,
+): Prisma.HrAttendanceRecordWhereInput {
+  const org = orgClause(user);
+  if (!org) {
+    return denyWhere<Prisma.HrAttendanceRecordWhereInput>();
+  }
+  if (canManageHr(user)) {
+    return org;
+  }
+  const userId = userIdOf(user);
+  if (!userId) {
+    return denyWhere<Prisma.HrAttendanceRecordWhereInput>();
+  }
+  return andWhere(org, { employee: { is: { userId } } });
+}
+
+export function hrAbsenceVisibilityWhere(
+  user: PermissionInput,
+): Prisma.HrAbsenceRequestWhereInput {
+  const org = orgClause(user);
+  if (!org) {
+    return denyWhere<Prisma.HrAbsenceRequestWhereInput>();
+  }
+  if (canManageHr(user)) {
+    return org;
+  }
+  const userId = userIdOf(user);
+  if (!userId) {
+    return denyWhere<Prisma.HrAbsenceRequestWhereInput>();
+  }
+  return andWhere(org, { employee: { is: { userId } } });
+}
+
 // Visibility for court hearings (F4) — same case-derived rules as deadlines.
 export function courtHearingVisibilityWhere(
   user: PermissionInput,

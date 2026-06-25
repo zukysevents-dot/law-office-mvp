@@ -9,6 +9,10 @@ import {
   DeadlineType,
   DocumentKind,
   FeeType,
+  HrAbsenceStatus,
+  HrAbsenceType,
+  HrAttendanceSource,
+  HrEmploymentType,
   InvoiceStatus,
   ModuleKey,
   ModuleStatus,
@@ -92,6 +96,34 @@ export const documentKindLabels: Record<DocumentKind, string> = {
   LETTER: "Dopis / výzva",
   INTERNAL_NOTE: "Interní",
   OTHER: "Jiný",
+};
+
+export const hrEmploymentTypeLabels: Record<HrEmploymentType, string> = {
+  FULL_TIME: "Plný úvazek",
+  PART_TIME: "Částečný úvazek",
+  AGREEMENT: "Dohoda (DPP/DPČ)",
+  CONTRACTOR: "OSVČ / kontraktor",
+};
+
+export const hrAbsenceTypeLabels: Record<HrAbsenceType, string> = {
+  VACATION: "Dovolená",
+  SICK: "Nemoc",
+  HOME_OFFICE: "Home office",
+  DOCTOR: "Lékař",
+  UNPAID: "Neplacené volno",
+  OTHER: "Jiné",
+};
+
+export const hrAbsenceStatusLabels: Record<HrAbsenceStatus, string> = {
+  PENDING: "Čeká na schválení",
+  APPROVED: "Schváleno",
+  REJECTED: "Zamítnuto",
+  CANCELLED: "Zrušeno",
+};
+
+export const hrAttendanceSourceLabels: Record<HrAttendanceSource, string> = {
+  MANUAL: "Ruční",
+  IMPORT: "Import",
 };
 
 export const moduleKeyLabels: Record<ModuleKey, string> = {
@@ -249,6 +281,8 @@ export const options = {
   taskDeadlineTypes: Object.values(TaskDeadlineType),
   deadlineTypes: Object.values(DeadlineType),
   documentKinds: Object.values(DocumentKind),
+  hrEmploymentTypes: Object.values(HrEmploymentType),
+  hrAbsenceTypes: Object.values(HrAbsenceType),
   taskPriorities: Object.values(TaskPriority),
   billingStatuses: Object.values(BillingStatus),
   approvalStatuses: Object.values(ApprovalStatus),

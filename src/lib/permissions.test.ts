@@ -7,12 +7,14 @@ import {
   andWhere,
   assertCanManageAml,
   assertCanManageDeadlines,
+  assertCanManageHr,
   assertCanManagePortal,
   canEditRecord,
   canManageAml,
   canManageDeadlines,
   canManageDocumentTemplates,
   canManageDocuments,
+  canManageHr,
   canManagePortal,
   canViewAllLegalData,
   canViewRecord,
@@ -21,6 +23,9 @@ import {
   deadlineVisibilityWhere,
   documentTemplateVisibilityWhere,
   documentVisibilityWhere,
+  hrAbsenceVisibilityWhere,
+  hrAttendanceVisibilityWhere,
+  hrEmployeeVisibilityWhere,
   taskVisibilityWhere,
   workLogVisibilityWhere,
 } from "./permissions";
@@ -463,4 +468,122 @@ test("assertCanManagePortal: TRAINEE/INTERN/null/undefined throw (data-exposure 
   assert.throws(() => assertCanManagePortal(intern), expected);
   assert.throws(() => assertCanManagePortal(null), expected);
   assert.throws(() => assertCanManagePortal(undefined), expected);
+});
+
+// --- HR / Docházka (F7): personal/payroll data restricted to ADMIN/PARTNER ---
+// HR holds sensitive personal data (payroll, absences, sickness). Management
+// (employee records, approvals, payroll export) is the HR-manager gate; regular
+// employees may only see/request their OWN records via the visibility helpers.
+test("canManageHr: ADMIN/PARTNER true, juniors false", () => {
+  assert.equal(canManageHr(admin), true);
+  assert.equal(canManageHr(partner), true);
+  assert.equal(canManageHr(lawyer), false);
+  assert.equal(canManageHr(trainee), false);
+  assert.equal(canManageHr(intern), false);
+});
+
+test("canManageHr: no role / org-less / null / undefined → false (fail closed)", () => {
+  // A caller carrying only an id but no role must not pass the HR gate.
+  assert.equal(canManageHr({ id: "u-x", role: undefined as never }), false);
+  // Role present but org-less: HR management depends only on the senior role,
+  // and a junior role stays denied regardless of org.
+  assert.equal(canManageHr({ id: "u-y", role: UserRole.LAWYER }), false);
+  assert.equal(canManageHr(null), false);
+  assert.equal(canManageHr(undefined), false);
+});
+
+test("assertCanManageHr: ADMIN/PARTNER do NOT throw", () => {
+  assert.doesNotThrow(() => assertCanManageHr(admin));
+  assert.doesNotThrow(() => assertCanManageHr(partner));
+});
+
+test("assertCanManageHr: juniors/null/undefined throw (personal-data gate)", () => {
+  const expected = { message: "Nemáte oprávnění spravovat HR a docházku." };
+  assert.throws(() => assertCanManageHr(lawyer), expected);
+  assert.throws(() => assertCanManageHr(trainee), expected);
+  assert.throws(() => assertCanManageHr(intern), expected);
+  assert.throws(() => assertCanManageHr(null), expected);
+  assert.throws(() => assertCanManageHr(undefined), expected);
+});
+
+// --- hrEmployeeVisibilityWhere: managers org-wide, others only own record ---
+test("hrEmployeeVisibilityWhere: ADMIN/PARTNER see all employees in their org", () => {
+  assert.deepEqual(hrEmployeeVisibilityWhere(admin), { organizationId: org });
+  assert.deepEqual(hrEmployeeVisibilityWhere(partner), { organizationId: org });
+});
+
+test("hrEmployeeVisibilityWhere: juniors scoped to their own employee row (userId)", () => {
+  assert.deepEqual(hrEmployeeVisibilityWhere(lawyer), {
+    AND: [{ organizationId: org }, { userId: "u-lawyer" }],
+  });
+  assert.deepEqual(hrEmployeeVisibilityWhere(trainee), {
+    AND: [{ organizationId: org }, { userId: "u-trainee" }],
+  });
+  assert.deepEqual(hrEmployeeVisibilityWhere(intern), {
+    AND: [{ organizationId: org }, { userId: "u-intern" }],
+  });
+});
+
+test("hrEmployeeVisibilityWhere: missing org → fail-closed deny clause", () => {
+  // Role-only and org-less callers must never reach another org's HR data.
+  const noOrg = { id: "u-x", role: UserRole.LAWYER };
+  assert.deepEqual(hrEmployeeVisibilityWhere(noOrg), { id: "__role_denied__" });
+  assert.deepEqual(hrEmployeeVisibilityWhere(null), { id: "__role_denied__" });
+  assert.deepEqual(hrEmployeeVisibilityWhere(undefined), { id: "__role_denied__" });
+});
+
+test("hrEmployeeVisibilityWhere: org present but no userId → deny (can't self-scope)", () => {
+  // A string role carries an org clause path of null, but a user object with an
+  // org yet no id cannot be self-scoped, so it must fail closed rather than leak.
+  assert.deepEqual(
+    hrEmployeeVisibilityWhere({ id: "" as never, role: UserRole.INTERN, organizationId: org }),
+    { id: "__role_denied__" },
+  );
+});
+
+// --- hrAttendanceVisibilityWhere: derived from employee.userId ---
+test("hrAttendanceVisibilityWhere: ADMIN/PARTNER org-wide", () => {
+  assert.deepEqual(hrAttendanceVisibilityWhere(admin), { organizationId: org });
+  assert.deepEqual(hrAttendanceVisibilityWhere(partner), { organizationId: org });
+});
+
+test("hrAttendanceVisibilityWhere: juniors only rows for their own employee", () => {
+  assert.deepEqual(hrAttendanceVisibilityWhere(lawyer), {
+    AND: [{ organizationId: org }, { employee: { is: { userId: "u-lawyer" } } }],
+  });
+  assert.deepEqual(hrAttendanceVisibilityWhere(trainee), {
+    AND: [{ organizationId: org }, { employee: { is: { userId: "u-trainee" } } }],
+  });
+  assert.deepEqual(hrAttendanceVisibilityWhere(intern), {
+    AND: [{ organizationId: org }, { employee: { is: { userId: "u-intern" } } }],
+  });
+});
+
+test("hrAttendanceVisibilityWhere: missing org → fail-closed deny clause", () => {
+  const noOrg = { id: "u-x", role: UserRole.TRAINEE };
+  assert.deepEqual(hrAttendanceVisibilityWhere(noOrg), { id: "__role_denied__" });
+  assert.deepEqual(hrAttendanceVisibilityWhere(null), { id: "__role_denied__" });
+  assert.deepEqual(hrAttendanceVisibilityWhere(undefined), { id: "__role_denied__" });
+});
+
+// --- hrAbsenceVisibilityWhere: same employee-derived rule as attendance ---
+test("hrAbsenceVisibilityWhere: ADMIN/PARTNER org-wide", () => {
+  assert.deepEqual(hrAbsenceVisibilityWhere(admin), { organizationId: org });
+  assert.deepEqual(hrAbsenceVisibilityWhere(partner), { organizationId: org });
+});
+
+test("hrAbsenceVisibilityWhere: juniors only their own absence requests", () => {
+  assert.deepEqual(hrAbsenceVisibilityWhere(lawyer), {
+    AND: [{ organizationId: org }, { employee: { is: { userId: "u-lawyer" } } }],
+  });
+  assert.deepEqual(hrAbsenceVisibilityWhere(intern), {
+    AND: [{ organizationId: org }, { employee: { is: { userId: "u-intern" } } }],
+  });
+});
+
+test("hrAbsenceVisibilityWhere: missing org → fail-closed deny clause", () => {
+  const noOrg = { id: "u-x", role: UserRole.INTERN };
+  assert.deepEqual(hrAbsenceVisibilityWhere(noOrg), { id: "__role_denied__" });
+  assert.deepEqual(hrAbsenceVisibilityWhere(null), { id: "__role_denied__" });
+  assert.deepEqual(hrAbsenceVisibilityWhere(undefined), { id: "__role_denied__" });
 });

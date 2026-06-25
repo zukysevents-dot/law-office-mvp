@@ -7,6 +7,7 @@ import type {
   DeadlineStatus,
   DeadlineType,
   DocumentKind,
+  HrAbsenceStatus,
   InvoiceStatus,
   SubjectRole,
   TaskDeadlineType,
@@ -125,4 +126,15 @@ export function documentKindTone(kind: DocumentKind): BadgeTone {
   };
 
   return tones[kind];
+}
+
+export function hrAbsenceStatusTone(status: HrAbsenceStatus): BadgeTone {
+  const tones: Record<HrAbsenceStatus, BadgeTone> = {
+    PENDING: "amber",
+    APPROVED: "green",
+    REJECTED: "red",
+    CANCELLED: "neutral",
+  };
+
+  return tones[status];
 }
