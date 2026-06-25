@@ -2,6 +2,8 @@ import {
   ApprovalStatus,
   BillingStatus,
   CaseStatus,
+  DataMessageDirection,
+  DataMessageStatus,
   FeeType,
   InvoiceStatus,
   ModuleKey,
@@ -46,6 +48,19 @@ export const reminderLevelLabels: Record<ReminderLevel, string> = {
   FIRST: "Upozornění",
   SECOND: "Upomínka",
   THIRD: "Předžalobní výzva",
+};
+
+export const dataMessageDirectionLabels: Record<DataMessageDirection, string> = {
+  IN: "Doručená",
+  OUT: "Odeslaná",
+};
+
+export const dataMessageStatusLabels: Record<DataMessageStatus, string> = {
+  RECEIVED: "Doručená",
+  ACCEPTED: "Doručeno (fikce/přihlášením)",
+  READ: "Přečtená",
+  SENT: "Odeslaná",
+  ARCHIVED: "Archivovaná",
 };
 
 export const moduleKeyLabels: Record<ModuleKey, string> = {

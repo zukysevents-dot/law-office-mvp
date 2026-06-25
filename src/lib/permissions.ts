@@ -396,6 +396,52 @@ export function assertCanManageInvoices(user: PermissionInput) {
   }
 }
 
+// Visibility for data messages (F2). Data-box content is sensitive: ADMIN/PARTNER
+// see all org messages; a LAWYER sees only ones they recorded or that are
+// assigned to a case they're responsible for. Unassigned messages (no case)
+// therefore stay visible only to ADMIN/PARTNER and their creator. TRAINEE/INTERN
+// see only what they created (default-deny on sensitive DS data).
+export function dataMessageVisibilityWhere(
+  user: PermissionInput,
+): Prisma.DataMessageWhereInput {
+  const org = orgClause(user);
+  if (!org) {
+    return denyWhere<Prisma.DataMessageWhereInput>();
+  }
+
+  if (canViewAllLegalData(user)) {
+    return org;
+  }
+
+  const userId = userIdOf(user);
+  const role = roleOf(user);
+
+  if (!userId || !role) {
+    return denyWhere<Prisma.DataMessageWhereInput>();
+  }
+
+  if (role === UserRole.LAWYER) {
+    return andWhere(org, {
+      OR: [
+        { createdById: userId },
+        { case: { is: { responsibleUserId: userId } } },
+        { case: { is: { project: { is: { responsibleUserId: userId } } } } },
+      ],
+    });
+  }
+
+  return andWhere(org, { createdById: userId });
+}
+
+// Who may record/assign/send data messages: ADMIN, PARTNER, LAWYER. (Configuring
+// a DataBoxAccount is stricter — ADMIN/PARTNER via assertCanAdministerOrg.)
+export function assertCanManageDataBoxes(user: PermissionInput) {
+  const ok = canViewAllLegalData(user) || roleOf(user) === UserRole.LAWYER;
+  if (!ok) {
+    throw new Error("Nemáte oprávnění pracovat s datovými schránkami.");
+  }
+}
+
 export function referenceVisibilityWhere(
   user: PermissionInput,
 ): Prisma.ReferenceWhereInput {

@@ -8,6 +8,7 @@ import {
   canEditRecord,
   canViewAllLegalData,
   canViewRecord,
+  dataMessageVisibilityWhere,
   taskVisibilityWhere,
   workLogVisibilityWhere,
 } from "./permissions";
@@ -108,6 +109,57 @@ test("workLogVisibilityWhere: TRAINEE/INTERN see only their own logs", () => {
   });
   assert.deepEqual(workLogVisibilityWhere(admin), { organizationId: org });
   assert.deepEqual(workLogVisibilityWhere(null), { id: "__role_denied__" });
+});
+
+// --- dataMessageVisibilityWhere: sensitive DS data, default-deny ---
+test("dataMessageVisibilityWhere: missing org → fail-closed deny clause", () => {
+  // No organizationId on the user must never leak data-box content.
+  const noOrg = { id: "u-x", role: UserRole.LAWYER };
+  assert.deepEqual(dataMessageVisibilityWhere(noOrg), { id: "__role_denied__" });
+  assert.deepEqual(dataMessageVisibilityWhere(null), { id: "__role_denied__" });
+});
+
+test("dataMessageVisibilityWhere: ADMIN/PARTNER see all messages in their org", () => {
+  assert.deepEqual(dataMessageVisibilityWhere(admin), { organizationId: org });
+  assert.deepEqual(dataMessageVisibilityWhere(partner), { organizationId: org });
+});
+
+test("dataMessageVisibilityWhere: LAWYER scoped to own + responsible-case messages", () => {
+  // org-scoped: { AND: [{ organizationId }, { OR: [...3 clauses] }] }.
+  const expected = {
+    AND: [
+      { organizationId: org },
+      {
+        OR: [
+          { createdById: "u-lawyer" },
+          { case: { is: { responsibleUserId: "u-lawyer" } } },
+          { case: { is: { project: { is: { responsibleUserId: "u-lawyer" } } } } },
+        ],
+      },
+    ],
+  };
+  assert.deepEqual(dataMessageVisibilityWhere(lawyer), expected);
+});
+
+test("dataMessageVisibilityWhere: LAWYER OR has exactly the 3 documented branches", () => {
+  const where = dataMessageVisibilityWhere(lawyer) as {
+    AND?: Array<{ organizationId?: string; OR?: unknown[] }>;
+  };
+  assert.ok(Array.isArray(where.AND));
+  assert.deepEqual(where.AND?.[0], { organizationId: org });
+  const orClause = where.AND?.[1];
+  assert.ok(Array.isArray(orClause?.OR));
+  assert.equal(orClause?.OR?.length, 3);
+});
+
+test("dataMessageVisibilityWhere: TRAINEE/INTERN see only messages they created", () => {
+  // andWhere(orgClause, { createdById }) → org AND own-created only.
+  assert.deepEqual(dataMessageVisibilityWhere(trainee), {
+    AND: [{ organizationId: org }, { createdById: "u-trainee" }],
+  });
+  assert.deepEqual(dataMessageVisibilityWhere(intern), {
+    AND: [{ organizationId: org }, { createdById: "u-intern" }],
+  });
 });
 
 // --- canViewRecord: the per-record read gate ---

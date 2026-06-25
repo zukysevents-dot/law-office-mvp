@@ -204,6 +204,26 @@ enum ReminderLevel {
   THIRD // předžalobní výzva
 }
 
+// --- DATA_BOXES (F2 / Datové schránky ISDS) ----------------------------------
+
+enum DataMessageDirection {
+  IN // doručená kanceláři
+  OUT // odeslaná kanceláří
+}
+
+enum DataMessageStatus {
+  RECEIVED // doručená do schránky (IN)
+  ACCEPTED // doručeno přihlášením / fikcí — spouští běh lhůty (F4)
+  READ // přečtená kanceláří
+  SENT // odeslaná (OUT)
+  ARCHIVED
+}
+
+enum DataBoxAccountStatus {
+  ACTIVE
+  DISABLED
+}
+
 model User {
   id              String   @id @default(cuid())
   name            String
@@ -238,6 +258,8 @@ model User {
   issuedInvoices          Invoice[]           @relation("InvoiceIssuedBy")
   recordedPayments        Payment[]           @relation("PaymentRecordedBy")
   sentReminders           Reminder[]          @relation("ReminderSentBy")
+  configuredDataBoxAccounts DataBoxAccount[]  @relation("DataBoxAccountCreatedBy")
+  createdDataMessages     DataMessage[]       @relation("DataMessageCreatedBy")
 
   @@map("users")
 }
@@ -279,6 +301,7 @@ model Subject {
   workLogs       WorkLog[]
   invoices       Invoice[]
   retainerAgreements RetainerAgreement[]
+  dataMessages   DataMessage[]
 
   // IČO is unique PER organization, not globally — the same company can be a
   // subject of more than one law office (multi-tenant). NULL ico is allowed
@@ -390,6 +413,7 @@ model Case {
   references       Reference[]
   workLogs         WorkLog[]
   invoices         Invoice[]
+  dataMessages     DataMessage[]
 
   @@unique([projectId, fileNumber])
   @@index([organizationId])
@@ -695,6 +719,9 @@ model Organization {
   payments             Payment[]
   reminders            Reminder[]
   retainerAgreements   RetainerAgreement[]
+  dataBoxAccounts      DataBoxAccount[]
+  dataMessages         DataMessage[]
+  dataBoxAttachments   DataBoxAttachment[]
 
   @@index([status])
   @@map("organizations")
@@ -1007,4 +1034,94 @@ model RetainerAgreement {
   @@index([organizationId])
   @@index([subjectId])
   @@map("retainerAgreements")
+}
+
+// --- DATA_BOXES models (F2 / Datové schránky ISDS) ---------------------------
+
+// A law office's access to a data box (ISDS). Credentials are stored ONLY as an
+// AES-256-GCM blob (credentialsEncrypted, never plaintext). Configured by
+// ADMIN/PARTNER. The real ISDS provider (official API vs partner) is deferred —
+// the credentials are an opaque encrypted JSON so either provider fits.
+model DataBoxAccount {
+  id                   String               @id @default(cuid())
+  organizationId       String
+  boxId                String // ISDS data box id
+  label                String
+  credentialsEncrypted String // encryptSecret() blob — NEVER plaintext
+  status               DataBoxAccountStatus @default(ACTIVE)
+  lastSyncedAt         DateTime?
+  createdById          String?
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  archivedAt           DateTime?
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  createdBy    User?         @relation("DataBoxAccountCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  messages     DataMessage[]
+
+  @@unique([organizationId, boxId])
+  @@index([organizationId])
+  @@map("dataBoxAccounts")
+}
+
+// A single data message (incoming/outgoing), org-scoped, assignable to a
+// Case/Subject. Deduped on the ISDS message id within an org.
+model DataMessage {
+  id               String               @id @default(cuid())
+  organizationId   String
+  dataBoxAccountId String?
+  direction        DataMessageDirection
+  dmId             String? // ISDS message id; NULL for a manually recorded message
+  senderBoxId      String?
+  recipientBoxId   String?
+  messageSubject   String // předmět zprávy (ne klient — ten je relace `subject`)
+  status           DataMessageStatus    @default(RECEIVED)
+  deliveredAt      DateTime?
+  acceptedAt       DateTime? // delivery-by-login/fiction — triggers a deadline (F4 seam)
+  caseId           String?
+  subjectId        String?
+  source           String               @default("MANUAL") // MANUAL | ISDS_SYNC
+  note             String?
+  createdById      String?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  archivedAt       DateTime?
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  account      DataBoxAccount?     @relation(fields: [dataBoxAccountId], references: [id], onDelete: SetNull)
+  case         Case?               @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  subject      Subject?            @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  createdBy    User?               @relation("DataMessageCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  attachments  DataBoxAttachment[]
+
+  // Dedupe the same ISDS message within an org (NULL dmId = manual, distinct).
+  @@unique([organizationId, dmId])
+  @@index([organizationId])
+  @@index([organizationId, direction, status])
+  @@index([caseId])
+  @@index([subjectId])
+  @@index([deliveredAt])
+  @@index([archivedAt])
+  @@map("dataMessages")
+}
+
+// Attachment of a data message. MVP keeps only a reference (storageUrl); real
+// storage (SharePoint vs blob) is decided in F5/DOC-6.
+model DataBoxAttachment {
+  id             String   @id @default(cuid())
+  organizationId String
+  dataMessageId  String
+  fileName       String
+  mimeType       String?
+  sizeBytes      Int?
+  storageUrl     String?
+  checksum       String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  message      DataMessage  @relation(fields: [dataMessageId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([dataMessageId])
+  @@map("dataBoxAttachments")
 }
