@@ -27,9 +27,20 @@ import {
 } from "lucide-react";
 
 import { logoutAction } from "@/app/actions/auth";
+import { ModuleKey } from "@/generated/prisma/enums";
 import { cn } from "@/lib/utils";
 
-const navItems = [
+type NavItem = {
+  href: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  adminOnly?: boolean;
+  // Gate this item behind a bought module (UX only). Items without `module`
+  // are always visible (CORE).
+  module?: ModuleKey;
+};
+
+const navItems: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/subjects", label: "Subjekty", icon: Building2 },
   { href: "/conflict-check", label: "Conflict check", icon: ShieldCheck },
@@ -39,10 +50,10 @@ const navItems = [
   { href: "/tasks/my", label: "Moje úkoly", icon: ListChecks },
   { href: "/tasks/archive", label: "Archiv úkolů", icon: Archive },
   { href: "/work-logs", label: "Výkazy práce", icon: Clock3 },
-  { href: "/billing", label: "Fakturace", icon: Receipt },
+  { href: "/billing", label: "Fakturace", icon: Receipt, module: ModuleKey.BILLING },
   { href: "/reports", label: "Reporty", icon: BarChart3 },
   { href: "/references", label: "Reference", icon: LibraryBig },
-  { href: "/calendar", label: "Kalendář", icon: CalendarDays },
+  { href: "/calendar", label: "Kalendář", icon: CalendarDays, module: ModuleKey.DEADLINES },
   { href: "/audit-log", label: "Audit log", icon: ScrollText, adminOnly: true },
   { href: "/settings/organization", label: "Kancelář", icon: Briefcase, adminOnly: true },
   { href: "/settings", label: "Nastavení", icon: Settings },
@@ -66,18 +77,26 @@ export function AppSidebar({
   showAuditLog,
   userName,
   userRole,
+  enabledModules,
 }: {
   showAuditLog?: boolean;
   userName?: string;
   userRole?: string;
+  enabledModules?: string[];
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  // showAuditLog === canViewAllLegalData (ADMIN/PARTNER); same gate covers the
-  // org-management link, so adminOnly items hide for everyone else.
-  const visibleNavItems = showAuditLog
-    ? navItems
-    : navItems.filter((item) => !item.adminOnly);
+  // Two independent gates:
+  // - showAuditLog === canViewAllLegalData (ADMIN/PARTNER); same gate covers the
+  //   org-management link, so adminOnly items hide for everyone else.
+  // - enabledModules hides nav items for modules the org hasn't bought. Missing
+  //   prop → empty list → module-gated items hidden (fail-closed UX).
+  const enabled = enabledModules ?? [];
+  const visibleNavItems = navItems.filter((item) => {
+    if (item.adminOnly && !showAuditLog) return false;
+    if (item.module && !enabled.includes(item.module)) return false;
+    return true;
+  });
   const activeHref = getActiveHref(pathname, visibleNavItems);
 
   const accountFooter = (

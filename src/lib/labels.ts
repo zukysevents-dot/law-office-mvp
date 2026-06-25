@@ -3,16 +3,43 @@ import {
   BillingStatus,
   CaseStatus,
   FeeType,
+  ModuleKey,
+  ModuleStatus,
   OrganizationMemberStatus,
   OrganizationStatus,
   ProjectStatus,
   SubjectRole,
   SubjectType,
+  SubscriptionStatus,
   TaskDeadlineType,
   TaskPriority,
   TaskStatus,
   UserRole,
 } from "@/generated/prisma/enums";
+
+export const moduleKeyLabels: Record<ModuleKey, string> = {
+  CORE: "Jádro",
+  BILLING: "Fakturace",
+  DATA_BOXES: "Datové schránky",
+  AML: "AML",
+  DEADLINES: "Lhůtník",
+  DOCUMENTS: "Dokumenty a šablony",
+  CLIENT_PORTAL: "Klientský portál",
+  HR_ATTENDANCE: "HR a docházka",
+};
+
+export const moduleStatusLabels: Record<ModuleStatus, string> = {
+  ENABLED: "Aktivní",
+  DISABLED: "Neaktivní",
+  TRIAL: "Zkušební",
+};
+
+export const subscriptionStatusLabels: Record<SubscriptionStatus, string> = {
+  ACTIVE: "Aktivní",
+  PAST_DUE: "Po splatnosti",
+  CANCELED: "Zrušené",
+  TRIALING: "Zkušební období",
+};
 
 export const userRoleLabels: Record<UserRole, string> = {
   ADMIN: "Admin",

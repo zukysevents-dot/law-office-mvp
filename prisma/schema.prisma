@@ -143,6 +143,38 @@ enum OrganizationMemberStatus {
   SUSPENDED
 }
 
+// --- Produktizace / entitlements (Epik 0 / F0) -----------------------------
+// Each sellable module is one ModuleKey. CORE is always on and never sold
+// separately; every other key gates a module via assertModuleEnabled().
+enum ModuleKey {
+  CORE
+  BILLING
+  DATA_BOXES
+  AML
+  DEADLINES
+  DOCUMENTS
+  CLIENT_PORTAL
+  HR_ATTENDANCE
+}
+
+enum ModuleStatus {
+  ENABLED
+  DISABLED
+  TRIAL
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  TRIALING
+}
+
+enum PlanInterval {
+  MONTHLY
+  YEARLY
+}
+
 model User {
   id              String   @id @default(cuid())
   name            String
@@ -606,9 +638,81 @@ model Organization {
   conflictChecks       ConflictCheck[]
   dashboardWidgets     DashboardWidget[]
   tableViewPreferences TableViewPreference[]
+  modules              OrganizationModule[]
+  subscription         Subscription?
 
   @@index([status])
   @@map("organizations")
+}
+
+// Read-mostly catalog of sellable modules. Seeded (prisma/seed.ts); the guard
+// logic's source of truth for dependencies is MODULE_DEPENDENCIES in
+// src/lib/entitlements.ts — keep the two in sync.
+model Module {
+  key          ModuleKey   @id
+  name         String
+  description  String?
+  // Modules that must be enabled before this one (e.g. CLIENT_PORTAL needs
+  // DOCUMENTS). Enforced at the /admin toggle and in resolveEnabledModules().
+  requiresKeys ModuleKey[]
+  isCore       Boolean     @default(false)
+  active       Boolean     @default(true)
+
+  @@map("modules")
+}
+
+// Entitlement of one module for one organization. Absence of a row == DISABLED.
+model OrganizationModule {
+  id             String       @id @default(cuid())
+  organizationId String
+  moduleKey      ModuleKey
+  status         ModuleStatus @default(DISABLED)
+  trialEndsAt    DateTime?
+  enabledAt      DateTime?
+  disabledAt     DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, moduleKey])
+  @@index([organizationId])
+  @@map("organizationModules")
+}
+
+// Priced plan bundling a set of modules. Seeded; informational for now.
+model Plan {
+  id           String       @id @default(cuid())
+  name         String
+  includedKeys ModuleKey[]
+  priceCzk     Decimal      @db.Decimal(12, 2)
+  interval     PlanInterval @default(MONTHLY)
+  active       Boolean      @default(true)
+
+  subscriptions Subscription[]
+
+  @@map("plans")
+}
+
+// One active subscription per organization (MVP). Billing of the SaaS product
+// itself — kept separate from client invoicing (Epik 1 / BILLING).
+model Subscription {
+  id               String             @id @default(cuid())
+  organizationId   String
+  planId           String?
+  status           SubscriptionStatus @default(TRIALING)
+  currentPeriodEnd DateTime?
+  // Stripe subscription id or similar; F8 wires real billing.
+  externalRef      String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  plan         Plan?        @relation(fields: [planId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId])
+  @@index([organizationId])
+  @@map("subscriptions")
 }
 
 model OrganizationJoinCode {

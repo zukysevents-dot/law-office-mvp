@@ -12,15 +12,52 @@ import {
   DashboardWidgetSize,
   DashboardWidgetType,
   FeeType,
+  ModuleKey,
+  ModuleStatus,
   OrganizationMemberStatus,
+  PlanInterval,
   ProjectStatus,
   SubjectRole,
   SubjectType,
+  SubscriptionStatus,
   TaskDeadlineType,
   TaskPriority,
   TaskStatus,
   UserRole,
 } from "../src/generated/prisma/enums";
+
+// Module catalog. `requiresKeys` here is DISPLAY-ONLY (shown in the admin UI);
+// the runtime authority for the dependency graph is MODULE_DEPENDENCIES in
+// src/lib/entitlements.ts. Keep the two in sync — a completeness test in
+// entitlements.test.ts guards against a key missing from the runtime graph.
+const MODULE_CATALOG: {
+  key: ModuleKey;
+  name: string;
+  description: string;
+  requiresKeys: ModuleKey[];
+  isCore: boolean;
+}[] = [
+  { key: ModuleKey.CORE, name: "Jádro", description: "Subjekty, spisy, úkoly, výkazy a reporty.", requiresKeys: [], isCore: true },
+  { key: ModuleKey.BILLING, name: "Fakturace", description: "Vystavování faktur klientům z výkazů práce.", requiresKeys: [], isCore: false },
+  { key: ModuleKey.DATA_BOXES, name: "Datové schránky", description: "Příjem, odeslání a přiřazení datových zpráv ke spisu.", requiresKeys: [], isCore: false },
+  { key: ModuleKey.AML, name: "AML", description: "Identifikace klienta a hodnocení rizik.", requiresKeys: [], isCore: false },
+  { key: ModuleKey.DEADLINES, name: "Lhůtník", description: "Procesní lhůty, soudní jednání a hlídání termínů.", requiresKeys: [], isCore: false },
+  { key: ModuleKey.DOCUMENTS, name: "Dokumenty a šablony", description: "DMS s verzováním a generování dokumentů ze šablon.", requiresKeys: [], isCore: false },
+  { key: ModuleKey.CLIENT_PORTAL, name: "Klientský portál", description: "Sdílení dokumentů a stavu spisu s klientem.", requiresKeys: [ModuleKey.DOCUMENTS], isCore: false },
+  { key: ModuleKey.HR_ATTENDANCE, name: "HR a docházka", description: "Zaměstnanci, docházka, absence a saldo dovolené.", requiresKeys: [], isCore: false },
+];
+
+const PLAN_CATALOG: {
+  id: string;
+  name: string;
+  includedKeys: ModuleKey[];
+  priceCzk: string;
+  interval: PlanInterval;
+}[] = [
+  { id: "plan-start", name: "Start", includedKeys: [ModuleKey.CORE], priceCzk: "0", interval: PlanInterval.MONTHLY },
+  { id: "plan-profi", name: "Profi", includedKeys: [ModuleKey.CORE, ModuleKey.BILLING, ModuleKey.DEADLINES, ModuleKey.AML], priceCzk: "1990", interval: PlanInterval.MONTHLY },
+  { id: "plan-komplet", name: "Komplet", includedKeys: MODULE_CATALOG.map((m) => m.key), priceCzk: "3990", interval: PlanInterval.MONTHLY },
+];
 
 // Must match the migration + src/lib/organization.ts DEMO_ORG_ID.
 const DEMO_ORG_ID = "org-demo-syndikat-legal";
@@ -282,6 +319,88 @@ async function main() {
       organizationId: demoOrg.id,
       codeHash: hashCode(DEMO_JOIN_CODE),
       label: "Demo onboarding",
+    },
+  });
+
+  // --- Produktizace / entitlements (F0) --------------------------------------
+  // Read-mostly module catalog.
+  for (const moduleDef of MODULE_CATALOG) {
+    await prisma.module.upsert({
+      where: { key: moduleDef.key },
+      update: {
+        name: moduleDef.name,
+        description: moduleDef.description,
+        requiresKeys: moduleDef.requiresKeys,
+        isCore: moduleDef.isCore,
+        active: true,
+      },
+      create: moduleDef,
+    });
+  }
+
+  // Priced plans (informational for now; F8 wires real billing).
+  for (const plan of PLAN_CATALOG) {
+    await prisma.plan.upsert({
+      where: { id: plan.id },
+      update: {
+        name: plan.name,
+        includedKeys: plan.includedKeys,
+        priceCzk: plan.priceCzk,
+        interval: plan.interval,
+        active: true,
+      },
+      create: plan,
+    });
+  }
+
+  // Demo org entitlements: BILLING live, DEADLINES on trial, rest disabled.
+  await prisma.organizationModule.upsert({
+    where: {
+      organizationId_moduleKey: {
+        organizationId: demoOrg.id,
+        moduleKey: ModuleKey.BILLING,
+      },
+    },
+    update: { status: ModuleStatus.ENABLED, enabledAt: new Date(), disabledAt: null },
+    create: {
+      organizationId: demoOrg.id,
+      moduleKey: ModuleKey.BILLING,
+      status: ModuleStatus.ENABLED,
+      enabledAt: new Date(),
+    },
+  });
+
+  await prisma.organizationModule.upsert({
+    where: {
+      organizationId_moduleKey: {
+        organizationId: demoOrg.id,
+        moduleKey: ModuleKey.DEADLINES,
+      },
+    },
+    update: {
+      status: ModuleStatus.TRIAL,
+      trialEndsAt: new Date("2026-12-31T00:00:00.000Z"),
+      enabledAt: new Date(),
+      disabledAt: null,
+    },
+    create: {
+      organizationId: demoOrg.id,
+      moduleKey: ModuleKey.DEADLINES,
+      status: ModuleStatus.TRIAL,
+      trialEndsAt: new Date("2026-12-31T00:00:00.000Z"),
+      enabledAt: new Date(),
+    },
+  });
+
+  // Demo subscription on the Profi plan (trialing).
+  await prisma.subscription.upsert({
+    where: { organizationId: demoOrg.id },
+    update: { planId: "plan-profi", status: SubscriptionStatus.TRIALING },
+    create: {
+      organizationId: demoOrg.id,
+      planId: "plan-profi",
+      status: SubscriptionStatus.TRIALING,
+      currentPeriodEnd: new Date("2026-12-31T00:00:00.000Z"),
     },
   });
 

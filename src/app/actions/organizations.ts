@@ -4,11 +4,19 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import {
+  ModuleKey,
+  ModuleStatus,
   OrganizationMemberStatus,
   OrganizationStatus,
   UserRole,
 } from "@/generated/prisma/enums";
 import { getAuthUser } from "@/lib/auth";
+import {
+  canEnableModule,
+  dependentsBlockingDisable,
+  MODULE_DEPENDENCIES,
+  resolveEnabledModules,
+} from "@/lib/entitlements";
 import {
   enumValue,
   optionalDate,
@@ -17,12 +25,15 @@ import {
   requiredString,
 } from "@/lib/form";
 import { generateCode, hashCode } from "@/lib/join-code";
+import { moduleKeyLabels } from "@/lib/labels";
 import { countActiveMembers } from "@/lib/organization";
 import {
   assertCanAdministerOrg,
   assertPlatformAdmin,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+
+const TRIAL_DEFAULT_DAYS = 30;
 
 // Thrown inside the join transaction to roll back and report a generic reason
 // without leaking which specific check failed.
@@ -423,4 +434,124 @@ export async function updateOrganization(formData: FormData) {
 
   revalidatePath("/admin");
   revalidatePath(`/admin/organizations/${organizationId}`);
+}
+
+// --- Module entitlements (platform admin only) -------------------------------
+// Enables/disables/trials one module for an org. Enforces the requiresKeys
+// dependency graph so entitlements never become inconsistent (e.g. portal
+// without documents). This is the only place that mutates OrganizationModule.
+export async function setOrganizationModule(formData: FormData) {
+  const user = await getAuthUser();
+  assertPlatformAdmin(user);
+  const prisma = getPrisma();
+
+  const organizationId = requiredString(formData, "organizationId");
+  const moduleKey = enumValue(ModuleKey, formData.get("moduleKey"), ModuleKey.CORE);
+  const status = enumValue(
+    ModuleStatus,
+    formData.get("status"),
+    ModuleStatus.DISABLED,
+  );
+
+  if (moduleKey === ModuleKey.CORE) {
+    throw new Error("Jádro je vždy aktivní a nelze ho měnit.");
+  }
+
+  const now = new Date();
+  const willEnable =
+    status === ModuleStatus.ENABLED || status === ModuleStatus.TRIAL;
+  const trialEndsAt =
+    status === ModuleStatus.TRIAL
+      ? optionalDate(formData, "trialEndsAt") ??
+        new Date(now.getTime() + TRIAL_DEFAULT_DAYS * 24 * 60 * 60 * 1000)
+      : null;
+
+  // Validate the dependency graph and write in one transaction, locking the org
+  // row so concurrent toggles can't each validate against a stale snapshot and
+  // leave entitlements inconsistent (same row-lock pattern as joinOrganization).
+  await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "organizations" WHERE id = ${organizationId} FOR UPDATE`;
+
+    const org = await tx.organization.findUnique({
+      where: { id: organizationId },
+    });
+    if (!org) {
+      throw new Error("Kancelář nenalezena.");
+    }
+
+    const existing = await tx.organizationModule.findMany({
+      where: { organizationId },
+    });
+    const enabledNow = resolveEnabledModules(
+      existing.map((m) => ({
+        moduleKey: m.moduleKey,
+        status: m.status,
+        trialEndsAt: m.trialEndsAt,
+      })),
+      now,
+    );
+
+    if (willEnable) {
+      if (!canEnableModule(moduleKey, enabledNow)) {
+        const missing = (MODULE_DEPENDENCIES[moduleKey] ?? [])
+          .filter((dep) => !enabledNow.has(dep))
+          .map((dep) => moduleKeyLabels[dep]);
+        throw new Error(
+          `Nejdříve aktivujte závislé moduly: ${missing.join(", ")}.`,
+        );
+      }
+    } else {
+      const blockers = dependentsBlockingDisable(moduleKey, enabledNow);
+      if (blockers.length > 0) {
+        throw new Error(
+          `Modul nelze deaktivovat — závisí na něm: ${blockers
+            .map((key) => moduleKeyLabels[key])
+            .join(", ")}.`,
+        );
+      }
+    }
+
+    const previous = existing.find((m) => m.moduleKey === moduleKey);
+
+    await tx.organizationModule.upsert({
+      where: { organizationId_moduleKey: { organizationId, moduleKey } },
+      update: {
+        status,
+        trialEndsAt,
+        enabledAt: willEnable ? previous?.enabledAt ?? now : previous?.enabledAt,
+        disabledAt: willEnable ? null : now,
+      },
+      create: {
+        organizationId,
+        moduleKey,
+        status,
+        trialEndsAt,
+        enabledAt: willEnable ? now : null,
+        disabledAt: willEnable ? null : now,
+      },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        entityType: "OrganizationModule",
+        entityId: organizationId,
+        action: "MODULE_CHANGE",
+        changedById: user.id,
+        oldValue: {
+          moduleKey,
+          status: previous?.status ?? ModuleStatus.DISABLED,
+          trialEndsAt: previous?.trialEndsAt?.toISOString() ?? null,
+        },
+        newValue: {
+          moduleKey,
+          status,
+          trialEndsAt: trialEndsAt?.toISOString() ?? null,
+        },
+      },
+    });
+  });
+
+  revalidatePath("/admin");
+  revalidatePath(`/admin/organizations/${organizationId}`);
+  revalidatePath("/settings/organization");
 }
