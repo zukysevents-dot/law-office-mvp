@@ -13,6 +13,7 @@ import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
 import { SharepointFolderField } from "@/components/sharepoint-folder-field";
 import { SharepointNotice } from "@/components/sharepoint-notice";
+import { SubjectAmlSection } from "@/components/subject-aml-section";
 import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
@@ -114,10 +115,32 @@ async function loadSubject(id: string) {
     },
   });
 
+  // AML/KYC data is compliance-sensitive — load it only for ADMIN/PARTNER, and
+  // never include it in the main subject query a LAWYER can run.
+  const canAml = canViewAllLegalData(currentUser);
+  let aml: {
+    identifications: Awaited<
+      ReturnType<typeof prisma.amlIdentification.findMany>
+    >;
+    assessment: Awaited<ReturnType<typeof prisma.amlAssessment.findUnique>>;
+  } | null = null;
+  if (canAml && subject) {
+    const [identifications, assessment] = await Promise.all([
+      prisma.amlIdentification.findMany({
+        where: { subjectId: subject.id },
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.amlAssessment.findUnique({ where: { subjectId: subject.id } }),
+    ]);
+    aml = { identifications, assessment };
+  }
+
   return {
     subject,
     canArchive: canViewAllLegalData(currentUser),
     canEdit: subject ? canEditRecord(currentUser, "Subject", subject) : false,
+    canAml,
+    aml,
   };
 }
 
@@ -162,7 +185,7 @@ export default async function SubjectDetailPage({
   const { id } = await params;
   const { sharepoint, ares } = await searchParams;
   const result = await safeQuery<SubjectDetailData>(
-    { subject: null, canArchive: false, canEdit: false },
+    { subject: null, canArchive: false, canEdit: false, canAml: false, aml: null },
     () => loadSubject(id),
   );
 
@@ -170,7 +193,7 @@ export default async function SubjectDetailPage({
     notFound();
   }
 
-  const { subject, canArchive, canEdit } = result.data;
+  const { subject, canArchive, canEdit, canAml, aml } = result.data;
   const projects = subject ? projectGroups(subject) : { active: [], inactive: [] };
   const links = subject?.ico ? icoLinks(subject.ico) : null;
 
@@ -476,6 +499,13 @@ export default async function SubjectDetailPage({
               <EmptyState>Pro subjekt zatím není uložený conflict check.</EmptyState>
             )}
           </Section>
+          {canAml && aml ? (
+            <SubjectAmlSection
+              subjectId={subject.id}
+              identifications={aml.identifications}
+              assessment={aml.assessment}
+            />
+          ) : null}
         </>
       ) : (
         <EmptyState>Detail subjektu není dostupný bez databáze.</EmptyState>

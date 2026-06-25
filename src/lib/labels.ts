@@ -1,4 +1,5 @@
 import {
+  AmlRiskLevel,
   ApprovalStatus,
   BillingStatus,
   CaseStatus,
@@ -48,6 +49,12 @@ export const reminderLevelLabels: Record<ReminderLevel, string> = {
   FIRST: "Upozornění",
   SECOND: "Upomínka",
   THIRD: "Předžalobní výzva",
+};
+
+export const amlRiskLevelLabels: Record<AmlRiskLevel, string> = {
+  LOW: "Nízké",
+  MEDIUM: "Střední",
+  HIGH: "Vysoké",
 };
 
 export const dataMessageDirectionLabels: Record<DataMessageDirection, string> = {

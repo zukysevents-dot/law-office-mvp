@@ -442,6 +442,18 @@ export function assertCanManageDataBoxes(user: PermissionInput) {
   }
 }
 
+// AML/KYC data is compliance-sensitive (identity documents, PEP/sanctions) —
+// restricted to ADMIN/PARTNER for both viewing and management.
+export function canManageAml(user: PermissionInput): boolean {
+  return canViewAllLegalData(user);
+}
+
+export function assertCanManageAml(user: PermissionInput) {
+  if (!canManageAml(user)) {
+    throw new Error("Nemáte oprávnění k AML/KYC údajům.");
+  }
+}
+
 export function referenceVisibilityWhere(
   user: PermissionInput,
 ): Prisma.ReferenceWhereInput {

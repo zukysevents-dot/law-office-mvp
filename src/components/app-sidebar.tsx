@@ -23,6 +23,7 @@ import {
   Receipt,
   ScrollText,
   Settings,
+  ShieldAlert,
   ShieldCheck,
   X,
 } from "lucide-react";
@@ -45,6 +46,13 @@ const navItems: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/subjects", label: "Subjekty", icon: Building2 },
   { href: "/conflict-check", label: "Conflict check", icon: ShieldCheck },
+  {
+    href: "/aml",
+    label: "AML / KYC",
+    icon: ShieldAlert,
+    adminOnly: true,
+    module: ModuleKey.AML,
+  },
   { href: "/projects", label: "Projekty", icon: BriefcaseBusiness },
   { href: "/cases", label: "Případy", icon: FileText },
   {

@@ -1,5 +1,6 @@
 import type { BadgeTone } from "@/components/ui/badge";
 import type {
+  AmlRiskLevel,
   ApprovalStatus,
   BillingStatus,
   DataMessageStatus,
@@ -8,6 +9,16 @@ import type {
   TaskDeadlineType,
   TaskStatus,
 } from "@/generated/prisma/enums";
+
+export function amlRiskLevelTone(level: AmlRiskLevel): BadgeTone {
+  const tones: Record<AmlRiskLevel, BadgeTone> = {
+    LOW: "green",
+    MEDIUM: "amber",
+    HIGH: "red",
+  };
+
+  return tones[level];
+}
 
 export function dataMessageStatusTone(status: DataMessageStatus): BadgeTone {
   const tones: Record<DataMessageStatus, BadgeTone> = {

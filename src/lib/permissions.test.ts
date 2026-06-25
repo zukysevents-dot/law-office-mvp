@@ -5,7 +5,9 @@ import { UserRole } from "@/generated/prisma/enums";
 
 import {
   andWhere,
+  assertCanManageAml,
   canEditRecord,
+  canManageAml,
   canViewAllLegalData,
   canViewRecord,
   dataMessageVisibilityWhere,
@@ -33,6 +35,45 @@ test("canViewAllLegalData: ADMIN and PARTNER true, others false", () => {
   assert.equal(canViewAllLegalData(trainee), false);
   assert.equal(canViewAllLegalData(intern), false);
   assert.equal(canViewAllLegalData(null), false);
+});
+
+// --- canManageAml / assertCanManageAml: AML/KYC restricted to ADMIN/PARTNER ---
+// Compliance-sensitive identity data (ID documents, PEP/sanctions) must never be
+// reachable by junior roles or an unauthenticated/org-less caller.
+test("canManageAml: ADMIN and PARTNER true, juniors false", () => {
+  assert.equal(canManageAml(admin), true);
+  assert.equal(canManageAml(partner), true);
+  assert.equal(canManageAml(lawyer), false);
+  assert.equal(canManageAml(trainee), false);
+  assert.equal(canManageAml(intern), false);
+});
+
+test("canManageAml: no role / no org / null user → false (fail closed)", () => {
+  // Caller carrying only an id but no role must not pass the AML gate.
+  assert.equal(canManageAml({ id: "u-x", role: undefined as never }), false);
+  // Org-less user (role present, organizationId missing) — still denied: AML
+  // access never depends on org alone, only on the senior role.
+  assert.equal(canManageAml({ id: "u-y", role: UserRole.LAWYER }), false);
+  assert.equal(canManageAml(null), false);
+  assert.equal(canManageAml(undefined), false);
+});
+
+test("assertCanManageAml: ADMIN and PARTNER do NOT throw", () => {
+  assert.doesNotThrow(() => assertCanManageAml(admin));
+  assert.doesNotThrow(() => assertCanManageAml(partner));
+});
+
+test("assertCanManageAml: LAWYER/TRAINEE/INTERN throw the AML message", () => {
+  const expected = { message: "Nemáte oprávnění k AML/KYC údajům." };
+  assert.throws(() => assertCanManageAml(lawyer), expected);
+  assert.throws(() => assertCanManageAml(trainee), expected);
+  assert.throws(() => assertCanManageAml(intern), expected);
+});
+
+test("assertCanManageAml: missing role / null / undefined throw (fail closed)", () => {
+  assert.throws(() => assertCanManageAml({ id: "u-x", role: undefined as never }));
+  assert.throws(() => assertCanManageAml(null));
+  assert.throws(() => assertCanManageAml(undefined));
 });
 
 // --- andWhere: empty clauses dropped, single passthrough, else AND-wrapped ---
