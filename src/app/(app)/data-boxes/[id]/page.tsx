@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
 
 import { assignToCase, downloadAttachment } from "@/app/actions/data-boxes";
-import { Field, SelectInput } from "@/components/form-field";
+import { createDeadlineFromDataMessage } from "@/app/actions/deadlines";
+import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
 import { Badge } from "@/components/ui/badge";
@@ -12,7 +13,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { ModuleKey } from "@/generated/prisma/enums";
 import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
-import { assertModuleEnabled } from "@/lib/entitlements";
+import { assertModuleEnabled, isModuleEnabled } from "@/lib/entitlements";
 import { formatCaseLabel, formatDate } from "@/lib/format";
 import {
   dataMessageDirectionLabels,
@@ -20,6 +21,7 @@ import {
 } from "@/lib/labels";
 import {
   andWhere,
+  canManageDeadlines,
   caseVisibilityWhere,
   dataMessageVisibilityWhere,
   subjectVisibilityWhere,
@@ -42,6 +44,9 @@ type Data = {
   message: Detail;
   cases: Array<{ id: string; name: string; fileNumber: string | null }>;
   subjects: Array<{ id: string; name: string }>;
+  // L-6: offering a deadline from this message needs the module + the right role.
+  canCreateDeadline: boolean;
+  members: Array<{ id: string; name: string }>;
 };
 
 export default async function DataMessageDetailPage({
@@ -62,7 +67,11 @@ export default async function DataMessageDetailPage({
     if (!message) {
       return null;
     }
-    const [cases, subjects] = await Promise.all([
+    const deadlinesEnabled = await isModuleEnabled(
+      currentUser.organizationId,
+      ModuleKey.DEADLINES,
+    );
+    const [cases, subjects, memberRows] = await Promise.all([
       prisma.case.findMany({
         where: andWhere(caseVisibilityWhere(currentUser), { archivedAt: null }),
         select: { id: true, name: true, fileNumber: true },
@@ -77,8 +86,24 @@ export default async function DataMessageDetailPage({
         orderBy: { name: "asc" },
         take: 500,
       }),
+      deadlinesEnabled
+        ? prisma.organizationMember.findMany({
+            where: {
+              organizationId: currentUser.organizationId ?? undefined,
+              status: "ACTIVE",
+            },
+            orderBy: { user: { name: "asc" } },
+            select: { user: { select: { id: true, name: true } } },
+          })
+        : Promise.resolve([]),
     ]);
-    return { message, cases, subjects };
+    return {
+      message,
+      cases,
+      subjects,
+      canCreateDeadline: deadlinesEnabled && canManageDeadlines(currentUser),
+      members: memberRows.map((row) => row.user),
+    };
   });
 
   if (result.databaseReady && !result.data) {
@@ -221,6 +246,67 @@ export default async function DataMessageDetailPage({
               </div>
             </form>
           </Section>
+
+          {data.canCreateDeadline ? (
+            <Section title="Vytvořit procesní lhůtu z této zprávy">
+              {message.caseId ? (
+                <form
+                  action={createDeadlineFromDataMessage}
+                  className="grid gap-4 sm:max-w-2xl"
+                >
+                  <input type="hidden" name="dataMessageId" value={message.id} />
+                  <p className="text-sm text-stone-600">
+                    Lhůta vznikne na spisu{" "}
+                    <span className="font-medium">
+                      {message.case?.name ?? "—"}
+                    </span>
+                    . Počátek běhu:{" "}
+                    {formatDate(message.acceptedAt ?? message.deliveredAt)}{" "}
+                    (doručení datové zprávy).
+                  </p>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Field label="Název lhůty">
+                      <TextInput name="title" required />
+                    </Field>
+                    <Field label="Termín (datum) — zadává advokát">
+                      <TextInput name="dueDate" type="date" required />
+                    </Field>
+                    <Field label="Odpovědný (volitelné)">
+                      <SelectInput name="responsibleUserId" defaultValue="">
+                        <option value="">—</option>
+                        {data.members.map((member) => (
+                          <option key={member.id} value={member.id}>
+                            {member.name}
+                          </option>
+                        ))}
+                      </SelectInput>
+                    </Field>
+                    <Field label="Pravidlo výpočtu (poznámka, volitelné)">
+                      <TextInput
+                        name="computedRule"
+                        placeholder="+15 dní od doručení"
+                      />
+                    </Field>
+                  </div>
+                  <Field label="Poznámka (volitelné)">
+                    <TextArea name="note" />
+                  </Field>
+                  <div>
+                    <Button type="submit">Založit lhůtu</Button>
+                  </div>
+                </form>
+              ) : (
+                <p className="text-sm text-stone-600">
+                  Nejprve přiřaďte zprávu ke spisu — lhůtu lze založit jen na
+                  spisu.
+                </p>
+              )}
+              <p className="mt-2 text-xs text-stone-400">
+                Termín lhůty systém nepočítá automaticky — zadává a potvrzuje
+                advokát. Lhůta zůstane dohledatelná k této datové zprávě.
+              </p>
+            </Section>
+          ) : null}
         </>
       ) : null}
     </>

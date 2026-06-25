@@ -64,6 +64,21 @@ enum TaskDeadlineType {
   PROCEDURAL
 }
 
+// Lhůtník (F4 / DEADLINES). Mirrors TaskDeadlineType's spirit but adds COURT for
+// deadlines tied to a hearing. The software RECORDS and WATCHES — it never
+// computes legal due dates; the lawyer enters/confirms `dueDate`.
+enum DeadlineType {
+  PROCEDURAL // procesní (soudní/správní lhůta)
+  COURT      // soudní (lhůta navázaná na jednání)
+  INTERNAL   // interní kancelářská kontrolní lhůta
+}
+
+enum DeadlineStatus {
+  OPEN
+  COMPLETED
+  CANCELLED // zrušená/bezpředmětná — auditní stopa zůstává (NE tvrdé smazání)
+}
+
 enum BillingStatus {
   BILLABLE
   NEEDS_APPROVAL
@@ -122,6 +137,11 @@ enum NotificationType {
   TASK_FOR_REVIEW
   TASK_DEADLINE_SOON
   TASK_FILED_FOLLOWUP
+  // Lhůtník (F4 / L-5). OVERDUE is the deliberate redundant escalation: a missed
+  // procedural deadline is lawyer liability, so we re-notify while still OPEN.
+  DEADLINE_SOON
+  DEADLINE_OVERDUE
+  COURT_HEARING_SOON
 }
 
 enum NotificationStatus {
@@ -271,6 +291,10 @@ model User {
   createdAmlIdentifications AmlIdentification[] @relation("AmlIdentificationCreatedBy")
   createdAmlAssessments   AmlAssessment[]     @relation("AmlAssessmentCreatedBy")
   reviewedAmlAssessments  AmlAssessment[]     @relation("AmlAssessmentReviewedBy")
+  responsibleDeadlines     Deadline[]         @relation("DeadlineResponsibleUser")
+  createdDeadlines         Deadline[]         @relation("DeadlineCreatedBy")
+  responsibleCourtHearings CourtHearing[]     @relation("CourtHearingResponsibleUser")
+  createdCourtHearings     CourtHearing[]     @relation("CourtHearingCreatedBy")
 
   @@map("users")
 }
@@ -427,6 +451,8 @@ model Case {
   workLogs         WorkLog[]
   invoices         Invoice[]
   dataMessages     DataMessage[]
+  deadlines        Deadline[]
+  courtHearings    CourtHearing[]
 
   @@unique([projectId, fileNumber])
   @@index([organizationId])
@@ -665,6 +691,12 @@ model NotificationPreference {
   taskFiledFollowupEmail Boolean  @default(true)
   deadlineReminderDays   Int      @default(1)
   filedFollowupDays      Int      @default(5)
+  // Lhůtník (F4 / L-5). Procedural deadlines carry liability, so they default ON
+  // and warn earlier (3 days) than task deadlines (1).
+  deadlineSoonEmail      Boolean  @default(true)
+  deadlineOverdueEmail   Boolean  @default(true)
+  courtHearingSoonEmail  Boolean  @default(true)
+  deadlineWatchDaysBefore Int     @default(3)
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 
@@ -737,6 +769,8 @@ model Organization {
   dataBoxAttachments   DataBoxAttachment[]
   amlIdentifications   AmlIdentification[]
   amlAssessments       AmlAssessment[]
+  deadlines            Deadline[]
+  courtHearings        CourtHearing[]
 
   @@index([status])
   @@map("organizations")
@@ -1108,6 +1142,7 @@ model DataMessage {
   subject      Subject?            @relation(fields: [subjectId], references: [id], onDelete: SetNull)
   createdBy    User?               @relation("DataMessageCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   attachments  DataBoxAttachment[]
+  deadlines    Deadline[]          @relation("DeadlineSourceDataMessage")
 
   // Dedupe the same ISDS message within an org (NULL dmId = manual, distinct).
   @@unique([organizationId, dmId])
@@ -1199,4 +1234,74 @@ model AmlAssessment {
   @@index([riskLevel])
   @@index([reviewDueAt])
   @@map("amlAssessments")
+}
+
+// --- Lhůtník models (F4 / DEADLINES) -----------------------------------------
+
+// A watched deadline on a case. The software RECORDS and WATCHES — it never
+// computes legal due dates; `dueDate` is entered/confirmed by the lawyer.
+// Visibility derives from the case (deadlineVisibilityWhere). CANCELLED keeps an
+// audit trail rather than hard-deleting. `sourceDataMessage` links a deadline
+// created from a delivered data message (L-6).
+model Deadline {
+  id                  String         @id @default(cuid())
+  organizationId      String
+  caseId              String
+  type                DeadlineType   @default(PROCEDURAL)
+  status              DeadlineStatus @default(OPEN)
+  title               String
+  dueDate             DateTime // termín; potvrzený advokátem (NE strojový výpočet)
+  originEvent         String? // např. "doručení datové zprávy", "fikce doručení"
+  originDate          DateTime? // datum události, od níž lhůta běží
+  computedRule        String? // poznámka advokáta (§/pravidlo) — jen dokumentační
+  responsibleUserId   String?
+  sourceDataMessageId String? // L-6: z které DZ lhůta vznikla
+  note                String?
+  completedAt         DateTime?
+  createdById         String?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  archivedAt          DateTime?
+
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  case              Case         @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  responsibleUser   User?        @relation("DeadlineResponsibleUser", fields: [responsibleUserId], references: [id], onDelete: SetNull)
+  sourceDataMessage DataMessage? @relation("DeadlineSourceDataMessage", fields: [sourceDataMessageId], references: [id], onDelete: SetNull)
+  createdBy         User?        @relation("DeadlineCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([caseId])
+  @@index([responsibleUserId])
+  @@index([status])
+  @@index([dueDate])
+  @@index([sourceDataMessageId])
+  @@map("deadlines")
+}
+
+// A court hearing on a case. Surfaced in /calendar via the calendar-events seam.
+// hearingAt carries a time (datetime), unlike date-only deadlines.
+model CourtHearing {
+  id                String    @id @default(cuid())
+  organizationId    String
+  caseId            String
+  court             String // označení soudu
+  hearingAt         DateTime // datum a čas jednání (UTC v DB)
+  room              String?
+  responsibleUserId String?
+  note              String?
+  createdById       String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  archivedAt        DateTime?
+
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  case            Case         @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  responsibleUser User?        @relation("CourtHearingResponsibleUser", fields: [responsibleUserId], references: [id], onDelete: SetNull)
+  createdBy       User?        @relation("CourtHearingCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([caseId])
+  @@index([responsibleUserId])
+  @@index([hearingAt])
+  @@map("courtHearings")
 }

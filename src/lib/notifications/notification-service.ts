@@ -1,6 +1,7 @@
 import nodemailer, { type Transporter } from "nodemailer";
 
 import {
+  DeadlineStatus,
   NotificationStatus,
   NotificationType,
   TaskStatus,
@@ -11,8 +12,14 @@ import { getPrisma } from "@/lib/prisma";
 const MAX_ATTEMPTS = 3;
 const DEFAULT_DEADLINE_REMINDER_DAYS = 1;
 const DEFAULT_FILED_FOLLOWUP_DAYS = 5;
+// Lhůtník (F4 / L-5): procedural deadlines warn earlier than task deadlines.
+const DEFAULT_DEADLINE_WATCH_DAYS = 3;
 const DEFAULT_SEND_LIMIT = 50;
 const LOCK_TIMEOUT_MINUTES = 15;
+// Cap how many deadlines/hearings a single scheduled scan loads into memory so a
+// large backlog (esp. long-overdue OPEN deadlines) can't overwhelm one cron run.
+// Dedupe keys make this safe to resume: unsent rows are picked up next run.
+const SCHEDULED_SCAN_LIMIT = 1000;
 
 type NotificationPreferenceShape = {
   emailEnabled: boolean;
@@ -23,6 +30,10 @@ type NotificationPreferenceShape = {
   taskFiledFollowupEmail: boolean;
   deadlineReminderDays: number;
   filedFollowupDays: number;
+  deadlineSoonEmail: boolean;
+  deadlineOverdueEmail: boolean;
+  courtHearingSoonEmail: boolean;
+  deadlineWatchDaysBefore: number;
 };
 
 export type NotificationPayload = {
@@ -55,6 +66,10 @@ const defaultPreference: NotificationPreferenceShape = {
   taskFiledFollowupEmail: true,
   deadlineReminderDays: DEFAULT_DEADLINE_REMINDER_DAYS,
   filedFollowupDays: DEFAULT_FILED_FOLLOWUP_DAYS,
+  deadlineSoonEmail: true,
+  deadlineOverdueEmail: true,
+  courtHearingSoonEmail: true,
+  deadlineWatchDaysBefore: DEFAULT_DEADLINE_WATCH_DAYS,
 };
 
 function notificationPreferenceData() {
@@ -104,6 +119,18 @@ function preferenceAllows(
 
   if (type === NotificationType.TASK_FILED_FOLLOWUP) {
     return current.taskFiledFollowupEmail;
+  }
+
+  if (type === NotificationType.DEADLINE_SOON) {
+    return current.deadlineSoonEmail;
+  }
+
+  if (type === NotificationType.DEADLINE_OVERDUE) {
+    return current.deadlineOverdueEmail;
+  }
+
+  if (type === NotificationType.COURT_HEARING_SOON) {
+    return current.courtHearingSoonEmail;
   }
 
   return false;
@@ -190,6 +217,22 @@ function formatTaskNotificationBody({
     `Úkol: ${title}`,
     `Odkaz: ${appUrl(`/tasks/${taskId}`)}`,
   ].join("\n");
+}
+
+// Deadlines/hearings live on a case (no per-deadline detail page) — link to the
+// case so the recipient can act on it.
+function formatCaseNotificationBody({
+  heading,
+  message,
+  caseId,
+}: {
+  heading: string;
+  message: string;
+  caseId: string;
+}) {
+  return [message, "", heading, `Odkaz: ${appUrl(`/cases/${caseId}`)}`].join(
+    "\n",
+  );
 }
 
 function normalizeDays(value: number, fallback: number) {
@@ -666,16 +709,182 @@ async function createScheduledFiledFollowupNotifications(now: Date) {
   return created;
 }
 
+// F4 / L-5: reminders for watched deadlines (Deadline). Two flavours from one
+// scan of OPEN, non-archived deadlines:
+//   • DEADLINE_SOON — once, when within the recipient's watch window.
+//   • DEADLINE_OVERDUE — the deliberate redundant escalation: re-sent ONCE PER
+//     DAY (date in the dedupe key) while the deadline stays OPEN past its date.
+// A missed procedural deadline is the lawyer's liability, so overdue keeps
+// nagging rather than firing a single easily-missed alert.
+async function createScheduledDeadlineReminders(now: Date) {
+  const prisma = getPrisma();
+  const maxWindow = new Date(now);
+  maxWindow.setDate(maxWindow.getDate() + 30);
+
+  // dueDate <= maxWindow covers both upcoming (≤30d) and any overdue (dueDate<now).
+  const deadlines = await prisma.deadline.findMany({
+    where: {
+      archivedAt: null,
+      status: DeadlineStatus.OPEN,
+      dueDate: { lte: maxWindow },
+    },
+    orderBy: { dueDate: "asc" },
+    take: SCHEDULED_SCAN_LIMIT,
+    select: {
+      id: true,
+      title: true,
+      dueDate: true,
+      responsibleUserId: true,
+      case: { select: { id: true, responsibleUserId: true } },
+    },
+  });
+  const preferenceCache = new Map<string, NotificationPreferenceShape>();
+  let created = 0;
+
+  for (const deadline of deadlines) {
+    const recipientIds = uniqueRecipients([
+      deadline.responsibleUserId,
+      deadline.case.responsibleUserId,
+    ]);
+    const dueLabel = deadline.dueDate.toLocaleDateString("cs-CZ");
+    const overdue = deadline.dueDate < now;
+
+    for (const recipientId of recipientIds) {
+      if (overdue) {
+        // One escalation per day while OPEN — date stamp in the dedupe key.
+        const day = now.toISOString().slice(0, 10);
+        const result = await queueInternalNotification({
+          toUserId: recipientId,
+          type: NotificationType.DEADLINE_OVERDUE,
+          subject: `Lhůta po termínu: ${deadline.title}`,
+          body: formatCaseNotificationBody({
+            heading: `Lhůta: ${deadline.title} (termín ${dueLabel})`,
+            message: "Lhůta je po termínu a stále není vyřízena.",
+            caseId: deadline.case.id,
+          }),
+          entityType: "Deadline",
+          entityId: deadline.id,
+          dedupeKey: `deadline:${deadline.id}:overdue:${day}`,
+        });
+        created += result.queued + result.skipped;
+        continue;
+      }
+
+      const preference = await preferenceForUser(recipientId, preferenceCache);
+      const reminderAt = new Date(deadline.dueDate);
+      reminderAt.setDate(
+        reminderAt.getDate() -
+          normalizeDays(
+            preference.deadlineWatchDaysBefore,
+            DEFAULT_DEADLINE_WATCH_DAYS,
+          ),
+      );
+
+      if (now < reminderAt) {
+        continue;
+      }
+
+      const result = await queueInternalNotification({
+        toUserId: recipientId,
+        type: NotificationType.DEADLINE_SOON,
+        subject: `Blíží se lhůta: ${deadline.title}`,
+        body: formatCaseNotificationBody({
+          heading: `Lhůta: ${deadline.title} (termín ${dueLabel})`,
+          message: `Blíží se termín lhůty: ${dueLabel}.`,
+          caseId: deadline.case.id,
+        }),
+        entityType: "Deadline",
+        entityId: deadline.id,
+        dedupeKey: `deadline:${deadline.id}:soon`,
+      });
+      created += result.queued + result.skipped;
+    }
+  }
+
+  return created;
+}
+
+// F4 / L-5: COURT_HEARING_SOON for hearings within the watch window. Fires once
+// per hearing/recipient (dedupe `hearing:<id>:soon`).
+async function createScheduledCourtHearingReminders(now: Date) {
+  const prisma = getPrisma();
+  const maxWindow = new Date(now);
+  maxWindow.setDate(maxWindow.getDate() + 30);
+
+  const hearings = await prisma.courtHearing.findMany({
+    where: {
+      archivedAt: null,
+      hearingAt: { gte: now, lte: maxWindow },
+    },
+    orderBy: { hearingAt: "asc" },
+    take: SCHEDULED_SCAN_LIMIT,
+    select: {
+      id: true,
+      court: true,
+      hearingAt: true,
+      responsibleUserId: true,
+      case: { select: { id: true, responsibleUserId: true } },
+    },
+  });
+  const preferenceCache = new Map<string, NotificationPreferenceShape>();
+  let created = 0;
+
+  for (const hearing of hearings) {
+    const recipientIds = uniqueRecipients([
+      hearing.responsibleUserId,
+      hearing.case.responsibleUserId,
+    ]);
+    const whenLabel = hearing.hearingAt.toLocaleString("cs-CZ");
+
+    for (const recipientId of recipientIds) {
+      const preference = await preferenceForUser(recipientId, preferenceCache);
+      const reminderAt = new Date(hearing.hearingAt);
+      reminderAt.setDate(
+        reminderAt.getDate() -
+          normalizeDays(
+            preference.deadlineWatchDaysBefore,
+            DEFAULT_DEADLINE_WATCH_DAYS,
+          ),
+      );
+
+      if (now < reminderAt) {
+        continue;
+      }
+
+      const result = await queueInternalNotification({
+        toUserId: recipientId,
+        type: NotificationType.COURT_HEARING_SOON,
+        subject: `Blíží se jednání: ${hearing.court}`,
+        body: formatCaseNotificationBody({
+          heading: `Jednání: ${hearing.court} (${whenLabel})`,
+          message: `Blíží se soudní jednání: ${whenLabel}.`,
+          caseId: hearing.case.id,
+        }),
+        entityType: "CourtHearing",
+        entityId: hearing.id,
+        dedupeKey: `hearing:${hearing.id}:soon`,
+      });
+      created += result.queued + result.skipped;
+    }
+  }
+
+  return created;
+}
+
 export async function runScheduledNotifications(limit = DEFAULT_SEND_LIMIT) {
   const now = new Date();
-  const [deadlineCreated, filedCreated] = await Promise.all([
-    createScheduledDeadlineNotifications(now),
-    createScheduledFiledFollowupNotifications(now),
-  ]);
+  const [deadlineCreated, filedCreated, watchedCreated, hearingCreated] =
+    await Promise.all([
+      createScheduledDeadlineNotifications(now),
+      createScheduledFiledFollowupNotifications(now),
+      createScheduledDeadlineReminders(now),
+      createScheduledCourtHearingReminders(now),
+    ]);
   const sendResult = await sendPendingNotifications(limit);
 
   return {
-    created: deadlineCreated + filedCreated,
+    created:
+      deadlineCreated + filedCreated + watchedCreated + hearingCreated,
     ...sendResult,
   } satisfies NotificationRunResult;
 }

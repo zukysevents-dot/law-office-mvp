@@ -454,6 +454,94 @@ export function assertCanManageAml(user: PermissionInput) {
   }
 }
 
+// Who may create/edit/complete deadlines and court hearings: ADMIN, PARTNER,
+// LAWYER. Closing a procedural deadline is a liability act (a missed deadline is
+// the lawyer's liability), so TRAINEE/INTERN are excluded from managing them.
+export function canManageDeadlines(user: PermissionInput): boolean {
+  return canViewAllLegalData(user) || roleOf(user) === UserRole.LAWYER;
+}
+
+export function assertCanManageDeadlines(user: PermissionInput) {
+  if (!canManageDeadlines(user)) {
+    throw new Error("Nemáte oprávnění spravovat lhůty.");
+  }
+}
+
+// Visibility for deadlines (F4). Deadlines are case-bound, so visibility derives
+// from the case (like data messages): ADMIN/PARTNER see all org deadlines; a
+// LAWYER sees ones they own (responsible/created) or on a case they're
+// responsible for; TRAINEE/INTERN see only ones they own. Fail-closed without org.
+export function deadlineVisibilityWhere(
+  user: PermissionInput,
+): Prisma.DeadlineWhereInput {
+  const org = orgClause(user);
+  if (!org) {
+    return denyWhere<Prisma.DeadlineWhereInput>();
+  }
+
+  if (canViewAllLegalData(user)) {
+    return org;
+  }
+
+  const userId = userIdOf(user);
+  const role = roleOf(user);
+
+  if (!userId || !role) {
+    return denyWhere<Prisma.DeadlineWhereInput>();
+  }
+
+  if (role === UserRole.LAWYER) {
+    return andWhere(org, {
+      OR: [
+        { responsibleUserId: userId },
+        { createdById: userId },
+        { case: { is: { responsibleUserId: userId } } },
+        { case: { is: { project: { is: { responsibleUserId: userId } } } } },
+      ],
+    });
+  }
+
+  return andWhere(org, {
+    OR: [{ responsibleUserId: userId }, { createdById: userId }],
+  });
+}
+
+// Visibility for court hearings (F4) — same case-derived rules as deadlines.
+export function courtHearingVisibilityWhere(
+  user: PermissionInput,
+): Prisma.CourtHearingWhereInput {
+  const org = orgClause(user);
+  if (!org) {
+    return denyWhere<Prisma.CourtHearingWhereInput>();
+  }
+
+  if (canViewAllLegalData(user)) {
+    return org;
+  }
+
+  const userId = userIdOf(user);
+  const role = roleOf(user);
+
+  if (!userId || !role) {
+    return denyWhere<Prisma.CourtHearingWhereInput>();
+  }
+
+  if (role === UserRole.LAWYER) {
+    return andWhere(org, {
+      OR: [
+        { responsibleUserId: userId },
+        { createdById: userId },
+        { case: { is: { responsibleUserId: userId } } },
+        { case: { is: { project: { is: { responsibleUserId: userId } } } } },
+      ],
+    });
+  }
+
+  return andWhere(org, {
+    OR: [{ responsibleUserId: userId }, { createdById: userId }],
+  });
+}
+
 export function referenceVisibilityWhere(
   user: PermissionInput,
 ): Prisma.ReferenceWhereInput {

@@ -6,11 +6,15 @@ import { UserRole } from "@/generated/prisma/enums";
 import {
   andWhere,
   assertCanManageAml,
+  assertCanManageDeadlines,
   canEditRecord,
   canManageAml,
+  canManageDeadlines,
   canViewAllLegalData,
   canViewRecord,
+  courtHearingVisibilityWhere,
   dataMessageVisibilityWhere,
+  deadlineVisibilityWhere,
   taskVisibilityWhere,
   workLogVisibilityWhere,
 } from "./permissions";
@@ -201,6 +205,96 @@ test("dataMessageVisibilityWhere: TRAINEE/INTERN see only messages they created"
   assert.deepEqual(dataMessageVisibilityWhere(intern), {
     AND: [{ organizationId: org }, { createdById: "u-intern" }],
   });
+});
+
+// --- canManageDeadlines: deadline write gate is ADMIN/PARTNER/LAWYER only ---
+// Missing/late legal deadlines are a malpractice risk, so editing them is
+// reserved for fully-qualified roles. The bool feeds assertCanManageDeadlines
+// (below) and the UI's show/hide of the deadline form controls.
+test("canManageDeadlines: ADMIN/PARTNER/LAWYER true, TRAINEE/INTERN false", () => {
+  assert.equal(canManageDeadlines(admin), true);
+  assert.equal(canManageDeadlines(partner), true);
+  assert.equal(canManageDeadlines(lawyer), true);
+  assert.equal(canManageDeadlines(trainee), false);
+  assert.equal(canManageDeadlines(intern), false);
+});
+
+test("canManageDeadlines: no role / no org / null / undefined → false (fail closed)", () => {
+  // A caller with an id but no role must not pass the deadline gate.
+  assert.equal(canManageDeadlines({ id: "u-x", role: undefined as never }), false);
+  // Role present but org-less: deadline management depends on the role only,
+  // and a missing role on a malformed user must still fail closed.
+  assert.equal(canManageDeadlines({ id: "u-y", role: undefined as never }), false);
+  assert.equal(canManageDeadlines(null), false);
+  assert.equal(canManageDeadlines(undefined), false);
+});
+
+// --- assertCanManageDeadlines: ADMIN/PARTNER/LAWYER may manage deadlines ---
+test("assertCanManageDeadlines: ADMIN/PARTNER/LAWYER do NOT throw", () => {
+  assert.doesNotThrow(() => assertCanManageDeadlines(admin));
+  assert.doesNotThrow(() => assertCanManageDeadlines(partner));
+  assert.doesNotThrow(() => assertCanManageDeadlines(lawyer));
+});
+
+test("assertCanManageDeadlines: TRAINEE/INTERN/null throw (liability gate)", () => {
+  const expected = { message: "Nemáte oprávnění spravovat lhůty." };
+  assert.throws(() => assertCanManageDeadlines(trainee), expected);
+  assert.throws(() => assertCanManageDeadlines(intern), expected);
+  assert.throws(() => assertCanManageDeadlines(null), expected);
+});
+
+// --- deadlineVisibilityWhere: case-derived, fail-closed ---
+test("deadlineVisibilityWhere: missing org → fail-closed deny clause", () => {
+  const noOrg = { id: "u-x", role: UserRole.LAWYER };
+  assert.deepEqual(deadlineVisibilityWhere(noOrg), { id: "__role_denied__" });
+  assert.deepEqual(deadlineVisibilityWhere(null), { id: "__role_denied__" });
+});
+
+test("deadlineVisibilityWhere: ADMIN/PARTNER see all deadlines in their org", () => {
+  assert.deepEqual(deadlineVisibilityWhere(admin), { organizationId: org });
+  assert.deepEqual(deadlineVisibilityWhere(partner), { organizationId: org });
+});
+
+test("deadlineVisibilityWhere: LAWYER scoped to own + responsible-case deadlines", () => {
+  const expected = {
+    AND: [
+      { organizationId: org },
+      {
+        OR: [
+          { responsibleUserId: "u-lawyer" },
+          { createdById: "u-lawyer" },
+          { case: { is: { responsibleUserId: "u-lawyer" } } },
+          { case: { is: { project: { is: { responsibleUserId: "u-lawyer" } } } } },
+        ],
+      },
+    ],
+  };
+  assert.deepEqual(deadlineVisibilityWhere(lawyer), expected);
+});
+
+test("deadlineVisibilityWhere: TRAINEE/INTERN see only own (responsible/created)", () => {
+  const expectedFor = (id: string) => ({
+    AND: [
+      { organizationId: org },
+      { OR: [{ responsibleUserId: id }, { createdById: id }] },
+    ],
+  });
+  assert.deepEqual(deadlineVisibilityWhere(trainee), expectedFor("u-trainee"));
+  assert.deepEqual(deadlineVisibilityWhere(intern), expectedFor("u-intern"));
+});
+
+// --- courtHearingVisibilityWhere: same case-derived rules as deadlines ---
+test("courtHearingVisibilityWhere: missing org → fail-closed deny clause", () => {
+  assert.deepEqual(courtHearingVisibilityWhere(null), { id: "__role_denied__" });
+});
+
+test("courtHearingVisibilityWhere: ADMIN org-wide; LAWYER scoped", () => {
+  assert.deepEqual(courtHearingVisibilityWhere(admin), { organizationId: org });
+  const lawyerWhere = courtHearingVisibilityWhere(lawyer) as {
+    AND?: Array<{ organizationId?: string; OR?: unknown[] }>;
+  };
+  assert.deepEqual(lawyerWhere.AND?.[0], { organizationId: org });
+  assert.equal(lawyerWhere.AND?.[1]?.OR?.length, 4);
 });
 
 // --- canViewRecord: the per-record read gate ---

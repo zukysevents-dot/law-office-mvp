@@ -5,6 +5,7 @@ import { archiveCase, restoreCase } from "@/app/actions/cases";
 import { addCaseSubjectRelation } from "@/app/actions/subject-relations";
 import { ArchiveActionForm } from "@/components/archive-action-form";
 import { ArchiveNotice } from "@/components/archive-notice";
+import { CaseDeadlinesSection } from "@/components/case-deadlines-section";
 import { Field, SelectInput, TextArea } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
 import { ReferenceForm } from "@/components/reference-form";
@@ -15,7 +16,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ModuleKey } from "@/generated/prisma/enums";
 import { getCurrentUser } from "@/lib/auth";
+import { isModuleEnabled } from "@/lib/entitlements";
 import { formatDate, formatMoney } from "@/lib/format";
 import {
   caseStatusLabels,
@@ -26,9 +29,12 @@ import {
 import { safeQuery } from "@/lib/db-safe";
 import {
   andWhere,
+  canManageDeadlines,
   canViewAllLegalData,
   canEditRecord,
   caseVisibilityWhere,
+  courtHearingVisibilityWhere,
+  deadlineVisibilityWhere,
   referenceVisibilityWhere,
   subjectVisibilityWhere,
   taskVisibilityWhere,
@@ -103,11 +109,64 @@ async function loadCase(id: string) {
     }),
   ]);
 
+  const deadlinesEnabled =
+    legalCase != null &&
+    (await isModuleEnabled(currentUser.organizationId, ModuleKey.DEADLINES));
+
+  const [deadlines, hearings, memberRows] = deadlinesEnabled
+    ? await Promise.all([
+        prisma.deadline.findMany({
+          where: andWhere(
+            { caseId: id, archivedAt: null },
+            deadlineVisibilityWhere(currentUser),
+          ),
+          orderBy: { dueDate: "asc" },
+          take: 200,
+          select: {
+            id: true,
+            type: true,
+            status: true,
+            title: true,
+            dueDate: true,
+            responsibleUser: { select: { name: true } },
+          },
+        }),
+        prisma.courtHearing.findMany({
+          where: andWhere(
+            { caseId: id, archivedAt: null },
+            courtHearingVisibilityWhere(currentUser),
+          ),
+          orderBy: { hearingAt: "asc" },
+          take: 200,
+          select: {
+            id: true,
+            court: true,
+            hearingAt: true,
+            room: true,
+            responsibleUser: { select: { name: true } },
+          },
+        }),
+        prisma.organizationMember.findMany({
+          where: {
+            organizationId: currentUser.organizationId ?? undefined,
+            status: "ACTIVE",
+          },
+          orderBy: { user: { name: "asc" } },
+          select: { user: { select: { id: true, name: true } } },
+        }),
+      ])
+    : [[], [], []];
+
   return {
     legalCase,
     subjects,
     canArchive: canViewAllLegalData(currentUser),
     canEdit: legalCase ? canEditRecord(currentUser, "Case", legalCase) : false,
+    deadlinesEnabled,
+    deadlines,
+    hearings,
+    members: memberRows.map((row) => row.user),
+    canManageDeadlines: canManageDeadlines(currentUser),
   };
 }
 
@@ -118,6 +177,11 @@ const emptyCaseDetail: CaseDetailData = {
   subjects: [],
   canArchive: false,
   canEdit: false,
+  deadlinesEnabled: false,
+  deadlines: [],
+  hearings: [],
+  members: [],
+  canManageDeadlines: false,
 };
 
 export default async function CaseDetailPage({
@@ -135,7 +199,17 @@ export default async function CaseDetailPage({
     notFound();
   }
 
-  const { legalCase, subjects, canArchive, canEdit } = result.data;
+  const {
+    legalCase,
+    subjects,
+    canArchive,
+    canEdit,
+    deadlinesEnabled,
+    deadlines,
+    hearings,
+    members,
+    canManageDeadlines: canManageDeadlinesFlag,
+  } = result.data;
 
   return (
     <>
@@ -390,6 +464,15 @@ export default async function CaseDetailPage({
               <EmptyState>Případ zatím nemá úkoly.</EmptyState>
             )}
           </Section>
+          {deadlinesEnabled ? (
+            <CaseDeadlinesSection
+              caseId={legalCase.id}
+              deadlines={deadlines}
+              hearings={hearings}
+              members={members}
+              canManage={canManageDeadlinesFlag}
+            />
+          ) : null}
         </>
       ) : (
         <EmptyState>Detail případu není dostupný bez databáze.</EmptyState>

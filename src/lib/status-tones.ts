@@ -4,6 +4,8 @@ import type {
   ApprovalStatus,
   BillingStatus,
   DataMessageStatus,
+  DeadlineStatus,
+  DeadlineType,
   InvoiceStatus,
   SubjectRole,
   TaskDeadlineType,
@@ -89,4 +91,24 @@ export function subjectRoleTone(role: SubjectRole): BadgeTone {
 
 export function taskDeadlineTypeTone(type: TaskDeadlineType): BadgeTone {
   return type === "PROCEDURAL" ? "red" : "mint";
+}
+
+export function deadlineTypeTone(type: DeadlineType): BadgeTone {
+  const tones: Record<DeadlineType, BadgeTone> = {
+    PROCEDURAL: "red",
+    COURT: "purple",
+    INTERNAL: "mint",
+  };
+
+  return tones[type];
+}
+
+export function deadlineStatusTone(status: DeadlineStatus): BadgeTone {
+  const tones: Record<DeadlineStatus, BadgeTone> = {
+    OPEN: "blue",
+    COMPLETED: "green",
+    CANCELLED: "neutral",
+  };
+
+  return tones[status];
 }

@@ -150,6 +150,21 @@ export default async function SettingsPage() {
                 label="Kontrola po statusu Podáno"
                 defaultChecked={preference.taskFiledFollowupEmail}
               />
+              <PreferenceCheckbox
+                name="deadlineSoonEmail"
+                label="Blížící se lhůta (lhůtník)"
+                defaultChecked={preference.deadlineSoonEmail}
+              />
+              <PreferenceCheckbox
+                name="deadlineOverdueEmail"
+                label="Lhůta po termínu (lhůtník)"
+                defaultChecked={preference.deadlineOverdueEmail}
+              />
+              <PreferenceCheckbox
+                name="courtHearingSoonEmail"
+                label="Blížící se soudní jednání"
+                defaultChecked={preference.courtHearingSoonEmail}
+              />
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               <Field label="Upozornit kolik dní před deadlinem">
@@ -168,6 +183,15 @@ export default async function SettingsPage() {
                   min={0}
                   max={30}
                   defaultValue={preference.filedFollowupDays}
+                />
+              </Field>
+              <Field label="Upozornit kolik dní před lhůtou (lhůtník)">
+                <TextInput
+                  name="deadlineWatchDaysBefore"
+                  type="number"
+                  min={0}
+                  max={30}
+                  defaultValue={preference.deadlineWatchDaysBefore}
                 />
               </Field>
             </div>

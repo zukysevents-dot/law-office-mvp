@@ -67,3 +67,6 @@ Thumbs.db
 *.swo
 *~
 *.pem
+
+# Playwright MCP smoke-test artifacts
+.playwright-mcp/

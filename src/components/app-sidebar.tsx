@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  AlarmClock,
   BarChart3,
   Briefcase,
   BriefcaseBusiness,
@@ -68,6 +69,7 @@ const navItems: NavItem[] = [
   { href: "/billing", label: "Fakturace", icon: Receipt, module: ModuleKey.BILLING },
   { href: "/reports", label: "Reporty", icon: BarChart3 },
   { href: "/references", label: "Reference", icon: LibraryBig },
+  { href: "/deadlines", label: "Lhůtník", icon: AlarmClock, module: ModuleKey.DEADLINES },
   { href: "/calendar", label: "Kalendář", icon: CalendarDays, module: ModuleKey.DEADLINES },
   { href: "/audit-log", label: "Audit log", icon: ScrollText, adminOnly: true },
   { href: "/settings/organization", label: "Kancelář", icon: Briefcase, adminOnly: true },
