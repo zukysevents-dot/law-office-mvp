@@ -16,7 +16,8 @@
     "db:deploy": "prisma migrate deploy",
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "db:bootstrap": "tsx scripts/bootstrap.ts"
   },
   "dependencies": {
     "@fullcalendar/core": "^6.1.21",
