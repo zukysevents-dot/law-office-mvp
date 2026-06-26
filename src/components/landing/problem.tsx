@@ -48,15 +48,15 @@ export function Problem() {
       <div className="mt-12 grid grid-cols-1 gap-4 sm:grid-cols-2">
         {pains.map((pain, index) => (
           <Reveal key={pain.title} delay={index * 70}>
-            <article className="flex h-full gap-4 rounded-xl border border-[#d4e2dc] bg-white p-5 shadow-sm shadow-[#072924]/5 transition duration-300 hover:-translate-y-1 hover:shadow-md hover:shadow-[#072924]/10">
+            <article className="flex h-full gap-4 rounded-xl border border-[var(--iv-line)] bg-white p-5 shadow-sm shadow-[var(--iv-deep)]/5 transition duration-300 hover:-translate-y-1 hover:shadow-md hover:shadow-[var(--iv-deep)]/10">
               <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-amber-100 bg-amber-50 text-amber-900">
                 <pain.icon className="h-5 w-5" aria-hidden />
               </span>
               <div className="min-w-0">
-                <h3 className="text-base font-semibold text-[#072924]">
+                <h3 className="text-base font-semibold text-[var(--iv-ink)]">
                   {pain.title}
                 </h3>
-                <p className="mt-1.5 text-sm leading-relaxed text-[#5f756e]">
+                <p className="mt-1.5 text-sm leading-relaxed text-[var(--iv-muted)]">
                   {pain.body}
                 </p>
               </div>

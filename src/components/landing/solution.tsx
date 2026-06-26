@@ -34,17 +34,17 @@ export function Solution() {
 
       <div className="mt-12 grid grid-cols-1 gap-5 lg:grid-cols-2">
         <Reveal>
-          <div className="h-full rounded-2xl border border-[#d4e2dc] bg-white p-6 shadow-sm shadow-[#072924]/5 sm:p-8">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#5f756e]">
+          <div className="h-full rounded-2xl border border-[var(--iv-line)] bg-white p-6 shadow-sm shadow-[var(--iv-deep)]/5 sm:p-8">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--iv-muted)]">
               Dříve
             </p>
             <ul className="mt-5 space-y-3.5">
               {before.map((item) => (
                 <li key={item} className="flex items-start gap-3">
-                  <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[#d4e2dc] bg-[#eef5f1] text-[#5f756e]">
+                  <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[var(--iv-line)] bg-[var(--iv-bg)] text-[var(--iv-muted)]">
                     <X className="h-3.5 w-3.5" aria-hidden />
                   </span>
-                  <span className="text-sm leading-relaxed text-[#5f756e]">
+                  <span className="text-sm leading-relaxed text-[var(--iv-muted)]">
                     {item}
                   </span>
                 </li>
@@ -54,17 +54,21 @@ export function Solution() {
         </Reveal>
 
         <Reveal delay={100}>
-          <div className="h-full rounded-2xl border border-[#072924] bg-[#072924] p-6 shadow-lg shadow-[#072924]/15 sm:p-8">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#B9DCC6]">
-              Se syndikat.legal
+          <div className="relative h-full overflow-hidden rounded-2xl border border-[var(--iv-deep)] bg-[var(--iv-deep)] p-6 shadow-xl shadow-[var(--iv-deep)]/25 sm:p-8">
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(70%_60%_at_100%_0%,rgba(45,198,194,0.18),transparent_70%)]"
+            />
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--iv-teal-bright)]">
+              S IURIVERSE
             </p>
             <ul className="mt-5 space-y-3.5">
               {after.map((item) => (
                 <li key={item} className="flex items-start gap-3">
-                  <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#B9DCC6] text-[#072924]">
+                  <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--iv-teal-bright)] text-[var(--iv-deep)]">
                     <Check className="h-3.5 w-3.5" aria-hidden />
                   </span>
-                  <span className="text-sm leading-relaxed text-[#d8eee0]">
+                  <span className="text-sm leading-relaxed text-[var(--iv-on-dark)]">
                     {item}
                   </span>
                 </li>

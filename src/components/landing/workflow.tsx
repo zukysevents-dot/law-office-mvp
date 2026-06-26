@@ -54,25 +54,25 @@ export function Workflow() {
       <ol className="relative mt-14 grid grid-cols-1 gap-10 sm:grid-cols-2 lg:grid-cols-5 lg:gap-6">
         <span
           aria-hidden
-          className="absolute left-6 top-6 hidden h-px bg-gradient-to-r from-[#B9DCC6] via-[#B9DCC6] to-transparent lg:block"
+          className="absolute left-6 top-6 hidden h-px bg-gradient-to-r from-[var(--iv-teal)] via-[var(--iv-teal)]/60 to-transparent lg:block"
           style={{ width: "calc(100% - 3rem)" }}
         />
         {steps.map((step, index) => (
           <li key={step.title} className="relative">
             <Reveal delay={index * 80}>
               <div className="flex items-center gap-3 lg:flex-col lg:items-start">
-                <span className="relative z-10 flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#072924] text-base font-semibold text-white ring-4 ring-[#eef5f1]">
+                <span className="relative z-10 flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[var(--iv-deep)] text-base font-semibold text-white ring-4 ring-[var(--iv-bg)]">
                   {index + 1}
                 </span>
                 <step.icon
-                  className="h-5 w-5 text-[#072924]/70 lg:mt-4"
+                  className="h-5 w-5 text-[var(--iv-teal-ink)] lg:mt-4"
                   aria-hidden
                 />
               </div>
-              <h3 className="mt-4 text-base font-semibold text-[#072924]">
+              <h3 className="mt-4 text-base font-semibold text-[var(--iv-ink)]">
                 {step.title}
               </h3>
-              <p className="mt-1.5 text-sm leading-relaxed text-[#5f756e]">
+              <p className="mt-1.5 text-sm leading-relaxed text-[var(--iv-muted)]">
                 {step.body}
               </p>
             </Reveal>
