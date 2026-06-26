@@ -2,9 +2,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { archiveCase, restoreCase } from "@/app/actions/cases";
+import { shareCase } from "@/app/actions/portal";
 import { addCaseSubjectRelation } from "@/app/actions/subject-relations";
 import { ArchiveActionForm } from "@/components/archive-action-form";
 import { ArchiveNotice } from "@/components/archive-notice";
+import { CaseDeadlinesSection } from "@/components/case-deadlines-section";
+import { CaseDocumentsSection } from "@/components/case-documents-section";
 import { Field, SelectInput, TextArea } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
 import { ReferenceForm } from "@/components/reference-form";
@@ -15,7 +18,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ModuleKey } from "@/generated/prisma/enums";
 import { getCurrentUser } from "@/lib/auth";
+import { isModuleEnabled } from "@/lib/entitlements";
 import { formatDate, formatMoney } from "@/lib/format";
 import {
   caseStatusLabels,
@@ -26,9 +31,16 @@ import {
 import { safeQuery } from "@/lib/db-safe";
 import {
   andWhere,
+  canManageDeadlines,
+  canManageDocuments,
+  canManagePortal,
   canViewAllLegalData,
   canEditRecord,
   caseVisibilityWhere,
+  courtHearingVisibilityWhere,
+  deadlineVisibilityWhere,
+  documentTemplateVisibilityWhere,
+  documentVisibilityWhere,
   referenceVisibilityWhere,
   subjectVisibilityWhere,
   taskVisibilityWhere,
@@ -103,11 +115,117 @@ async function loadCase(id: string) {
     }),
   ]);
 
+  const deadlinesEnabled =
+    legalCase != null &&
+    (await isModuleEnabled(currentUser.organizationId, ModuleKey.DEADLINES));
+
+  const [deadlines, hearings, memberRows] = deadlinesEnabled
+    ? await Promise.all([
+        prisma.deadline.findMany({
+          where: andWhere(
+            { caseId: id, archivedAt: null },
+            deadlineVisibilityWhere(currentUser),
+          ),
+          orderBy: { dueDate: "asc" },
+          take: 200,
+          select: {
+            id: true,
+            type: true,
+            status: true,
+            title: true,
+            dueDate: true,
+            responsibleUser: { select: { name: true } },
+          },
+        }),
+        prisma.courtHearing.findMany({
+          where: andWhere(
+            { caseId: id, archivedAt: null },
+            courtHearingVisibilityWhere(currentUser),
+          ),
+          orderBy: { hearingAt: "asc" },
+          take: 200,
+          select: {
+            id: true,
+            court: true,
+            hearingAt: true,
+            room: true,
+            responsibleUser: { select: { name: true } },
+          },
+        }),
+        prisma.organizationMember.findMany({
+          where: {
+            organizationId: currentUser.organizationId ?? undefined,
+            status: "ACTIVE",
+          },
+          orderBy: { user: { name: "asc" } },
+          select: { user: { select: { id: true, name: true } } },
+        }),
+      ])
+    : [[], [], []];
+
+  const documentsEnabled =
+    legalCase != null &&
+    (await isModuleEnabled(currentUser.organizationId, ModuleKey.DOCUMENTS));
+
+  const [documents, templates] = documentsEnabled
+    ? await Promise.all([
+        prisma.document.findMany({
+          where: andWhere(
+            { caseId: id, archivedAt: null },
+            documentVisibilityWhere(currentUser),
+          ),
+          orderBy: { createdAt: "desc" },
+          take: 200,
+          select: {
+            id: true,
+            kind: true,
+            name: true,
+            storageUrl: true,
+            currentVersion: { select: { version: true } },
+          },
+        }),
+        prisma.documentTemplate.findMany({
+          where: andWhere(
+            { archivedAt: null, active: true },
+            documentTemplateVisibilityWhere(currentUser),
+          ),
+          orderBy: { name: "asc" },
+          take: 200,
+          select: { id: true, name: true },
+        }),
+      ])
+    : [[], []];
+
+  const canShareToPortal =
+    legalCase != null &&
+    canManagePortal(currentUser) &&
+    (await isModuleEnabled(currentUser.organizationId, ModuleKey.CLIENT_PORTAL));
+  const portalTargets = canShareToPortal
+    ? await prisma.portalAccess.findMany({
+        where: {
+          organizationId: currentUser.organizationId ?? undefined,
+          status: "ACTIVE",
+        },
+        orderBy: { subject: { name: "asc" } },
+        select: { id: true, subject: { select: { name: true } } },
+      })
+    : [];
+
   return {
     legalCase,
     subjects,
     canArchive: canViewAllLegalData(currentUser),
     canEdit: legalCase ? canEditRecord(currentUser, "Case", legalCase) : false,
+    deadlinesEnabled,
+    deadlines,
+    hearings,
+    members: memberRows.map((row) => row.user),
+    canManageDeadlines: canManageDeadlines(currentUser),
+    documentsEnabled,
+    documents,
+    templates,
+    canManageDocuments: canManageDocuments(currentUser),
+    portalTargets,
   };
 }
 
@@ -118,6 +236,16 @@ const emptyCaseDetail: CaseDetailData = {
   subjects: [],
   canArchive: false,
   canEdit: false,
+  deadlinesEnabled: false,
+  deadlines: [],
+  hearings: [],
+  members: [],
+  canManageDeadlines: false,
+  documentsEnabled: false,
+  documents: [],
+  templates: [],
+  canManageDocuments: false,
+  portalTargets: [],
 };
 
 export default async function CaseDetailPage({
@@ -135,7 +263,22 @@ export default async function CaseDetailPage({
     notFound();
   }
 
-  const { legalCase, subjects, canArchive, canEdit } = result.data;
+  const {
+    legalCase,
+    subjects,
+    canArchive,
+    canEdit,
+    deadlinesEnabled,
+    deadlines,
+    hearings,
+    members,
+    canManageDeadlines: canManageDeadlinesFlag,
+    documentsEnabled,
+    documents,
+    templates,
+    canManageDocuments: canManageDocumentsFlag,
+    portalTargets,
+  } = result.data;
 
   return (
     <>
@@ -390,6 +533,48 @@ export default async function CaseDetailPage({
               <EmptyState>Případ zatím nemá úkoly.</EmptyState>
             )}
           </Section>
+          {deadlinesEnabled ? (
+            <CaseDeadlinesSection
+              caseId={legalCase.id}
+              deadlines={deadlines}
+              hearings={hearings}
+              members={members}
+              canManage={canManageDeadlinesFlag}
+            />
+          ) : null}
+          {documentsEnabled ? (
+            <CaseDocumentsSection
+              caseId={legalCase.id}
+              documents={documents}
+              templates={templates}
+              canManage={canManageDocumentsFlag}
+            />
+          ) : null}
+          {portalTargets.length > 0 ? (
+            <Section title="Sdílet spis s klientem">
+              <form action={shareCase} className="flex flex-wrap items-end gap-3">
+                <input type="hidden" name="caseId" value={legalCase.id} />
+                <Field label="Klient (portálový přístup)">
+                  <SelectInput
+                    name="portalAccessId"
+                    defaultValue={portalTargets[0].id}
+                  >
+                    {portalTargets.map((target) => (
+                      <option key={target.id} value={target.id}>
+                        {target.subject.name}
+                      </option>
+                    ))}
+                  </SelectInput>
+                </Field>
+                <Button type="submit" variant="secondary">
+                  Sdílet spis
+                </Button>
+              </form>
+              <p className="mt-2 text-xs text-stone-400">
+                Klient uvidí jen stav a spisovou značku, ne interní poznámky.
+              </p>
+            </Section>
+          ) : null}
         </>
       ) : (
         <EmptyState>Detail případu není dostupný bez databáze.</EmptyState>

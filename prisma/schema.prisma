@@ -64,6 +64,73 @@ enum TaskDeadlineType {
   PROCEDURAL
 }
 
+// Lhůtník (F4 / DEADLINES). Mirrors TaskDeadlineType's spirit but adds COURT for
+// deadlines tied to a hearing. The software RECORDS and WATCHES — it never
+// computes legal due dates; the lawyer enters/confirms `dueDate`.
+enum DeadlineType {
+  PROCEDURAL // procesní (soudní/správní lhůta)
+  COURT      // soudní (lhůta navázaná na jednání)
+  INTERNAL   // interní kancelářská kontrolní lhůta
+}
+
+enum DeadlineStatus {
+  OPEN
+  COMPLETED
+  CANCELLED // zrušená/bezpředmětná — auditní stopa zůstává (NE tvrdé smazání)
+}
+
+// Dokumenty (F5 / DOCUMENTS). Malá uzavřená taxonomie pro filtrování a mapování
+// na šablony. Dokument nemá životní cyklus jako lhůta — archivace přes archivedAt.
+enum DocumentKind {
+  CONTRACT          // smlouva
+  SUBMISSION        // podání (soud/úřad)
+  POWER_OF_ATTORNEY // plná moc
+  LETTER            // dopis/výzva
+  INTERNAL_NOTE     // interní
+  OTHER
+}
+
+// Klientský portál (F6 / CLIENT_PORTAL).
+enum PortalAccessStatus {
+  ACTIVE  // přístup platný, lze žádat o magic-link
+  REVOKED // ručně zrušený — žádné nové linky, existující session neplatné
+}
+
+enum PortalShareType {
+  DOCUMENT
+  CASE
+}
+
+// HR / Docházka (F7 / HR_ATTENDANCE). Separate domain — does not touch legal
+// (Subject/Project/Case) entities.
+enum HrEmploymentType {
+  FULL_TIME
+  PART_TIME
+  AGREEMENT // DPP/DPČ
+  CONTRACTOR // OSVČ
+}
+
+enum HrAttendanceSource {
+  MANUAL
+  IMPORT
+}
+
+enum HrAbsenceType {
+  VACATION // dovolená — jediná čerpá saldo
+  SICK
+  HOME_OFFICE
+  DOCTOR
+  UNPAID
+  OTHER
+}
+
+enum HrAbsenceStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
 enum BillingStatus {
   BILLABLE
   NEEDS_APPROVAL
@@ -122,6 +189,11 @@ enum NotificationType {
   TASK_FOR_REVIEW
   TASK_DEADLINE_SOON
   TASK_FILED_FOLLOWUP
+  // Lhůtník (F4 / L-5). OVERDUE is the deliberate redundant escalation: a missed
+  // procedural deadline is lawyer liability, so we re-notify while still OPEN.
+  DEADLINE_SOON
+  DEADLINE_OVERDUE
+  COURT_HEARING_SOON
 }
 
 enum NotificationStatus {
@@ -141,6 +213,95 @@ enum OrganizationMemberStatus {
   PENDING
   ACTIVE
   SUSPENDED
+}
+
+// --- Produktizace / entitlements (Epik 0 / F0) -----------------------------
+// Each sellable module is one ModuleKey. CORE is always on and never sold
+// separately; every other key gates a module via assertModuleEnabled().
+enum ModuleKey {
+  CORE
+  BILLING
+  DATA_BOXES
+  AML
+  DEADLINES
+  DOCUMENTS
+  CLIENT_PORTAL
+  HR_ATTENDANCE
+}
+
+enum ModuleStatus {
+  ENABLED
+  DISABLED
+  TRIAL
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  TRIALING
+}
+
+enum PlanInterval {
+  MONTHLY
+  YEARLY
+}
+
+// --- BILLING (F1 / modul Fakturace) ------------------------------------------
+
+enum InvoiceStatus {
+  DRAFT // rozpracovaná, bez čísla, editovatelná, lze smazat
+  ISSUED // vystavená, má číslo, neměnná; zdrojové výkazy zamčené
+  SENT // odeslaná klientovi
+  PARTIALLY_PAID // částečně uhrazená
+  PAID // plně uhrazená
+  CANCELLED // stornovaná (číslo se nerecykluje, výkazy uvolněny)
+}
+
+enum VatMode {
+  PAYER // vystavitel je plátce DPH → DPH dle vatRate řádků
+  NON_PAYER // neplátce → DPH = 0 + text na faktuře
+}
+
+enum PaymentMethod {
+  BANK_TRANSFER
+  CASH
+  CARD
+  OTHER
+}
+
+enum ReminderLevel {
+  FIRST // upozornění
+  SECOND // upomínka
+  THIRD // předžalobní výzva
+}
+
+// --- DATA_BOXES (F2 / Datové schránky ISDS) ----------------------------------
+
+enum DataMessageDirection {
+  IN // doručená kanceláři
+  OUT // odeslaná kanceláří
+}
+
+enum DataMessageStatus {
+  RECEIVED // doručená do schránky (IN)
+  ACCEPTED // doručeno přihlášením / fikcí — spouští běh lhůty (F4)
+  READ // přečtená kanceláří
+  SENT // odeslaná (OUT)
+  ARCHIVED
+}
+
+enum DataBoxAccountStatus {
+  ACTIVE
+  DISABLED
+}
+
+// --- AML (F3 / AML / KYC) ----------------------------------------------------
+
+enum AmlRiskLevel {
+  LOW
+  MEDIUM
+  HIGH
 }
 
 model User {
@@ -173,6 +334,28 @@ model User {
   notificationPreference  NotificationPreference?
   notifications           Notification[]      @relation("NotificationRecipient")
   memberships             OrganizationMember[]
+  createdInvoices         Invoice[]           @relation("InvoiceCreatedBy")
+  issuedInvoices          Invoice[]           @relation("InvoiceIssuedBy")
+  recordedPayments        Payment[]           @relation("PaymentRecordedBy")
+  sentReminders           Reminder[]          @relation("ReminderSentBy")
+  configuredDataBoxAccounts DataBoxAccount[]  @relation("DataBoxAccountCreatedBy")
+  createdDataMessages     DataMessage[]       @relation("DataMessageCreatedBy")
+  createdAmlIdentifications AmlIdentification[] @relation("AmlIdentificationCreatedBy")
+  createdAmlAssessments   AmlAssessment[]     @relation("AmlAssessmentCreatedBy")
+  reviewedAmlAssessments  AmlAssessment[]     @relation("AmlAssessmentReviewedBy")
+  responsibleDeadlines     Deadline[]         @relation("DeadlineResponsibleUser")
+  createdDeadlines         Deadline[]         @relation("DeadlineCreatedBy")
+  responsibleCourtHearings CourtHearing[]     @relation("CourtHearingResponsibleUser")
+  createdCourtHearings     CourtHearing[]     @relation("CourtHearingCreatedBy")
+  createdDocuments         Document[]         @relation("DocumentCreatedBy")
+  uploadedDocumentVersions DocumentVersion[]  @relation("DocumentVersionUploadedBy")
+  createdDocumentTemplates DocumentTemplate[] @relation("DocumentTemplateCreatedBy")
+  createdPortalAccesses    PortalAccess[]     @relation("PortalAccessCreatedBy")
+  sharedPortalShares       PortalShare[]      @relation("PortalShareSharedBy")
+  hrEmployee               HrEmployee?        @relation("HrEmployeeUser")
+  createdHrEmployees       HrEmployee[]       @relation("HrEmployeeCreatedBy")
+  requestedHrAbsences      HrAbsenceRequest[] @relation("HrAbsenceRequestedBy")
+  decidedHrAbsences        HrAbsenceRequest[] @relation("HrAbsenceDecidedBy")
 
   @@map("users")
 }
@@ -198,17 +381,27 @@ model Subject {
   hourlyRate       Decimal?    @db.Decimal(12, 2)
   flatFee          Decimal?    @db.Decimal(12, 2)
   feeNote          String?
+  // Informative: is this customer a VAT payer? Shown on invoices (their DIČ),
+  // does NOT drive our VAT calc — that follows the issuer (billing profile).
+  vatPayer         Boolean     @default(false)
   aresVerifiedAt   DateTime?
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
   archivedAt       DateTime?
 
-  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   relations      SubjectRelation[]
   conflictChecks ConflictCheck[]
-  mainProjects   Project[]         @relation("ProjectMainSubject")
+  mainProjects   Project[]           @relation("ProjectMainSubject")
   references     Reference[]
   workLogs       WorkLog[]
+  invoices       Invoice[]
+  retainerAgreements RetainerAgreement[]
+  dataMessages   DataMessage[]
+  amlIdentifications AmlIdentification[]
+  amlAssessment  AmlAssessment?
+  documents      Document[]
+  portalAccess   PortalAccess?
 
   // IČO is unique PER organization, not globally — the same company can be a
   // subject of more than one law office (multi-tenant). NULL ico is allowed
@@ -287,6 +480,8 @@ model Project {
   subjectRelations SubjectRelation[]
   references       Reference[]
   workLogs         WorkLog[]
+  invoices         Invoice[]
+  retainerAgreements RetainerAgreement[]
 
   @@index([organizationId])
   @@index([mainSubjectId])
@@ -317,6 +512,12 @@ model Case {
   subjectRelations SubjectRelation[]
   references       Reference[]
   workLogs         WorkLog[]
+  invoices         Invoice[]
+  dataMessages     DataMessage[]
+  deadlines        Deadline[]
+  courtHearings    CourtHearing[]
+  documents        Document[]
+  portalShares     PortalShare[]
 
   @@unique([projectId, fileNumber])
   @@index([organizationId])
@@ -418,6 +619,12 @@ model WorkLog {
   billingStatus  BillingStatus  @default(BILLABLE)
   approvalStatus ApprovalStatus @default(DRAFT)
   legalArea      String?
+  // Set inside the issueInvoice transaction so a work-log can't be invoiced
+  // twice; cleared again when that invoice is cancelled. Orthogonal to
+  // approvalStatus/billingStatus (a separate dimension). invoicedInvoiceId is
+  // informative (no FK) — its lifecycle is managed by the invoice actions.
+  invoicedAt     DateTime?
+  invoicedInvoiceId String?
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   archivedAt     DateTime?
@@ -428,6 +635,7 @@ model WorkLog {
   case    Case?    @relation(fields: [caseId], references: [id], onDelete: SetNull)
   task    Task?    @relation(fields: [taskId], references: [id], onDelete: SetNull)
   user    User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  invoiceLines InvoiceLine[]
 
   @@index([organizationId])
   @@index([subjectId])
@@ -437,6 +645,7 @@ model WorkLog {
   @@index([userId])
   @@index([workDate])
   @@index([archivedAt])
+  @@index([invoicedAt])
   @@map("workLogs")
 }
 
@@ -547,6 +756,12 @@ model NotificationPreference {
   taskFiledFollowupEmail Boolean  @default(true)
   deadlineReminderDays   Int      @default(1)
   filedFollowupDays      Int      @default(5)
+  // Lhůtník (F4 / L-5). Procedural deadlines carry liability, so they default ON
+  // and warn earlier (3 days) than task deadlines (1).
+  deadlineSoonEmail      Boolean  @default(true)
+  deadlineOverdueEmail   Boolean  @default(true)
+  courtHearingSoonEmail  Boolean  @default(true)
+  deadlineWatchDaysBefore Int     @default(3)
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 
@@ -606,9 +821,106 @@ model Organization {
   conflictChecks       ConflictCheck[]
   dashboardWidgets     DashboardWidget[]
   tableViewPreferences TableViewPreference[]
+  modules              OrganizationModule[]
+  subscription         Subscription?
+  billingProfile       OrganizationBillingProfile?
+  invoiceSequences     InvoiceNumberSequence[]
+  invoices             Invoice[]
+  payments             Payment[]
+  reminders            Reminder[]
+  retainerAgreements   RetainerAgreement[]
+  dataBoxAccounts      DataBoxAccount[]
+  dataMessages         DataMessage[]
+  dataBoxAttachments   DataBoxAttachment[]
+  amlIdentifications   AmlIdentification[]
+  amlAssessments       AmlAssessment[]
+  deadlines            Deadline[]
+  courtHearings        CourtHearing[]
+  documents            Document[]
+  documentVersions     DocumentVersion[]
+  documentTemplates    DocumentTemplate[]
+  portalAccesses       PortalAccess[]
+  portalLoginTokens    PortalLoginToken[]
+  portalSessions       PortalSession[]
+  portalShares         PortalShare[]
+  hrEmployees          HrEmployee[]
+  hrWorkSchedules      HrWorkSchedule[]
+  hrAttendanceRecords  HrAttendanceRecord[]
+  hrAbsenceRequests    HrAbsenceRequest[]
+  hrLeaveBalances      HrLeaveBalance[]
 
   @@index([status])
   @@map("organizations")
+}
+
+// Read-mostly catalog of sellable modules. Seeded (prisma/seed.ts); the guard
+// logic's source of truth for dependencies is MODULE_DEPENDENCIES in
+// src/lib/entitlements.ts — keep the two in sync.
+model Module {
+  key          ModuleKey   @id
+  name         String
+  description  String?
+  // Modules that must be enabled before this one (e.g. CLIENT_PORTAL needs
+  // DOCUMENTS). Enforced at the /admin toggle and in resolveEnabledModules().
+  requiresKeys ModuleKey[]
+  isCore       Boolean     @default(false)
+  active       Boolean     @default(true)
+
+  @@map("modules")
+}
+
+// Entitlement of one module for one organization. Absence of a row == DISABLED.
+model OrganizationModule {
+  id             String       @id @default(cuid())
+  organizationId String
+  moduleKey      ModuleKey
+  status         ModuleStatus @default(DISABLED)
+  trialEndsAt    DateTime?
+  enabledAt      DateTime?
+  disabledAt     DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, moduleKey])
+  @@index([organizationId])
+  @@map("organizationModules")
+}
+
+// Priced plan bundling a set of modules. Seeded; informational for now.
+model Plan {
+  id           String       @id @default(cuid())
+  name         String
+  includedKeys ModuleKey[]
+  priceCzk     Decimal      @db.Decimal(12, 2)
+  interval     PlanInterval @default(MONTHLY)
+  active       Boolean      @default(true)
+
+  subscriptions Subscription[]
+
+  @@map("plans")
+}
+
+// One active subscription per organization (MVP). Billing of the SaaS product
+// itself — kept separate from client invoicing (Epik 1 / BILLING).
+model Subscription {
+  id               String             @id @default(cuid())
+  organizationId   String
+  planId           String?
+  status           SubscriptionStatus @default(TRIALING)
+  currentPeriodEnd DateTime?
+  // Stripe subscription id or similar; F8 wires real billing.
+  externalRef      String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  plan         Plan?        @relation(fields: [planId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId])
+  @@index([organizationId])
+  @@map("subscriptions")
 }
 
 model OrganizationJoinCode {
@@ -652,4 +964,770 @@ model OrganizationMember {
   @@index([organizationId])
   @@index([userId])
   @@map("organizationMembers")
+}
+
+// --- BILLING models (F1 / Fakturace klientům) --------------------------------
+
+// Issuer (law office) billing identity. 1:1 with Organization. vatPayer is the
+// source of truth for a new invoice's vatMode. Domain part of BILLING, kept
+// separate from the F0 Organization entity.
+model OrganizationBillingProfile {
+  id             String   @id @default(cuid())
+  organizationId String   @unique
+  legalName      String
+  ico            String?
+  dic            String?
+  address        String?
+  bankAccount    String?
+  iban           String?
+  vatPayer       Boolean  @default(false)
+  defaultDueDays Int      @default(14)
+  invoiceNote    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("organizationBillingProfiles")
+}
+
+// Gap-free invoice number series, unique per org+year. lastNumber is bumped
+// under a FOR UPDATE row lock inside the issueInvoice transaction (B-3).
+model InvoiceNumberSequence {
+  id             String   @id @default(cuid())
+  organizationId String
+  year           Int
+  prefix         String   @default("")
+  lastNumber     Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, year])
+  @@index([organizationId])
+  @@map("invoiceNumberSequences")
+}
+
+model Invoice {
+  id             String        @id @default(cuid())
+  organizationId String
+  subjectId      String
+  projectId      String?
+  caseId         String?
+
+  // number/VS are NULL in DRAFT; assigned under the sequence lock at ISSUE.
+  number         String?
+  numberSeq      Int?
+  numberYear     Int?
+  variableSymbol String?
+
+  status         InvoiceStatus @default(DRAFT)
+  vatMode        VatMode       @default(PAYER)
+  currency       String        @default("CZK")
+
+  issueDate      DateTime?
+  dueDate        DateTime?
+  taxDate        DateTime?
+
+  subtotalCzk    Decimal       @default(0) @db.Decimal(12, 2)
+  vatCzk         Decimal       @default(0) @db.Decimal(12, 2)
+  totalCzk       Decimal       @default(0) @db.Decimal(12, 2)
+
+  note           String?
+  pdfUrl         String?
+
+  // Frozen copies of issuer/customer details at ISSUE time (document immutability).
+  supplierSnapshot Json?
+  customerSnapshot Json?
+
+  createdById    String?
+  issuedById     String?
+  cancelledAt    DateTime?
+  cancelReason   String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  subject      Subject      @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  project      Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  case         Case?        @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  createdBy    User?        @relation("InvoiceCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  issuedBy     User?        @relation("InvoiceIssuedBy", fields: [issuedById], references: [id], onDelete: SetNull)
+  lines        InvoiceLine[]
+  payments     Payment[]
+  reminders    Reminder[]
+
+  // Number unique per org; NULL drafts don't collide (Postgres NULLs distinct).
+  @@unique([organizationId, number])
+  @@index([organizationId])
+  @@index([subjectId])
+  @@index([projectId])
+  @@index([caseId])
+  @@index([status])
+  @@index([issueDate])
+  @@map("invoices")
+}
+
+model InvoiceLine {
+  id           String   @id @default(cuid())
+  invoiceId    String
+  description  String
+  quantity     Decimal  @default(1) @db.Decimal(8, 2)
+  unit         String   @default("h")
+  unitPriceCzk Decimal  @db.Decimal(12, 2)
+  vatRate      Decimal  @default(21) @db.Decimal(5, 2)
+  // Computed by the pure billing-calc function; stored for immutability + totals.
+  lineBaseCzk  Decimal  @default(0) @db.Decimal(12, 2)
+  lineVatCzk   Decimal  @default(0) @db.Decimal(12, 2)
+  amountCzk    Decimal  @default(0) @db.Decimal(12, 2)
+  workLogId    String?
+  position     Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  invoice Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  workLog WorkLog? @relation(fields: [workLogId], references: [id], onDelete: SetNull)
+
+  @@index([invoiceId])
+  @@index([workLogId])
+  @@map("invoiceLines")
+}
+
+model Payment {
+  id             String        @id @default(cuid())
+  organizationId String
+  invoiceId      String
+  paidAt         DateTime
+  amountCzk      Decimal       @db.Decimal(12, 2)
+  method         PaymentMethod @default(BANK_TRANSFER)
+  note           String?
+  recordedById   String?
+  createdAt      DateTime      @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  invoice      Invoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  recordedBy   User?        @relation("PaymentRecordedBy", fields: [recordedById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([invoiceId])
+  @@index([paidAt])
+  @@map("payments")
+}
+
+model Reminder {
+  id             String        @id @default(cuid())
+  organizationId String
+  invoiceId      String
+  level          ReminderLevel @default(FIRST)
+  sentAt         DateTime      @default(now())
+  channel        String        @default("EMAIL")
+  sentById       String?
+  note           String?
+  createdAt      DateTime      @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  invoice      Invoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  sentBy       User?        @relation("ReminderSentBy", fields: [sentById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([invoiceId])
+  @@map("reminders")
+}
+
+// Retainer: recurring monthly fee for a subject. Generates an Invoice (manual
+// trigger in MVP).
+model RetainerAgreement {
+  id             String   @id @default(cuid())
+  organizationId String
+  subjectId      String
+  projectId      String?
+  monthlyFeeCzk  Decimal  @db.Decimal(12, 2)
+  includedHours  Decimal? @db.Decimal(8, 2)
+  vatRate        Decimal  @default(21) @db.Decimal(5, 2)
+  startDate      DateTime
+  endDate        DateTime?
+  active         Boolean  @default(true)
+  note           String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  archivedAt     DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  subject      Subject      @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  project      Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([subjectId])
+  @@map("retainerAgreements")
+}
+
+// --- DATA_BOXES models (F2 / Datové schránky ISDS) ---------------------------
+
+// A law office's access to a data box (ISDS). Credentials are stored ONLY as an
+// AES-256-GCM blob (credentialsEncrypted, never plaintext). Configured by
+// ADMIN/PARTNER. The real ISDS provider (official API vs partner) is deferred —
+// the credentials are an opaque encrypted JSON so either provider fits.
+model DataBoxAccount {
+  id                   String               @id @default(cuid())
+  organizationId       String
+  boxId                String // ISDS data box id
+  label                String
+  credentialsEncrypted String // encryptSecret() blob — NEVER plaintext
+  status               DataBoxAccountStatus @default(ACTIVE)
+  lastSyncedAt         DateTime?
+  createdById          String?
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  archivedAt           DateTime?
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  createdBy    User?         @relation("DataBoxAccountCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  messages     DataMessage[]
+
+  @@unique([organizationId, boxId])
+  @@index([organizationId])
+  @@map("dataBoxAccounts")
+}
+
+// A single data message (incoming/outgoing), org-scoped, assignable to a
+// Case/Subject. Deduped on the ISDS message id within an org.
+model DataMessage {
+  id               String               @id @default(cuid())
+  organizationId   String
+  dataBoxAccountId String?
+  direction        DataMessageDirection
+  dmId             String? // ISDS message id; NULL for a manually recorded message
+  senderBoxId      String?
+  recipientBoxId   String?
+  messageSubject   String // předmět zprávy (ne klient — ten je relace `subject`)
+  status           DataMessageStatus    @default(RECEIVED)
+  deliveredAt      DateTime?
+  acceptedAt       DateTime? // delivery-by-login/fiction — triggers a deadline (F4 seam)
+  caseId           String?
+  subjectId        String?
+  source           String               @default("MANUAL") // MANUAL | ISDS_SYNC
+  note             String?
+  createdById      String?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  archivedAt       DateTime?
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  account      DataBoxAccount?     @relation(fields: [dataBoxAccountId], references: [id], onDelete: SetNull)
+  case         Case?               @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  subject      Subject?            @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  createdBy    User?               @relation("DataMessageCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  attachments  DataBoxAttachment[]
+  deadlines    Deadline[]          @relation("DeadlineSourceDataMessage")
+
+  // Dedupe the same ISDS message within an org (NULL dmId = manual, distinct).
+  @@unique([organizationId, dmId])
+  @@index([organizationId])
+  @@index([organizationId, direction, status])
+  @@index([caseId])
+  @@index([subjectId])
+  @@index([deliveredAt])
+  @@index([archivedAt])
+  @@map("dataMessages")
+}
+
+// Attachment of a data message. MVP keeps only a reference (storageUrl); real
+// storage (SharePoint vs blob) is decided in F5/DOC-6.
+model DataBoxAttachment {
+  id             String   @id @default(cuid())
+  organizationId String
+  dataMessageId  String
+  fileName       String
+  mimeType       String?
+  sizeBytes      Int?
+  storageUrl     String?
+  checksum       String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  message      DataMessage  @relation(fields: [dataMessageId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([dataMessageId])
+  @@map("dataBoxAttachments")
+}
+
+// --- AML models (F3 / AML / KYC) ---------------------------------------------
+
+// Client identification record. The document number is stored ONLY encrypted
+// (AES-256-GCM); a short masked hint is kept for display so we never decrypt to
+// render a list. A subject can have several (e.g. person + statutory body).
+model AmlIdentification {
+  id                      String   @id @default(cuid())
+  organizationId          String
+  subjectId               String
+  documentType            String
+  documentNumberEncrypted String // encryptSecret() blob — NEVER plaintext
+  documentNumberMasked    String // e.g. "••••1234" — safe to display
+  issueCountry            String?
+  issuedAt                DateTime?
+  expiresAt               DateTime?
+  verifiedAt              DateTime?
+  method                  String? // způsob ověření (osobně, na dálku…)
+  note                    String?
+  createdById             String?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  subject      Subject      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  createdBy    User?        @relation("AmlIdentificationCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([subjectId])
+  @@map("amlIdentifications")
+}
+
+// Risk assessment of a subject (one current per subject; history lives in the
+// audit log). Drives Subject.riskFlag.
+model AmlAssessment {
+  id              String       @id @default(cuid())
+  organizationId  String
+  subjectId       String       @unique
+  riskLevel       AmlRiskLevel @default(MEDIUM)
+  isPep           Boolean      @default(false) // politicky exponovaná osoba
+  hasSanctions    Boolean      @default(false) // nalezena shoda na sankčním seznamu
+  screeningResult String?
+  note            String?
+  reviewDueAt     DateTime? // kdy je splatná příští revize
+  reviewedById    String?
+  reviewedAt      DateTime?
+  createdById     String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  subject      Subject      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  reviewedBy   User?        @relation("AmlAssessmentReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  createdBy    User?        @relation("AmlAssessmentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([riskLevel])
+  @@index([reviewDueAt])
+  @@map("amlAssessments")
+}
+
+// --- Lhůtník models (F4 / DEADLINES) -----------------------------------------
+
+// A watched deadline on a case. The software RECORDS and WATCHES — it never
+// computes legal due dates; `dueDate` is entered/confirmed by the lawyer.
+// Visibility derives from the case (deadlineVisibilityWhere). CANCELLED keeps an
+// audit trail rather than hard-deleting. `sourceDataMessage` links a deadline
+// created from a delivered data message (L-6).
+model Deadline {
+  id                  String         @id @default(cuid())
+  organizationId      String
+  caseId              String
+  type                DeadlineType   @default(PROCEDURAL)
+  status              DeadlineStatus @default(OPEN)
+  title               String
+  dueDate             DateTime // termín; potvrzený advokátem (NE strojový výpočet)
+  originEvent         String? // např. "doručení datové zprávy", "fikce doručení"
+  originDate          DateTime? // datum události, od níž lhůta běží
+  computedRule        String? // poznámka advokáta (§/pravidlo) — jen dokumentační
+  responsibleUserId   String?
+  sourceDataMessageId String? // L-6: z které DZ lhůta vznikla
+  note                String?
+  completedAt         DateTime?
+  createdById         String?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  archivedAt          DateTime?
+
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  case              Case         @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  responsibleUser   User?        @relation("DeadlineResponsibleUser", fields: [responsibleUserId], references: [id], onDelete: SetNull)
+  sourceDataMessage DataMessage? @relation("DeadlineSourceDataMessage", fields: [sourceDataMessageId], references: [id], onDelete: SetNull)
+  createdBy         User?        @relation("DeadlineCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([caseId])
+  @@index([responsibleUserId])
+  @@index([status])
+  @@index([dueDate])
+  @@index([sourceDataMessageId])
+  @@map("deadlines")
+}
+
+// A court hearing on a case. Surfaced in /calendar via the calendar-events seam.
+// hearingAt carries a time (datetime), unlike date-only deadlines.
+model CourtHearing {
+  id                String    @id @default(cuid())
+  organizationId    String
+  caseId            String
+  court             String // označení soudu
+  hearingAt         DateTime // datum a čas jednání (UTC v DB)
+  room              String?
+  responsibleUserId String?
+  note              String?
+  createdById       String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  archivedAt        DateTime?
+
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  case            Case         @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  responsibleUser User?        @relation("CourtHearingResponsibleUser", fields: [responsibleUserId], references: [id], onDelete: SetNull)
+  createdBy       User?        @relation("CourtHearingCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([caseId])
+  @@index([responsibleUserId])
+  @@index([hearingAt])
+  @@map("courtHearings")
+}
+
+// --- Dokumenty models (F5 / DOCUMENTS) ---------------------------------------
+
+// A document is a SharePoint-REFERENCE: we hold metadata + a storageUrl (link),
+// never the file bytes. It hangs on a case OR a subject (XOR — enforced by a DB
+// CHECK in the migration). currentVersion points at the latest DocumentVersion;
+// it is set inside the same transaction that creates the version (never dangling).
+model Document {
+  id               String       @id @default(cuid())
+  organizationId   String
+  caseId           String?
+  subjectId        String?
+  kind             DocumentKind @default(OTHER)
+  name             String
+  description      String?
+  storageUrl       String? // odkaz do SharePointu (http/https), žádný soubor u nás
+  mimeType         String? // volitelná uživatelská metadata
+  currentVersionId String?      @unique // pointer na aktuální verzi
+  sourceTemplateId String? // ze které šablony byl vygenerován (traceabilita)
+  createdById      String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  archivedAt       DateTime?
+
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  case           Case?             @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  subject        Subject?          @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  currentVersion DocumentVersion?  @relation("DocumentCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
+  sourceTemplate DocumentTemplate? @relation("DocumentSourceTemplate", fields: [sourceTemplateId], references: [id], onDelete: SetNull)
+  createdBy      User?             @relation("DocumentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  versions       DocumentVersion[] @relation("DocumentVersions")
+  portalShares   PortalShare[]
+
+  @@index([organizationId])
+  @@index([caseId])
+  @@index([subjectId])
+  @@index([kind])
+  @@index([createdById])
+  @@index([sourceTemplateId])
+  @@map("documents")
+}
+
+// One revision of a document. version is gap-free per document (max+1 inside a
+// transaction, protected by the unique). storageUrl is the link to that revision.
+model DocumentVersion {
+  id             String   @id @default(cuid())
+  organizationId String // denormalized for direct org-scoped queries/audit
+  documentId     String
+  version        Int // 1,2,3… gap-free per document
+  storageUrl     String // odkaz do SharePointu na konkrétní verzi (povinný)
+  note           String? // popis změny verze
+  checksum       String? // volitelné, uživatelské (soubor nemáme)
+  uploadedById   String?
+  uploadedAt     DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  document     Document     @relation("DocumentVersions", fields: [documentId], references: [id], onDelete: Cascade)
+  uploadedBy   User?        @relation("DocumentVersionUploadedBy", fields: [uploadedById], references: [id], onDelete: SetNull)
+  currentOf    Document?    @relation("DocumentCurrentVersion")
+
+  @@unique([documentId, version])
+  @@index([organizationId])
+  @@index([documentId])
+  @@index([uploadedById])
+  @@map("documentVersions")
+}
+
+// Office-wide (org-scoped) template. bodyTemplate is text/markdown with {{tokens}}
+// substituted at generation time from case/client/counterparty/org. placeholders
+// is a JSON hint list for the UI; it is NOT a security boundary (data comes from
+// the DB, not the JSON).
+model DocumentTemplate {
+  id             String       @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?
+  kind           DocumentKind @default(OTHER)
+  bodyTemplate   String
+  placeholders   Json?
+  active         Boolean      @default(true)
+  createdById    String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  archivedAt     DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  createdBy    User?        @relation("DocumentTemplateCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  documents    Document[]   @relation("DocumentSourceTemplate")
+
+  @@index([organizationId])
+  @@index([kind])
+  @@map("documentTemplates")
+}
+
+// --- Klientský portál models (F6 / CLIENT_PORTAL) ----------------------------
+
+// A client's portal identity (per Subject). email is the auth identity for magic
+// links. Org-scoped; access is granted/revoked by the firm. Whitelist sharing
+// lives in PortalShare — this row alone grants NO data visibility.
+model PortalAccess {
+  id             String             @id @default(cuid())
+  organizationId String
+  subjectId      String             @unique
+  email          String // normalized (lowercase); auth identity for magic links
+  status         PortalAccessStatus @default(ACTIVE)
+  createdById    String?
+  lastLoginAt    DateTime?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  revokedAt      DateTime?
+
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  subject      Subject            @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  createdBy    User?              @relation("PortalAccessCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  loginTokens  PortalLoginToken[]
+  sessions     PortalSession[]
+  shares       PortalShare[]
+
+  @@unique([organizationId, email])
+  @@index([organizationId])
+  @@index([email])
+  @@map("portalAccesses")
+}
+
+// Single-use, short-lived magic-link token. ONLY the HMAC hash is stored; the
+// plaintext lives only in the e-mailed URL. consumedAt enforces single use.
+model PortalLoginToken {
+  id             String    @id @default(cuid())
+  portalAccessId String
+  organizationId String
+  tokenHash      String    @unique // HMAC-SHA256(token) hex
+  expiresAt      DateTime
+  consumedAt     DateTime?
+  requestedIp    String?
+  createdAt      DateTime  @default(now())
+
+  portalAccess PortalAccess @relation(fields: [portalAccessId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([portalAccessId])
+  @@index([expiresAt])
+  @@map("portalLoginTokens")
+}
+
+// DB-tracked client session issued after a magic link is verified. The cookie
+// carries a signed reference to this row; deleting/revoking the row invalidates
+// the cookie (revocation that a stateless cookie alone can't give).
+model PortalSession {
+  id             String    @id @default(cuid())
+  portalAccessId String
+  organizationId String
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  lastSeenAt     DateTime?
+  ipAddress      String?
+  createdAt      DateTime  @default(now())
+
+  portalAccess PortalAccess @relation(fields: [portalAccessId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([portalAccessId])
+  @@index([expiresAt])
+  @@map("portalSessions")
+}
+
+// Whitelist: this client (portalAccess) may see this Document OR this Case.
+// Exactly one target (DB CHECK in migration). revokedAt = soft revoke (audit).
+model PortalShare {
+  id             String          @id @default(cuid())
+  organizationId String
+  portalAccessId String
+  shareType      PortalShareType
+  documentId     String?
+  caseId         String?
+  sharedById     String?
+  sharedAt       DateTime        @default(now())
+  revokedAt      DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  portalAccess PortalAccess @relation(fields: [portalAccessId], references: [id], onDelete: Cascade)
+  document     Document?    @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  case         Case?        @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  sharedBy     User?        @relation("PortalShareSharedBy", fields: [sharedById], references: [id], onDelete: SetNull)
+
+  @@unique([portalAccessId, documentId])
+  @@unique([portalAccessId, caseId])
+  @@index([organizationId])
+  @@index([portalAccessId])
+  @@index([documentId])
+  @@index([caseId])
+  @@map("portalShares")
+}
+
+// Pre-auth, IP-keyed throttle ledger for the magic-link endpoint
+// (requestPortalLink). One row per request attempt, recorded BEFORE any account
+// lookup, so the anonymous surface — non-existent / REVOKED orgs & e-mails — is
+// rate-limited uniformly, not just resolved ACTIVE accounts. DB-backed on purpose:
+// an in-memory counter would not hold across serverless/multi-instance deploys.
+// No org/account FK: the attempt is counted before we know (or trust) which
+// org/e-mail was claimed. Rows self-prune per IP on each request.
+model PortalLoginAttempt {
+  id        String   @id @default(cuid())
+  ipAddress String
+  createdAt DateTime @default(now())
+
+  @@index([ipAddress, createdAt])
+  @@map("portalLoginAttempts")
+}
+
+// --- HR / Docházka models (F7 / HR_ATTENDANCE) -------------------------------
+// Separate domain. organizationId is denormalized on every row (repo convention)
+// so org isolation + visibility queries stay simple. userId links an employee to
+// a login account (nullable: an employee may have no account; unique: one account
+// maps to at most one employee, so "see only my own" is unambiguous).
+
+model HrEmployee {
+  id             String           @id @default(cuid())
+  organizationId String
+  userId         String?          @unique
+  firstName      String
+  lastName       String
+  personalNumber String? // osobní číslo (mzdy/import)
+  position       String?
+  employmentType HrEmploymentType @default(FULL_TIME)
+  weeklyHours    Decimal          @default(40) @db.Decimal(5, 2)
+  dailyHours     Decimal          @default(8) @db.Decimal(4, 2)
+  startDate      DateTime?
+  endDate        DateTime?
+  active         Boolean          @default(true)
+  createdById    String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  archivedAt     DateTime?
+
+  organization     Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user             User?                @relation("HrEmployeeUser", fields: [userId], references: [id], onDelete: SetNull)
+  createdBy        User?                @relation("HrEmployeeCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  workSchedules    HrWorkSchedule[]
+  attendanceRecords HrAttendanceRecord[]
+  absenceRequests  HrAbsenceRequest[]
+  leaveBalances    HrLeaveBalance[]
+
+  @@unique([organizationId, personalNumber])
+  @@index([organizationId])
+  @@index([userId])
+  @@index([active])
+  @@map("hrEmployees")
+}
+
+// History of working-time fund per employee (úvazek/fond pracovní doby).
+model HrWorkSchedule {
+  id             String    @id @default(cuid())
+  organizationId String
+  employeeId     String
+  validFrom      DateTime
+  validTo        DateTime?
+  weeklyHours    Decimal   @db.Decimal(5, 2)
+  dailyHours     Decimal   @db.Decimal(4, 2)
+  note           String?
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee     HrEmployee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([employeeId])
+  @@map("hrWorkSchedules")
+}
+
+// One attendance day per employee. Manual entry or import upsert on the unique.
+model HrAttendanceRecord {
+  id             String             @id @default(cuid())
+  organizationId String
+  employeeId     String
+  workDate       DateTime // date-only (UTC midnight)
+  checkIn        DateTime?
+  checkOut       DateTime?
+  workedHours    Decimal            @default(0) @db.Decimal(5, 2)
+  breakHours     Decimal            @default(0) @db.Decimal(4, 2)
+  source         HrAttendanceSource @default(MANUAL)
+  importBatchId  String?
+  note           String?
+  createdById    String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee     HrEmployee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, workDate])
+  @@index([organizationId])
+  @@index([employeeId])
+  @@index([workDate])
+  @@map("hrAttendanceRecords")
+}
+
+// Absence request with an approval workflow. requestedHours is a snapshot used to
+// debit/credit the leave balance (only for VACATION) when APPROVED/CANCELLED.
+model HrAbsenceRequest {
+  id             String          @id @default(cuid())
+  organizationId String
+  employeeId     String
+  type           HrAbsenceType
+  status         HrAbsenceStatus @default(PENDING)
+  startDate      DateTime // date-only
+  endDate        DateTime // date-only
+  halfDay        Boolean         @default(false)
+  requestedHours Decimal         @db.Decimal(7, 2)
+  leaveYear      Int?
+  note           String?
+  requestedById  String?
+  decidedById    String?
+  decidedAt      DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee     HrEmployee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  requestedBy  User?        @relation("HrAbsenceRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+  decidedBy    User?        @relation("HrAbsenceDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([employeeId])
+  @@index([status])
+  @@index([startDate])
+  @@map("hrAbsenceRequests")
+}
+
+// Leave balance per employee per year (in hours). usedHours is the single source
+// of truth; remaining is derived (computeRemainingHours). Updated under a row lock.
+model HrLeaveBalance {
+  id               String   @id @default(cuid())
+  organizationId   String
+  employeeId       String
+  year             Int
+  entitlementHours Decimal  @default(0) @db.Decimal(7, 2)
+  carryoverHours   Decimal  @default(0) @db.Decimal(7, 2)
+  usedHours        Decimal  @default(0) @db.Decimal(7, 2)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee     HrEmployee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, year])
+  @@index([organizationId])
+  @@index([employeeId])
+  @@map("hrLeaveBalances")
 }

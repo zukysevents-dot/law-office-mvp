@@ -7,15 +7,21 @@
  */
 
 import type { BadgeTone } from "@/components/ui/badge";
-import type {
-  TaskDeadlineType,
-  TaskPriority,
-  TaskStatus,
-  UserRole,
+import {
+  DeadlineStatus,
+  type TaskDeadlineType,
+  type TaskPriority,
+  type TaskStatus,
+  type UserRole,
 } from "@/generated/prisma/enums";
-import { andWhere, taskVisibilityWhere } from "@/lib/permissions";
+import {
+  andWhere,
+  courtHearingVisibilityWhere,
+  deadlineVisibilityWhere,
+  taskVisibilityWhere,
+} from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
-import { taskDeadlineTypeTone } from "@/lib/status-tones";
+import { deadlineTypeTone, taskDeadlineTypeTone } from "@/lib/status-tones";
 
 /** Minimal user shape the calendar needs: visibility (`id`/`role`). */
 export type CalendarUser = {
@@ -37,6 +43,7 @@ export type CalendarEvent = {
   allDay: boolean;
   href?: string;
   tone: BadgeTone;
+  kind?: "task" | "deadline" | "hearing";
   deadlineType?: TaskDeadlineType;
   status?: TaskStatus;
   priority?: TaskPriority;
@@ -103,12 +110,107 @@ async function getTaskDeadlineEvents(
     }));
 }
 
+// F4 / L-4: watched deadlines (Deadline) within the window. CANCELLED deadlines
+// are soft-deleted (archivedAt set) so the archivedAt filter excludes them;
+// COMPLETED ones stay visible and the view greys them via status === "COMPLETED".
+async function getDeadlineEvents(
+  user: CalendarUser,
+  range: CalendarRange,
+): Promise<CalendarEvent[]> {
+  const prisma = getPrisma();
+  const deadlines = await prisma.deadline.findMany({
+    where: andWhere(
+      {
+        archivedAt: null,
+        dueDate: { gte: range.start, lt: range.end },
+      },
+      deadlineVisibilityWhere(user),
+    ),
+    orderBy: { dueDate: "asc" },
+    take: TASK_EVENT_LIMIT,
+    select: {
+      id: true,
+      title: true,
+      dueDate: true,
+      type: true,
+      status: true,
+      responsibleUser: { select: { name: true } },
+      case: { select: { id: true, name: true } },
+    },
+  });
+
+  return deadlines.map((deadline) => ({
+    id: `deadline:${deadline.id}`,
+    title: `Lhůta: ${deadline.title}`,
+    date: deadline.dueDate,
+    allDay: true,
+    href: `/cases/${deadline.case.id}`,
+    tone: deadlineTypeTone(deadline.type),
+    kind: "deadline" as const,
+    // Reuse the view's COMPLETED greying; OPEN deadlines carry no status.
+    status:
+      deadline.status === DeadlineStatus.COMPLETED
+        ? ("COMPLETED" satisfies TaskStatus)
+        : undefined,
+    assigneeName: deadline.responsibleUser?.name ?? undefined,
+    projectName: deadline.case.name,
+  }));
+}
+
+// F4 / L-4: court hearings (CourtHearing) within the window. hearingAt carries a
+// time, so these are NOT all-day events.
+async function getCourtHearingEvents(
+  user: CalendarUser,
+  range: CalendarRange,
+): Promise<CalendarEvent[]> {
+  const prisma = getPrisma();
+  const hearings = await prisma.courtHearing.findMany({
+    where: andWhere(
+      {
+        archivedAt: null,
+        hearingAt: { gte: range.start, lt: range.end },
+      },
+      courtHearingVisibilityWhere(user),
+    ),
+    orderBy: { hearingAt: "asc" },
+    take: TASK_EVENT_LIMIT,
+    select: {
+      id: true,
+      court: true,
+      hearingAt: true,
+      room: true,
+      responsibleUser: { select: { name: true } },
+      case: { select: { id: true, name: true } },
+    },
+  });
+
+  return hearings.map((hearing) => ({
+    id: `hearing:${hearing.id}`,
+    title: `Jednání: ${hearing.court}${hearing.room ? ` (${hearing.room})` : ""}`,
+    date: hearing.hearingAt,
+    allDay: false,
+    href: `/cases/${hearing.case.id}`,
+    tone: "purple" as BadgeTone,
+    kind: "hearing" as const,
+    assigneeName: hearing.responsibleUser?.name ?? undefined,
+    projectName: hearing.case.name,
+  }));
+}
+
 /** Aggregate every calendar source for `user` within `range`, sorted by date. */
 export async function getCalendarEvents(
   user: CalendarUser,
   range: CalendarRange,
 ): Promise<CalendarEvent[]> {
-  // Only task deadlines today; getTaskDeadlineEvents already returns them
-  // ordered by deadline asc. Future sources (Outlook, meetings) merge in here.
-  return getTaskDeadlineEvents(user, range);
+  // Task deadlines + watched deadlines + court hearings (F4). Each source is
+  // visibility-scoped independently; future sources (Outlook) merge in here too.
+  const [tasks, deadlines, hearings] = await Promise.all([
+    getTaskDeadlineEvents(user, range),
+    getDeadlineEvents(user, range),
+    getCourtHearingEvents(user, range),
+  ]);
+
+  return [...tasks, ...deadlines, ...hearings].sort(
+    (a, b) => a.date.getTime() - b.date.getTime(),
+  );
 }

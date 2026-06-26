@@ -5,14 +5,21 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  AlarmClock,
   BarChart3,
   Briefcase,
   BriefcaseBusiness,
   Building2,
+  CalendarClock,
   CalendarDays,
+  CalendarOff,
   Clock3,
   Archive,
+  FileSpreadsheet,
   FileText,
+  FolderOpen,
+  Inbox,
+  Users,
   LayoutDashboard,
   LibraryBig,
   ListChecks,
@@ -22,27 +29,58 @@ import {
   Receipt,
   ScrollText,
   Settings,
+  ShieldAlert,
   ShieldCheck,
   X,
 } from "lucide-react";
 
 import { logoutAction } from "@/app/actions/auth";
+import { ModuleKey } from "@/generated/prisma/enums";
 import { cn } from "@/lib/utils";
 
-const navItems = [
+type NavItem = {
+  href: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  adminOnly?: boolean;
+  // Gate this item behind a bought module (UX only). Items without `module`
+  // are always visible (CORE).
+  module?: ModuleKey;
+};
+
+const navItems: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/subjects", label: "Subjekty", icon: Building2 },
   { href: "/conflict-check", label: "Conflict check", icon: ShieldCheck },
+  {
+    href: "/aml",
+    label: "AML / KYC",
+    icon: ShieldAlert,
+    adminOnly: true,
+    module: ModuleKey.AML,
+  },
   { href: "/projects", label: "Projekty", icon: BriefcaseBusiness },
   { href: "/cases", label: "Případy", icon: FileText },
+  {
+    href: "/data-boxes",
+    label: "Datové schránky",
+    icon: Inbox,
+    module: ModuleKey.DATA_BOXES,
+  },
   { href: "/tasks", label: "Úkoly", icon: ListTodo },
   { href: "/tasks/my", label: "Moje úkoly", icon: ListChecks },
   { href: "/tasks/archive", label: "Archiv úkolů", icon: Archive },
   { href: "/work-logs", label: "Výkazy práce", icon: Clock3 },
-  { href: "/billing", label: "Fakturace", icon: Receipt },
+  { href: "/billing", label: "Fakturace", icon: Receipt, module: ModuleKey.BILLING },
   { href: "/reports", label: "Reporty", icon: BarChart3 },
   { href: "/references", label: "Reference", icon: LibraryBig },
-  { href: "/calendar", label: "Kalendář", icon: CalendarDays },
+  { href: "/documents", label: "Dokumenty", icon: FolderOpen, module: ModuleKey.DOCUMENTS },
+  { href: "/deadlines", label: "Lhůtník", icon: AlarmClock, module: ModuleKey.DEADLINES },
+  { href: "/calendar", label: "Kalendář", icon: CalendarDays, module: ModuleKey.DEADLINES },
+  { href: "/hr/employees", label: "Zaměstnanci", icon: Users, module: ModuleKey.HR_ATTENDANCE },
+  { href: "/hr/attendance", label: "Docházka", icon: CalendarClock, module: ModuleKey.HR_ATTENDANCE },
+  { href: "/hr/absences", label: "Absence", icon: CalendarOff, module: ModuleKey.HR_ATTENDANCE },
+  { href: "/hr/exports", label: "Mzdový export", icon: FileSpreadsheet, module: ModuleKey.HR_ATTENDANCE },
   { href: "/audit-log", label: "Audit log", icon: ScrollText, adminOnly: true },
   { href: "/settings/organization", label: "Kancelář", icon: Briefcase, adminOnly: true },
   { href: "/settings", label: "Nastavení", icon: Settings },
@@ -66,18 +104,26 @@ export function AppSidebar({
   showAuditLog,
   userName,
   userRole,
+  enabledModules,
 }: {
   showAuditLog?: boolean;
   userName?: string;
   userRole?: string;
+  enabledModules?: string[];
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  // showAuditLog === canViewAllLegalData (ADMIN/PARTNER); same gate covers the
-  // org-management link, so adminOnly items hide for everyone else.
-  const visibleNavItems = showAuditLog
-    ? navItems
-    : navItems.filter((item) => !item.adminOnly);
+  // Two independent gates:
+  // - showAuditLog === canViewAllLegalData (ADMIN/PARTNER); same gate covers the
+  //   org-management link, so adminOnly items hide for everyone else.
+  // - enabledModules hides nav items for modules the org hasn't bought. Missing
+  //   prop → empty list → module-gated items hidden (fail-closed UX).
+  const enabled = enabledModules ?? [];
+  const visibleNavItems = navItems.filter((item) => {
+    if (item.adminOnly && !showAuditLog) return false;
+    if (item.module && !enabled.includes(item.module)) return false;
+    return true;
+  });
   const activeHref = getActiveHref(pathname, visibleNavItems);
 
   const accountFooter = (

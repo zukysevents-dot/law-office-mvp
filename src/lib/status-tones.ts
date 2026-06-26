@@ -1,11 +1,53 @@
 import type { BadgeTone } from "@/components/ui/badge";
 import type {
+  AmlRiskLevel,
   ApprovalStatus,
   BillingStatus,
+  DataMessageStatus,
+  DeadlineStatus,
+  DeadlineType,
+  DocumentKind,
+  HrAbsenceStatus,
+  InvoiceStatus,
   SubjectRole,
   TaskDeadlineType,
   TaskStatus,
 } from "@/generated/prisma/enums";
+
+export function amlRiskLevelTone(level: AmlRiskLevel): BadgeTone {
+  const tones: Record<AmlRiskLevel, BadgeTone> = {
+    LOW: "green",
+    MEDIUM: "amber",
+    HIGH: "red",
+  };
+
+  return tones[level];
+}
+
+export function dataMessageStatusTone(status: DataMessageStatus): BadgeTone {
+  const tones: Record<DataMessageStatus, BadgeTone> = {
+    RECEIVED: "blue",
+    ACCEPTED: "amber",
+    READ: "neutral",
+    SENT: "mint",
+    ARCHIVED: "neutral",
+  };
+
+  return tones[status];
+}
+
+export function invoiceStatusTone(status: InvoiceStatus): BadgeTone {
+  const tones: Record<InvoiceStatus, BadgeTone> = {
+    DRAFT: "neutral",
+    ISSUED: "blue",
+    SENT: "mint",
+    PARTIALLY_PAID: "amber",
+    PAID: "green",
+    CANCELLED: "red",
+  };
+
+  return tones[status];
+}
 
 export function taskStatusTone(status: TaskStatus): BadgeTone {
   const tones: Record<TaskStatus, BadgeTone> = {
@@ -51,4 +93,48 @@ export function subjectRoleTone(role: SubjectRole): BadgeTone {
 
 export function taskDeadlineTypeTone(type: TaskDeadlineType): BadgeTone {
   return type === "PROCEDURAL" ? "red" : "mint";
+}
+
+export function deadlineTypeTone(type: DeadlineType): BadgeTone {
+  const tones: Record<DeadlineType, BadgeTone> = {
+    PROCEDURAL: "red",
+    COURT: "purple",
+    INTERNAL: "mint",
+  };
+
+  return tones[type];
+}
+
+export function deadlineStatusTone(status: DeadlineStatus): BadgeTone {
+  const tones: Record<DeadlineStatus, BadgeTone> = {
+    OPEN: "blue",
+    COMPLETED: "green",
+    CANCELLED: "neutral",
+  };
+
+  return tones[status];
+}
+
+export function documentKindTone(kind: DocumentKind): BadgeTone {
+  const tones: Record<DocumentKind, BadgeTone> = {
+    CONTRACT: "blue",
+    SUBMISSION: "purple",
+    POWER_OF_ATTORNEY: "amber",
+    LETTER: "mint",
+    INTERNAL_NOTE: "neutral",
+    OTHER: "neutral",
+  };
+
+  return tones[kind];
+}
+
+export function hrAbsenceStatusTone(status: HrAbsenceStatus): BadgeTone {
+  const tones: Record<HrAbsenceStatus, BadgeTone> = {
+    PENDING: "amber",
+    APPROVED: "green",
+    REJECTED: "red",
+    CANCELLED: "neutral",
+  };
+
+  return tones[status];
 }

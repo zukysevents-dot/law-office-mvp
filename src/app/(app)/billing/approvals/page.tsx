@@ -5,7 +5,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ModuleKey } from "@/generated/prisma/enums";
 import { getCurrentUser } from "@/lib/auth";
+import { assertModuleEnabled } from "@/lib/entitlements";
 import {
   BILLING_ROW_LIMIT,
   billingWorkLogInclude,
@@ -42,6 +44,7 @@ export default async function BillingApprovalsPage() {
     async () => {
       const prisma = getPrisma();
       const currentUser = await getCurrentUser();
+      await assertModuleEnabled(currentUser, ModuleKey.BILLING);
       const rows = await prisma.workLog.findMany({
         where: andWhere(
           pendingApprovalWorkLogWhere,

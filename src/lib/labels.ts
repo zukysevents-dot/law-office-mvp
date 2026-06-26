@@ -1,18 +1,154 @@
 import {
+  AmlRiskLevel,
   ApprovalStatus,
   BillingStatus,
   CaseStatus,
+  DataMessageDirection,
+  DataMessageStatus,
+  DeadlineStatus,
+  DeadlineType,
+  DocumentKind,
   FeeType,
+  HrAbsenceStatus,
+  HrAbsenceType,
+  HrAttendanceSource,
+  HrEmploymentType,
+  InvoiceStatus,
+  ModuleKey,
+  ModuleStatus,
   OrganizationMemberStatus,
   OrganizationStatus,
+  PaymentMethod,
   ProjectStatus,
+  ReminderLevel,
   SubjectRole,
   SubjectType,
+  SubscriptionStatus,
   TaskDeadlineType,
   TaskPriority,
   TaskStatus,
   UserRole,
+  VatMode,
 } from "@/generated/prisma/enums";
+
+export const invoiceStatusLabels: Record<InvoiceStatus, string> = {
+  DRAFT: "Rozpracovaná",
+  ISSUED: "Vystavená",
+  SENT: "Odeslaná",
+  PARTIALLY_PAID: "Částečně uhrazená",
+  PAID: "Uhrazená",
+  CANCELLED: "Stornovaná",
+};
+
+export const vatModeLabels: Record<VatMode, string> = {
+  PAYER: "Plátce DPH",
+  NON_PAYER: "Neplátce DPH",
+};
+
+export const paymentMethodLabels: Record<PaymentMethod, string> = {
+  BANK_TRANSFER: "Bankovní převod",
+  CASH: "Hotovost",
+  CARD: "Karta",
+  OTHER: "Jiné",
+};
+
+export const reminderLevelLabels: Record<ReminderLevel, string> = {
+  FIRST: "Upozornění",
+  SECOND: "Upomínka",
+  THIRD: "Předžalobní výzva",
+};
+
+export const amlRiskLevelLabels: Record<AmlRiskLevel, string> = {
+  LOW: "Nízké",
+  MEDIUM: "Střední",
+  HIGH: "Vysoké",
+};
+
+export const dataMessageDirectionLabels: Record<DataMessageDirection, string> = {
+  IN: "Doručená",
+  OUT: "Odeslaná",
+};
+
+export const dataMessageStatusLabels: Record<DataMessageStatus, string> = {
+  RECEIVED: "Doručená",
+  ACCEPTED: "Doručeno (fikce/přihlášením)",
+  READ: "Přečtená",
+  SENT: "Odeslaná",
+  ARCHIVED: "Archivovaná",
+};
+
+export const deadlineTypeLabels: Record<DeadlineType, string> = {
+  PROCEDURAL: "Procesní",
+  COURT: "Soudní",
+  INTERNAL: "Interní",
+};
+
+export const deadlineStatusLabels: Record<DeadlineStatus, string> = {
+  OPEN: "Otevřená",
+  COMPLETED: "Splněná",
+  CANCELLED: "Zrušená",
+};
+
+export const documentKindLabels: Record<DocumentKind, string> = {
+  CONTRACT: "Smlouva",
+  SUBMISSION: "Podání",
+  POWER_OF_ATTORNEY: "Plná moc",
+  LETTER: "Dopis / výzva",
+  INTERNAL_NOTE: "Interní",
+  OTHER: "Jiný",
+};
+
+export const hrEmploymentTypeLabels: Record<HrEmploymentType, string> = {
+  FULL_TIME: "Plný úvazek",
+  PART_TIME: "Částečný úvazek",
+  AGREEMENT: "Dohoda (DPP/DPČ)",
+  CONTRACTOR: "OSVČ / kontraktor",
+};
+
+export const hrAbsenceTypeLabels: Record<HrAbsenceType, string> = {
+  VACATION: "Dovolená",
+  SICK: "Nemoc",
+  HOME_OFFICE: "Home office",
+  DOCTOR: "Lékař",
+  UNPAID: "Neplacené volno",
+  OTHER: "Jiné",
+};
+
+export const hrAbsenceStatusLabels: Record<HrAbsenceStatus, string> = {
+  PENDING: "Čeká na schválení",
+  APPROVED: "Schváleno",
+  REJECTED: "Zamítnuto",
+  CANCELLED: "Zrušeno",
+};
+
+export const hrAttendanceSourceLabels: Record<HrAttendanceSource, string> = {
+  MANUAL: "Ruční",
+  IMPORT: "Import",
+};
+
+export const moduleKeyLabels: Record<ModuleKey, string> = {
+  CORE: "Jádro",
+  BILLING: "Fakturace",
+  DATA_BOXES: "Datové schránky",
+  AML: "AML",
+  DEADLINES: "Lhůtník",
+  DOCUMENTS: "Dokumenty a šablony",
+  CLIENT_PORTAL: "Klientský portál",
+  HR_ATTENDANCE: "HR a docházka",
+};
+
+export const moduleStatusLabels: Record<ModuleStatus, string> = {
+  ENABLED: "Aktivní",
+  DISABLED: "Neaktivní",
+  TRIAL: "Zkušební",
+};
+
+export const subscriptionStatusLabels: Record<SubscriptionStatus, string> = {
+  ACTIVE: "Aktivní",
+  PAST_DUE: "Po splatnosti",
+  CANCELED: "Zrušené",
+  TRIALING: "Zkušební období",
+};
 
 export const userRoleLabels: Record<UserRole, string> = {
   ADMIN: "Admin",
@@ -143,6 +279,10 @@ export const options = {
   feeTypes: Object.values(FeeType),
   taskStatuses: Object.values(TaskStatus),
   taskDeadlineTypes: Object.values(TaskDeadlineType),
+  deadlineTypes: Object.values(DeadlineType),
+  documentKinds: Object.values(DocumentKind),
+  hrEmploymentTypes: Object.values(HrEmploymentType),
+  hrAbsenceTypes: Object.values(HrAbsenceType),
   taskPriorities: Object.values(TaskPriority),
   billingStatuses: Object.values(BillingStatus),
   approvalStatuses: Object.values(ApprovalStatus),

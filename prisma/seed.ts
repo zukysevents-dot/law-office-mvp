@@ -11,16 +11,54 @@ import {
   CaseStatus,
   DashboardWidgetSize,
   DashboardWidgetType,
+  DocumentKind,
   FeeType,
+  ModuleKey,
+  ModuleStatus,
   OrganizationMemberStatus,
+  PlanInterval,
   ProjectStatus,
   SubjectRole,
   SubjectType,
+  SubscriptionStatus,
   TaskDeadlineType,
   TaskPriority,
   TaskStatus,
   UserRole,
 } from "../src/generated/prisma/enums";
+
+// Module catalog. `requiresKeys` here is DISPLAY-ONLY (shown in the admin UI);
+// the runtime authority for the dependency graph is MODULE_DEPENDENCIES in
+// src/lib/entitlements.ts. Keep the two in sync — a completeness test in
+// entitlements.test.ts guards against a key missing from the runtime graph.
+const MODULE_CATALOG: {
+  key: ModuleKey;
+  name: string;
+  description: string;
+  requiresKeys: ModuleKey[];
+  isCore: boolean;
+}[] = [
+  { key: ModuleKey.CORE, name: "Jádro", description: "Subjekty, spisy, úkoly, výkazy a reporty.", requiresKeys: [], isCore: true },
+  { key: ModuleKey.BILLING, name: "Fakturace", description: "Vystavování faktur klientům z výkazů práce.", requiresKeys: [], isCore: false },
+  { key: ModuleKey.DATA_BOXES, name: "Datové schránky", description: "Příjem, odeslání a přiřazení datových zpráv ke spisu.", requiresKeys: [], isCore: false },
+  { key: ModuleKey.AML, name: "AML", description: "Identifikace klienta a hodnocení rizik.", requiresKeys: [], isCore: false },
+  { key: ModuleKey.DEADLINES, name: "Lhůtník", description: "Procesní lhůty, soudní jednání a hlídání termínů.", requiresKeys: [], isCore: false },
+  { key: ModuleKey.DOCUMENTS, name: "Dokumenty a šablony", description: "DMS s verzováním a generování dokumentů ze šablon.", requiresKeys: [], isCore: false },
+  { key: ModuleKey.CLIENT_PORTAL, name: "Klientský portál", description: "Sdílení dokumentů a stavu spisu s klientem.", requiresKeys: [ModuleKey.DOCUMENTS], isCore: false },
+  { key: ModuleKey.HR_ATTENDANCE, name: "HR a docházka", description: "Zaměstnanci, docházka, absence a saldo dovolené.", requiresKeys: [], isCore: false },
+];
+
+const PLAN_CATALOG: {
+  id: string;
+  name: string;
+  includedKeys: ModuleKey[];
+  priceCzk: string;
+  interval: PlanInterval;
+}[] = [
+  { id: "plan-start", name: "Start", includedKeys: [ModuleKey.CORE], priceCzk: "0", interval: PlanInterval.MONTHLY },
+  { id: "plan-profi", name: "Profi", includedKeys: [ModuleKey.CORE, ModuleKey.BILLING, ModuleKey.DEADLINES, ModuleKey.AML], priceCzk: "1990", interval: PlanInterval.MONTHLY },
+  { id: "plan-komplet", name: "Komplet", includedKeys: MODULE_CATALOG.map((m) => m.key), priceCzk: "3990", interval: PlanInterval.MONTHLY },
+];
 
 // Must match the migration + src/lib/organization.ts DEMO_ORG_ID.
 const DEMO_ORG_ID = "org-demo-syndikat-legal";
@@ -285,6 +323,173 @@ async function main() {
     },
   });
 
+  // --- Produktizace / entitlements (F0) --------------------------------------
+  // Read-mostly module catalog.
+  for (const moduleDef of MODULE_CATALOG) {
+    await prisma.module.upsert({
+      where: { key: moduleDef.key },
+      update: {
+        name: moduleDef.name,
+        description: moduleDef.description,
+        requiresKeys: moduleDef.requiresKeys,
+        isCore: moduleDef.isCore,
+        active: true,
+      },
+      create: moduleDef,
+    });
+  }
+
+  // Priced plans (informational for now; F8 wires real billing).
+  for (const plan of PLAN_CATALOG) {
+    await prisma.plan.upsert({
+      where: { id: plan.id },
+      update: {
+        name: plan.name,
+        includedKeys: plan.includedKeys,
+        priceCzk: plan.priceCzk,
+        interval: plan.interval,
+        active: true,
+      },
+      create: plan,
+    });
+  }
+
+  // Demo org entitlements: BILLING live, DEADLINES + DOCUMENTS + CLIENT_PORTAL + HR_ATTENDANCE on trial.
+  await prisma.organizationModule.upsert({
+    where: {
+      organizationId_moduleKey: {
+        organizationId: demoOrg.id,
+        moduleKey: ModuleKey.BILLING,
+      },
+    },
+    update: { status: ModuleStatus.ENABLED, enabledAt: new Date(), disabledAt: null },
+    create: {
+      organizationId: demoOrg.id,
+      moduleKey: ModuleKey.BILLING,
+      status: ModuleStatus.ENABLED,
+      enabledAt: new Date(),
+    },
+  });
+
+  await prisma.organizationModule.upsert({
+    where: {
+      organizationId_moduleKey: {
+        organizationId: demoOrg.id,
+        moduleKey: ModuleKey.DEADLINES,
+      },
+    },
+    update: {
+      status: ModuleStatus.TRIAL,
+      trialEndsAt: new Date("2026-12-31T00:00:00.000Z"),
+      enabledAt: new Date(),
+      disabledAt: null,
+    },
+    create: {
+      organizationId: demoOrg.id,
+      moduleKey: ModuleKey.DEADLINES,
+      status: ModuleStatus.TRIAL,
+      trialEndsAt: new Date("2026-12-31T00:00:00.000Z"),
+      enabledAt: new Date(),
+    },
+  });
+
+  await prisma.organizationModule.upsert({
+    where: {
+      organizationId_moduleKey: {
+        organizationId: demoOrg.id,
+        moduleKey: ModuleKey.DOCUMENTS,
+      },
+    },
+    update: {
+      status: ModuleStatus.TRIAL,
+      trialEndsAt: new Date("2026-12-31T00:00:00.000Z"),
+      enabledAt: new Date(),
+      disabledAt: null,
+    },
+    create: {
+      organizationId: demoOrg.id,
+      moduleKey: ModuleKey.DOCUMENTS,
+      status: ModuleStatus.TRIAL,
+      trialEndsAt: new Date("2026-12-31T00:00:00.000Z"),
+      enabledAt: new Date(),
+    },
+  });
+
+  await prisma.organizationModule.upsert({
+    where: {
+      organizationId_moduleKey: {
+        organizationId: demoOrg.id,
+        moduleKey: ModuleKey.CLIENT_PORTAL,
+      },
+    },
+    update: {
+      status: ModuleStatus.TRIAL,
+      trialEndsAt: new Date("2026-12-31T00:00:00.000Z"),
+      enabledAt: new Date(),
+      disabledAt: null,
+    },
+    create: {
+      organizationId: demoOrg.id,
+      moduleKey: ModuleKey.CLIENT_PORTAL,
+      status: ModuleStatus.TRIAL,
+      trialEndsAt: new Date("2026-12-31T00:00:00.000Z"),
+      enabledAt: new Date(),
+    },
+  });
+
+  await prisma.organizationModule.upsert({
+    where: {
+      organizationId_moduleKey: {
+        organizationId: demoOrg.id,
+        moduleKey: ModuleKey.HR_ATTENDANCE,
+      },
+    },
+    update: {
+      status: ModuleStatus.TRIAL,
+      trialEndsAt: new Date("2026-12-31T00:00:00.000Z"),
+      enabledAt: new Date(),
+      disabledAt: null,
+    },
+    create: {
+      organizationId: demoOrg.id,
+      moduleKey: ModuleKey.HR_ATTENDANCE,
+      status: ModuleStatus.TRIAL,
+      trialEndsAt: new Date("2026-12-31T00:00:00.000Z"),
+      enabledAt: new Date(),
+    },
+  });
+
+  // Demo subscription on the Profi plan (trialing).
+  await prisma.subscription.upsert({
+    where: { organizationId: demoOrg.id },
+    update: { planId: "plan-profi", status: SubscriptionStatus.TRIALING },
+    create: {
+      organizationId: demoOrg.id,
+      planId: "plan-profi",
+      status: SubscriptionStatus.TRIALING,
+      currentPeriodEnd: new Date("2026-12-31T00:00:00.000Z"),
+    },
+  });
+
+  // Demo billing profile (issuer identity) so invoices can be issued out of the
+  // box. VAT payer by default.
+  const demoBillingProfile = {
+    legalName: "syndikat.legal s.r.o., advokátní kancelář",
+    ico: "12345678",
+    dic: "CZ12345678",
+    address: "Příkladná 1, 110 00 Praha 1",
+    bankAccount: "123456789/0100",
+    iban: "CZ6501000000000123456789",
+    vatPayer: true,
+    defaultDueDays: 14,
+    invoiceNote: "Děkujeme za důvěru.",
+  };
+  await prisma.organizationBillingProfile.upsert({
+    where: { organizationId: demoOrg.id },
+    update: demoBillingProfile,
+    create: { organizationId: demoOrg.id, ...demoBillingProfile },
+  });
+
   const abc = await prisma.subject.upsert({
     where: { organizationId_ico: { organizationId: demoOrg.id, ico: "12345678" } },
     update: {
@@ -407,6 +612,95 @@ async function main() {
     role: SubjectRole.COUNTERPARTY,
     createdById: partner.id,
     note: "XYZ s.r.o. jako protistrana.",
+  });
+
+  // Demo document templates (F5 / DOCUMENTS) — idempotent by org + name.
+  const demoTemplates = [
+    {
+      name: "Plná moc",
+      kind: DocumentKind.POWER_OF_ATTORNEY,
+      description: "Plná moc k zastupování klienta.",
+      bodyTemplate:
+        "PLNÁ MOC\n\nKlient: {{client.name}}, IČO {{client.ico}}, {{client.address}}\nuděluje plnou moc advokátovi {{lawyer.name}} ({{org.name}})\nve věci: {{case.name}} (sp. zn. {{case.fileNumber}}).\n\nV Praze dne {{today}}",
+    },
+    {
+      name: "Předžalobní výzva",
+      kind: DocumentKind.LETTER,
+      description: "Předžalobní výzva k úhradě.",
+      bodyTemplate:
+        "Věc: Předžalobní výzva — {{case.name}}\n\nVážení,\njménem klienta {{client.name}} Vás ve věci sp. zn. {{case.fileNumber}} vyzýváme k úhradě.\nProtistrana: {{counterparty.name}}.\n\nV Praze dne {{today}}\n{{lawyer.name}}, {{org.name}}",
+    },
+  ];
+  for (const tpl of demoTemplates) {
+    const exists = await prisma.documentTemplate.findFirst({
+      where: { organizationId: demoOrg.id, name: tpl.name },
+      select: { id: true },
+    });
+    if (!exists) {
+      await prisma.documentTemplate.create({
+        data: {
+          organizationId: demoOrg.id,
+          name: tpl.name,
+          kind: tpl.kind,
+          description: tpl.description,
+          bodyTemplate: tpl.bodyTemplate,
+          createdById: partner.id,
+        },
+      });
+    }
+  }
+
+  // Demo client-portal access for ABC s.r.o. (F6) — idempotent per subject.
+  const portalAccess = await prisma.portalAccess.upsert({
+    where: { subjectId: abc.id },
+    update: {},
+    create: {
+      organizationId: demoOrg.id,
+      subjectId: abc.id,
+      email: "klient.abc@example.com",
+      createdById: partner.id,
+    },
+  });
+  // Share the demo case with the client (whitelist).
+  await prisma.portalShare.upsert({
+    where: {
+      portalAccessId_caseId: { portalAccessId: portalAccess.id, caseId: legalCase.id },
+    },
+    update: { revokedAt: null },
+    create: {
+      organizationId: demoOrg.id,
+      portalAccessId: portalAccess.id,
+      shareType: "CASE",
+      caseId: legalCase.id,
+      sharedById: partner.id,
+    },
+  });
+
+  // Demo HR employee (F7) linked to the trainee account, with a leave balance.
+  const demoEmployee = await prisma.hrEmployee.upsert({
+    where: { userId: trainee.id },
+    update: {},
+    create: {
+      organizationId: demoOrg.id,
+      userId: trainee.id,
+      firstName: "Koncipient",
+      lastName: "Demo",
+      personalNumber: "1001",
+      position: "Advokátní koncipient",
+      weeklyHours: "40",
+      dailyHours: "8",
+      createdById: partner.id,
+    },
+  });
+  await prisma.hrLeaveBalance.upsert({
+    where: { employeeId_year: { employeeId: demoEmployee.id, year: 2026 } },
+    update: {},
+    create: {
+      organizationId: demoOrg.id,
+      employeeId: demoEmployee.id,
+      year: 2026,
+      entitlementHours: "160",
+    },
   });
 
   const existingTask = await prisma.task.findFirst({

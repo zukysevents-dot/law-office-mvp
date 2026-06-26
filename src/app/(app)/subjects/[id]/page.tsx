@@ -13,11 +13,15 @@ import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
 import { SharepointFolderField } from "@/components/sharepoint-folder-field";
 import { SharepointNotice } from "@/components/sharepoint-notice";
+import { SubjectAmlSection } from "@/components/subject-aml-section";
+import { SubjectPortalSection } from "@/components/subject-portal-section";
 import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ModuleKey } from "@/generated/prisma/enums";
 import { getCurrentUser } from "@/lib/auth";
+import { isModuleEnabled } from "@/lib/entitlements";
 import { formatDate, formatMoney } from "@/lib/format";
 import {
   feeTypeLabels,
@@ -29,6 +33,7 @@ import { safeQuery } from "@/lib/db-safe";
 import {
   andWhere,
   canEditRecord,
+  canManagePortal,
   canViewAllLegalData,
   caseVisibilityWhere,
   projectVisibilityWhere,
@@ -114,10 +119,69 @@ async function loadSubject(id: string) {
     },
   });
 
+  // AML/KYC data is compliance-sensitive — load it only for ADMIN/PARTNER, and
+  // never include it in the main subject query a LAWYER can run.
+  const canAml = canViewAllLegalData(currentUser);
+  let aml: {
+    identifications: Awaited<
+      ReturnType<typeof prisma.amlIdentification.findMany>
+    >;
+    assessment: Awaited<ReturnType<typeof prisma.amlAssessment.findUnique>>;
+  } | null = null;
+  if (canAml && subject) {
+    const [identifications, assessment] = await Promise.all([
+      prisma.amlIdentification.findMany({
+        where: { subjectId: subject.id },
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.amlAssessment.findUnique({ where: { subjectId: subject.id } }),
+    ]);
+    aml = { identifications, assessment };
+  }
+
+  const portalEnabled =
+    subject != null &&
+    canManagePortal(currentUser) &&
+    (await isModuleEnabled(currentUser.organizationId, ModuleKey.CLIENT_PORTAL));
+
+  let portal: {
+    access: { id: string; email: string; status: "ACTIVE" | "REVOKED" } | null;
+    shares: Array<{
+      id: string;
+      shareType: "DOCUMENT" | "CASE";
+      document: { id: string; name: string } | null;
+      case: { id: string; name: string } | null;
+    }>;
+  } | null = null;
+
+  if (portalEnabled && subject) {
+    const access = await prisma.portalAccess.findUnique({
+      where: { subjectId: subject.id },
+      select: { id: true, email: true, status: true },
+    });
+    const shares = access
+      ? await prisma.portalShare.findMany({
+          where: { portalAccessId: access.id, revokedAt: null },
+          orderBy: { sharedAt: "desc" },
+          select: {
+            id: true,
+            shareType: true,
+            document: { select: { id: true, name: true } },
+            case: { select: { id: true, name: true } },
+          },
+        })
+      : [];
+    portal = { access, shares };
+  }
+
   return {
     subject,
     canArchive: canViewAllLegalData(currentUser),
     canEdit: subject ? canEditRecord(currentUser, "Subject", subject) : false,
+    canAml,
+    aml,
+    portalEnabled,
+    portal,
   };
 }
 
@@ -162,7 +226,15 @@ export default async function SubjectDetailPage({
   const { id } = await params;
   const { sharepoint, ares } = await searchParams;
   const result = await safeQuery<SubjectDetailData>(
-    { subject: null, canArchive: false, canEdit: false },
+    {
+      subject: null,
+      canArchive: false,
+      canEdit: false,
+      canAml: false,
+      aml: null,
+      portalEnabled: false,
+      portal: null,
+    },
     () => loadSubject(id),
   );
 
@@ -170,7 +242,8 @@ export default async function SubjectDetailPage({
     notFound();
   }
 
-  const { subject, canArchive, canEdit } = result.data;
+  const { subject, canArchive, canEdit, canAml, aml, portalEnabled, portal } =
+    result.data;
   const projects = subject ? projectGroups(subject) : { active: [], inactive: [] };
   const links = subject?.ico ? icoLinks(subject.ico) : null;
 
@@ -476,6 +549,20 @@ export default async function SubjectDetailPage({
               <EmptyState>Pro subjekt zatím není uložený conflict check.</EmptyState>
             )}
           </Section>
+          {canAml && aml ? (
+            <SubjectAmlSection
+              subjectId={subject.id}
+              identifications={aml.identifications}
+              assessment={aml.assessment}
+            />
+          ) : null}
+          {portalEnabled ? (
+            <SubjectPortalSection
+              subjectId={subject.id}
+              access={portal?.access ?? null}
+              shares={portal?.shares ?? []}
+            />
+          ) : null}
         </>
       ) : (
         <EmptyState>Detail subjektu není dostupný bez databáze.</EmptyState>

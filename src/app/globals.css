@@ -234,3 +234,17 @@ html:has(.landing-root) {
     animation: none !important;
   }
 }
+
+/* Print: hide the app chrome so invoice/print views render clean (S7 brings a
+   real server-side PDF). Anything marked .no-print is dropped from print too. */
+@media print {
+  .app-shell aside {
+    display: none !important;
+  }
+  .app-shell main {
+    padding: 0 !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+}

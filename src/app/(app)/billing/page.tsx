@@ -6,7 +6,9 @@ import { Section } from "@/components/section";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ModuleKey } from "@/generated/prisma/enums";
 import { getCurrentUser } from "@/lib/auth";
+import { assertModuleEnabled } from "@/lib/entitlements";
 import {
   BILLING_ROW_LIMIT,
   billingFilterWhere,
@@ -89,6 +91,7 @@ export default async function BillingPage({ searchParams }: BillingProps) {
     async () => {
       const prisma = getPrisma();
       const currentUser = await getCurrentUser();
+      await assertModuleEnabled(currentUser, ModuleKey.BILLING);
       const [rows, subjects, projects, cases, users] = await Promise.all([
         prisma.workLog.findMany({
           where: andWhere(
@@ -155,9 +158,15 @@ export default async function BillingPage({ searchParams }: BillingProps) {
         title="Fakturace"
         description="Fakturační podklady – schválené a fakturovatelné výkazy práce, souhrny a export."
         action={
-          <ButtonLink href="/billing/approvals" variant="secondary">
-            Ke schválení
-          </ButtonLink>
+          <div className="flex gap-2">
+            <ButtonLink href="/billing/approvals" variant="secondary">
+              Ke schválení
+            </ButtonLink>
+            <ButtonLink href="/billing/retainers" variant="secondary">
+              Paušály
+            </ButtonLink>
+            <ButtonLink href="/billing/invoices">Faktury</ButtonLink>
+          </div>
         }
       />
       <DatabaseNotice databaseReady={result.databaseReady} error={result.error} />

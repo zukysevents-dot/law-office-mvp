@@ -352,6 +352,351 @@ export function workLogVisibilityWhere(
   return denyWhere<Prisma.WorkLogWhereInput>();
 }
 
+export function invoiceVisibilityWhere(
+  user: PermissionInput,
+): Prisma.InvoiceWhereInput {
+  const org = orgClause(user);
+  if (!org) {
+    return denyWhere<Prisma.InvoiceWhereInput>();
+  }
+
+  if (canViewAllLegalData(user)) {
+    return org;
+  }
+
+  const userId = userIdOf(user);
+  const role = roleOf(user);
+
+  if (!userId || !role) {
+    return denyWhere<Prisma.InvoiceWhereInput>();
+  }
+
+  if (role === UserRole.LAWYER) {
+    return andWhere(org, {
+      OR: [
+        { createdById: userId },
+        { issuedById: userId },
+        { project: { is: { responsibleUserId: userId } } },
+        { case: { is: { responsibleUserId: userId } } },
+        { case: { is: { project: { is: { responsibleUserId: userId } } } } },
+      ],
+    });
+  }
+
+  // TRAINEE/INTERN don't manage invoices; only ones they created (≈ none).
+  return andWhere(org, { createdById: userId });
+}
+
+// Who may create/issue/cancel client invoices: ADMIN, PARTNER, LAWYER.
+// TRAINEE/INTERN are excluded. Org isolation is enforced separately per record.
+export function assertCanManageInvoices(user: PermissionInput) {
+  const ok = canViewAllLegalData(user) || roleOf(user) === UserRole.LAWYER;
+  if (!ok) {
+    throw new Error("Nemáte oprávnění spravovat faktury.");
+  }
+}
+
+// Visibility for data messages (F2). Data-box content is sensitive: ADMIN/PARTNER
+// see all org messages; a LAWYER sees only ones they recorded or that are
+// assigned to a case they're responsible for. Unassigned messages (no case)
+// therefore stay visible only to ADMIN/PARTNER and their creator. TRAINEE/INTERN
+// see only what they created (default-deny on sensitive DS data).
+export function dataMessageVisibilityWhere(
+  user: PermissionInput,
+): Prisma.DataMessageWhereInput {
+  const org = orgClause(user);
+  if (!org) {
+    return denyWhere<Prisma.DataMessageWhereInput>();
+  }
+
+  if (canViewAllLegalData(user)) {
+    return org;
+  }
+
+  const userId = userIdOf(user);
+  const role = roleOf(user);
+
+  if (!userId || !role) {
+    return denyWhere<Prisma.DataMessageWhereInput>();
+  }
+
+  if (role === UserRole.LAWYER) {
+    return andWhere(org, {
+      OR: [
+        { createdById: userId },
+        { case: { is: { responsibleUserId: userId } } },
+        { case: { is: { project: { is: { responsibleUserId: userId } } } } },
+      ],
+    });
+  }
+
+  return andWhere(org, { createdById: userId });
+}
+
+// Who may record/assign/send data messages: ADMIN, PARTNER, LAWYER. (Configuring
+// a DataBoxAccount is stricter — ADMIN/PARTNER via assertCanAdministerOrg.)
+export function assertCanManageDataBoxes(user: PermissionInput) {
+  const ok = canViewAllLegalData(user) || roleOf(user) === UserRole.LAWYER;
+  if (!ok) {
+    throw new Error("Nemáte oprávnění pracovat s datovými schránkami.");
+  }
+}
+
+// AML/KYC data is compliance-sensitive (identity documents, PEP/sanctions) —
+// restricted to ADMIN/PARTNER for both viewing and management.
+export function canManageAml(user: PermissionInput): boolean {
+  return canViewAllLegalData(user);
+}
+
+export function assertCanManageAml(user: PermissionInput) {
+  if (!canManageAml(user)) {
+    throw new Error("Nemáte oprávnění k AML/KYC údajům.");
+  }
+}
+
+// Who may create/edit/complete deadlines and court hearings: ADMIN, PARTNER,
+// LAWYER. Closing a procedural deadline is a liability act (a missed deadline is
+// the lawyer's liability), so TRAINEE/INTERN are excluded from managing them.
+export function canManageDeadlines(user: PermissionInput): boolean {
+  return canViewAllLegalData(user) || roleOf(user) === UserRole.LAWYER;
+}
+
+export function assertCanManageDeadlines(user: PermissionInput) {
+  if (!canManageDeadlines(user)) {
+    throw new Error("Nemáte oprávnění spravovat lhůty.");
+  }
+}
+
+// Visibility for deadlines (F4). Deadlines are case-bound, so visibility derives
+// from the case (like data messages): ADMIN/PARTNER see all org deadlines; a
+// LAWYER sees ones they own (responsible/created) or on a case they're
+// responsible for; TRAINEE/INTERN see only ones they own. Fail-closed without org.
+export function deadlineVisibilityWhere(
+  user: PermissionInput,
+): Prisma.DeadlineWhereInput {
+  const org = orgClause(user);
+  if (!org) {
+    return denyWhere<Prisma.DeadlineWhereInput>();
+  }
+
+  if (canViewAllLegalData(user)) {
+    return org;
+  }
+
+  const userId = userIdOf(user);
+  const role = roleOf(user);
+
+  if (!userId || !role) {
+    return denyWhere<Prisma.DeadlineWhereInput>();
+  }
+
+  if (role === UserRole.LAWYER) {
+    return andWhere(org, {
+      OR: [
+        { responsibleUserId: userId },
+        { createdById: userId },
+        { case: { is: { responsibleUserId: userId } } },
+        { case: { is: { project: { is: { responsibleUserId: userId } } } } },
+      ],
+    });
+  }
+
+  return andWhere(org, {
+    OR: [{ responsibleUserId: userId }, { createdById: userId }],
+  });
+}
+
+// Who may create/edit/version documents: ADMIN, PARTNER, LAWYER. Documents are
+// case/subject-bound work artifacts under attorney confidentiality, so junior
+// roles (TRAINEE/INTERN) don't author or version them in the MVP.
+export function canManageDocuments(user: PermissionInput): boolean {
+  return canViewAllLegalData(user) || roleOf(user) === UserRole.LAWYER;
+}
+
+export function assertCanManageDocuments(user: PermissionInput) {
+  if (!canManageDocuments(user)) {
+    throw new Error("Nemáte oprávnění spravovat dokumenty.");
+  }
+}
+
+// Templates are an office-wide asset (they change generation for everyone), so
+// managing them is restricted to ADMIN/PARTNER. LAWYER uses but doesn't edit.
+export function canManageDocumentTemplates(user: PermissionInput): boolean {
+  return canViewAllLegalData(user);
+}
+
+export function assertCanManageDocumentTemplates(user: PermissionInput) {
+  if (!canManageDocumentTemplates(user)) {
+    throw new Error("Nemáte oprávnění spravovat šablony dokumentů.");
+  }
+}
+
+// Visibility for documents (F5). Case/subject-bound and confidentiality-sensitive:
+// ADMIN/PARTNER see all org documents; a LAWYER sees ones they created, on a case
+// they're responsible for, or on a subject visible to them; TRAINEE/INTERN see
+// only ones they created (default-deny on confidential material). Fail-closed.
+export function documentVisibilityWhere(
+  user: PermissionInput,
+): Prisma.DocumentWhereInput {
+  const org = orgClause(user);
+  if (!org) {
+    return denyWhere<Prisma.DocumentWhereInput>();
+  }
+
+  if (canViewAllLegalData(user)) {
+    return org;
+  }
+
+  const userId = userIdOf(user);
+  const role = roleOf(user);
+
+  if (!userId || !role) {
+    return denyWhere<Prisma.DocumentWhereInput>();
+  }
+
+  if (role === UserRole.LAWYER) {
+    return andWhere(org, {
+      OR: [
+        { createdById: userId },
+        { case: { is: { responsibleUserId: userId } } },
+        { case: { is: { project: { is: { responsibleUserId: userId } } } } },
+        { subject: { is: subjectVisibilityWhere(user) } },
+      ],
+    });
+  }
+
+  return andWhere(org, { createdById: userId });
+}
+
+// Templates are office-wide: any org member who has the module may read them.
+// Fail-closed without an org.
+export function documentTemplateVisibilityWhere(
+  user: PermissionInput,
+): Prisma.DocumentTemplateWhereInput {
+  const org = orgClause(user);
+  if (!org) {
+    return denyWhere<Prisma.DocumentTemplateWhereInput>();
+  }
+  return org;
+}
+
+// Who may grant/revoke client portal access and share records with clients:
+// ADMIN, PARTNER, LAWYER (sharing confidential data with an external party is a
+// case-handling decision). TRAINEE/INTERN are excluded.
+export function canManagePortal(user: PermissionInput): boolean {
+  return canViewAllLegalData(user) || roleOf(user) === UserRole.LAWYER;
+}
+
+export function assertCanManagePortal(user: PermissionInput) {
+  if (!canManagePortal(user)) {
+    throw new Error("Nemáte oprávnění spravovat klientský portál.");
+  }
+}
+
+// HR / Docházka (F7). HR data are personal/sensitive (payroll, absences), so
+// management (employees, approvals, exports) is restricted to ADMIN/PARTNER (the
+// HR manager). Regular employees see and request only their OWN records.
+export function canManageHr(user: PermissionInput): boolean {
+  return canViewAllLegalData(user);
+}
+
+export function assertCanManageHr(user: PermissionInput) {
+  if (!canManageHr(user)) {
+    throw new Error("Nemáte oprávnění spravovat HR a docházku.");
+  }
+}
+
+// Employee visibility: ADMIN/PARTNER see all employees in the org; everyone else
+// sees only their own employee record (linked via userId). Fail-closed w/o org.
+export function hrEmployeeVisibilityWhere(
+  user: PermissionInput,
+): Prisma.HrEmployeeWhereInput {
+  const org = orgClause(user);
+  if (!org) {
+    return denyWhere<Prisma.HrEmployeeWhereInput>();
+  }
+  if (canManageHr(user)) {
+    return org;
+  }
+  const userId = userIdOf(user);
+  if (!userId) {
+    return denyWhere<Prisma.HrEmployeeWhereInput>();
+  }
+  return andWhere(org, { userId });
+}
+
+// Attendance/absence visibility derives from the employee: managers see all org
+// records, others only rows for their own employee (employee.userId === me).
+export function hrAttendanceVisibilityWhere(
+  user: PermissionInput,
+): Prisma.HrAttendanceRecordWhereInput {
+  const org = orgClause(user);
+  if (!org) {
+    return denyWhere<Prisma.HrAttendanceRecordWhereInput>();
+  }
+  if (canManageHr(user)) {
+    return org;
+  }
+  const userId = userIdOf(user);
+  if (!userId) {
+    return denyWhere<Prisma.HrAttendanceRecordWhereInput>();
+  }
+  return andWhere(org, { employee: { is: { userId } } });
+}
+
+export function hrAbsenceVisibilityWhere(
+  user: PermissionInput,
+): Prisma.HrAbsenceRequestWhereInput {
+  const org = orgClause(user);
+  if (!org) {
+    return denyWhere<Prisma.HrAbsenceRequestWhereInput>();
+  }
+  if (canManageHr(user)) {
+    return org;
+  }
+  const userId = userIdOf(user);
+  if (!userId) {
+    return denyWhere<Prisma.HrAbsenceRequestWhereInput>();
+  }
+  return andWhere(org, { employee: { is: { userId } } });
+}
+
+// Visibility for court hearings (F4) — same case-derived rules as deadlines.
+export function courtHearingVisibilityWhere(
+  user: PermissionInput,
+): Prisma.CourtHearingWhereInput {
+  const org = orgClause(user);
+  if (!org) {
+    return denyWhere<Prisma.CourtHearingWhereInput>();
+  }
+
+  if (canViewAllLegalData(user)) {
+    return org;
+  }
+
+  const userId = userIdOf(user);
+  const role = roleOf(user);
+
+  if (!userId || !role) {
+    return denyWhere<Prisma.CourtHearingWhereInput>();
+  }
+
+  if (role === UserRole.LAWYER) {
+    return andWhere(org, {
+      OR: [
+        { responsibleUserId: userId },
+        { createdById: userId },
+        { case: { is: { responsibleUserId: userId } } },
+        { case: { is: { project: { is: { responsibleUserId: userId } } } } },
+      ],
+    });
+  }
+
+  return andWhere(org, {
+    OR: [{ responsibleUserId: userId }, { createdById: userId }],
+  });
+}
+
 export function referenceVisibilityWhere(
   user: PermissionInput,
 ): Prisma.ReferenceWhereInput {

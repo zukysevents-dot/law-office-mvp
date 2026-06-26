@@ -149,6 +149,13 @@ export async function updateNotificationPreference(formData: FormData) {
       optionalNumber(formData, "filedFollowupDays"),
       5,
     ),
+    deadlineSoonEmail: checkboxValue(formData, "deadlineSoonEmail"),
+    deadlineOverdueEmail: checkboxValue(formData, "deadlineOverdueEmail"),
+    courtHearingSoonEmail: checkboxValue(formData, "courtHearingSoonEmail"),
+    deadlineWatchDaysBefore: boundedDays(
+      optionalNumber(formData, "deadlineWatchDaysBefore"),
+      3,
+    ),
   };
 
   const preference = await prisma.notificationPreference.upsert({

@@ -1,10 +1,14 @@
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
 import { OrganizationAdminPanel } from "@/components/organization-admin";
+import { OrganizationModulesOverview } from "@/components/organization-modules-overview";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
-import { getOrganizationAdminData } from "@/lib/organization";
+import {
+  getOrganizationAdminData,
+  getOrganizationEntitlements,
+} from "@/lib/organization";
 import { canViewAllLegalData } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +16,7 @@ export const dynamic = "force-dynamic";
 type OrgSettingsData = Awaited<ReturnType<typeof getOrganizationAdminData>> & {
   allowed: boolean;
   currentUserId: string;
+  entitlements: Awaited<ReturnType<typeof getOrganizationEntitlements>> | null;
 };
 
 export default async function OrganizationSettingsPage() {
@@ -25,11 +30,20 @@ export default async function OrganizationSettingsPage() {
         members: [],
         joinCodes: [],
         activeMembers: 0,
+        entitlements: null,
       };
     }
 
-    const data = await getOrganizationAdminData(currentUser.organizationId);
-    return { ...data, allowed: true, currentUserId: currentUser.id };
+    const [adminData, entitlements] = await Promise.all([
+      getOrganizationAdminData(currentUser.organizationId),
+      getOrganizationEntitlements(currentUser.organizationId),
+    ]);
+    return {
+      ...adminData,
+      allowed: true,
+      currentUserId: currentUser.id,
+      entitlements,
+    };
   });
 
   const data = result.data;
@@ -69,6 +83,12 @@ export default async function OrganizationSettingsPage() {
             joinCodes={data.joinCodes}
             currentUserId={data.currentUserId}
           />
+          {data.entitlements ? (
+            <OrganizationModulesOverview
+              modules={data.entitlements.modules}
+              subscription={data.entitlements.subscription}
+            />
+          ) : null}
         </>
       ) : null}
     </>
