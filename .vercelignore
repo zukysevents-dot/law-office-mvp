@@ -1,0 +1,5 @@
+# Env files never belong in the uploaded build context — Vercel injects env vars
+# from Project Settings. Keeps DB password / admin creds out of the deployment.
+.env
+.env.*
+!.env.example
