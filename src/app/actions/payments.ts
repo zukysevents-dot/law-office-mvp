@@ -53,8 +53,9 @@ export async function recordPayment(formData: FormData) {
   await prisma.$transaction(async (tx) => {
     // Lock the invoice row so concurrent payments serialize — otherwise both
     // could read the same stale sum and leave the status stuck in
-    // PARTIALLY_PAID after the invoice is actually fully covered.
-    await tx.$queryRaw`SELECT id FROM "invoices" WHERE id = ${invoiceId} FOR UPDATE`;
+    // PARTIALLY_PAID after the invoice is actually fully covered. Scope to the
+    // user's org so we never take a lock on another tenant's row.
+    await tx.$queryRaw`SELECT id FROM "invoices" WHERE id = ${invoiceId} AND "organizationId" = ${currentUser.organizationId} FOR UPDATE`;
 
     const invoice = await tx.invoice.findFirst({
       where: andWhere(invoiceVisibilityWhere(currentUser), { id: invoiceId }),

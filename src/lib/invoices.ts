@@ -67,3 +67,25 @@ export function resolvePaidStatus(
 ): InvoiceStatus {
   return paidCzk >= totalCzk ? InvoiceStatus.PAID : InvoiceStatus.PARTIALLY_PAID;
 }
+
+// Statuses that can still go overdue (an unpaid receivable). PAID and CANCELLED
+// never are; DRAFT has no due date yet.
+const OVERDUE_STATUSES: InvoiceStatus[] = [
+  InvoiceStatus.ISSUED,
+  InvoiceStatus.SENT,
+  InvoiceStatus.PARTIALLY_PAID,
+];
+
+// "Po splatnosti": an outstanding invoice whose due date has already passed.
+// Derived (not a stored status), so it composes with PARTIALLY_PAID. `now` is
+// injectable for deterministic tests.
+export function isPastDue(
+  invoice: { dueDate: Date | null; status: InvoiceStatus },
+  now: Date = new Date(),
+): boolean {
+  return (
+    invoice.dueDate != null &&
+    invoice.dueDate.getTime() < now.getTime() &&
+    OVERDUE_STATUSES.includes(invoice.status)
+  );
+}

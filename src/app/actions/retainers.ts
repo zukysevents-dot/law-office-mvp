@@ -155,6 +155,24 @@ export async function generateRetainerInvoice(formData: FormData) {
       }
     }
 
+    // Idempotence: don't generate a second invoice for the same retainer client
+    // and period. The period is encoded in the invoice note ("Paušál MM/RRRR");
+    // a non-cancelled match means this month is already (being) billed.
+    const existing = await tx.invoice.findFirst({
+      where: {
+        organizationId,
+        subjectId: retainer.subjectId,
+        note: `Paušál ${period}`,
+        status: { not: InvoiceStatus.CANCELLED },
+      },
+      select: { id: true, number: true },
+    });
+    if (existing) {
+      throw new Error(
+        `Faktura za paušál ${period} už existuje${existing.number ? ` (č. ${existing.number})` : ""} — otevřete ji v seznamu faktur.`,
+      );
+    }
+
     const profile = await tx.organizationBillingProfile.findUnique({
       where: { organizationId },
     });
