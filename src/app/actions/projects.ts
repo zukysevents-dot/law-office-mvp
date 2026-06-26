@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { ProjectStatus, SubjectRole } from "@/generated/prisma/enums";
+import { setArchived } from "@/lib/archive";
 import { auditJson } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
 import {
@@ -12,11 +13,7 @@ import {
   optionalString,
   requiredString,
 } from "@/lib/form";
-import {
-  assertCanArchiveRecords,
-  assertCanEditRecord,
-  assertSameOrg,
-} from "@/lib/permissions";
+import { assertCanEditRecord } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 export async function createProject(formData: FormData) {
@@ -119,60 +116,20 @@ export async function updateProject(formData: FormData) {
   redirect(`/projects/${project.id}`);
 }
 
-export async function archiveProject(formData: FormData) {
+async function setProjectArchived(formData: FormData, archived: boolean) {
   const prisma = getPrisma();
-  const currentUser = await getCurrentUser();
-  assertCanArchiveRecords(currentUser);
-  const projectId = requiredString(formData, "id");
-  const oldProject = await prisma.project.findUniqueOrThrow({
-    where: { id: projectId },
+  const project = await setArchived(formData, "Project", archived, {
+    find: (id) => prisma.project.findUniqueOrThrow({ where: { id } }),
+    update: (id, data) => prisma.project.update({ where: { id }, data }),
   });
-  assertSameOrg(currentUser, oldProject);
-  const project = await prisma.project.update({
-    where: { id: projectId },
-    data: { archivedAt: new Date() },
-  });
-
-  await prisma.auditLog.create({
-    data: {
-      entityType: "Project",
-      entityId: project.id,
-      action: "ARCHIVE",
-      changedById: currentUser.id,
-      oldValue: auditJson(oldProject),
-      newValue: auditJson(project),
-    },
-  });
-
   revalidatePath("/projects");
   revalidatePath(`/projects/${project.id}`);
 }
 
+export async function archiveProject(formData: FormData) {
+  await setProjectArchived(formData, true);
+}
+
 export async function restoreProject(formData: FormData) {
-  const prisma = getPrisma();
-  const currentUser = await getCurrentUser();
-  assertCanArchiveRecords(currentUser);
-  const projectId = requiredString(formData, "id");
-  const oldProject = await prisma.project.findUniqueOrThrow({
-    where: { id: projectId },
-  });
-  assertSameOrg(currentUser, oldProject);
-  const project = await prisma.project.update({
-    where: { id: projectId },
-    data: { archivedAt: null },
-  });
-
-  await prisma.auditLog.create({
-    data: {
-      entityType: "Project",
-      entityId: project.id,
-      action: "RESTORE",
-      changedById: currentUser.id,
-      oldValue: auditJson(oldProject),
-      newValue: auditJson(project),
-    },
-  });
-
-  revalidatePath("/projects");
-  revalidatePath(`/projects/${project.id}`);
+  await setProjectArchived(formData, false);
 }

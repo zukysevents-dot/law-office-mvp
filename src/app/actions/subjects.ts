@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { Prisma } from "@/generated/prisma/client";
 import { FeeType, SubjectType } from "@/generated/prisma/enums";
+import { setArchived } from "@/lib/archive";
 import { auditJson } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
 import {
@@ -14,11 +15,7 @@ import {
   optionalString,
   requiredString,
 } from "@/lib/form";
-import {
-  assertCanArchiveRecords,
-  assertCanEditRecord,
-  assertSameOrg,
-} from "@/lib/permissions";
+import { assertCanEditRecord } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 // Map the per-org unique IČO violation to a readable Czech message instead of a
@@ -138,60 +135,20 @@ export async function updateSubject(formData: FormData) {
   redirect(`/subjects/${subject.id}`);
 }
 
-export async function archiveSubject(formData: FormData) {
+async function setSubjectArchived(formData: FormData, archived: boolean) {
   const prisma = getPrisma();
-  const currentUser = await getCurrentUser();
-  assertCanArchiveRecords(currentUser);
-  const subjectId = requiredString(formData, "id");
-  const oldSubject = await prisma.subject.findUniqueOrThrow({
-    where: { id: subjectId },
+  const subject = await setArchived(formData, "Subject", archived, {
+    find: (id) => prisma.subject.findUniqueOrThrow({ where: { id } }),
+    update: (id, data) => prisma.subject.update({ where: { id }, data }),
   });
-  assertSameOrg(currentUser, oldSubject);
-  const subject = await prisma.subject.update({
-    where: { id: subjectId },
-    data: { archivedAt: new Date() },
-  });
-
-  await prisma.auditLog.create({
-    data: {
-      entityType: "Subject",
-      entityId: subject.id,
-      action: "ARCHIVE",
-      changedById: currentUser.id,
-      oldValue: auditJson(oldSubject),
-      newValue: auditJson(subject),
-    },
-  });
-
   revalidatePath("/subjects");
   revalidatePath(`/subjects/${subject.id}`);
 }
 
+export async function archiveSubject(formData: FormData) {
+  await setSubjectArchived(formData, true);
+}
+
 export async function restoreSubject(formData: FormData) {
-  const prisma = getPrisma();
-  const currentUser = await getCurrentUser();
-  assertCanArchiveRecords(currentUser);
-  const subjectId = requiredString(formData, "id");
-  const oldSubject = await prisma.subject.findUniqueOrThrow({
-    where: { id: subjectId },
-  });
-  assertSameOrg(currentUser, oldSubject);
-  const subject = await prisma.subject.update({
-    where: { id: subjectId },
-    data: { archivedAt: null },
-  });
-
-  await prisma.auditLog.create({
-    data: {
-      entityType: "Subject",
-      entityId: subject.id,
-      action: "RESTORE",
-      changedById: currentUser.id,
-      oldValue: auditJson(oldSubject),
-      newValue: auditJson(subject),
-    },
-  });
-
-  revalidatePath("/subjects");
-  revalidatePath(`/subjects/${subject.id}`);
+  await setSubjectArchived(formData, false);
 }

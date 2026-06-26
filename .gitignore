@@ -27,6 +27,7 @@ next-env.d.ts
 
 # --- Testing / coverage ----------------------------------------------------
 /coverage/
+.playwright-mcp/
 
 # --- Environment variables -------------------------------------------------
 # Ignore every .env file except the tracked example.

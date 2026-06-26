@@ -9,13 +9,12 @@ import {
   optionalString,
   requiredString,
 } from "@/lib/form";
+import { setArchived } from "@/lib/archive";
 import { auditJson } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
 import {
   andWhere,
-  assertCanArchiveRecords,
   assertCanEditRecord,
-  assertSameOrg,
   caseVisibilityWhere,
   projectVisibilityWhere,
 } from "@/lib/permissions";
@@ -150,60 +149,20 @@ export async function updateReference(formData: FormData) {
   redirect("/references");
 }
 
-export async function archiveReference(formData: FormData) {
+async function setReferenceArchived(formData: FormData, archived: boolean) {
   const prisma = getPrisma();
-  const currentUser = await getCurrentUser();
-  assertCanArchiveRecords(currentUser);
-  const referenceId = requiredString(formData, "id");
-  const oldReference = await prisma.reference.findUniqueOrThrow({
-    where: { id: referenceId },
+  const reference = await setArchived(formData, "Reference", archived, {
+    find: (id) => prisma.reference.findUniqueOrThrow({ where: { id } }),
+    update: (id, data) => prisma.reference.update({ where: { id }, data }),
   });
-  assertSameOrg(currentUser, oldReference);
-  const reference = await prisma.reference.update({
-    where: { id: referenceId },
-    data: { archivedAt: new Date() },
-  });
-
-  await prisma.auditLog.create({
-    data: {
-      entityType: "Reference",
-      entityId: reference.id,
-      action: "ARCHIVE",
-      changedById: currentUser.id,
-      oldValue: auditJson(oldReference),
-      newValue: auditJson(reference),
-    },
-  });
-
   revalidatePath("/references");
   revalidatePath(`/references/${reference.id}/edit`);
 }
 
+export async function archiveReference(formData: FormData) {
+  await setReferenceArchived(formData, true);
+}
+
 export async function restoreReference(formData: FormData) {
-  const prisma = getPrisma();
-  const currentUser = await getCurrentUser();
-  assertCanArchiveRecords(currentUser);
-  const referenceId = requiredString(formData, "id");
-  const oldReference = await prisma.reference.findUniqueOrThrow({
-    where: { id: referenceId },
-  });
-  assertSameOrg(currentUser, oldReference);
-  const reference = await prisma.reference.update({
-    where: { id: referenceId },
-    data: { archivedAt: null },
-  });
-
-  await prisma.auditLog.create({
-    data: {
-      entityType: "Reference",
-      entityId: reference.id,
-      action: "RESTORE",
-      changedById: currentUser.id,
-      oldValue: auditJson(oldReference),
-      newValue: auditJson(reference),
-    },
-  });
-
-  revalidatePath("/references");
-  revalidatePath(`/references/${reference.id}/edit`);
+  await setReferenceArchived(formData, false);
 }
