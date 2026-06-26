@@ -26,6 +26,9 @@ npm run dev
 
 Aplikace poběží na `http://127.0.0.1:3001`.
 
+Pro produkční nasazení (Supabase PostgreSQL + Vercel) viz
+[`DEPLOYMENT.md`](DEPLOYMENT.md).
+
 Ve Windows PowerShellu lze `.env` vytvořit příkazem:
 
 ```powershell

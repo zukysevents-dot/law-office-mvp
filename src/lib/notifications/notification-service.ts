@@ -72,10 +72,6 @@ const defaultPreference: NotificationPreferenceShape = {
   deadlineWatchDaysBefore: DEFAULT_DEADLINE_WATCH_DAYS,
 };
 
-function notificationPreferenceData() {
-  return defaultPreference;
-}
-
 function uniqueRecipients(
   ids: Array<string | null | undefined>,
   actorUserId?: string | null,
@@ -260,7 +256,7 @@ function lockCutoff(now: Date) {
 export function defaultNotificationPreferenceData(userId: string) {
   return {
     userId,
-    ...notificationPreferenceData(),
+    ...defaultPreference,
   };
 }
 

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { CaseStatus, SubjectRole } from "@/generated/prisma/enums";
+import { setArchived } from "@/lib/archive";
 import { auditJson } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
 import {
@@ -14,9 +15,7 @@ import {
 } from "@/lib/form";
 import {
   andWhere,
-  assertCanArchiveRecords,
   assertCanEditRecord,
-  assertSameOrg,
   projectVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
@@ -126,58 +125,21 @@ export async function updateCase(formData: FormData) {
   redirect(`/cases/${legalCase.id}`);
 }
 
-export async function archiveCase(formData: FormData) {
+async function setCaseArchived(formData: FormData, archived: boolean) {
   const prisma = getPrisma();
-  const currentUser = await getCurrentUser();
-  assertCanArchiveRecords(currentUser);
-  const caseId = requiredString(formData, "id");
-  const oldCase = await prisma.case.findUniqueOrThrow({ where: { id: caseId } });
-  assertSameOrg(currentUser, oldCase);
-  const legalCase = await prisma.case.update({
-    where: { id: caseId },
-    data: { archivedAt: new Date() },
+  const legalCase = await setArchived(formData, "Case", archived, {
+    find: (id) => prisma.case.findUniqueOrThrow({ where: { id } }),
+    update: (id, data) => prisma.case.update({ where: { id }, data }),
   });
-
-  await prisma.auditLog.create({
-    data: {
-      entityType: "Case",
-      entityId: legalCase.id,
-      action: "ARCHIVE",
-      changedById: currentUser.id,
-      oldValue: auditJson(oldCase),
-      newValue: auditJson(legalCase),
-    },
-  });
-
   revalidatePath("/cases");
   revalidatePath(`/cases/${legalCase.id}`);
   revalidatePath(`/projects/${legalCase.projectId}`);
 }
 
+export async function archiveCase(formData: FormData) {
+  await setCaseArchived(formData, true);
+}
+
 export async function restoreCase(formData: FormData) {
-  const prisma = getPrisma();
-  const currentUser = await getCurrentUser();
-  assertCanArchiveRecords(currentUser);
-  const caseId = requiredString(formData, "id");
-  const oldCase = await prisma.case.findUniqueOrThrow({ where: { id: caseId } });
-  assertSameOrg(currentUser, oldCase);
-  const legalCase = await prisma.case.update({
-    where: { id: caseId },
-    data: { archivedAt: null },
-  });
-
-  await prisma.auditLog.create({
-    data: {
-      entityType: "Case",
-      entityId: legalCase.id,
-      action: "RESTORE",
-      changedById: currentUser.id,
-      oldValue: auditJson(oldCase),
-      newValue: auditJson(legalCase),
-    },
-  });
-
-  revalidatePath("/cases");
-  revalidatePath(`/cases/${legalCase.id}`);
-  revalidatePath(`/projects/${legalCase.projectId}`);
+  await setCaseArchived(formData, false);
 }
