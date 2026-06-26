@@ -42,16 +42,16 @@ export function Benefits() {
           {benefits.map((benefit, index) => (
             <li key={benefit.title}>
               <Reveal delay={index * 70}>
-                <div className="flex gap-4 rounded-xl border border-[#d4e2dc] bg-white p-5 shadow-sm shadow-[#072924]/5 transition duration-300 hover:-translate-y-1 hover:shadow-md hover:shadow-[#072924]/10">
+                <div className="flex gap-4 rounded-xl border border-[var(--iv-line)] bg-white p-5 shadow-sm shadow-[var(--iv-deep)]/5 transition duration-300 hover:-translate-y-1 hover:shadow-md hover:shadow-[var(--iv-deep)]/10">
                   <CheckCircle2
-                    className="mt-0.5 h-6 w-6 shrink-0 text-[#072924]"
+                    className="mt-0.5 h-6 w-6 shrink-0 text-[var(--iv-teal)]"
                     aria-hidden
                   />
                   <div className="min-w-0">
-                    <h3 className="text-base font-semibold text-[#072924]">
+                    <h3 className="text-base font-semibold text-[var(--iv-ink)]">
                       {benefit.title}
                     </h3>
-                    <p className="mt-1.5 text-sm leading-relaxed text-[#5f756e]">
+                    <p className="mt-1.5 text-sm leading-relaxed text-[var(--iv-muted)]">
                       {benefit.body}
                     </p>
                   </div>

@@ -78,14 +78,14 @@ export function FeaturesGrid() {
       <div className="mt-12 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {features.map((feature, index) => (
           <Reveal key={feature.title} delay={(index % 3) * 70}>
-            <article className="group flex h-full flex-col rounded-xl border border-[#d4e2dc] bg-white p-6 shadow-sm shadow-[#072924]/5 transition duration-300 hover:-translate-y-1 hover:border-[#B9DCC6] hover:shadow-md hover:shadow-[#072924]/10">
-              <span className="flex h-11 w-11 items-center justify-center rounded-lg bg-[#B9DCC6] text-[#072924] transition group-hover:bg-[#072924] group-hover:text-[#B9DCC6]">
+            <article className="group flex h-full flex-col rounded-xl border border-[var(--iv-line)] bg-white p-6 shadow-sm shadow-[var(--iv-deep)]/5 transition duration-300 hover:-translate-y-1 hover:border-[var(--iv-teal)] hover:shadow-md hover:shadow-[var(--iv-deep)]/10">
+              <span className="flex h-11 w-11 items-center justify-center rounded-lg bg-[var(--iv-teal)]/12 text-[var(--iv-teal-ink)] transition group-hover:bg-[var(--iv-teal)] group-hover:text-white">
                 <feature.icon className="h-5 w-5" aria-hidden />
               </span>
-              <h3 className="mt-4 text-base font-semibold text-[#072924]">
+              <h3 className="mt-4 text-base font-semibold text-[var(--iv-ink)]">
                 {feature.title}
               </h3>
-              <p className="mt-2 text-sm leading-relaxed text-[#5f756e]">
+              <p className="mt-2 text-sm leading-relaxed text-[var(--iv-muted)]">
                 {feature.body}
               </p>
             </article>

@@ -4,9 +4,9 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Menu, X } from "lucide-react";
 
-import { ButtonLink } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { Wordmark } from "@/components/landing/landing-primitives";
+import { CtaLink } from "@/components/landing/landing-primitives";
+import { IuriverseLogo } from "@/components/landing/iuriverse-logo";
 
 const navLinks = [
   { href: "#produkt", label: "Produkt" },
@@ -17,6 +17,16 @@ const navLinks = [
 
 export function MarketingHeader() {
   const [open, setOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    function onScroll() {
+      setScrolled(window.scrollY > 8);
+    }
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -28,14 +38,29 @@ export function MarketingHeader() {
     }
   }, [open]);
 
+  // At the very top the header floats over the dark cinematic hero (light text);
+  // once scrolled it becomes a solid light bar (dark text). Opening the mobile
+  // menu always needs a solid backing.
+  const solid = scrolled || open;
+  const darkTone = !scrolled;
+
   return (
     <header
       aria-label="Hlavní navigace"
-      className="sticky top-0 z-50 border-b border-[#d4e2dc]/70 bg-[#eef5f1]/80 backdrop-blur-md"
+      className={cn(
+        "sticky top-0 z-50 border-b transition-colors duration-300",
+        // At the top the header is opaque deep so it blends seamlessly into the
+        // cinematic hero (the body bg behind it is the app's light tone, so a
+        // transparent header would otherwise flash light). Once scrolled it
+        // becomes a light glass bar over the lower light sections.
+        !solid && "border-transparent bg-[var(--iv-deep)]",
+        solid && darkTone && "border-white/10 bg-[var(--iv-deep)]/95 backdrop-blur-md",
+        solid && !darkTone && "border-[var(--iv-line)] bg-[var(--iv-bg)]/85 backdrop-blur-md",
+      )}
     >
       <a
         href="#main"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-3 focus:z-10 focus:rounded-md focus:bg-[#072924] focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-white"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-3 focus:z-10 focus:rounded-md focus:bg-[var(--iv-teal-bright)] focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-[var(--iv-deep)]"
       >
         Přeskočit na obsah
       </a>
@@ -43,21 +68,31 @@ export function MarketingHeader() {
       <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
         <Link
           href="/"
-          className="flex items-center rounded-md outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#072924]"
-          aria-label="syndikat.legal — domů"
+          className={cn(
+            "flex items-center rounded-md outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2",
+            // Outline colour follows the header tone so it always clears 3:1
+            // (SC 1.4.11): teal-bright on the dark hero bar, teal-ink on the
+            // light scrolled bar — a single teal would fall to ~2.9:1 on light.
+            darkTone
+              ? "focus-visible:outline-[var(--iv-teal-bright)]"
+              : "focus-visible:outline-[var(--iv-teal-ink)]",
+          )}
+          aria-label="IURIVERSE — domů"
         >
-          <Wordmark className="text-xl" />
+          <IuriverseLogo tone={darkTone ? "light" : "dark"} />
         </Link>
 
-        <nav
-          aria-label="Sekce stránky"
-          className="hidden items-center gap-8 lg:flex"
-        >
+        <nav aria-label="Sekce stránky" className="hidden items-center gap-8 lg:flex">
           {navLinks.map((link) => (
             <a
               key={link.href}
               href={link.href}
-              className="text-sm font-medium text-[#072924]/80 transition hover:text-[#072924]"
+              className={cn(
+                "rounded-sm text-sm font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4",
+                darkTone
+                  ? "text-white/75 hover:text-white focus-visible:outline-[var(--iv-teal-bright)]"
+                  : "text-[var(--iv-ink)]/75 hover:text-[var(--iv-ink)] focus-visible:outline-[var(--iv-teal-ink)]",
+              )}
             >
               {link.label}
             </a>
@@ -65,9 +100,9 @@ export function MarketingHeader() {
         </nav>
 
         <div className="hidden items-center gap-3 lg:flex">
-          <ButtonLink href="/dashboard" variant="primary">
+          <CtaLink href="/login" variant="solid">
             Spustit systém
-          </ButtonLink>
+          </CtaLink>
         </div>
 
         <button
@@ -76,7 +111,12 @@ export function MarketingHeader() {
           aria-expanded={open}
           aria-controls="mobile-menu"
           aria-label={open ? "Zavřít menu" : "Otevřít menu"}
-          className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-[#d4e2dc] bg-white text-[#072924] transition hover:bg-[#eef5f1] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#072924] lg:hidden"
+          className={cn(
+            "inline-flex h-10 w-10 items-center justify-center rounded-md border transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 lg:hidden",
+            darkTone
+              ? "border-white/25 text-white hover:bg-white/10 focus-visible:outline-[var(--iv-teal-bright)]"
+              : "border-[var(--iv-line)] bg-white text-[var(--iv-ink)] hover:bg-[var(--iv-bg)] focus-visible:outline-[var(--iv-teal-ink)]",
+          )}
         >
           {open ? (
             <X className="h-5 w-5" aria-hidden />
@@ -89,7 +129,10 @@ export function MarketingHeader() {
       <div
         id="mobile-menu"
         className={cn(
-          "overflow-hidden border-t border-[#d4e2dc]/70 bg-[#eef5f1] transition-[max-height] duration-300 ease-out lg:hidden",
+          "overflow-hidden border-t transition-[max-height] duration-300 ease-out lg:hidden",
+          darkTone
+            ? "border-white/10 bg-[var(--iv-deep)]"
+            : "border-[var(--iv-line)] bg-[var(--iv-bg)]",
           open ? "max-h-80" : "max-h-0 border-t-0",
         )}
       >
@@ -102,18 +145,19 @@ export function MarketingHeader() {
               key={link.href}
               href={link.href}
               onClick={() => setOpen(false)}
-              className="rounded-md px-3 py-2.5 text-sm font-medium text-[#072924] transition hover:bg-[#B9DCC6]/25"
+              className={cn(
+                "rounded-md px-3 py-2.5 text-sm font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2",
+                darkTone
+                  ? "text-white/85 hover:bg-white/10 focus-visible:outline-[var(--iv-teal-bright)]"
+                  : "text-[var(--iv-ink)] hover:bg-white focus-visible:outline-[var(--iv-teal-ink)]",
+              )}
             >
               {link.label}
             </a>
           ))}
-          <ButtonLink
-            href="/dashboard"
-            variant="primary"
-            className="mt-2 w-full"
-          >
+          <CtaLink href="/login" variant="solid" className="mt-2 w-full">
             Spustit systém
-          </ButtonLink>
+          </CtaLink>
         </nav>
       </div>
     </header>

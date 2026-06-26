@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Michroma } from "next/font/google";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -9,6 +9,14 @@ const geistSans = Geist({
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
+  subsets: ["latin"],
+});
+
+// Wide geometric display face for the IURIVERSE wordmark on the landing page
+// only (applied via the .font-display utility). Does not affect the app UI.
+const michroma = Michroma({
+  variable: "--font-michroma",
+  weight: "400",
   subsets: ["latin"],
 });
 
@@ -29,7 +37,7 @@ export default function RootLayout({
   return (
     <html
       lang="cs"
-      className={`${geistSans.variable} ${geistMono.variable} h-full overflow-x-hidden`}
+      className={`${geistSans.variable} ${geistMono.variable} ${michroma.variable} h-full overflow-x-hidden`}
     >
       <body className="min-h-full overflow-x-hidden antialiased">
         {children}
