@@ -40,9 +40,15 @@ export async function createInvoiceFromWorkLogs(formData: FormData) {
 
   const organizationId = currentUser.organizationId;
   const subjectId = requiredString(formData, "subjectId");
-  const workLogIds = formData
-    .getAll("workLogId")
-    .filter((v): v is string => typeof v === "string" && v.length > 0);
+  // Dedupe: a repeated id in the POST must not trip the count check below
+  // (Prisma `id: { in }` collapses duplicates, so the raw list could be longer).
+  const workLogIds = [
+    ...new Set(
+      formData
+        .getAll("workLogId")
+        .filter((v): v is string => typeof v === "string" && v.length > 0),
+    ),
+  ];
 
   if (workLogIds.length === 0) {
     throw new Error("Vyberte alespoň jeden výkaz k fakturaci.");
@@ -58,12 +64,14 @@ export async function createInvoiceFromWorkLogs(formData: FormData) {
       throw new Error("Klient nenalezen.");
     }
 
-    // Only work-logs the user may see (visibility), approved, billable, and not
-    // yet invoiced. workLogVisibilityWhere carries the org clause; this is the
-    // authoritative gate against a direct POST with someone else's work-logs.
+    // Only work-logs the user may see (visibility), belonging to THIS client,
+    // approved, billable, and not yet invoiced. workLogVisibilityWhere carries
+    // the org clause; binding subjectId is the authoritative gate against a
+    // direct POST that mixes another client's work-logs onto this invoice.
     const workLogs = await tx.workLog.findMany({
       where: andWhere(workLogVisibilityWhere(currentUser), {
         id: { in: workLogIds },
+        subjectId,
         archivedAt: null,
         billingStatus: "BILLABLE",
         approvalStatus: "APPROVED",
@@ -71,8 +79,13 @@ export async function createInvoiceFromWorkLogs(formData: FormData) {
       }),
       orderBy: { workDate: "asc" },
     });
-    if (workLogs.length === 0) {
-      throw new Error("Žádný z vybraných výkazů nelze fakturovat.");
+    // Every selected id must resolve to an invoiceable work-log of this client.
+    // A mismatch means some id belongs to another client / isn't billable — fail
+    // loudly rather than silently issuing a partial or cross-client invoice.
+    if (workLogs.length !== workLogIds.length) {
+      throw new Error(
+        "Některý z vybraných výkazů nepatří tomuto klientovi nebo jej nelze fakturovat.",
+      );
     }
 
     const profile = await tx.organizationBillingProfile.findUnique({
@@ -383,6 +396,18 @@ export async function cancelInvoice(formData: FormData) {
     }
     if (invoice.status === InvoiceStatus.CANCELLED) {
       throw new Error("Faktura je již stornovaná.");
+    }
+    // A (partially) paid invoice must not be plainly cancelled: that would
+    // release its work-logs for re-invoicing while the recorded payments stay
+    // attached here — opening the door to billing already-paid work twice. The
+    // correct correction is a credit note (dobropis).
+    if (
+      invoice.status === InvoiceStatus.PAID ||
+      invoice.status === InvoiceStatus.PARTIALLY_PAID
+    ) {
+      throw new Error(
+        "Uhrazenou ani částečně uhrazenou fakturu nelze stornovat — vystavte opravný daňový doklad (dobropis).",
+      );
     }
 
     const updated = await tx.invoice.update({

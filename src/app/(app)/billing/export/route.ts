@@ -12,6 +12,7 @@ import {
   readBillingFilters,
   type BillingWorkLog,
 } from "@/lib/billing";
+import { csvCell, csvNumber } from "@/lib/export/csv";
 import { formatCaseLabel, formatDateUtc } from "@/lib/format";
 import { getPrisma } from "@/lib/prisma";
 import { andWhere, workLogVisibilityWhere } from "@/lib/permissions";
@@ -38,18 +39,6 @@ function toNumber(value: unknown) {
   }
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
-}
-
-function csvCell(value: string) {
-  if (/[";\n\r]/.test(value)) {
-    return `"${value.replace(/"/g, '""')}"`;
-  }
-  return value;
-}
-
-function csvNumber(value: number | null) {
-  // Czech Excel convention: comma decimal separator, ; column separator.
-  return value === null ? "" : value.toFixed(2).replace(".", ",");
 }
 
 function buildCsv(rows: BillingWorkLog[]) {

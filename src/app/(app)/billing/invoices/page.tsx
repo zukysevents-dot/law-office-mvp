@@ -12,6 +12,7 @@ import { formatDate, formatMoney } from "@/lib/format";
 import { invoiceStatusLabels } from "@/lib/labels";
 import {
   invoiceListInclude,
+  isPastDue,
   type InvoiceListRow,
 } from "@/lib/invoices";
 import { andWhere, invoiceVisibilityWhere } from "@/lib/permissions";
@@ -85,9 +86,14 @@ export default async function InvoicesPage() {
                     <td>{formatDate(invoice.issueDate)}</td>
                     <td>{formatDate(invoice.dueDate)}</td>
                     <td>
-                      <Badge tone={invoiceStatusTone(invoice.status)}>
-                        {invoiceStatusLabels[invoice.status]}
-                      </Badge>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <Badge tone={invoiceStatusTone(invoice.status)}>
+                          {invoiceStatusLabels[invoice.status]}
+                        </Badge>
+                        {isPastDue(invoice) ? (
+                          <Badge tone="red">Po splatnosti</Badge>
+                        ) : null}
+                      </div>
                     </td>
                     <td className="text-right font-medium text-stone-950">
                       {formatMoney(invoice.totalCzk)}
