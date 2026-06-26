@@ -9,6 +9,10 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
-    url: process.env["DATABASE_URL"],
+    // Migrations need a DIRECT connection (advisory locks, DDL). On Supabase the
+    // runtime DATABASE_URL points at the transaction pooler (6543), which can't
+    // run `prisma migrate` — so prefer DIRECT_URL here when set. Locally there is
+    // no DIRECT_URL and this falls back to DATABASE_URL unchanged.
+    url: process.env["DIRECT_URL"] ?? process.env["DATABASE_URL"],
   },
 });
