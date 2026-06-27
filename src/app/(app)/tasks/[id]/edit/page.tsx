@@ -23,6 +23,7 @@ import {
   projectVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { LIST_QUERY_LIMIT } from "@/lib/query-limits";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +42,7 @@ async function loadTaskEdit(id: string) {
         projectVisibilityWhere(currentUser),
       ),
       orderBy: { name: "asc" },
+      take: LIST_QUERY_LIMIT,
       select: { id: true, name: true },
     }),
     prisma.case.findMany({
@@ -49,6 +51,7 @@ async function loadTaskEdit(id: string) {
         caseVisibilityWhere(currentUser),
       ),
       orderBy: { name: "asc" },
+      take: LIST_QUERY_LIMIT,
       select: {
         id: true,
         name: true,
@@ -57,8 +60,12 @@ async function loadTaskEdit(id: string) {
       },
     }),
     prisma.user.findMany({
-      where: { active: true },
+      where: {
+        active: true,
+        memberships: { some: { organizationId: currentUser.organizationId } },
+      },
       orderBy: { name: "asc" },
+      take: LIST_QUERY_LIMIT,
       select: { id: true, name: true },
     }),
   ]);

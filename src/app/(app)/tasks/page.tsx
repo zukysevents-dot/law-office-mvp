@@ -45,6 +45,7 @@ import {
   taskVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { LIST_QUERY_LIMIT } from "@/lib/query-limits";
 import {
   taskDeadlineTypeTone,
   taskStatusTone,
@@ -225,6 +226,7 @@ export default async function TasksPage({ searchParams }: TasksProps) {
         prisma.task.findMany({
           where,
           orderBy: taskOrderBy(sort),
+          take: LIST_QUERY_LIMIT,
           include: {
             project: {
               select: {
@@ -249,8 +251,12 @@ export default async function TasksPage({ searchParams }: TasksProps) {
           },
         }),
         prisma.user.findMany({
-          where: { active: true },
+          where: {
+            active: true,
+            memberships: { some: { organizationId: currentUser.organizationId } },
+          },
           orderBy: { name: "asc" },
+          take: LIST_QUERY_LIMIT,
           select: { id: true, name: true },
         }),
         prisma.project.findMany({
@@ -259,6 +265,7 @@ export default async function TasksPage({ searchParams }: TasksProps) {
             projectVisibilityWhere(currentUser),
           ),
           orderBy: { name: "asc" },
+          take: LIST_QUERY_LIMIT,
           select: { id: true, name: true },
         }),
         prisma.case.findMany({
@@ -267,6 +274,7 @@ export default async function TasksPage({ searchParams }: TasksProps) {
             caseVisibilityWhere(currentUser),
           ),
           orderBy: { name: "asc" },
+          take: LIST_QUERY_LIMIT,
           select: { id: true, name: true, project: { select: { name: true } } },
         }),
         prisma.task.count({

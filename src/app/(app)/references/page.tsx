@@ -25,6 +25,7 @@ import { safeQuery } from "@/lib/db-safe";
 import { formatDate, formatMoney } from "@/lib/format";
 import { legalAreaOptions } from "@/lib/labels";
 import { getPrisma } from "@/lib/prisma";
+import { LIST_QUERY_LIMIT } from "@/lib/query-limits";
 import {
   getCurrentTableView,
   getDefaultTableView,
@@ -173,6 +174,7 @@ export default async function ReferencesPage({ searchParams }: ReferencesProps) 
             },
           ),
           orderBy: [{ endDate: "asc" }, { startDate: "desc" }],
+          take: LIST_QUERY_LIMIT,
           include: {
             project: { select: { id: true, name: true } },
             case: { select: { id: true, name: true, fileNumber: true } },
@@ -185,6 +187,7 @@ export default async function ReferencesPage({ searchParams }: ReferencesProps) 
             projectVisibilityWhere(currentUser),
           ),
           orderBy: { name: "asc" },
+          take: LIST_QUERY_LIMIT,
           select: { id: true, name: true },
         }),
         prisma.case.findMany({
@@ -193,6 +196,7 @@ export default async function ReferencesPage({ searchParams }: ReferencesProps) 
             caseVisibilityWhere(currentUser),
           ),
           orderBy: { name: "asc" },
+          take: LIST_QUERY_LIMIT,
           select: { id: true, name: true, project: { select: { name: true } } },
         }),
         prisma.subject.findMany({
@@ -201,6 +205,7 @@ export default async function ReferencesPage({ searchParams }: ReferencesProps) 
             subjectVisibilityWhere(currentUser),
           ),
           orderBy: { name: "asc" },
+          take: LIST_QUERY_LIMIT,
           select: { id: true, name: true, ico: true },
         }),
       ]);

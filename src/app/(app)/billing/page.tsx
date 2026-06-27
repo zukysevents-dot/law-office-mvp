@@ -25,6 +25,7 @@ import {
   formatMoney,
 } from "@/lib/format";
 import { getPrisma } from "@/lib/prisma";
+import { LIST_QUERY_LIMIT } from "@/lib/query-limits";
 import { filterQuery, firstParam } from "@/lib/search-params";
 import {
   andWhere,
@@ -107,21 +108,28 @@ export default async function BillingPage({ searchParams }: BillingProps) {
           where: andWhere({ archivedAt: null }, subjectVisibilityWhere(currentUser)),
           orderBy: { name: "asc" },
           select: { id: true, name: true, ico: true },
+          take: LIST_QUERY_LIMIT,
         }),
         prisma.project.findMany({
           where: andWhere({ archivedAt: null }, projectVisibilityWhere(currentUser)),
           orderBy: { name: "asc" },
           select: { id: true, name: true },
+          take: LIST_QUERY_LIMIT,
         }),
         prisma.case.findMany({
           where: andWhere({ archivedAt: null }, caseVisibilityWhere(currentUser)),
           orderBy: { name: "asc" },
           select: { id: true, name: true, project: { select: { name: true } } },
+          take: LIST_QUERY_LIMIT,
         }),
         prisma.user.findMany({
-          where: { active: true },
+          where: {
+            active: true,
+            memberships: { some: { organizationId: currentUser.organizationId } },
+          },
           orderBy: { name: "asc" },
           select: { id: true, name: true },
+          take: LIST_QUERY_LIMIT,
         }),
       ]);
 

@@ -36,6 +36,7 @@ import {
   workLogVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { LIST_QUERY_LIMIT } from "@/lib/query-limits";
 import { subjectRoleTone } from "@/lib/status-tones";
 
 export const dynamic = "force-dynamic";
@@ -120,6 +121,7 @@ async function loadProject(id: string) {
         subjectVisibilityWhere(currentUser),
       ),
       orderBy: { name: "asc" },
+      take: LIST_QUERY_LIMIT,
       select: { id: true, name: true, ico: true },
     }),
   ]);

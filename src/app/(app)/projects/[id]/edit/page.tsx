@@ -17,6 +17,7 @@ import {
   subjectVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { LIST_QUERY_LIMIT } from "@/lib/query-limits";
 
 export const dynamic = "force-dynamic";
 
@@ -35,11 +36,16 @@ async function loadProjectEdit(id: string) {
         subjectVisibilityWhere(currentUser),
       ),
       orderBy: { name: "asc" },
+      take: LIST_QUERY_LIMIT,
       select: { id: true, name: true, ico: true },
     }),
     prisma.user.findMany({
-      where: { active: true },
+      where: {
+        active: true,
+        memberships: { some: { organizationId: currentUser.organizationId } },
+      },
       orderBy: { name: "asc" },
+      take: LIST_QUERY_LIMIT,
       select: { id: true, name: true },
     }),
   ]);

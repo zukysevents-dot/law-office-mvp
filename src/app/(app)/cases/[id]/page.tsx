@@ -46,6 +46,7 @@ import {
   taskVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { LIST_QUERY_LIMIT } from "@/lib/query-limits";
 import { subjectRoleTone } from "@/lib/status-tones";
 
 export const dynamic = "force-dynamic";
@@ -111,6 +112,7 @@ async function loadCase(id: string) {
         subjectVisibilityWhere(currentUser),
       ),
       orderBy: { name: "asc" },
+      take: LIST_QUERY_LIMIT,
       select: { id: true, name: true, ico: true },
     }),
   ]);
@@ -158,6 +160,7 @@ async function loadCase(id: string) {
             status: "ACTIVE",
           },
           orderBy: { user: { name: "asc" } },
+          take: LIST_QUERY_LIMIT,
           select: { user: { select: { id: true, name: true } } },
         }),
       ])
@@ -207,6 +210,7 @@ async function loadCase(id: string) {
           status: "ACTIVE",
         },
         orderBy: { subject: { name: "asc" } },
+        take: LIST_QUERY_LIMIT,
         select: { id: true, subject: { select: { name: true } } },
       })
     : [];

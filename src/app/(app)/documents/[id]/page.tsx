@@ -32,6 +32,7 @@ import {
   documentVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { LIST_QUERY_LIMIT } from "@/lib/query-limits";
 import { documentKindTone } from "@/lib/status-tones";
 
 export const dynamic = "force-dynamic";
@@ -95,6 +96,7 @@ export default async function DocumentDetailPage({
           },
           orderBy: { subject: { name: "asc" } },
           select: { id: true, subject: { select: { name: true } } },
+          take: LIST_QUERY_LIMIT,
         })
       : [];
 

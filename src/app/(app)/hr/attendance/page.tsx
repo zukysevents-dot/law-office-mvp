@@ -20,6 +20,7 @@ import {
   hrEmployeeVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { LIST_QUERY_LIMIT } from "@/lib/query-limits";
 
 export const dynamic = "force-dynamic";
 
@@ -61,6 +62,7 @@ export default async function HrAttendancePage() {
             ),
             orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
             select: { id: true, firstName: true, lastName: true },
+            take: LIST_QUERY_LIMIT,
           })
         : Promise.resolve([]),
     ]);

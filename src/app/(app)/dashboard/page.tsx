@@ -55,6 +55,7 @@ import {
   workLogVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { LIST_QUERY_LIMIT } from "@/lib/query-limits";
 import { billingStatusTone, taskStatusTone } from "@/lib/status-tones";
 
 export const dynamic = "force-dynamic";
@@ -792,6 +793,7 @@ export default async function DashboardPage() {
           size: true,
           config: true,
         },
+        take: LIST_QUERY_LIMIT,
       }),
       prisma.task.count({ where: activeTaskWhere }),
       prisma.task.count({

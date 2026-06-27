@@ -18,6 +18,7 @@ import { options, userRoleLabels } from "@/lib/labels";
 import { getNotificationPreference } from "@/lib/notifications/notification-service";
 import { canViewAllLegalData } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { LIST_QUERY_LIMIT } from "@/lib/query-limits";
 
 export const dynamic = "force-dynamic";
 
@@ -80,6 +81,11 @@ export default async function SettingsPage() {
         getNotificationPreference(currentUser.id),
         allowed
           ? prisma.user.findMany({
+              where: {
+                memberships: {
+                  some: { organizationId: currentUser.organizationId },
+                },
+              },
               orderBy: { createdAt: "asc" },
               select: {
                 id: true,
@@ -90,6 +96,7 @@ export default async function SettingsPage() {
                 active: true,
                 createdAt: true,
               },
+              take: LIST_QUERY_LIMIT,
             })
           : Promise.resolve([]),
         allowed ? prisma.auditLog.count() : Promise.resolve(0),

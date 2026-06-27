@@ -36,6 +36,7 @@ import {
   options,
 } from "@/lib/labels";
 import { getPrisma } from "@/lib/prisma";
+import { LIST_QUERY_LIMIT } from "@/lib/query-limits";
 import { billingStatusTone } from "@/lib/status-tones";
 import {
   getCurrentTableView,
@@ -178,6 +179,7 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
             subjectVisibilityWhere(currentUser),
           ),
           orderBy: { name: "asc" },
+          take: LIST_QUERY_LIMIT,
           select: { id: true, name: true, ico: true },
         }),
         prisma.project.findMany({
@@ -186,6 +188,7 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
             projectVisibilityWhere(currentUser),
           ),
           orderBy: { name: "asc" },
+          take: LIST_QUERY_LIMIT,
           select: { id: true, name: true },
         }),
         prisma.case.findMany({
@@ -194,6 +197,7 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
             caseVisibilityWhere(currentUser),
           ),
           orderBy: { name: "asc" },
+          take: LIST_QUERY_LIMIT,
           select: { id: true, name: true, project: { select: { name: true } } },
         }),
         prisma.task.findMany({
@@ -202,11 +206,16 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
             taskVisibilityWhere(currentUser),
           ),
           orderBy: { createdAt: "desc" },
+          take: LIST_QUERY_LIMIT,
           select: { id: true, title: true },
         }),
         prisma.user.findMany({
-          where: { active: true },
+          where: {
+            active: true,
+            memberships: { some: { organizationId: currentUser.organizationId } },
+          },
           orderBy: { name: "asc" },
+          take: LIST_QUERY_LIMIT,
           select: { id: true, name: true },
         }),
       ]);

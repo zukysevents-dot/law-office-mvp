@@ -40,6 +40,7 @@ import {
   subjectVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { LIST_QUERY_LIMIT } from "@/lib/query-limits";
 import { subjectRoleTone } from "@/lib/status-tones";
 
 export const dynamic = "force-dynamic";
@@ -133,6 +134,7 @@ async function loadSubject(id: string) {
       prisma.amlIdentification.findMany({
         where: { subjectId: subject.id },
         orderBy: { createdAt: "desc" },
+        take: LIST_QUERY_LIMIT,
       }),
       prisma.amlAssessment.findUnique({ where: { subjectId: subject.id } }),
     ]);
@@ -163,6 +165,7 @@ async function loadSubject(id: string) {
       ? await prisma.portalShare.findMany({
           where: { portalAccessId: access.id, revokedAt: null },
           orderBy: { sharedAt: "desc" },
+          take: LIST_QUERY_LIMIT,
           select: {
             id: true,
             shareType: true,

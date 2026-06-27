@@ -27,6 +27,7 @@ import {
   subjectVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { LIST_QUERY_LIMIT } from "@/lib/query-limits";
 import { dataMessageStatusTone } from "@/lib/status-tones";
 
 export const dynamic = "force-dynamic";
@@ -94,6 +95,7 @@ export default async function DataMessageDetailPage({
             },
             orderBy: { user: { name: "asc" } },
             select: { user: { select: { id: true, name: true } } },
+            take: LIST_QUERY_LIMIT,
           })
         : Promise.resolve([]),
     ]);

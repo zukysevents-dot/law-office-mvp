@@ -16,6 +16,7 @@ import {
   taskStatusLabels,
 } from "@/lib/labels";
 import { getPrisma } from "@/lib/prisma";
+import { LIST_QUERY_LIMIT } from "@/lib/query-limits";
 import {
   taskDeadlineTypeTone,
   taskStatusTone,
@@ -61,6 +62,7 @@ export default async function MyTasksPage() {
           { deadline: "asc" },
           { createdAt: "desc" },
         ],
+        take: LIST_QUERY_LIMIT,
         include: {
           project: { select: { name: true } },
           case: { select: { name: true, fileNumber: true } },

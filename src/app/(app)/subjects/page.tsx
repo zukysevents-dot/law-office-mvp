@@ -22,6 +22,7 @@ import { formatDate, formatMoney } from "@/lib/format";
 import { feeTypeLabels, options, subjectTypeLabels } from "@/lib/labels";
 import { andWhere, subjectVisibilityWhere } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { LIST_QUERY_LIMIT } from "@/lib/query-limits";
 import {
   getCurrentTableView,
   getDefaultTableView,
@@ -85,6 +86,7 @@ export default async function SubjectsPage({ searchParams }: SubjectsPageProps) 
           },
         ),
         orderBy: { name: "asc" },
+        take: LIST_QUERY_LIMIT,
       });
 
       return { subjects, tableView };

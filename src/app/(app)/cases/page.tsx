@@ -21,6 +21,7 @@ import { formatDate } from "@/lib/format";
 import { caseStatusLabels, options } from "@/lib/labels";
 import { andWhere, caseVisibilityWhere, projectVisibilityWhere } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { LIST_QUERY_LIMIT } from "@/lib/query-limits";
 import {
   getCurrentTableView,
   getDefaultTableView,
@@ -72,6 +73,7 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
             caseVisibilityWhere(currentUser),
           ),
           orderBy: { createdAt: "desc" },
+          take: LIST_QUERY_LIMIT,
           include: {
             project: { select: { id: true, name: true } },
             responsibleUser: { select: { name: true } },
@@ -83,11 +85,16 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
             projectVisibilityWhere(currentUser),
           ),
           orderBy: { name: "asc" },
+          take: LIST_QUERY_LIMIT,
           select: { id: true, name: true },
         }),
         prisma.user.findMany({
-          where: { active: true },
+          where: {
+            active: true,
+            memberships: { some: { organizationId: currentUser.organizationId } },
+          },
           orderBy: { name: "asc" },
+          take: LIST_QUERY_LIMIT,
           select: { id: true, name: true },
         }),
       ]);

@@ -13,6 +13,7 @@ import { safeQuery } from "@/lib/db-safe";
 import { numberInputValue } from "@/lib/form-values";
 import { andWhere, canEditRecord, projectVisibilityWhere } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { LIST_QUERY_LIMIT } from "@/lib/query-limits";
 
 export const dynamic = "force-dynamic";
 
@@ -31,11 +32,16 @@ async function loadCaseEdit(id: string) {
         projectVisibilityWhere(currentUser),
       ),
       orderBy: { name: "asc" },
+      take: LIST_QUERY_LIMIT,
       select: { id: true, name: true },
     }),
     prisma.user.findMany({
-      where: { active: true },
+      where: {
+        active: true,
+        memberships: { some: { organizationId: currentUser.organizationId } },
+      },
       orderBy: { name: "asc" },
+      take: LIST_QUERY_LIMIT,
       select: { id: true, name: true },
     }),
   ]);

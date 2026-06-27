@@ -18,6 +18,7 @@ import { safeQuery } from "@/lib/db-safe";
 import { formatDateTime } from "@/lib/format";
 import { andWhere, canViewAllLegalData } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { LIST_QUERY_LIMIT } from "@/lib/query-limits";
 import { firstParam } from "@/lib/search-params";
 
 export const dynamic = "force-dynamic";
@@ -108,6 +109,7 @@ export default async function AuditLogPage({ searchParams }: AuditLogPageProps) 
           },
           orderBy: { name: "asc" },
           select: { id: true, name: true },
+          take: LIST_QUERY_LIMIT,
         }),
       ]);
 

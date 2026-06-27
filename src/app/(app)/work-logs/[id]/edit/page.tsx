@@ -32,6 +32,7 @@ import {
   taskVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { LIST_QUERY_LIMIT } from "@/lib/query-limits";
 
 export const dynamic = "force-dynamic";
 
@@ -50,6 +51,7 @@ async function loadWorkLogEdit(id: string) {
         subjectVisibilityWhere(currentUser),
       ),
       orderBy: { name: "asc" },
+      take: LIST_QUERY_LIMIT,
       select: { id: true, name: true, ico: true },
     }),
     prisma.project.findMany({
@@ -58,6 +60,7 @@ async function loadWorkLogEdit(id: string) {
         projectVisibilityWhere(currentUser),
       ),
       orderBy: { name: "asc" },
+      take: LIST_QUERY_LIMIT,
       select: { id: true, name: true },
     }),
     prisma.case.findMany({
@@ -66,6 +69,7 @@ async function loadWorkLogEdit(id: string) {
         caseVisibilityWhere(currentUser),
       ),
       orderBy: { name: "asc" },
+      take: LIST_QUERY_LIMIT,
       select: { id: true, name: true, project: { select: { name: true } } },
     }),
     prisma.task.findMany({
@@ -74,6 +78,7 @@ async function loadWorkLogEdit(id: string) {
         taskVisibilityWhere(currentUser),
       ),
       orderBy: { createdAt: "desc" },
+      take: LIST_QUERY_LIMIT,
       select: { id: true, title: true },
     }),
   ]);

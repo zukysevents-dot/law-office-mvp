@@ -28,6 +28,7 @@ import {
 import { safeQuery } from "@/lib/db-safe";
 import { getCurrentUser } from "@/lib/auth";
 import { getPrisma } from "@/lib/prisma";
+import { LIST_QUERY_LIMIT } from "@/lib/query-limits";
 
 export const dynamic = "force-dynamic";
 
@@ -68,6 +69,7 @@ export default async function DashboardSettingsPage() {
           visible: true,
           config: true,
         },
+        take: LIST_QUERY_LIMIT,
       });
 
       return {

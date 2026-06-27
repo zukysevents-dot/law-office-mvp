@@ -13,6 +13,7 @@ import { formatDate } from "@/lib/format";
 import { subjectRoleLabels, subjectTypeLabels } from "@/lib/labels";
 import { safeQuery } from "@/lib/db-safe";
 import { getPrisma } from "@/lib/prisma";
+import { LIST_QUERY_LIMIT } from "@/lib/query-limits";
 import { subjectRoleTone } from "@/lib/status-tones";
 
 export const dynamic = "force-dynamic";
@@ -86,6 +87,7 @@ export default async function ConflictCheckPage({
           },
         },
         orderBy: { name: "asc" },
+        take: LIST_QUERY_LIMIT,
       });
 
       return { subjects };

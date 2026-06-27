@@ -10,6 +10,7 @@ import { safeQuery } from "@/lib/db-safe";
 import { taskStatusLabels } from "@/lib/labels";
 import { andWhere, taskVisibilityWhere } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { LIST_QUERY_LIMIT } from "@/lib/query-limits";
 import { taskStatusTone } from "@/lib/status-tones";
 
 export const dynamic = "force-dynamic";
@@ -43,6 +44,7 @@ export default async function TaskArchivePage() {
           taskVisibilityWhere(currentUser),
         ),
         orderBy: [{ completedAt: "desc" }, { updatedAt: "desc" }],
+        take: LIST_QUERY_LIMIT,
         include: {
           project: { select: { name: true } },
           case: { select: { name: true, fileNumber: true } },
