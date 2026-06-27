@@ -1,0 +1,91 @@
+# ⚠️ UMÍSTĚNÍ: zkopíruj tento soubor do `.github/workflows/prod-readiness.yml`.
+# Není commitnutý přímo do .github/workflows/, protože push přes OAuth token bez
+# `workflow` scope GitHub odmítne. Přidej ho buď přes GitHub web UI (Add file →
+# Create new file → cesta `.github/workflows/prod-readiness.yml`, vlož obsah níže),
+# nebo lokálně po `gh auth refresh -h github.com -s workflow` a běžným commitem.
+#
+# --- obsah workflow (od tohoto řádku níže) -----------------------------------
+
+name: prod-readiness
+
+# Rozšířená "prod-readiness" pipeline. Zrcadlí lokální `npm run prod-readiness`
+# a přidává historii-aware secret scan (gitleaks) + SAST (semgrep) na Linux
+# runneru. Cílem je NAJÍT díry a shodit build — některé gaty proto mohou být
+# záměrně červené, dokud nejsou nálezy vyřešeny nebo vědomě přijaty v allowlistu.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # --- Baseline + automatizované gaty (ČÁST A) ------------------------------
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests (vč. bezpečnostních negativních testů)
+        run: npm run test
+
+      - name: Build
+        run: npm run build
+        env:
+          # Build nepotřebuje živou DB (stránky jsou force-dynamic), ale prisma.ts
+          # vyžaduje, aby proměnná existovala.
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+
+      - name: Prod-readiness gaty (A1–A7)
+        # Pojede i když je build červený, ať se nahraje report. Krok sám selže,
+        # pokud kterýkoli gate najde blokující díru (to je záměr).
+        run: npm run prod-readiness
+
+      - name: Upload JUnit + report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prod-readiness-report
+          path: |
+            reports/prod-readiness/junit/*.xml
+            reports/prod-readiness/report.md
+          if-no-files-found: warn
+
+  # --- A3 (historie): secret scan celé git historie -------------------------
+  secrets-history:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # plná historie pro gitleaks
+
+      - name: gitleaks (repo + historie)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_CONFIG: .gitleaks.toml
+
+  # --- A5 (rozšířený SAST): semgrep -----------------------------------------
+  sast-semgrep:
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: semgrep (custom pravidla)
+        # --error: nález = nenulový exit = červený build.
+        run: semgrep --config .semgrep.yml --error src/

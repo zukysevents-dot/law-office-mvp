@@ -1,0 +1,71 @@
+# Semgrep ruleset for the prod-readiness A5 (SAST) gate, run in CI on Linux.
+# Mirrors and deepens the pure-Node injection guard. Parameterized Prisma
+# ($queryRaw with a tagged template) is SAFE and intentionally not matched —
+# only the *Unsafe variants and raw process/eval/HTML surfaces are.
+
+rules:
+  - id: prisma-raw-sql-unsafe
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      Neparametrizovaný raw SQL ($queryRawUnsafe / $executeRawUnsafe) — riziko
+      SQL injection. Použij tagged-template $queryRaw / $executeRaw nebo Prisma API.
+    patterns:
+      - pattern-either:
+          - pattern: $P.$queryRawUnsafe(...)
+          - pattern: $P.$executeRawUnsafe(...)
+
+  - id: child-process-exec
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      Spouštění procesu (exec/execSync/spawn) v produkčním kódu — riziko command
+      injection. Vyhýbej se shellu nad uživatelským vstupem.
+    patterns:
+      - pattern-either:
+          - pattern: execSync(...)
+          - pattern: exec(...)
+          - pattern: spawnSync(...)
+          - pattern: spawn(...)
+
+  - id: dynamic-code-eval
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      Dynamické vyhodnocení kódu (eval / new Function) — riziko code injection.
+    patterns:
+      - pattern-either:
+          - pattern: eval(...)
+          - pattern: new Function(...)
+
+  - id: react-dangerously-set-inner-html
+    languages: [typescript, javascript]
+    severity: WARNING
+    message: >-
+      dangerouslySetInnerHTML — riziko XSS, pokud obsah není sanitizován.
+    patterns:
+      - pattern: dangerouslySetInnerHTML={...}
+
+  - id: server-action-mutation-without-authz
+    languages: [typescript]
+    severity: WARNING
+    message: >-
+      Server action volá getCurrentUser() a mutuje data — ověř, že obsahuje i
+      autorizační kontrolu (assertCan* / assertSameOrg / assertModuleEnabled /
+      self-scope), ne jen přihlášení.
+    patterns:
+      - pattern: |
+          export async function $FN(...) {
+            ...
+            getCurrentUser(...)
+            ...
+          }
+      - pattern-not: |
+          export async function $FN(...) {
+            ...
+            assertCan$X(...)
+            ...
+          }
+    paths:
+      include:
+        - src/app/actions/

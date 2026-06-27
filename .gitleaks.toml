@@ -1,0 +1,25 @@
+# gitleaks config for the prod-readiness A3 (secrets) history scan.
+# Extends gitleaks' default ruleset and allowlists files that legitimately carry
+# secret-shaped strings (the committed env template, the npm lockfile, and this
+# pipeline's own docs that describe patterns). The real local .env* files are
+# gitignored, so they are never committed and never reach this scan.
+
+title = "law-office-mvp gitleaks"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Tracked files allowed to contain secret-shaped strings"
+paths = [
+  '''\.env\.example$''',
+  '''package-lock\.json$''',
+  '''docs/prod-readiness/.*''',
+  '''scripts/prod-readiness/guards/secret-guard\.ts$''',
+]
+# Common placeholder values used in the env template / docs.
+regexes = [
+  '''change-me-locally''',
+  '''your-[a-z-]+-here''',
+  '''(?i)\bplaceholder\b''',
+]

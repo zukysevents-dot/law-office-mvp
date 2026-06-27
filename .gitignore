@@ -29,6 +29,9 @@ next-env.d.ts
 /coverage/
 .playwright-mcp/
 
+# Prod-readiness pipeline output (JUnit XML + report.md) — regenerated each run.
+/reports/
+
 # --- Environment variables -------------------------------------------------
 # Ignore every .env file except the tracked example.
 .env*
