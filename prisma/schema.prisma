@@ -487,6 +487,7 @@ model Project {
   @@index([mainSubjectId])
   @@index([responsibleUserId])
   @@index([status])
+  @@index([organizationId, status])
   @@map("projects")
 }
 
@@ -524,6 +525,7 @@ model Case {
   @@index([projectId])
   @@index([responsibleUserId])
   @@index([status])
+  @@index([organizationId, status])
   @@map("cases")
 }
 
@@ -567,6 +569,7 @@ model Task {
   @@index([status])
   @@index([deadlineType])
   @@index([deadline])
+  @@index([organizationId, status, deadline])
   @@map("tasks")
 }
 
@@ -646,6 +649,7 @@ model WorkLog {
   @@index([workDate])
   @@index([archivedAt])
   @@index([invoicedAt])
+  @@index([organizationId, workDate])
   @@map("workLogs")
 }
 
@@ -678,6 +682,7 @@ model Reference {
   @@index([valueCzk])
   @@index([endDate])
   @@index([archivedAt])
+  @@index([organizationId, endDate])
   @@map("references")
 }
 

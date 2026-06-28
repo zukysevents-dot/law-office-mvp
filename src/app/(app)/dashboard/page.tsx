@@ -27,6 +27,7 @@ import {
   TaskPriority,
   TaskStatus,
 } from "@/generated/prisma/enums";
+import { activeTaskCount, statusCount } from "@/lib/dashboard/task-counts";
 import { cn } from "@/lib/utils";
 import {
   dashboardTableColumns,
@@ -764,11 +765,8 @@ export default async function DashboardPage() {
 
     const [
       widgets,
-      activeTasks,
+      taskStatusGroups,
       overdueTasks,
-      reviewTasks,
-      waitingForClientTasks,
-      waitingForCounterpartyTasks,
       workLogAggregate,
       myTasks,
       workLogs,
@@ -793,30 +791,15 @@ export default async function DashboardPage() {
           config: true,
         },
       }),
-      prisma.task.count({ where: activeTaskWhere }),
+      // One grouped scan instead of four separate COUNT queries; the active
+      // total and each per-status card are derived from this result below.
+      prisma.task.groupBy({
+        by: ["status"],
+        where: andWhere({ archivedAt: null }, taskAccessWhere),
+        _count: { _all: true },
+      }),
       prisma.task.count({
         where: andWhere(activeTaskWhere, { deadline: { lt: now } }),
-      }),
-      prisma.task.count({
-        where: andWhere(
-          { archivedAt: null, status: TaskStatus.FOR_REVIEW },
-          taskAccessWhere,
-        ),
-      }),
-      prisma.task.count({
-        where: andWhere(
-          { archivedAt: null, status: TaskStatus.WAITING_FOR_CLIENT },
-          taskAccessWhere,
-        ),
-      }),
-      prisma.task.count({
-        where: andWhere(
-          {
-            archivedAt: null,
-            status: TaskStatus.WAITING_FOR_COUNTERPARTY,
-          },
-          taskAccessWhere,
-        ),
       }),
       prisma.workLog.aggregate({
         where: andWhere(activeWorkLogWhere, {
@@ -989,11 +972,17 @@ export default async function DashboardPage() {
     return {
       widgets,
       counts: {
-        activeTasks,
+        activeTasks: activeTaskCount(taskStatusGroups),
         overdueTasks,
-        reviewTasks,
-        waitingForClientTasks,
-        waitingForCounterpartyTasks,
+        reviewTasks: statusCount(taskStatusGroups, TaskStatus.FOR_REVIEW),
+        waitingForClientTasks: statusCount(
+          taskStatusGroups,
+          TaskStatus.WAITING_FOR_CLIENT,
+        ),
+        waitingForCounterpartyTasks: statusCount(
+          taskStatusGroups,
+          TaskStatus.WAITING_FOR_COUNTERPARTY,
+        ),
       },
       monthHours: formatHours(workLogAggregate._sum.hours),
       myTasks,
