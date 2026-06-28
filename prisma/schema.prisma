@@ -356,6 +356,9 @@ model User {
   createdHrEmployees       HrEmployee[]       @relation("HrEmployeeCreatedBy")
   requestedHrAbsences      HrAbsenceRequest[] @relation("HrAbsenceRequestedBy")
   decidedHrAbsences        HrAbsenceRequest[] @relation("HrAbsenceDecidedBy")
+  runSanctionsScreenings   SanctionsScreening[] @relation("SanctionsScreeningRunBy")
+  reviewedSanctionsScreenings SanctionsScreening[] @relation("SanctionsScreeningReviewedBy")
+  decidedSanctionsMatches  SanctionsScreeningMatch[] @relation("SanctionsMatchDecidedBy")
 
   @@map("users")
 }
@@ -402,6 +405,7 @@ model Subject {
   amlAssessment  AmlAssessment?
   documents      Document[]
   portalAccess   PortalAccess?
+  sanctionsScreenings SanctionsScreening[]
 
   // IČO is unique PER organization, not globally — the same company can be a
   // subject of more than one law office (multi-tenant). NULL ico is allowed
@@ -853,6 +857,8 @@ model Organization {
   hrAttendanceRecords  HrAttendanceRecord[]
   hrAbsenceRequests    HrAbsenceRequest[]
   hrLeaveBalances      HrLeaveBalance[]
+  sanctionsScreenings  SanctionsScreening[]
+  sanctionsScreeningMatches SanctionsScreeningMatch[]
 
   @@index([status])
   @@map("organizations")
@@ -1316,6 +1322,92 @@ model AmlAssessment {
   @@index([riskLevel])
   @@index([reviewDueAt])
   @@map("amlAssessments")
+}
+
+// Local copy of one sanctions-list entry, synced periodically from the source
+// (EU consolidated list). Pure reference data the screening matches against —
+// the source of truth stays external; this is a queryable mirror.
+// Public reference data, identical for every org → stored globally (not
+// org-scoped), so the periodic refresh runs once instead of N× per organization.
+// Screenings/matches that reference it stay org-scoped via their subject.
+model SanctionsListEntry {
+  id                String   @id @default(cuid())
+  source            String   @default("EU_CONSOLIDATED")
+  sourceEntityId    String // stable id from the source — drives idempotent upsert
+  entityType        String   @default("PERSON") // PERSON | ENTITY
+  primaryName       String
+  normalizedName    String // normalizeName() output — indexed for the pre-filter
+  aliasesNormalized String[]
+  countries         String[]
+  programs          String[]
+  listPublishedAt   DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  matches SanctionsScreeningMatch[]
+
+  @@unique([source, sourceEntityId])
+  @@index([normalizedName])
+  @@index([source])
+  @@map("sanctionsListEntries")
+}
+
+// One screening run against a single subject. Append-only history (who/when,
+// against which list version). Never auto-sets AmlAssessment.hasSanctions —
+// confirming a match only prompts the lawyer to set it via assessRisk.
+model SanctionsScreening {
+  id              String   @id @default(cuid())
+  organizationId  String
+  subjectId       String
+  queryName       String // snapshot of the subject name at screening time
+  queryNormalized String
+  source          String   @default("EU_CONSOLIDATED")
+  listVersionAt   DateTime?
+  candidateCount  Int      @default(0)
+  status          String   @default("PENDING_REVIEW") // PENDING_REVIEW | REVIEWED
+  reviewOutcome   String? // NO_MATCH_CONFIRMED | MATCH_CONFIRMED
+  reviewedById    String?
+  reviewedAt      DateTime?
+  runById         String?
+  createdAt       DateTime @default(now())
+
+  organization Organization              @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  subject      Subject                   @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  reviewedBy   User?                     @relation("SanctionsScreeningReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  runBy        User?                     @relation("SanctionsScreeningRunBy", fields: [runById], references: [id], onDelete: SetNull)
+  matches      SanctionsScreeningMatch[]
+
+  @@index([organizationId])
+  @@index([subjectId])
+  @@index([status])
+  @@map("sanctionsScreenings")
+}
+
+// One candidate match within a screening — where the lawyer confirms/dismisses.
+// matchedName/score are snapshots so the decision stays reproducible even if the
+// list later changes.
+model SanctionsScreeningMatch {
+  id             String   @id @default(cuid())
+  organizationId String
+  screeningId    String
+  listEntryId    String?
+  matchedName    String
+  score          Float
+  decision       String   @default("PENDING") // PENDING | CONFIRMED | DISMISSED
+  decisionNote   String?
+  decidedById    String?
+  decidedAt      DateTime?
+  createdAt      DateTime @default(now())
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  screening    SanctionsScreening  @relation(fields: [screeningId], references: [id], onDelete: Cascade)
+  listEntry    SanctionsListEntry? @relation(fields: [listEntryId], references: [id], onDelete: SetNull)
+  decidedBy    User?               @relation("SanctionsMatchDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([screeningId])
+  @@index([decision])
+  @@map("sanctionsScreeningMatches")
 }
 
 // --- Lhůtník models (F4 / DEADLINES) -----------------------------------------

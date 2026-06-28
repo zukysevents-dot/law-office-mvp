@@ -1,5 +1,9 @@
 import { assessRisk, recordIdentification } from "@/app/actions/aml";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
+import {
+  SanctionsScreeningPanel,
+  type ScreeningWithMatches,
+} from "@/components/sanctions-screening-panel";
 import { Section } from "@/components/section";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,10 +21,12 @@ export function SubjectAmlSection({
   subjectId,
   identifications,
   assessment,
+  screening,
 }: {
   subjectId: string;
   identifications: AmlIdentification[];
   assessment: AmlAssessment | null;
+  screening: ScreeningWithMatches | null;
 }) {
   return (
     <>
@@ -123,6 +129,8 @@ export function SubjectAmlSection({
           </div>
         </form>
       </Section>
+
+      <SanctionsScreeningPanel subjectId={subjectId} screening={screening} />
 
       <Section title="AML — identifikace klienta">
         {identifications.length > 0 ? (
