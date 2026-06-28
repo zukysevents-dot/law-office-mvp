@@ -84,6 +84,14 @@ export default async function InvoiceDetailPage({
                 Tisk / PDF
               </ButtonLink>
             ) : null}
+            {invoice && !isDraft && !isCancelled ? (
+              <ButtonLink
+                href={`/billing/invoices/${invoice.id}/isdoc`}
+                variant="ghost"
+              >
+                Export ISDOC
+              </ButtonLink>
+            ) : null}
           </div>
         }
       />
