@@ -764,11 +764,8 @@ export default async function DashboardPage() {
 
     const [
       widgets,
-      activeTasks,
+      taskStatusGroups,
       overdueTasks,
-      reviewTasks,
-      waitingForClientTasks,
-      waitingForCounterpartyTasks,
       workLogAggregate,
       myTasks,
       workLogs,
@@ -793,30 +790,15 @@ export default async function DashboardPage() {
           config: true,
         },
       }),
-      prisma.task.count({ where: activeTaskWhere }),
+      // One grouped scan instead of four separate COUNT queries; the active
+      // total and each per-status card are derived from this result below.
+      prisma.task.groupBy({
+        by: ["status"],
+        where: andWhere({ archivedAt: null }, taskAccessWhere),
+        _count: { _all: true },
+      }),
       prisma.task.count({
         where: andWhere(activeTaskWhere, { deadline: { lt: now } }),
-      }),
-      prisma.task.count({
-        where: andWhere(
-          { archivedAt: null, status: TaskStatus.FOR_REVIEW },
-          taskAccessWhere,
-        ),
-      }),
-      prisma.task.count({
-        where: andWhere(
-          { archivedAt: null, status: TaskStatus.WAITING_FOR_CLIENT },
-          taskAccessWhere,
-        ),
-      }),
-      prisma.task.count({
-        where: andWhere(
-          {
-            archivedAt: null,
-            status: TaskStatus.WAITING_FOR_COUNTERPARTY,
-          },
-          taskAccessWhere,
-        ),
       }),
       prisma.workLog.aggregate({
         where: andWhere(activeWorkLogWhere, {
@@ -986,14 +968,21 @@ export default async function DashboardPage() {
       }),
     ]);
 
+    const statusCount = (status: TaskStatus) =>
+      taskStatusGroups.find((group) => group.status === status)?._count._all ?? 0;
+    // "Active" = every non-completed status, matching the old status:{not:COMPLETED} count.
+    const activeTasks = taskStatusGroups
+      .filter((group) => group.status !== TaskStatus.COMPLETED)
+      .reduce((sum, group) => sum + group._count._all, 0);
+
     return {
       widgets,
       counts: {
         activeTasks,
         overdueTasks,
-        reviewTasks,
-        waitingForClientTasks,
-        waitingForCounterpartyTasks,
+        reviewTasks: statusCount(TaskStatus.FOR_REVIEW),
+        waitingForClientTasks: statusCount(TaskStatus.WAITING_FOR_CLIENT),
+        waitingForCounterpartyTasks: statusCount(TaskStatus.WAITING_FOR_COUNTERPARTY),
       },
       monthHours: formatHours(workLogAggregate._sum.hours),
       myTasks,

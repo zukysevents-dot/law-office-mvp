@@ -164,7 +164,23 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
           ),
           orderBy: [{ workDate: "desc" }, { createdAt: "desc" }],
           take: 100,
-          include: {
+          // Explicit select avoids pulling unused WorkLog columns; organizationId
+          // is required by canEditRecord's org-isolation check.
+          select: {
+            id: true,
+            organizationId: true,
+            userId: true,
+            workDate: true,
+            hours: true,
+            hourlyRate: true,
+            amountCzk: true,
+            description: true,
+            billingStatus: true,
+            approvalStatus: true,
+            legalArea: true,
+            createdAt: true,
+            updatedAt: true,
+            archivedAt: true,
             subject: { select: { name: true } },
             project: { select: { name: true } },
             case: { select: { name: true, fileNumber: true } },

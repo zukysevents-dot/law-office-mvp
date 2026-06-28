@@ -100,6 +100,7 @@ type TaskRow = {
 
 type TasksPageData = {
   tasks: TaskRow[];
+  truncated: boolean;
   users: Array<{ id: string; name: string }>;
   projects: Array<{ id: string; name: string }>;
   cases: Array<{ id: string; name: string; project: { name: string } }>;
@@ -111,6 +112,11 @@ type TasksPageData = {
   };
   tableView: TableViewState;
 };
+
+// Upper bound on rows pulled into a single list render. Filters keep normal
+// usage well under this; the cap only guards against an unbounded scan when a
+// firm accumulates thousands of tasks. When hit, the UI shows a notice.
+const TASK_LIST_LIMIT = 500;
 
 const sortLabels = {
   deadline: "Deadline",
@@ -186,6 +192,7 @@ export default async function TasksPage({ searchParams }: TasksProps) {
       users: [],
       projects: [],
       cases: [],
+      truncated: false,
       cards: { review: 0, waitingClient: 0, waitingCounterparty: 0, overdue: 0 },
       tableView: getDefaultTableView("tasks"),
     },
@@ -212,20 +219,33 @@ export default async function TasksPage({ searchParams }: TasksProps) {
         },
       );
 
-      const [
-        tasks,
-        users,
-        projects,
-        cases,
-        review,
-        waitingClient,
-        waitingCounterparty,
-        overdue,
-      ] = await Promise.all([
+      const [tasks, users, projects, cases, statusGroups, overdue] =
+        await Promise.all([
         prisma.task.findMany({
           where,
           orderBy: taskOrderBy(sort),
-          include: {
+          // Fetch one extra row so we can tell "exactly LIMIT" from "more than
+          // LIMIT" without a false-positive truncation notice.
+          take: TASK_LIST_LIMIT + 1,
+          // Explicit select (not include) so heavy free-text columns like
+          // detailedDescription/shortDescription never travel to the list view.
+          // organizationId is required by canEditRecord's org-isolation check.
+          select: {
+            id: true,
+            title: true,
+            status: true,
+            priority: true,
+            deadlineType: true,
+            startDate: true,
+            deadline: true,
+            sharepointUrl: true,
+            archivedAt: true,
+            organizationId: true,
+            createdById: true,
+            assignedToId: true,
+            responsibleUserId: true,
+            createdAt: true,
+            updatedAt: true,
             project: {
               select: {
                 name: true,
@@ -269,14 +289,12 @@ export default async function TasksPage({ searchParams }: TasksProps) {
           orderBy: { name: "asc" },
           select: { id: true, name: true, project: { select: { name: true } } },
         }),
-        prisma.task.count({
-          where: { ...activeWhere, status: TaskStatus.FOR_REVIEW },
-        }),
-        prisma.task.count({
-          where: { ...activeWhere, status: TaskStatus.WAITING_FOR_CLIENT },
-        }),
-        prisma.task.count({
-          where: { ...activeWhere, status: TaskStatus.WAITING_FOR_COUNTERPARTY },
+        // One grouped scan covers the three status cards; overdue keeps its own
+        // count because it filters on deadline rather than a single status.
+        prisma.task.groupBy({
+          by: ["status"],
+          where: activeWhere,
+          _count: { _all: true },
         }),
         prisma.task.count({
           where: {
@@ -287,15 +305,27 @@ export default async function TasksPage({ searchParams }: TasksProps) {
         }),
       ]);
 
+      const cardCount = (status: TaskStatus) =>
+        statusGroups.find((group) => group.status === status)?._count._all ?? 0;
+
+      const truncated = tasks.length > TASK_LIST_LIMIT;
+      const visibleTasks = truncated ? tasks.slice(0, TASK_LIST_LIMIT) : tasks;
+
       return {
-        tasks: tasks.map((task) => ({
+        tasks: visibleTasks.map((task) => ({
           ...task,
           canEdit: canEditRecord(currentUser, "Task", task),
         })),
+        truncated,
         users,
         projects,
         cases,
-        cards: { review, waitingClient, waitingCounterparty, overdue },
+        cards: {
+          review: cardCount(TaskStatus.FOR_REVIEW),
+          waitingClient: cardCount(TaskStatus.WAITING_FOR_CLIENT),
+          waitingCounterparty: cardCount(TaskStatus.WAITING_FOR_COUNTERPARTY),
+          overdue,
+        },
         tableView,
       };
     },
@@ -445,6 +475,12 @@ export default async function TasksPage({ searchParams }: TasksProps) {
           columns={result.data.tableView.columns}
           visibleColumns={result.data.tableView.visibleColumns}
         />
+        {result.data.truncated ? (
+          <p className="mb-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            Zobrazeno prvních {TASK_LIST_LIMIT} úkolů. Pro zobrazení dalších
+            zpřesněte filtr výše.
+          </p>
+        ) : null}
         {result.data.tasks.length > 0 ? (
           <div className="table-scroll">
             <table className="w-max min-w-full [&_td]:align-top">

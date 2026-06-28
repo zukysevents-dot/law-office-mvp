@@ -291,54 +291,61 @@ export async function queueInternalNotification(payload: NotificationPayload) {
       notificationPreference: true,
     },
   });
-  let queued = 0;
-  let skipped = 0;
+  // Recipients are independent (each gets its own per-user dedupeKey), so the
+  // writes run concurrently rather than one sequential round-trip per user.
+  const counts = await Promise.all(
+    users.map(async (user) => {
+      const allowed =
+        user.active && preferenceAllows(user.notificationPreference, type);
+      const status = allowed
+        ? NotificationStatus.PENDING
+        : NotificationStatus.SKIPPED;
+      const dedupeKey = payload.dedupeKey
+        ? `${payload.dedupeKey}:${user.id}`
+        : undefined;
+      const data = {
+        recipientUserId: user.id,
+        type,
+        status,
+        subject: payload.subject,
+        body: payload.body,
+        entityType: payload.entityType,
+        entityId: payload.entityId,
+        dedupeKey,
+        emailTo: user.email,
+        lastError: allowed ? undefined : "NOTIFICATION_PREFERENCE_DISABLED",
+      };
 
-  for (const user of users) {
-    const allowed = user.active && preferenceAllows(user.notificationPreference, type);
-    const status = allowed
-      ? NotificationStatus.PENDING
-      : NotificationStatus.SKIPPED;
-    const dedupeKey = payload.dedupeKey
-      ? `${payload.dedupeKey}:${user.id}`
-      : undefined;
-    const data = {
-      recipientUserId: user.id,
-      type,
-      status,
-      subject: payload.subject,
-      body: payload.body,
-      entityType: payload.entityType,
-      entityId: payload.entityId,
-      dedupeKey,
-      emailTo: user.email,
-      lastError: allowed ? undefined : "NOTIFICATION_PREFERENCE_DISABLED",
-    };
+      if (dedupeKey) {
+        const notification = await prisma.notification.upsert({
+          where: { dedupeKey },
+          update: {},
+          create: data,
+        });
 
-    if (dedupeKey) {
-      const notification = await prisma.notification.upsert({
-        where: { dedupeKey },
-        update: {},
-        create: data,
-      });
-
-      if (notification.createdAt.getTime() === notification.updatedAt.getTime()) {
-        if (notification.status === NotificationStatus.PENDING) {
-          queued += 1;
-        } else if (notification.status === NotificationStatus.SKIPPED) {
-          skipped += 1;
+        // createdAt === updatedAt ⇒ freshly inserted, not a deduped hit.
+        if (
+          notification.createdAt.getTime() === notification.updatedAt.getTime()
+        ) {
+          if (notification.status === NotificationStatus.PENDING) {
+            return { queued: 1, skipped: 0 };
+          }
+          if (notification.status === NotificationStatus.SKIPPED) {
+            return { queued: 0, skipped: 1 };
+          }
         }
+        return { queued: 0, skipped: 0 };
       }
-    } else {
-      await prisma.notification.create({ data });
 
-      if (status === NotificationStatus.PENDING) {
-        queued += 1;
-      } else {
-        skipped += 1;
-      }
-    }
-  }
+      await prisma.notification.create({ data });
+      return status === NotificationStatus.PENDING
+        ? { queued: 1, skipped: 0 }
+        : { queued: 0, skipped: 1 };
+    }),
+  );
+
+  const queued = counts.reduce((sum, entry) => sum + entry.queued, 0);
+  const skipped = counts.reduce((sum, entry) => sum + entry.skipped, 0);
 
   return { queued, skipped };
 }
@@ -600,6 +607,8 @@ async function createScheduledDeadlineNotifications(now: Date) {
       task.responsibleUserId,
     ]);
 
+    // Per-recipient reminder window first, then one batched queue call.
+    const eligible: string[] = [];
     for (const recipientId of recipientIds) {
       const preference = await preferenceForUser(recipientId, preferenceCache);
       const reminderAt = new Date(task.deadline ?? now);
@@ -611,25 +620,29 @@ async function createScheduledDeadlineNotifications(now: Date) {
           ),
       );
 
-      if (now < reminderAt) {
-        continue;
+      if (now >= reminderAt) {
+        eligible.push(recipientId);
       }
-
-      const result = await queueInternalNotification({
-        toUserId: recipientId,
-        type: NotificationType.TASK_DEADLINE_SOON,
-        subject: `Blíží se deadline: ${task.title}`,
-        body: formatTaskNotificationBody({
-          title: task.title,
-          message: `Blíží se deadline úkolu: ${task.deadline?.toLocaleDateString("cs-CZ") ?? "bez data"}.`,
-          taskId: task.id,
-        }),
-        entityType: "Task",
-        entityId: task.id,
-        dedupeKey: `task:${task.id}:deadline-soon`,
-      });
-      created += result.queued + result.skipped;
     }
+
+    if (eligible.length === 0) {
+      continue;
+    }
+
+    const result = await queueInternalNotification({
+      toUserIds: eligible,
+      type: NotificationType.TASK_DEADLINE_SOON,
+      subject: `Blíží se deadline: ${task.title}`,
+      body: formatTaskNotificationBody({
+        title: task.title,
+        message: `Blíží se deadline úkolu: ${task.deadline?.toLocaleDateString("cs-CZ") ?? "bez data"}.`,
+        taskId: task.id,
+      }),
+      entityType: "Task",
+      entityId: task.id,
+      dedupeKey: `task:${task.id}:deadline-soon`,
+    });
+    created += result.queued + result.skipped;
   }
 
   return created;
@@ -672,6 +685,7 @@ async function createScheduledFiledFollowupNotifications(now: Date) {
       task.createdById,
     ]);
 
+    const eligible: string[] = [];
     for (const recipientId of recipientIds) {
       const preference = await preferenceForUser(recipientId, preferenceCache);
       const followupAt = new Date(filedHistory.createdAt);
@@ -683,25 +697,29 @@ async function createScheduledFiledFollowupNotifications(now: Date) {
           ),
       );
 
-      if (now < followupAt) {
-        continue;
+      if (now >= followupAt) {
+        eligible.push(recipientId);
       }
-
-      const result = await queueInternalNotification({
-        toUserId: recipientId,
-        type: NotificationType.TASK_FILED_FOLLOWUP,
-        subject: `Kontrola po podání: ${task.title}`,
-        body: formatTaskNotificationBody({
-          title: task.title,
-          message: "Úkol je ve statusu Podáno a čeká na kontrolu navazujících kroků.",
-          taskId: task.id,
-        }),
-        entityType: "Task",
-        entityId: task.id,
-        dedupeKey: `task:${task.id}:filed-followup:${filedHistory.id}`,
-      });
-      created += result.queued + result.skipped;
     }
+
+    if (eligible.length === 0) {
+      continue;
+    }
+
+    const result = await queueInternalNotification({
+      toUserIds: eligible,
+      type: NotificationType.TASK_FILED_FOLLOWUP,
+      subject: `Kontrola po podání: ${task.title}`,
+      body: formatTaskNotificationBody({
+        title: task.title,
+        message: "Úkol je ve statusu Podáno a čeká na kontrolu navazujících kroků.",
+        taskId: task.id,
+      }),
+      entityType: "Task",
+      entityId: task.id,
+      dedupeKey: `task:${task.id}:filed-followup:${filedHistory.id}`,
+    });
+    created += result.queued + result.skipped;
   }
 
   return created;
@@ -747,27 +765,33 @@ async function createScheduledDeadlineReminders(now: Date) {
     const dueLabel = deadline.dueDate.toLocaleDateString("cs-CZ");
     const overdue = deadline.dueDate < now;
 
-    for (const recipientId of recipientIds) {
-      if (overdue) {
-        // One escalation per day while OPEN — date stamp in the dedupe key.
-        const day = now.toISOString().slice(0, 10);
-        const result = await queueInternalNotification({
-          toUserId: recipientId,
-          type: NotificationType.DEADLINE_OVERDUE,
-          subject: `Lhůta po termínu: ${deadline.title}`,
-          body: formatCaseNotificationBody({
-            heading: `Lhůta: ${deadline.title} (termín ${dueLabel})`,
-            message: "Lhůta je po termínu a stále není vyřízena.",
-            caseId: deadline.case.id,
-          }),
-          entityType: "Deadline",
-          entityId: deadline.id,
-          dedupeKey: `deadline:${deadline.id}:overdue:${day}`,
-        });
-        created += result.queued + result.skipped;
+    if (overdue) {
+      // One escalation per day while OPEN — date stamp in the dedupe key.
+      // Every recipient is notified (overdue has no per-recipient window).
+      if (recipientIds.length === 0) {
         continue;
       }
+      const day = now.toISOString().slice(0, 10);
+      const result = await queueInternalNotification({
+        toUserIds: recipientIds,
+        type: NotificationType.DEADLINE_OVERDUE,
+        subject: `Lhůta po termínu: ${deadline.title}`,
+        body: formatCaseNotificationBody({
+          heading: `Lhůta: ${deadline.title} (termín ${dueLabel})`,
+          message: "Lhůta je po termínu a stále není vyřízena.",
+          caseId: deadline.case.id,
+        }),
+        entityType: "Deadline",
+        entityId: deadline.id,
+        dedupeKey: `deadline:${deadline.id}:overdue:${day}`,
+      });
+      created += result.queued + result.skipped;
+      continue;
+    }
 
+    // Upcoming: gate each recipient by their own watch window, then batch.
+    const eligible: string[] = [];
+    for (const recipientId of recipientIds) {
       const preference = await preferenceForUser(recipientId, preferenceCache);
       const reminderAt = new Date(deadline.dueDate);
       reminderAt.setDate(
@@ -778,25 +802,29 @@ async function createScheduledDeadlineReminders(now: Date) {
           ),
       );
 
-      if (now < reminderAt) {
-        continue;
+      if (now >= reminderAt) {
+        eligible.push(recipientId);
       }
-
-      const result = await queueInternalNotification({
-        toUserId: recipientId,
-        type: NotificationType.DEADLINE_SOON,
-        subject: `Blíží se lhůta: ${deadline.title}`,
-        body: formatCaseNotificationBody({
-          heading: `Lhůta: ${deadline.title} (termín ${dueLabel})`,
-          message: `Blíží se termín lhůty: ${dueLabel}.`,
-          caseId: deadline.case.id,
-        }),
-        entityType: "Deadline",
-        entityId: deadline.id,
-        dedupeKey: `deadline:${deadline.id}:soon`,
-      });
-      created += result.queued + result.skipped;
     }
+
+    if (eligible.length === 0) {
+      continue;
+    }
+
+    const result = await queueInternalNotification({
+      toUserIds: eligible,
+      type: NotificationType.DEADLINE_SOON,
+      subject: `Blíží se lhůta: ${deadline.title}`,
+      body: formatCaseNotificationBody({
+        heading: `Lhůta: ${deadline.title} (termín ${dueLabel})`,
+        message: `Blíží se termín lhůty: ${dueLabel}.`,
+        caseId: deadline.case.id,
+      }),
+      entityType: "Deadline",
+      entityId: deadline.id,
+      dedupeKey: `deadline:${deadline.id}:soon`,
+    });
+    created += result.queued + result.skipped;
   }
 
   return created;
@@ -834,6 +862,7 @@ async function createScheduledCourtHearingReminders(now: Date) {
     ]);
     const whenLabel = hearing.hearingAt.toLocaleString("cs-CZ");
 
+    const eligible: string[] = [];
     for (const recipientId of recipientIds) {
       const preference = await preferenceForUser(recipientId, preferenceCache);
       const reminderAt = new Date(hearing.hearingAt);
@@ -845,25 +874,29 @@ async function createScheduledCourtHearingReminders(now: Date) {
           ),
       );
 
-      if (now < reminderAt) {
-        continue;
+      if (now >= reminderAt) {
+        eligible.push(recipientId);
       }
-
-      const result = await queueInternalNotification({
-        toUserId: recipientId,
-        type: NotificationType.COURT_HEARING_SOON,
-        subject: `Blíží se jednání: ${hearing.court}`,
-        body: formatCaseNotificationBody({
-          heading: `Jednání: ${hearing.court} (${whenLabel})`,
-          message: `Blíží se soudní jednání: ${whenLabel}.`,
-          caseId: hearing.case.id,
-        }),
-        entityType: "CourtHearing",
-        entityId: hearing.id,
-        dedupeKey: `hearing:${hearing.id}:soon`,
-      });
-      created += result.queued + result.skipped;
     }
+
+    if (eligible.length === 0) {
+      continue;
+    }
+
+    const result = await queueInternalNotification({
+      toUserIds: eligible,
+      type: NotificationType.COURT_HEARING_SOON,
+      subject: `Blíží se jednání: ${hearing.court}`,
+      body: formatCaseNotificationBody({
+        heading: `Jednání: ${hearing.court} (${whenLabel})`,
+        message: `Blíží se soudní jednání: ${whenLabel}.`,
+        caseId: hearing.case.id,
+      }),
+      entityType: "CourtHearing",
+      entityId: hearing.id,
+      dedupeKey: `hearing:${hearing.id}:soon`,
+    });
+    created += result.queued + result.skipped;
   }
 
   return created;

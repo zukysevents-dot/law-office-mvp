@@ -18,8 +18,23 @@ const nextConfig: NextConfig = {
   outputFileTracingRoot: __dirname,
   poweredByHeader: false,
   productionBrowserSourceMaps: false,
+  // Heavy, server-only CJS packages: keep them out of the bundle so they load
+  // from node_modules at runtime instead of being traced/bundled into route code.
+  serverExternalPackages: ["nodemailer", "pg"],
   turbopack: {
     root: __dirname,
+  },
+  experimental: {
+    // Rewrite barrel imports to direct deep imports so a single icon / calendar
+    // plugin doesn't drag the whole package into the client bundle.
+    optimizePackageImports: [
+      "lucide-react",
+      "@fullcalendar/react",
+      "@fullcalendar/core",
+      "@fullcalendar/daygrid",
+      "@fullcalendar/timegrid",
+      "@fullcalendar/list",
+    ],
   },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
