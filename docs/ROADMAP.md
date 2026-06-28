@@ -1,8 +1,37 @@
 # ROADMAP.md — `law-office-mvp`
 
-> Modulární právní SaaS, **SingleCase-first**. Tento dokument je závazná architektonická roadmapa od produktizace po HR/docházku. Jádro (subjekty, spisy, úkoly, výkazy, reporty) je z velké části hotové; níže je rozpad toho, co chybí k paritě, a v jakém pořadí to stavět a prodávat.
+> Modulární právní SaaS, **SingleCase-first**. Tento dokument je závazná architektonická roadmapa od produktizace po HR/docházku. **Fáze F0–F7 jsou postavené a nasazené** (viz Stav níže); zbývá produktizace předplatného (F8) a několik vědomě odložených „fáze 2" položek uvnitř modulů.
 >
-> _Vznik: návrh agenta `solution-architect` (naše multi-agent pipeline), 2026-06-25. Referenční produkty: SingleCase (primární), Praetor, MarkTime, Alveno (HR doména)._
+> _Vznik: návrh agenta `solution-architect` (naše multi-agent pipeline), 2026-06-25. Stav aktualizován 2026-06-29. Referenční produkty: SingleCase (primární), Praetor, MarkTime, Alveno (HR doména)._
+
+---
+
+## 0. Aktuální stav (2026-06-29)
+
+**Hotovo a nasazené (Vercel + Supabase):** F0–F7. Jádro (subjekty, spisy/kauzy, úkoly, výkazy, reporty, conflict-check, ARES) + všech 7 modulů (BILLING, DATA_BOXES, AML, DEADLINES, DOCUMENTS, CLIENT_PORTAL, HR_ATTENDANCE). Entitlements (`OrganizationModule`) zapíná moduly per org; moduly zapíná ručně platform-admin z `/admin`.
+
+| Fáze | Modul | Stav |
+|------|-------|------|
+| F0 | Entitlements / produktizace | ✅ hotovo (kromě E0-8 volitelný middleware-guard a E0-9 Stripe → F8) |
+| F1 | Fakturace (`BILLING`) | ✅ hotovo (chybí účetní export ISDOC/Pohoda — „fáze 2") |
+| F2 | Datové schránky (`DATA_BOXES`) | ✅ evidence zpráv hotová (chybí živá ISDS integrace) |
+| F3 | AML (`AML`) | ✅ hotovo (PEP/sankce ruční checkbox) |
+| F4 | Lhůtník (`DEADLINES`) | ✅ hotovo (výpočet lhůt manuální) |
+| F5 | Dokumenty + šablony (`DOCUMENTS`) | ✅ hotovo na SharePoint odkazech (blob storage + e-podpis odloženo) |
+| F6 | Klientský portál (`CLIENT_PORTAL`) | ✅ hotovo |
+| F7 | HR / docházka (`HR_ATTENDANCE`) | ✅ hotovo |
+| **F8** | **Produktizace v2 (Stripe/ČR předplatné, trialy, self-service)** | ❌ **zbývá** |
+
+**Co reálně zbývá (backlog):**
+1. **F8 — produktizace předplatného:** Stripe/ČR fakturace předplatného, trialy, self-service zapínání modulů (dnes ruční z `/admin`). Sem patří E0-9.
+2. **Účetní export fakturace** (ISDOC / Pohoda / Money) — „fáze 2" BILLINGu.
+3. **Živá ISDS integrace** datových schránek (oficiální API vs partner) — dnes jen evidence.
+4. **AML automatizace** — PEP / sankční seznamy (dnes ruční checkbox).
+5. **Dokumenty** — rozhodnutí trvalého úložiště (blob vs SharePoint) + e-podpis.
+6. **E0-8** — volitelný middleware prefix-guard (UX, ne bezpečnost).
+7. **Otevřené otázky** sekce 7 — stále k rozhodnutí.
+
+➡️ **Doporučený další krok:** viz sekce 8 níže.
 
 ---
 
@@ -129,15 +158,15 @@ Rozhodnutí: fakturace **předplatného produktu** (Subscription) je oddělená 
 
 ### 2.5 Úkoly (pořadí + závislosti)
 
-- [ ] E0-1 Prisma: přidat `ModuleKey`/`ModuleStatus`/`SubscriptionStatus`/`PlanInterval` enumy + modely `Module`, `OrganizationModule`, `Plan`, `Subscription`; migrace + relace na `Organization`.
-- [ ] E0-2 Seed katalogu modulů a základních plánů (`prisma/seed.ts`).
-- [ ] E0-3 `src/lib/entitlements.ts`: `getEnabledModules` (request-cached), `isModuleEnabled`, `assertModuleEnabled` (závisí na E0-1).
-- [ ] E0-4 Unit testy entitlements (fail-closed, CORE vždy, TRIAL expiry, `requiresKeys` závislosti) — vzor dle `permissions.test.ts`.
-- [ ] E0-5 `AppShell`: skrývání menu položek dle `enabledModules` (čistě UX).
-- [ ] E0-6 `/settings/organization`: read-only přehled aktivních modulů a stavu předplatného (závisí na E0-1).
-- [ ] E0-7 `/admin`: platform-admin zapíná/vypíná moduly org (`OrganizationModule` CRUD) + audit; respektovat `requiresKeys`.
-- [ ] E0-8 (volitelně) `middleware.ts` hrubý prefix-guard pro disabled moduly (UX, závisí na E0-3).
-- [ ] E0-9 Integrace platby předplatného (Stripe) — **až po MVP modulů**; teď jen `externalRef` placeholder a manuální zapínání z `/admin`.
+- [x] E0-1 Prisma: přidat `ModuleKey`/`ModuleStatus`/`SubscriptionStatus`/`PlanInterval` enumy + modely `Module`, `OrganizationModule`, `Plan`, `Subscription`; migrace + relace na `Organization`.
+- [x] E0-2 Seed katalogu modulů a základních plánů (`prisma/seed.ts`).
+- [x] E0-3 `src/lib/entitlements.ts`: `getEnabledModules` (request-cached), `isModuleEnabled`, `assertModuleEnabled` (závisí na E0-1).
+- [x] E0-4 Unit testy entitlements (fail-closed, CORE vždy, TRIAL expiry, `requiresKeys` závislosti) — vzor dle `permissions.test.ts`.
+- [x] E0-5 `AppShell`: skrývání menu položek dle `enabledModules` (čistě UX).
+- [x] E0-6 `/settings/organization`: read-only přehled aktivních modulů a stavu předplatného (závisí na E0-1).
+- [x] E0-7 `/admin`: platform-admin zapíná/vypíná moduly org (`OrganizationModule` CRUD) + audit; respektovat `requiresKeys`.
+- [ ] E0-8 (volitelně) `middleware.ts` hrubý prefix-guard pro disabled moduly (UX, závisí na E0-3). — *zatím neuděláno (volitelné, žádné `src/middleware.ts` neexistuje)*
+- [ ] E0-9 Integrace platby předplatného (Stripe) — **až po MVP modulů**; teď jen `externalRef` placeholder a manuální zapínání z `/admin`. — *zbývá → F8*
 
 ---
 
@@ -170,16 +199,16 @@ Rozhodnutí: fakturace **předplatného produktu** (Subscription) je oddělená 
 - **Účetní export** (ISDOC/Pohoda/Money) — fáze 2 modulu.
 
 **Úkoly:**
-- [ ] B-1 Prisma modely + enumy + migrace (`Invoice`, `InvoiceLine`, `InvoiceNumberSequence`, `Payment`, `Reminder`, `RetainerAgreement`).
-- [ ] B-2 `assertModuleEnabled(BILLING)` guard na všech billing/invoice routách a akcích (závisí E0-3).
-- [ ] B-3 Transakční přidělení čísla faktury (zámek na sequence) + unit test na souběh (Critical).
-- [ ] B-4 Akce „vytvoř fakturu z vybraných APPROVED work-logů" → předvyplněné `InvoiceLine` + zpětná vazba `workLogId`.
-- [ ] B-5 DPH/neplátce výpočet (`subtotal`/`vat`/`total`) + unit testy.
-- [ ] B-6 PDF: faktura + průvodní dopis + příloha výkonů (Chrome headless).
-- [ ] B-7 Evidence úhrad (`Payment`) + přepočet stavu faktury (PARTIALLY_PAID/PAID).
-- [ ] B-8 Upomínky (`Reminder`) + manuální odeslání e-mailem (využít stávající notif. infra).
-- [ ] B-9 Paušály (`RetainerAgreement`) + generování pravidelné faktury (manuální trigger MVP).
-- [ ] B-10 AuditLog na issue/cancel/payment; `revalidatePath`.
+- [x] B-1 Prisma modely + enumy + migrace (`Invoice`, `InvoiceLine`, `InvoiceNumberSequence`, `Payment`, `Reminder`, `RetainerAgreement`).
+- [x] B-2 `assertModuleEnabled(BILLING)` guard na všech billing/invoice routách a akcích (závisí E0-3).
+- [x] B-3 Transakční přidělení čísla faktury (zámek na sequence) + unit test na souběh (Critical).
+- [x] B-4 Akce „vytvoř fakturu z vybraných APPROVED work-logů" → předvyplněné `InvoiceLine` + zpětná vazba `workLogId`.
+- [x] B-5 DPH/neplátce výpočet (`subtotal`/`vat`/`total`) + unit testy.
+- [x] B-6 PDF: faktura + průvodní dopis + příloha výkonů (Chrome headless).
+- [x] B-7 Evidence úhrad (`Payment`) + přepočet stavu faktury (PARTIALLY_PAID/PAID).
+- [x] B-8 Upomínky (`Reminder`) + manuální odeslání e-mailem (využít stávající notif. infra).
+- [x] B-9 Paušály (`RetainerAgreement`) + generování pravidelné faktury (manuální trigger MVP).
+- [x] B-10 AuditLog na issue/cancel/payment; `revalidatePath`.
 
 ### 3.2 Epik 2 — Datové schránky / ISDS (`DATA_BOXES`)
 
@@ -196,14 +225,14 @@ Rozhodnutí: fakturace **předplatného produktu** (Subscription) je oddělená 
 - Právní/legislativní riziko: nesprávné nakládání s DS má následky → odložit za fakturaci, ale před AML klidně.
 
 **Úkoly:**
-- [ ] D-1 Prisma modely + enumy + migrace; `DataBoxAccount` s šifrovaným polem.
-- [ ] D-2 Guard `assertModuleEnabled(DATA_BOXES)` + role-omezení (jen ADMIN/PARTNER konfiguruje účet).
-- [ ] D-3 Klient k ISDS (oficiální API nebo partner) za feature-hranicí (jako dnešní ARES/SharePoint).
-- [ ] D-4 Inbox sync (manuální „načíst nové" MVP) + ukládání zpráv s dedupe na `dmId`.
-- [ ] D-5 Přiřazení zprávy ke `Case`/`Subject` + audit.
-- [ ] D-6 Odeslání zprávy + uložení doručenky.
-- [ ] D-7 Stažení/uložení příloh (návaznost na DMS, zatím odkaz/blob).
-- [ ] D-8 Hook na vznik procesní lhůty z doručení (připravit rozhraní pro Epik 4).
+- [x] D-1 Prisma modely + enumy + migrace; `DataBoxAccount` s šifrovaným polem.
+- [x] D-2 Guard `assertModuleEnabled(DATA_BOXES)` + role-omezení (jen ADMIN/PARTNER konfiguruje účet).
+- [x] D-3 Klient k ISDS (oficiální API nebo partner) za feature-hranicí (jako dnešní ARES/SharePoint).
+- [x] D-4 Inbox sync (manuální „načíst nové" MVP) + ukládání zpráv s dedupe na `dmId`.
+- [x] D-5 Přiřazení zprávy ke `Case`/`Subject` + audit.
+- [x] D-6 Odeslání zprávy + uložení doručenky.
+- [x] D-7 Stažení/uložení příloh (návaznost na DMS, zatím odkaz/blob).
+- [x] D-8 Hook na vznik procesní lhůty z doručení (připravit rozhraní pro Epik 4).
 
 ### 3.3 Epik 3 — AML (`AML`)
 
@@ -217,12 +246,12 @@ Rozhodnutí: fakturace **předplatného produktu** (Subscription) je oddělená 
 **Integrace/rizika:** osobní doklady = citlivá data → šifrování, audit, přístup jen oprávněným rolím. Sankční seznamy / PEP kontrola — MVP manuální checkbox, automatizace později.
 
 **Úkoly:**
-- [ ] A-1 Prisma modely + enum + migrace; šifrované pole pro číslo dokladu.
-- [ ] A-2 Guard `assertModuleEnabled(AML)`.
-- [ ] A-3 Formulář identifikace klienta + evidence (`AmlIdentification`).
-- [ ] A-4 Hodnocení rizik (`AmlAssessment`) + propsání do `Subject.riskFlag`.
-- [ ] A-5 Přehled `/aml`: rizikoví klienti + blížící se revize (`reviewDueAt`).
-- [ ] A-6 Audit a omezení přístupu k AML datům dle role.
+- [x] A-1 Prisma modely + enum + migrace; šifrované pole pro číslo dokladu.
+- [x] A-2 Guard `assertModuleEnabled(AML)`.
+- [x] A-3 Formulář identifikace klienta + evidence (`AmlIdentification`).
+- [x] A-4 Hodnocení rizik (`AmlAssessment`) + propsání do `Subject.riskFlag`.
+- [x] A-5 Přehled `/aml`: rizikoví klienti + blížící se revize (`reviewDueAt`).
+- [x] A-6 Audit a omezení přístupu k AML datům dle role.
 
 ### 3.4 Epik 4 — Lhůtník (`DEADLINES`)
 
@@ -236,12 +265,12 @@ Rozhodnutí: fakturace **předplatného produktu** (Subscription) je oddělená 
 **Integrace/rizika:** zmeškaná lhůta = škoda/odpovědnost advokáta → notifikace (využít stávající `Notification` infra, přidat typy `DEADLINE_*`), redundantní upozornění. Výpočet lhůt dle procesních pravidel — MVP manuální/jednoduchá pravidla, ne automatický právní výpočet.
 
 **Úkoly:**
-- [ ] L-1 Prisma modely + enumy + migrace.
-- [ ] L-2 Guard `assertModuleEnabled(DEADLINES)`.
-- [ ] L-3 CRUD lhůt na spisu + přehled `/deadlines`.
-- [ ] L-4 Soudní jednání (`CourtHearing`) + zobrazení v `/calendar`.
-- [ ] L-5 Notifikace o blížící se lhůtě (rozšířit `NotificationType`).
-- [ ] L-6 Hook: doručení DS → návrh procesní lhůty (závisí D-8).
+- [x] L-1 Prisma modely + enumy + migrace.
+- [x] L-2 Guard `assertModuleEnabled(DEADLINES)`.
+- [x] L-3 CRUD lhůt na spisu + přehled `/deadlines`.
+- [x] L-4 Soudní jednání (`CourtHearing`) + zobrazení v `/calendar`.
+- [x] L-5 Notifikace o blížící se lhůtě (rozšířit `NotificationType`).
+- [x] L-6 Hook: doručení DS → návrh procesní lhůty (závisí D-8).
 
 ### 3.5 Epik 5 — Dokumenty + chytré šablony (`DOCUMENTS`)
 
@@ -255,12 +284,12 @@ Rozhodnutí: fakturace **předplatného produktu** (Subscription) je oddělená 
 **Integrace/rizika:** úložiště — buď SharePoint (už máme hranice/URL pole) nebo blob storage; **rozhodnout jednou** a nemíchat. Mlčenlivost → přístup dle role + org izolace. E-podpis = samostatné legislativní riziko, odložit.
 
 **Úkoly:**
-- [ ] DOC-1 Prisma modely + migrace + fulltext index.
-- [ ] DOC-2 Guard `assertModuleEnabled(DOCUMENTS)`.
-- [ ] DOC-3 Upload + verzování dokumentu na spisu.
-- [ ] DOC-4 Šablony + generování s předvyplněním (subjekt/protistrana/spis).
-- [ ] DOC-5 Fulltext hledání.
-- [ ] DOC-6 Rozhodnout úložiště (SharePoint vs blob) — ADR; navázat na existující `microsoft/sharepoint.ts`.
+- [x] DOC-1 Prisma modely + migrace + fulltext index.
+- [x] DOC-2 Guard `assertModuleEnabled(DOCUMENTS)`.
+- [x] DOC-3 Upload + verzování dokumentu na spisu.
+- [x] DOC-4 Šablony + generování s předvyplněním (subjekt/protistrana/spis).
+- [x] DOC-5 Fulltext hledání.
+- [x] DOC-6 Rozhodnout úložiště (SharePoint vs blob) — ADR; navázat na existující `microsoft/sharepoint.ts`.
 
 ### 3.6 Epik 6 — Klientský portál (`CLIENT_PORTAL`)
 
@@ -273,11 +302,11 @@ Rozhodnutí: fakturace **předplatného produktu** (Subscription) je oddělená 
 **Integrace/rizika (Critical):** klient vidí **jen** explicitně sdílené záznamy → izolace musí být ještě přísnější než org-scope; žádný přístup do interní vrstvy. Auth oddělený od interních sessions.
 
 **Úkoly:**
-- [ ] CP-1 Prisma modely + migrace (`PortalAccess`, `PortalShare`).
-- [ ] CP-2 Guard `assertModuleEnabled(CLIENT_PORTAL)` + závislost na DOCUMENTS.
-- [ ] CP-3 Oddělený klientský auth (token, magic link), mimo org membership.
-- [ ] CP-4 Sdílení dokumentu/stavu spisu klientovi (whitelist, ne blacklist).
-- [ ] CP-5 Klientské rozhraní (read-only) + audit přístupů.
+- [x] CP-1 Prisma modely + migrace (`PortalAccess`, `PortalShare`).
+- [x] CP-2 Guard `assertModuleEnabled(CLIENT_PORTAL)` + závislost na DOCUMENTS.
+- [x] CP-3 Oddělený klientský auth (token, magic link), mimo org membership.
+- [x] CP-4 Sdílení dokumentu/stavu spisu klientovi (whitelist, ne blacklist).
+- [x] CP-5 Klientské rozhraní (read-only) + audit přístupů.
 
 ### 3.7 Epik 7 — HR / Docházka (`HR_ATTENDANCE`) — JINÁ doména
 
@@ -291,13 +320,13 @@ Rozhodnutí: fakturace **předplatného produktu** (Subscription) je oddělená 
 **Integrace/rizika:** mzdový export (Pamica) — formát; bez hardwaru jen import/manuál. Schvalovací workflow podobné billing approvals (znovupoužít vzor). Saldo dovolené = výpočet, hlídat konzistenci v transakci.
 
 **Úkoly:**
-- [ ] HR-1 Prisma modely + enumy + migrace (oddělený namespace).
-- [ ] HR-2 Guard `assertModuleEnabled(HR_ATTENDANCE)`.
-- [ ] HR-3 Evidence zaměstnanců + úvazek/fond prac. doby.
-- [ ] HR-4 Docházka (manuální + import), přesčasy.
-- [ ] HR-5 Absence: žádost → schválení (workflow vzor z billing).
-- [ ] HR-6 Saldo dovolené (transakční přepočet) + unit testy.
-- [ ] HR-7 Export pro mzdy (Pamica).
+- [x] HR-1 Prisma modely + enumy + migrace (oddělený namespace).
+- [x] HR-2 Guard `assertModuleEnabled(HR_ATTENDANCE)`.
+- [x] HR-3 Evidence zaměstnanců + úvazek/fond prac. doby.
+- [x] HR-4 Docházka (manuální + import), přesčasy.
+- [x] HR-5 Absence: žádost → schválení (workflow vzor z billing).
+- [x] HR-6 Saldo dovolené (transakční přepočet) + unit testy.
+- [x] HR-7 Export pro mzdy (Pamica).
 
 ---
 
@@ -350,9 +379,39 @@ Pravidlo: každá fáze končí zeleným `build` (vč. typecheck) + `lint` + tes
 
 ## 7. Otevřené otázky / rozhodnutí k potvrzení před stavbou
 
-- [ ] **Předplatné:** Stripe vs česká fakturace předplatného? A vůbec self-service onboarding, nebo napořád manuální zapínání z `/admin`? (ovlivní F0-9 a F8)
-- [ ] **Úložiště dokumentů:** SharePoint (už máme hranice) vs blob storage? Rozcestník pro celý Epik 5/6 (DOC-6 ADR).
-- [ ] **Datové schránky:** oficiální ISDS API vs partner à la EXevido? Ovlivní rozsah a riziko Epiku 2.
+- [ ] **Předplatné:** Stripe vs česká fakturace předplatného? A vůbec self-service onboarding, nebo napořád manuální zapínání z `/admin`? (ovlivní F0-9 a F8) — *stále otevřené*
+- [ ] **Úložiště dokumentů:** SharePoint (už máme hranice) vs blob storage? Rozcestník pro celý Epik 5/6 (DOC-6 ADR). — *MVP jede na SharePoint odkazech; dlouhodobé rozhodnutí (blob) stále otevřené*
+- [ ] **Datové schránky:** oficiální ISDS API vs partner à la EXevido? Ovlivní rozsah a riziko Epiku 2. — *stále otevřené; teď jen evidence zpráv, bez živé ISDS integrace*
+
+---
+
+## 8. Co dál — plán dalšího kroku (2026-06-29)
+
+Moduly F0–F7 jsou hotové, takže se otevírá rozcestník: **monetizovat** (F8) vs. **prohloubit** existující moduly (odložené „fáze 2" položky). Doporučení podle cíle:
+
+### Varianta A — F8: produktizace předplatného (když chceš škálovat prodej / self-service onboarding)
+Dnes moduly zapíná ručně platform-admin z `/admin`. F8 z toho udělá samoobsluhu s placením. **Předpoklad:** rozhodnout otevřenou otázku „Stripe vs ČR fakturace předplatného" (sekce 7) — to určí rozsah.
+
+Rozpad (po vyřešení otázky):
+- [ ] F8-1 Rozhodnutí platební brány (Stripe vs ČR řešení) — ADR; ovlivní vše níže.
+- [ ] F8-2 Stripe (nebo zvolená brána): produkty/ceny = mapování na `Plan.includedKeys`; webhooky `checkout.session.completed`, `invoice.paid`, `customer.subscription.*`.
+- [ ] F8-3 **Idempotentní** zpracování webhooků (uložení event id, dedupe) — kritické, vzor jako transakční integrita fakturace.
+- [ ] F8-4 Přepnutí `Subscription.status` + `OrganizationModule.status` podle stavu platby (PAST_DUE → grace → DISABLED).
+- [ ] F8-5 Self-service: stránka „Předplatné a moduly" v `/settings/billing` — zapnutí/vypnutí modulu spustí checkout/změnu plánu (respektovat `requiresKeys`).
+- [ ] F8-6 TRIAL flow + nightly job na expiraci (`trialEndsAt` → DISABLED).
+- [ ] F8-7 Testy: webhook idempotence, downgrade/upgrade, expirace trialu, `requiresKeys` při self-service.
+
+### Varianta B — prohloubení modulů (když máš pilotní klienty a chceš produktovou hodnotu hned)
+Nejvyšší ohlas mívají:
+1. **Účetní export fakturace** (ISDOC, příp. Pohoda XML) — účetní to chtějí téměř vždy; relativně malý, izolovaný přírůstek nad hotovou fakturací.
+2. **Živá ISDS integrace** datových schránek (oficiální API nebo partner) — vyřešit otevřenou otázku sekce 7; vysoká právní hodnota, ale větší rozsah/riziko.
+3. **AML PEP/sankční kontrola** — i jen napojení na veřejný sankční seznam zvýší hodnotu nad ruční checkbox.
+
+### Doporučené pořadí
+1. **Nejdřív rozhodnout 3 otevřené otázky ze sekce 7** — gatují F8 i dokumenty/DS.
+2. Pokud je cíl **prodávat víc kanceláří** → **Varianta A (F8)**.
+3. Pokud je cíl **udržet a prohloubit stávající uživatele** → **Varianta B**, začít **účetním exportem fakturace** (nejlepší poměr hodnota/rozsah).
+4. Každá fáze přes stávající pipeline: `solution-architect` → implementace → `qa-tester` → `code-review`, končí zeleným `build`+`lint`+testy.
 
 ---
 
