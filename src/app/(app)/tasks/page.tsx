@@ -29,6 +29,7 @@ import {
   archiveFilterValue,
 } from "@/lib/archive-filter";
 import { getCurrentUser } from "@/lib/auth";
+import { statusCount } from "@/lib/dashboard/task-counts";
 import { safeQuery } from "@/lib/db-safe";
 import { formatDate } from "@/lib/format";
 import {
@@ -49,6 +50,7 @@ import {
   taskDeadlineTypeTone,
   taskStatusTone,
 } from "@/lib/status-tones";
+import { applyTaskLimit } from "@/lib/tasks/list-truncation";
 import {
   getCurrentTableView,
   getDefaultTableView,
@@ -305,11 +307,10 @@ export default async function TasksPage({ searchParams }: TasksProps) {
         }),
       ]);
 
-      const cardCount = (status: TaskStatus) =>
-        statusGroups.find((group) => group.status === status)?._count._all ?? 0;
-
-      const truncated = tasks.length > TASK_LIST_LIMIT;
-      const visibleTasks = truncated ? tasks.slice(0, TASK_LIST_LIMIT) : tasks;
+      const { visible: visibleTasks, truncated } = applyTaskLimit(
+        tasks,
+        TASK_LIST_LIMIT,
+      );
 
       return {
         tasks: visibleTasks.map((task) => ({
@@ -321,9 +322,12 @@ export default async function TasksPage({ searchParams }: TasksProps) {
         projects,
         cases,
         cards: {
-          review: cardCount(TaskStatus.FOR_REVIEW),
-          waitingClient: cardCount(TaskStatus.WAITING_FOR_CLIENT),
-          waitingCounterparty: cardCount(TaskStatus.WAITING_FOR_COUNTERPARTY),
+          review: statusCount(statusGroups, TaskStatus.FOR_REVIEW),
+          waitingClient: statusCount(statusGroups, TaskStatus.WAITING_FOR_CLIENT),
+          waitingCounterparty: statusCount(
+            statusGroups,
+            TaskStatus.WAITING_FOR_COUNTERPARTY,
+          ),
           overdue,
         },
         tableView,

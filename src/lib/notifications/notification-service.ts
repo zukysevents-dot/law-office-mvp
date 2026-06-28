@@ -21,7 +21,7 @@ const LOCK_TIMEOUT_MINUTES = 15;
 // Dedupe keys make this safe to resume: unsent rows are picked up next run.
 const SCHEDULED_SCAN_LIMIT = 1000;
 
-type NotificationPreferenceShape = {
+export type NotificationPreferenceShape = {
   emailEnabled: boolean;
   taskCreatedEmail: boolean;
   taskStatusChangedEmail: boolean;
@@ -72,7 +72,7 @@ const defaultPreference: NotificationPreferenceShape = {
   deadlineWatchDaysBefore: DEFAULT_DEADLINE_WATCH_DAYS,
 };
 
-function uniqueRecipients(
+export function uniqueRecipients(
   ids: Array<string | null | undefined>,
   actorUserId?: string | null,
 ) {
@@ -87,7 +87,7 @@ function uniqueRecipients(
   return [...recipients];
 }
 
-function preferenceAllows(
+export function preferenceAllows(
   preference: NotificationPreferenceShape | null | undefined,
   type: NotificationType,
 ) {
@@ -130,6 +130,28 @@ function preferenceAllows(
   }
 
   return false;
+}
+
+// Per-recipient contribution to the queued/skipped tally. A notification only
+// counts when it was freshly inserted (`wasInserted`): a dedupe hit on an
+// existing row contributes nothing. A fresh PENDING row counts as queued, a
+// fresh SKIPPED row (preference disabled) as skipped.
+export function notificationOutcome(
+  status: NotificationStatus,
+  wasInserted: boolean,
+): { queued: number; skipped: number } {
+  if (!wasInserted) {
+    return { queued: 0, skipped: 0 };
+  }
+  if (status === NotificationStatus.PENDING) {
+    return { queued: 1, skipped: 0 };
+  }
+  if (status === NotificationStatus.SKIPPED) {
+    return { queued: 0, skipped: 1 };
+  }
+  // Any other freshly-inserted status (e.g. SENT) counts as neither, matching
+  // the original inline fallthrough.
+  return { queued: 0, skipped: 0 };
 }
 
 function envFlag(value: string | undefined) {
@@ -324,23 +346,14 @@ export async function queueInternalNotification(payload: NotificationPayload) {
         });
 
         // createdAt === updatedAt ⇒ freshly inserted, not a deduped hit.
-        if (
-          notification.createdAt.getTime() === notification.updatedAt.getTime()
-        ) {
-          if (notification.status === NotificationStatus.PENDING) {
-            return { queued: 1, skipped: 0 };
-          }
-          if (notification.status === NotificationStatus.SKIPPED) {
-            return { queued: 0, skipped: 1 };
-          }
-        }
-        return { queued: 0, skipped: 0 };
+        const wasInserted =
+          notification.createdAt.getTime() ===
+          notification.updatedAt.getTime();
+        return notificationOutcome(notification.status, wasInserted);
       }
 
       await prisma.notification.create({ data });
-      return status === NotificationStatus.PENDING
-        ? { queued: 1, skipped: 0 }
-        : { queued: 0, skipped: 1 };
+      return notificationOutcome(status, true);
     }),
   );
 

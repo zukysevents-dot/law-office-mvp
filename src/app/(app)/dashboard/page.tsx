@@ -27,6 +27,7 @@ import {
   TaskPriority,
   TaskStatus,
 } from "@/generated/prisma/enums";
+import { activeTaskCount, statusCount } from "@/lib/dashboard/task-counts";
 import { cn } from "@/lib/utils";
 import {
   dashboardTableColumns,
@@ -968,21 +969,20 @@ export default async function DashboardPage() {
       }),
     ]);
 
-    const statusCount = (status: TaskStatus) =>
-      taskStatusGroups.find((group) => group.status === status)?._count._all ?? 0;
-    // "Active" = every non-completed status, matching the old status:{not:COMPLETED} count.
-    const activeTasks = taskStatusGroups
-      .filter((group) => group.status !== TaskStatus.COMPLETED)
-      .reduce((sum, group) => sum + group._count._all, 0);
-
     return {
       widgets,
       counts: {
-        activeTasks,
+        activeTasks: activeTaskCount(taskStatusGroups),
         overdueTasks,
-        reviewTasks: statusCount(TaskStatus.FOR_REVIEW),
-        waitingForClientTasks: statusCount(TaskStatus.WAITING_FOR_CLIENT),
-        waitingForCounterpartyTasks: statusCount(TaskStatus.WAITING_FOR_COUNTERPARTY),
+        reviewTasks: statusCount(taskStatusGroups, TaskStatus.FOR_REVIEW),
+        waitingForClientTasks: statusCount(
+          taskStatusGroups,
+          TaskStatus.WAITING_FOR_CLIENT,
+        ),
+        waitingForCounterpartyTasks: statusCount(
+          taskStatusGroups,
+          TaskStatus.WAITING_FOR_COUNTERPARTY,
+        ),
       },
       monthHours: formatHours(workLogAggregate._sum.hours),
       myTasks,
