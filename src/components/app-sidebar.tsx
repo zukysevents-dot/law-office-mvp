@@ -48,45 +48,81 @@ type NavItem = {
   module?: ModuleKey;
 };
 
-const navItems: NavItem[] = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/subjects", label: "Subjekty", icon: Building2 },
-  { href: "/conflict-check", label: "Conflict check", icon: ShieldCheck },
+// Grouped navigation. Sections give the (now 20+) items a hierarchy instead of
+// one flat scroll. A section whose items are all hidden (module not bought /
+// not admin) is dropped entirely, so the rail never shows an empty header.
+type NavSection = {
+  title: string;
+  items: NavItem[];
+};
+
+const navSections: NavSection[] = [
   {
-    href: "/aml",
-    label: "AML / KYC",
-    icon: ShieldAlert,
-    adminOnly: true,
-    module: ModuleKey.AML,
+    title: "Přehled",
+    items: [{ href: "/dashboard", label: "Dashboard", icon: LayoutDashboard }],
   },
-  { href: "/projects", label: "Projekty", icon: BriefcaseBusiness },
-  { href: "/cases", label: "Případy", icon: FileText },
   {
-    href: "/data-boxes",
-    label: "Datové schránky",
-    icon: Inbox,
-    module: ModuleKey.DATA_BOXES,
+    title: "Spisy",
+    items: [
+      { href: "/subjects", label: "Subjekty", icon: Building2 },
+      { href: "/conflict-check", label: "Conflict check", icon: ShieldCheck },
+      {
+        href: "/aml",
+        label: "AML / KYC",
+        icon: ShieldAlert,
+        adminOnly: true,
+        module: ModuleKey.AML,
+      },
+      { href: "/projects", label: "Projekty", icon: BriefcaseBusiness },
+      { href: "/cases", label: "Případy", icon: FileText },
+      {
+        href: "/data-boxes",
+        label: "Datové schránky",
+        icon: Inbox,
+        module: ModuleKey.DATA_BOXES,
+      },
+    ],
   },
-  { href: "/tasks", label: "Úkoly", icon: ListTodo },
-  { href: "/tasks/my", label: "Moje úkoly", icon: ListChecks },
-  { href: "/tasks/archive", label: "Archiv úkolů", icon: Archive },
-  { href: "/work-logs", label: "Výkazy práce", icon: Clock3 },
-  { href: "/billing", label: "Fakturace", icon: Receipt, module: ModuleKey.BILLING },
-  { href: "/reports", label: "Reporty", icon: BarChart3 },
-  { href: "/references", label: "Reference", icon: LibraryBig },
-  { href: "/documents", label: "Dokumenty", icon: FolderOpen, module: ModuleKey.DOCUMENTS },
-  { href: "/deadlines", label: "Lhůtník", icon: AlarmClock, module: ModuleKey.DEADLINES },
-  { href: "/calendar", label: "Kalendář", icon: CalendarDays, module: ModuleKey.DEADLINES },
-  { href: "/hr/employees", label: "Zaměstnanci", icon: Users, module: ModuleKey.HR_ATTENDANCE },
-  { href: "/hr/attendance", label: "Docházka", icon: CalendarClock, module: ModuleKey.HR_ATTENDANCE },
-  { href: "/hr/absences", label: "Absence", icon: CalendarOff, module: ModuleKey.HR_ATTENDANCE },
-  { href: "/hr/exports", label: "Mzdový export", icon: FileSpreadsheet, module: ModuleKey.HR_ATTENDANCE },
-  { href: "/audit-log", label: "Audit log", icon: ScrollText, adminOnly: true },
-  { href: "/settings/organization", label: "Kancelář", icon: Briefcase, adminOnly: true },
-  { href: "/settings", label: "Nastavení", icon: Settings },
+  {
+    title: "Práce",
+    items: [
+      { href: "/tasks", label: "Úkoly", icon: ListTodo },
+      { href: "/tasks/my", label: "Moje úkoly", icon: ListChecks },
+      { href: "/tasks/archive", label: "Archiv úkolů", icon: Archive },
+      { href: "/work-logs", label: "Výkazy práce", icon: Clock3 },
+      { href: "/billing", label: "Fakturace", icon: Receipt, module: ModuleKey.BILLING },
+      { href: "/reports", label: "Reporty", icon: BarChart3 },
+      { href: "/references", label: "Reference", icon: LibraryBig },
+    ],
+  },
+  {
+    title: "Lhůty & dokumenty",
+    items: [
+      { href: "/deadlines", label: "Lhůtník", icon: AlarmClock, module: ModuleKey.DEADLINES },
+      { href: "/calendar", label: "Kalendář", icon: CalendarDays, module: ModuleKey.DEADLINES },
+      { href: "/documents", label: "Dokumenty", icon: FolderOpen, module: ModuleKey.DOCUMENTS },
+    ],
+  },
+  {
+    title: "HR",
+    items: [
+      { href: "/hr/employees", label: "Zaměstnanci", icon: Users, module: ModuleKey.HR_ATTENDANCE },
+      { href: "/hr/attendance", label: "Docházka", icon: CalendarClock, module: ModuleKey.HR_ATTENDANCE },
+      { href: "/hr/absences", label: "Absence", icon: CalendarOff, module: ModuleKey.HR_ATTENDANCE },
+      { href: "/hr/exports", label: "Mzdový export", icon: FileSpreadsheet, module: ModuleKey.HR_ATTENDANCE },
+    ],
+  },
+  {
+    title: "Správa",
+    items: [
+      { href: "/audit-log", label: "Audit log", icon: ScrollText, adminOnly: true },
+      { href: "/settings/organization", label: "Kancelář", icon: Briefcase, adminOnly: true },
+      { href: "/settings", label: "Nastavení", icon: Settings },
+    ],
+  },
 ];
 
-function getActiveHref(pathname: string, items: typeof navItems) {
+function getActiveHref(pathname: string, items: NavItem[]) {
   const match = items
     .filter((item) => {
       if (item.href === "/dashboard") {
@@ -119,12 +155,20 @@ export function AppSidebar({
   // - enabledModules hides nav items for modules the org hasn't bought. Missing
   //   prop → empty list → module-gated items hidden (fail-closed UX).
   const enabled = enabledModules ?? [];
-  const visibleNavItems = navItems.filter((item) => {
-    if (item.adminOnly && !showAuditLog) return false;
-    if (item.module && !enabled.includes(item.module)) return false;
-    return true;
-  });
-  const activeHref = getActiveHref(pathname, visibleNavItems);
+  const visibleSections = navSections
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => {
+        if (item.adminOnly && !showAuditLog) return false;
+        if (item.module && !enabled.includes(item.module)) return false;
+        return true;
+      }),
+    }))
+    .filter((section) => section.items.length > 0);
+  const activeHref = getActiveHref(
+    pathname,
+    visibleSections.flatMap((section) => section.items),
+  );
 
   const accountFooter = (
     <div className="mt-auto border-t border-white/10 pt-3">
@@ -147,7 +191,7 @@ export function AppSidebar({
     </div>
   );
 
-  const navLinks = visibleNavItems.map((item) => {
+  const renderLink = (item: NavItem) => {
     const Icon = item.icon;
     const active = item.href === activeHref;
 
@@ -170,7 +214,25 @@ export function AppSidebar({
         </span>
       </Link>
     );
-  });
+  };
+
+  // One render reused by the mobile drawer and the desktop rail. Section headers
+  // show at full width (mobile + xl); on the collapsed lg rail they're hidden
+  // and the top border alone separates the icon groups.
+  const navContent = visibleSections.map((section, index) => (
+    <div
+      key={section.title}
+      className={cn(
+        "flex w-full flex-col gap-1 items-stretch lg:items-center xl:items-stretch",
+        index > 0 && "mt-1 border-t border-white/10 pt-2",
+      )}
+    >
+      <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-[#9cc6ad] lg:hidden xl:block">
+        {section.title}
+      </p>
+      {section.items.map(renderLink)}
+    </div>
+  ));
 
   return (
     <aside className="w-full max-w-full shrink-0 overflow-x-hidden bg-[#072924] text-white lg:min-h-screen lg:w-20 lg:self-stretch lg:overflow-visible xl:w-72">
@@ -213,7 +275,7 @@ export function AppSidebar({
           id="mobile-nav"
           className="fixed inset-x-0 top-16 bottom-0 z-40 flex flex-col gap-1 overflow-y-auto border-t border-white/10 bg-[#072924] p-3 lg:hidden"
         >
-          {navLinks}
+          {navContent}
           {accountFooter}
         </nav>
       ) : null}
@@ -245,7 +307,7 @@ export function AppSidebar({
           </Link>
         </div>
         <nav className="flex min-w-0 flex-1 flex-col flex-nowrap items-center gap-2 overflow-x-hidden overflow-y-auto p-3 xl:items-stretch">
-          {navLinks}
+          {navContent}
           {accountFooter}
         </nav>
       </div>
