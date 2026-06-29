@@ -334,6 +334,7 @@ model User {
 
   createdSubjectRelations SubjectRelation[]   @relation("SubjectRelationCreatedBy")
   checkedConflictChecks   ConflictCheck[]     @relation("ConflictCheckCheckedBy")
+  createdContactPersons   ContactPerson[]     @relation("ContactPersonCreatedBy")
   responsibleProjects     Project[]           @relation("ProjectResponsibleUser")
   responsibleCases        Case[]              @relation("CaseResponsibleUser")
   createdTasks            Task[]              @relation("TaskCreatedBy")
@@ -420,6 +421,7 @@ model Subject {
   documents      Document[]
   portalAccess   PortalAccess?
   sanctionsScreenings SanctionsScreening[]
+  contactPersons ContactPerson[]
 
   // IČO is unique PER organization, not globally — the same company can be a
   // subject of more than one law office (multi-tenant). NULL ico is allowed
@@ -453,6 +455,38 @@ model SubjectRelation {
   @@index([caseId])
   @@index([role])
   @@map("subjectRelations")
+}
+
+// Kontaktní osoby subjektu (klienta). Více osob na subjekt; volitelně lze osobu
+// navázat na konkrétní projekt nebo případ.
+model ContactPerson {
+  id             String   @id @default(cuid())
+  organizationId String
+  subjectId      String
+  firstName      String
+  lastName       String
+  email          String?
+  phone          String?
+  role           String? // např. zaměstnanec, jednatel, managing director
+  projectId      String?
+  caseId         String?
+  note           String?
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  archivedAt     DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  subject      Subject      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  project      Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  case         Case?        @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  createdBy    User?        @relation("ContactPersonCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([subjectId])
+  @@index([projectId])
+  @@index([caseId])
+  @@map("contactPersons")
 }
 
 model ConflictCheck {
@@ -500,6 +534,7 @@ model Project {
   workLogs         WorkLog[]
   invoices         Invoice[]
   retainerAgreements RetainerAgreement[]
+  contactPersons ContactPerson[]
 
   @@index([organizationId])
   @@index([mainSubjectId])
@@ -537,6 +572,7 @@ model Case {
   courtHearings    CourtHearing[]
   documents        Document[]
   portalShares     PortalShare[]
+  contactPersons   ContactPerson[]
 
   @@unique([projectId, fileNumber])
   @@index([organizationId])
@@ -875,6 +911,7 @@ model Organization {
   hrLeaveBalances      HrLeaveBalance[]
   sanctionsScreenings  SanctionsScreening[]
   sanctionsScreeningMatches SanctionsScreeningMatch[]
+  contactPersons       ContactPerson[]
 
   @@index([status])
   @@map("organizations")

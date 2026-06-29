@@ -14,6 +14,7 @@ import { Section } from "@/components/section";
 import { SharepointFolderField } from "@/components/sharepoint-folder-field";
 import { SharepointNotice } from "@/components/sharepoint-notice";
 import { SubjectAmlSection } from "@/components/subject-aml-section";
+import { SubjectContactPersons } from "@/components/subject-contact-persons";
 import type { ScreeningWithMatches } from "@/components/sanctions-screening-panel";
 import { SubjectPortalSection } from "@/components/subject-portal-section";
 import { Badge } from "@/components/ui/badge";
@@ -117,8 +118,39 @@ async function loadSubject(id: string) {
         take: 10,
         include: { checkedBy: { select: { name: true } } },
       },
+      contactPersons: {
+        where: { archivedAt: null },
+        orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+        include: {
+          project: { select: { name: true } },
+          case: { select: { name: true } },
+        },
+      },
     },
   });
+
+  // Matters of this client, for the optional project/case binding when adding a
+  // contact person (validated again in the action).
+  const contactMatters = subject
+    ? {
+        projects: await prisma.project.findMany({
+          where: andWhere(
+            { mainSubjectId: subject.id, archivedAt: null },
+            projectWhere,
+          ),
+          orderBy: { name: "asc" },
+          select: { id: true, name: true },
+        }),
+        cases: await prisma.case.findMany({
+          where: andWhere(
+            { project: { mainSubjectId: subject.id }, archivedAt: null },
+            caseVisibilityWhere(currentUser),
+          ),
+          orderBy: { name: "asc" },
+          select: { id: true, name: true, project: { select: { name: true } } },
+        }),
+      }
+    : { projects: [], cases: [] };
 
   // AML/KYC data is compliance-sensitive — load it only for ADMIN/PARTNER, and
   // never include it in the main subject query a LAWYER can run.
@@ -189,6 +221,7 @@ async function loadSubject(id: string) {
     aml,
     portalEnabled,
     portal,
+    contactMatters,
   };
 }
 
@@ -241,6 +274,7 @@ export default async function SubjectDetailPage({
       aml: null,
       portalEnabled: false,
       portal: null,
+      contactMatters: { projects: [], cases: [] },
     },
     () => loadSubject(id),
   );
@@ -249,8 +283,16 @@ export default async function SubjectDetailPage({
     notFound();
   }
 
-  const { subject, canArchive, canEdit, canAml, aml, portalEnabled, portal } =
-    result.data;
+  const {
+    subject,
+    canArchive,
+    canEdit,
+    canAml,
+    aml,
+    portalEnabled,
+    portal,
+    contactMatters,
+  } = result.data;
   const projects = subject ? projectGroups(subject) : { active: [], inactive: [] };
   const links = subject?.ico ? icoLinks(subject.ico) : null;
 
@@ -413,6 +455,13 @@ export default async function SubjectDetailPage({
               </div>
             </div>
           </Section>
+          <SubjectContactPersons
+            subjectId={subject.id}
+            contacts={subject.contactPersons}
+            projects={contactMatters.projects}
+            cases={contactMatters.cases}
+            canEdit={canEdit}
+          />
           <Section title="Podmínky poskytování právních služeb">
             <div className="grid gap-4 md:grid-cols-3">
               <div className="md:col-span-3">
