@@ -108,6 +108,14 @@ type WorkLogsPageData = {
   canArchive: boolean;
   canViewRates: boolean;
   canSetBillable: boolean;
+  // Souhrn hodin přihlášeného uživatele (jeho vlastní výkazy).
+  monthSummary: {
+    billable: number;
+    needsApproval: number;
+    internal: number;
+    total: number;
+  };
+  weekHours: number;
 };
 
 function numberParam(value: string) {
@@ -147,12 +155,30 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
       canArchive: false,
       canViewRates: false,
       canSetBillable: false,
+      monthSummary: { billable: 0, needsApproval: 0, internal: 0, total: 0 },
+      weekHours: 0,
     },
     async () => {
       const prisma = getPrisma();
       const currentUser = await getCurrentUser();
       const tableView = await getCurrentTableView("workLogs");
-      const [workLogs, subjects, projects, cases, tasks, users] = await Promise.all([
+      // Hranice pro souhrn: aktuální měsíc a aktuální týden (od pondělí).
+      const now = new Date();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+      const weekday = (now.getDay() + 6) % 7; // pondělí = 0
+      const weekStart = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate() - weekday,
+      );
+      const nextWeekStart = new Date(
+        weekStart.getFullYear(),
+        weekStart.getMonth(),
+        weekStart.getDate() + 7,
+      );
+      const [workLogs, subjects, projects, cases, tasks, users, monthGroups, weekAgg] =
+        await Promise.all([
         prisma.workLog.findMany({
           where: andWhere(
             archivedWhere(archive),
@@ -253,7 +279,46 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
           orderBy: { name: "asc" },
           select: { id: true, name: true },
         }),
+        prisma.workLog.groupBy({
+          by: ["billingStatus"],
+          where: {
+            userId: currentUser.id,
+            archivedAt: null,
+            workDate: { gte: monthStart, lt: nextMonthStart },
+          },
+          _sum: { hours: true },
+        }),
+        prisma.workLog.aggregate({
+          where: {
+            userId: currentUser.id,
+            archivedAt: null,
+            workDate: { gte: weekStart, lt: nextWeekStart },
+          },
+          _sum: { hours: true },
+        }),
       ]);
+
+      const sumForStatus = (status: BillingStatus) =>
+        Number(
+          monthGroups.find((group) => group.billingStatus === status)?._sum
+            .hours ?? 0,
+        );
+      const billable = sumForStatus(BillingStatus.BILLABLE);
+      const needsApproval = sumForStatus(BillingStatus.NEEDS_APPROVAL);
+      const internal = monthGroups
+        .filter(
+          (group) =>
+            group.billingStatus !== BillingStatus.BILLABLE &&
+            group.billingStatus !== BillingStatus.NEEDS_APPROVAL,
+        )
+        .reduce((acc, group) => acc + Number(group._sum.hours ?? 0), 0);
+      const monthSummary = {
+        billable,
+        needsApproval,
+        internal,
+        total: billable + needsApproval + internal,
+      };
+      const weekHours = Number(weekAgg._sum.hours ?? 0);
 
       return {
         workLogs: workLogs.map((workLog) => ({
@@ -269,6 +334,8 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
         canArchive: canViewAllLegalData(currentUser),
         canViewRates: canViewRates(currentUser),
         canSetBillable: canSetBillableStatus(currentUser),
+        monthSummary,
+        weekHours,
       };
     },
   );
@@ -306,6 +373,36 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
         databaseReady={result.databaseReady}
         error={result.error}
       />
+      <Section title="Můj přehled hodin">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          {[
+            { label: "Tento týden", value: result.data.weekHours },
+            { label: "Tento měsíc celkem", value: result.data.monthSummary.total },
+            {
+              label: "Fakturovatelné (měsíc)",
+              value: result.data.monthSummary.billable,
+            },
+            {
+              label: "Ke schválení (měsíc)",
+              value: result.data.monthSummary.needsApproval,
+            },
+            {
+              label: "Interní / odpis (měsíc)",
+              value: result.data.monthSummary.internal,
+            },
+          ].map((cell) => (
+            <div
+              key={cell.label}
+              className="rounded-lg border border-[#d4e2dc] bg-white p-4 shadow-sm shadow-[#072924]/5"
+            >
+              <p className="text-sm font-medium text-[#5f756e]">{cell.label}</p>
+              <p className="mt-2 text-2xl font-semibold text-[#072924]">
+                {formatHours(cell.value)}
+              </p>
+            </div>
+          ))}
+        </div>
+      </Section>
       <Section title="Filtry">
         <form className="grid gap-4">
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
