@@ -217,6 +217,7 @@ export async function issueInvoice(formData: FormData) {
     const vatMode = vatModeForProfile(profile.vatPayer);
 
     const year = issueDate.getUTCFullYear();
+    const month = issueDate.getUTCMonth() + 1;
 
     // Ensure the sequence row exists (race-safe), then lock it so concurrent
     // issues serialize on the same number assignment.
@@ -235,7 +236,14 @@ export async function issueInvoice(formData: FormData) {
     }
 
     const nextNumber = Number(seq.lastNumber) + 1;
-    const number = formatInvoiceNumber(seq.prefix, year, nextNumber);
+    // Prefix je nově konfigurovatelný na fakturačním profilu kanceláře; číselná
+    // řada (lastNumber) zůstává po ročníku, v čísle se navíc zobrazuje měsíc.
+    const number = formatInvoiceNumber(
+      profile.invoicePrefix,
+      year,
+      month,
+      nextNumber,
+    );
 
     await tx.invoiceNumberSequence.update({
       where: { id: seq.id },

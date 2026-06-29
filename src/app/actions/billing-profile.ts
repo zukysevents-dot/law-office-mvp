@@ -37,6 +37,7 @@ export async function saveBillingProfile(formData: FormData) {
       Math.round(optionalNumber(formData, "defaultDueDays") ?? 14),
     ),
     invoiceNote: optionalString(formData, "invoiceNote"),
+    invoicePrefix: optionalString(formData, "invoicePrefix") ?? "",
   };
 
   const previous = await prisma.organizationBillingProfile.findUnique({

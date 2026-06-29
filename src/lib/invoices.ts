@@ -50,13 +50,23 @@ export function vatModeForProfile(
   return profileVatPayer ? VatMode.PAYER : VatMode.NON_PAYER;
 }
 
-// Gap-free invoice number, e.g. prefix="" year=2026 seq=1 → "20260001".
+// Gap-free invoice number ve tvaru PREFIX_ROK_MĚSÍC_pořadové, pořadové číslo
+// vždy na 4 místa. Prázdný prefix se vynechá.
+//   formatInvoiceNumber("AK", 2026, 6, 1) → "AK_2026_06_0001"
+//   formatInvoiceNumber("", 2026, 6, 1)   → "2026_06_0001"
 export function formatInvoiceNumber(
   prefix: string,
   year: number,
+  month: number,
   seq: number,
 ): string {
-  return `${prefix}${year}${String(seq).padStart(4, "0")}`;
+  const parts = [
+    prefix.trim(),
+    String(year),
+    String(month).padStart(2, "0"),
+    String(seq).padStart(4, "0"),
+  ].filter((part) => part.length > 0);
+  return parts.join("_");
 }
 
 // Invoice status after recording a payment: fully covered → PAID, otherwise

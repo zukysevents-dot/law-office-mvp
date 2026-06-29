@@ -111,6 +111,17 @@ export default async function BillingSettingsPage() {
                 <span>Kancelář je plátce DPH</span>
               </label>
             </div>
+            <Field label="Prefix čísla faktury">
+              <TextInput
+                name="invoicePrefix"
+                defaultValue={profile?.invoicePrefix ?? "AK"}
+                placeholder="AK"
+              />
+              <p className="mt-1 text-xs text-[#5f756e]">
+                Číslo faktury má tvar PREFIX_ROK_MĚSÍC_pořadové (např.
+                AK_2026_06_0001). Prázdný prefix → ROK_MĚSÍC_pořadové.
+              </p>
+            </Field>
             <Field label="Patička / standardní text na faktuře">
               <TextArea
                 name="invoiceNote"

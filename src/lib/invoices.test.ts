@@ -13,23 +13,24 @@ import {
 
 // --- formatInvoiceNumber -----------------------------------------------------
 
-test("formatInvoiceNumber: no prefix, pads seq to 4 places", () => {
-  assert.equal(formatInvoiceNumber("", 2026, 1), "20260001");
-  assert.equal(formatInvoiceNumber("", 2026, 42), "20260042");
+test("formatInvoiceNumber: no prefix → ROK_MĚSÍC_pořadové (seq na 4 místa)", () => {
+  assert.equal(formatInvoiceNumber("", 2026, 6, 1), "2026_06_0001");
+  assert.equal(formatInvoiceNumber("", 2026, 12, 42), "2026_12_0042");
 });
 
-test("formatInvoiceNumber: prefix is prepended verbatim", () => {
-  assert.equal(formatInvoiceNumber("F", 2026, 7), "F20260007");
+test("formatInvoiceNumber: prefix se předřadí (AK_ROK_MĚSÍC_pořadové)", () => {
+  assert.equal(formatInvoiceNumber("AK", 2026, 6, 7), "AK_2026_06_0007");
+  assert.equal(formatInvoiceNumber("  AK  ", 2026, 1, 7), "AK_2026_01_0007");
 });
 
-test("formatInvoiceNumber: seq > 9999 is not truncated", () => {
-  // padStart only pads, never cuts — large sequences must survive intact.
-  assert.equal(formatInvoiceNumber("", 2026, 12345), "202612345");
+test("formatInvoiceNumber: seq > 9999 se neořezává", () => {
+  // padStart jen doplňuje, nikdy nekrátí — velké řady musí přežít celé.
+  assert.equal(formatInvoiceNumber("", 2026, 6, 12345), "2026_06_12345");
 });
 
-test("formatInvoiceNumber: boundary at exactly 4 digits keeps no extra padding", () => {
-  assert.equal(formatInvoiceNumber("", 2026, 9999), "20269999");
-  assert.equal(formatInvoiceNumber("", 2026, 10000), "202610000");
+test("formatInvoiceNumber: měsíc se doplní na 2 místa", () => {
+  assert.equal(formatInvoiceNumber("AK", 2026, 9, 9999), "AK_2026_09_9999");
+  assert.equal(formatInvoiceNumber("AK", 2026, 10, 10000), "AK_2026_10_10000");
 });
 
 // --- vatModeForProfile -------------------------------------------------------

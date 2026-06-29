@@ -1049,6 +1049,9 @@ model OrganizationBillingProfile {
   vatPayer       Boolean  @default(false)
   defaultDueDays Int      @default(14)
   invoiceNote    String?
+  // Prefix čísla faktury. Číslo má tvar PREFIX_ROK_MĚSÍC_pořadové (např.
+  // AK_2026_06_0001). Prázdný prefix → ROK_MĚSÍC_pořadové.
+  invoicePrefix  String   @default("AK")
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
