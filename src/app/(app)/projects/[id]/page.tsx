@@ -2,8 +2,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { archiveProject, restoreProject } from "@/app/actions/projects";
+import {
+  addProjectAssignee,
+  removeProjectAssignee,
+} from "@/app/actions/project-assignees";
 import { addProjectSubjectRelation } from "@/app/actions/subject-relations";
 import { ArchiveActionForm } from "@/components/archive-action-form";
+import { AssigneeSection } from "@/components/assignee-section";
 import { ArchiveNotice } from "@/components/archive-notice";
 import { Field, SelectInput, TextArea } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
@@ -49,12 +54,20 @@ async function loadProject(id: string) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
 
-  const [project, subjects] = await Promise.all([
+  const [project, subjects, users] = await Promise.all([
     prisma.project.findFirst({
       where: andWhere({ id }, projectVisibilityWhere(currentUser)),
       include: {
         mainSubject: { select: { id: true, name: true, ico: true } },
         responsibleUser: { select: { name: true } },
+        assignees: {
+          orderBy: { assignedAt: "asc" },
+          select: {
+            id: true,
+            userId: true,
+            user: { select: { id: true, name: true } },
+          },
+        },
         subjectRelations: {
           orderBy: { createdAt: "desc" },
           include: {
@@ -122,11 +135,21 @@ async function loadProject(id: string) {
       orderBy: { name: "asc" },
       select: { id: true, name: true, ico: true },
     }),
+    // Kandidáti na řešitele = aktivní členové stejné kanceláře (org-scoped).
+    prisma.organizationMember.findMany({
+      where: {
+        organizationId: currentUser.organizationId ?? undefined,
+        status: "ACTIVE",
+      },
+      orderBy: { user: { name: "asc" } },
+      select: { user: { select: { id: true, name: true } } },
+    }),
   ]);
 
   return {
     project,
     subjects,
+    users: users.map((row) => row.user),
     canArchive: canViewAllLegalData(currentUser),
     canEdit: project ? canEditRecord(currentUser, "Project", project) : false,
   };
@@ -137,6 +160,7 @@ type ProjectDetailData = Awaited<ReturnType<typeof loadProject>>;
 const emptyProjectDetail: ProjectDetailData = {
   project: null,
   subjects: [],
+  users: [],
   canArchive: false,
   canEdit: false,
 };
@@ -156,7 +180,7 @@ export default async function ProjectDetailPage({
     notFound();
   }
 
-  const { project, subjects, canArchive, canEdit } = result.data;
+  const { project, subjects, users, canArchive, canEdit } = result.data;
 
   return (
     <>
@@ -245,6 +269,16 @@ export default async function ProjectDetailPage({
               </div>
             </div>
           </Section>
+          <AssigneeSection
+            title="Řešitelé projektu"
+            assignees={project.assignees}
+            candidates={users}
+            parentField="projectId"
+            parentId={project.id}
+            addAction={addProjectAssignee}
+            removeAction={removeProjectAssignee}
+            canEdit={canEdit}
+          />
           <Section title="Subjektové vazby projektu">
             {project.subjectRelations.length > 0 ? (
               <div className="overflow-x-auto">

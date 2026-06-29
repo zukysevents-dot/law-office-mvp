@@ -24,7 +24,10 @@ async function loadCaseEdit(id: string) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
   const [legalCase, projects, users] = await Promise.all([
-    prisma.case.findUnique({ where: { id } }),
+    prisma.case.findUnique({
+      where: { id },
+      include: { assignees: { select: { userId: true } } },
+    }),
     prisma.project.findMany({
       where: andWhere(
         { archivedAt: null },
@@ -33,10 +36,14 @@ async function loadCaseEdit(id: string) {
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
-    prisma.user.findMany({
-      where: { active: true },
-      orderBy: { name: "asc" },
-      select: { id: true, name: true },
+    // Org-scoped: jen aktivní členové stejné kanceláře (ne napříč orgy).
+    prisma.organizationMember.findMany({
+      where: {
+        organizationId: currentUser.organizationId ?? undefined,
+        status: "ACTIVE",
+      },
+      orderBy: { user: { name: "asc" } },
+      select: { user: { select: { id: true, name: true } } },
     }),
   ]);
 
@@ -46,7 +53,7 @@ async function loadCaseEdit(id: string) {
         ? legalCase
         : null,
     projects,
-    users,
+    users: users.map((row) => row.user),
   };
 }
 

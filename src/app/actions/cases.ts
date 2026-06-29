@@ -91,6 +91,7 @@ export async function updateCase(formData: FormData) {
 
   const oldCase = await prisma.case.findUniqueOrThrow({
     where: { id: caseId },
+    include: { assignees: { select: { userId: true } } },
   });
   assertCanEditRecord(currentUser, "Case", oldCase);
 

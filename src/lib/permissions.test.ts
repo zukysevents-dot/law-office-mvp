@@ -18,6 +18,7 @@ import {
   canManagePortal,
   canViewAllLegalData,
   canViewRecord,
+  caseVisibilityWhere,
   courtHearingVisibilityWhere,
   dataMessageVisibilityWhere,
   deadlineVisibilityWhere,
@@ -26,6 +27,8 @@ import {
   hrAbsenceVisibilityWhere,
   hrAttendanceVisibilityWhere,
   hrEmployeeVisibilityWhere,
+  invoiceVisibilityWhere,
+  projectVisibilityWhere,
   taskVisibilityWhere,
   workLogVisibilityWhere,
 } from "./permissions";
@@ -143,8 +146,9 @@ test("taskVisibilityWhere: TRAINEE/INTERN scoped to direct assignment only", () 
   });
 });
 
-test("taskVisibilityWhere: LAWYER gets a broader OR (direct + responsibility)", () => {
-  // org-scoped: { AND: [{ organizationId }, { OR: [...4 clauses] }] }.
+test("taskVisibilityWhere: LAWYER gets a broader OR (direct + responsibility + assignee)", () => {
+  // org-scoped: { AND: [{ organizationId }, { OR: [...7 clauses] }] } — 4
+  // responsibility paths + 3 assignee mirrors (project/case/case→project).
   const where = taskVisibilityWhere(lawyer) as {
     AND?: Array<{ organizationId?: string; OR?: unknown[] }>;
   };
@@ -152,7 +156,7 @@ test("taskVisibilityWhere: LAWYER gets a broader OR (direct + responsibility)", 
   assert.deepEqual(where.AND?.[0], { organizationId: org });
   const orClause = where.AND?.[1];
   assert.ok(Array.isArray(orClause?.OR));
-  assert.equal(orClause?.OR?.length, 4);
+  assert.equal(orClause?.OR?.length, 7);
 });
 
 test("workLogVisibilityWhere: TRAINEE/INTERN see only their own logs", () => {
@@ -180,8 +184,9 @@ test("dataMessageVisibilityWhere: ADMIN/PARTNER see all messages in their org", 
   assert.deepEqual(dataMessageVisibilityWhere(partner), { organizationId: org });
 });
 
-test("dataMessageVisibilityWhere: LAWYER scoped to own + responsible-case messages", () => {
-  // org-scoped: { AND: [{ organizationId }, { OR: [...3 clauses] }] }.
+test("dataMessageVisibilityWhere: LAWYER scoped to own + responsible/assigned-case messages", () => {
+  // org-scoped: { AND: [{ organizationId }, { OR: [...5 clauses] }] } — own +
+  // case/project responsibility + case/project assignee mirrors.
   const expected = {
     AND: [
       { organizationId: org },
@@ -190,6 +195,12 @@ test("dataMessageVisibilityWhere: LAWYER scoped to own + responsible-case messag
           { createdById: "u-lawyer" },
           { case: { is: { responsibleUserId: "u-lawyer" } } },
           { case: { is: { project: { is: { responsibleUserId: "u-lawyer" } } } } },
+          { case: { is: { assignees: { some: { userId: "u-lawyer" } } } } },
+          {
+            case: {
+              is: { project: { is: { assignees: { some: { userId: "u-lawyer" } } } } },
+            },
+          },
         ],
       },
     ],
@@ -197,7 +208,7 @@ test("dataMessageVisibilityWhere: LAWYER scoped to own + responsible-case messag
   assert.deepEqual(dataMessageVisibilityWhere(lawyer), expected);
 });
 
-test("dataMessageVisibilityWhere: LAWYER OR has exactly the 3 documented branches", () => {
+test("dataMessageVisibilityWhere: LAWYER OR has exactly the 5 documented branches", () => {
   const where = dataMessageVisibilityWhere(lawyer) as {
     AND?: Array<{ organizationId?: string; OR?: unknown[] }>;
   };
@@ -205,7 +216,7 @@ test("dataMessageVisibilityWhere: LAWYER OR has exactly the 3 documented branche
   assert.deepEqual(where.AND?.[0], { organizationId: org });
   const orClause = where.AND?.[1];
   assert.ok(Array.isArray(orClause?.OR));
-  assert.equal(orClause?.OR?.length, 3);
+  assert.equal(orClause?.OR?.length, 5);
 });
 
 test("dataMessageVisibilityWhere: TRAINEE/INTERN see only messages they created", () => {
@@ -266,7 +277,7 @@ test("deadlineVisibilityWhere: ADMIN/PARTNER see all deadlines in their org", ()
   assert.deepEqual(deadlineVisibilityWhere(partner), { organizationId: org });
 });
 
-test("deadlineVisibilityWhere: LAWYER scoped to own + responsible-case deadlines", () => {
+test("deadlineVisibilityWhere: LAWYER scoped to own + responsible/assigned-case deadlines", () => {
   const expected = {
     AND: [
       { organizationId: org },
@@ -276,6 +287,12 @@ test("deadlineVisibilityWhere: LAWYER scoped to own + responsible-case deadlines
           { createdById: "u-lawyer" },
           { case: { is: { responsibleUserId: "u-lawyer" } } },
           { case: { is: { project: { is: { responsibleUserId: "u-lawyer" } } } } },
+          { case: { is: { assignees: { some: { userId: "u-lawyer" } } } } },
+          {
+            case: {
+              is: { project: { is: { assignees: { some: { userId: "u-lawyer" } } } } },
+            },
+          },
         ],
       },
     ],
@@ -305,7 +322,8 @@ test("courtHearingVisibilityWhere: ADMIN org-wide; LAWYER scoped", () => {
     AND?: Array<{ organizationId?: string; OR?: unknown[] }>;
   };
   assert.deepEqual(lawyerWhere.AND?.[0], { organizationId: org });
-  assert.equal(lawyerWhere.AND?.[1]?.OR?.length, 4);
+  // 4 responsibility paths + 2 case/project assignee mirrors.
+  assert.equal(lawyerWhere.AND?.[1]?.OR?.length, 6);
 });
 
 // --- F5 documents: management gates + visibility ---
@@ -345,13 +363,14 @@ test("documentVisibilityWhere: ADMIN/PARTNER org-wide; TRAINEE/INTERN own-only",
   });
 });
 
-test("documentVisibilityWhere: LAWYER OR covers created + case + subject branches", () => {
+test("documentVisibilityWhere: LAWYER OR covers created + case + assignee + subject branches", () => {
   const where = documentVisibilityWhere(lawyer) as {
     AND?: Array<{ organizationId?: string; OR?: unknown[] }>;
   };
   assert.deepEqual(where.AND?.[0], { organizationId: org });
-  // created + case-responsible + case-project-responsible + subject-visible
-  assert.equal(where.AND?.[1]?.OR?.length, 4);
+  // created + case-responsible + case-project-responsible + case-assignee +
+  // case-project-assignee + subject-visible
+  assert.equal(where.AND?.[1]?.OR?.length, 6);
 });
 
 test("documentTemplateVisibilityWhere: org-scoped read, fail-closed without org", () => {
@@ -586,4 +605,90 @@ test("hrAbsenceVisibilityWhere: missing org → fail-closed deny clause", () => 
   assert.deepEqual(hrAbsenceVisibilityWhere(noOrg), { id: "__role_denied__" });
   assert.deepEqual(hrAbsenceVisibilityWhere(null), { id: "__role_denied__" });
   assert.deepEqual(hrAbsenceVisibilityWhere(undefined), { id: "__role_denied__" });
+});
+
+// --- Multi-assignee visibility: assignee mirrors responsibleUser on Project/Case ---
+function orBranches(where: unknown): unknown[] {
+  const and = (where as { AND?: Array<{ OR?: unknown[] }> }).AND;
+  return and?.[1]?.OR ?? [];
+}
+
+test("projectVisibilityWhere: LAWYER OR adds direct + via-case assignee mirrors", () => {
+  const branches = orBranches(projectVisibilityWhere(lawyer));
+  assert.equal(branches.length, 6);
+  assert.ok(
+    branches.some(
+      (b) => JSON.stringify(b) === JSON.stringify({ assignees: { some: { userId: "u-lawyer" } } }),
+    ),
+  );
+});
+
+test("projectVisibilityWhere: TRAINEE sees assigned projects (assignee mirror added)", () => {
+  const branches = orBranches(projectVisibilityWhere(trainee));
+  assert.equal(branches.length, 4);
+  assert.ok(
+    branches.some(
+      (b) => JSON.stringify(b) === JSON.stringify({ assignees: { some: { userId: "u-trainee" } } }),
+    ),
+  );
+});
+
+test("caseVisibilityWhere: LAWYER and TRAINEE gain case + project-assignee paths", () => {
+  assert.equal(orBranches(caseVisibilityWhere(lawyer)).length, 6);
+  assert.equal(orBranches(caseVisibilityWhere(trainee)).length, 4);
+});
+
+test("workLogVisibilityWhere: LAWYER OR mirrors assignee on project/case", () => {
+  assert.equal(orBranches(workLogVisibilityWhere(lawyer)).length, 8);
+});
+
+test("invoiceVisibilityWhere: LAWYER gains assignee paths; juniors stay created-only", () => {
+  // 5 responsibility/ownership paths + 3 assignee mirrors (project/case/case→project).
+  assert.equal(orBranches(invoiceVisibilityWhere(lawyer)).length, 8);
+  // Sensitive billing data must NOT widen for juniors — created-only fallback.
+  assert.deepEqual(invoiceVisibilityWhere(trainee), {
+    AND: [{ organizationId: org }, { createdById: "u-trainee" }],
+  });
+  assert.deepEqual(invoiceVisibilityWhere(intern), {
+    AND: [{ organizationId: org }, { createdById: "u-intern" }],
+  });
+});
+
+test("canViewRecord: LAWYER and TRAINEE see a project/case they're assigned to", () => {
+  const projectAssignedToLawyer = { assignees: [{ userId: "u-lawyer" }] };
+  const projectAssignedToTrainee = { assignees: [{ userId: "u-trainee" }] };
+  assert.equal(canViewRecord(lawyer, "Project", projectAssignedToLawyer), true);
+  assert.equal(canViewRecord(trainee, "Project", projectAssignedToTrainee), true);
+  // INTERN is the most restricted role — assignment grants it nothing.
+  assert.equal(
+    canViewRecord(intern, "Project", { assignees: [{ userId: "u-intern" }] }),
+    false,
+  );
+  // A case is visible to an assignee of its parent project too.
+  assert.equal(
+    canViewRecord(trainee, "Case", { project: { assignees: [{ userId: "u-trainee" }] } }),
+    true,
+  );
+});
+
+test("canEditRecord: LAWYER assignee may edit project/case; TRAINEE assignee may not", () => {
+  assert.equal(
+    canEditRecord(lawyer, "Project", { assignees: [{ userId: "u-lawyer" }] }),
+    true,
+  );
+  assert.equal(
+    canEditRecord(lawyer, "Case", { assignees: [{ userId: "u-lawyer" }] }),
+    true,
+  );
+  // Edit stays LAWYER-only — a trainee assignee can view but never edit.
+  assert.equal(
+    canEditRecord(trainee, "Case", { assignees: [{ userId: "u-trainee" }] }),
+    false,
+  );
+  // Project-assignee does NOT cascade to editing the project's cases (mirrors
+  // that a project-responsible user can't edit its cases either).
+  assert.equal(
+    canEditRecord(lawyer, "Case", { project: { assignees: [{ userId: "u-lawyer" }] } }),
+    false,
+  );
 });

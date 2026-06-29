@@ -43,7 +43,13 @@ export async function provisionSharepointFolder(formData: FormData) {
   if (entityType === "Subject") {
     const record = await prisma.subject.findUniqueOrThrow({
       where: { id },
-      select: { id: true, name: true, ico: true, sharepointUrl: true },
+      select: {
+        id: true,
+        organizationId: true,
+        name: true,
+        ico: true,
+        sharepointUrl: true,
+      },
     });
     assertCanEditRecord(currentUser, "Subject", record);
     input = { type: "Subject", record };
@@ -53,7 +59,14 @@ export async function provisionSharepointFolder(formData: FormData) {
   } else if (entityType === "Project") {
     const record = await prisma.project.findUniqueOrThrow({
       where: { id },
-      select: { id: true, name: true, sharepointUrl: true, responsibleUserId: true },
+      select: {
+        id: true,
+        organizationId: true,
+        name: true,
+        sharepointUrl: true,
+        responsibleUserId: true,
+        assignees: { select: { userId: true } },
+      },
     });
     assertCanEditRecord(currentUser, "Project", record);
     input = { type: "Project", record: { id: record.id, name: record.name } };
@@ -65,10 +78,12 @@ export async function provisionSharepointFolder(formData: FormData) {
       where: { id },
       select: {
         id: true,
+        organizationId: true,
         name: true,
         fileNumber: true,
         sharepointUrl: true,
         responsibleUserId: true,
+        assignees: { select: { userId: true } },
         project: { select: { id: true, name: true } },
       },
     });

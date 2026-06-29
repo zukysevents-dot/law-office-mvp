@@ -28,7 +28,10 @@ async function loadProjectEdit(id: string) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
   const [project, subjects, users] = await Promise.all([
-    prisma.project.findUnique({ where: { id } }),
+    prisma.project.findUnique({
+      where: { id },
+      include: { assignees: { select: { userId: true } } },
+    }),
     prisma.subject.findMany({
       where: andWhere(
         { archivedAt: null },
@@ -37,10 +40,14 @@ async function loadProjectEdit(id: string) {
       orderBy: { name: "asc" },
       select: { id: true, name: true, ico: true },
     }),
-    prisma.user.findMany({
-      where: { active: true },
-      orderBy: { name: "asc" },
-      select: { id: true, name: true },
+    // Org-scoped: jen aktivní členové stejné kanceláře (ne napříč orgy).
+    prisma.organizationMember.findMany({
+      where: {
+        organizationId: currentUser.organizationId ?? undefined,
+        status: "ACTIVE",
+      },
+      orderBy: { user: { name: "asc" } },
+      select: { user: { select: { id: true, name: true } } },
     }),
   ]);
 
@@ -48,7 +55,7 @@ async function loadProjectEdit(id: string) {
     project:
       project && canEditRecord(currentUser, "Project", project) ? project : null,
     subjects,
-    users,
+    users: users.map((row) => row.user),
   };
 }
 

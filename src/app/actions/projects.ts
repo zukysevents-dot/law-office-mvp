@@ -84,6 +84,7 @@ export async function updateProject(formData: FormData) {
 
   const oldProject = await prisma.project.findUniqueOrThrow({
     where: { id: projectId },
+    include: { assignees: { select: { userId: true } } },
   });
   assertCanEditRecord(currentUser, "Project", oldProject);
 

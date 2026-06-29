@@ -1,0 +1,166 @@
+{
+  "mode": "design",
+  "status": "approved",
+  "summary": "Multi-assignee viditelnost pro Project a Case. Doporučuji explicitní join modely ProjectAssignee/CaseAssignee (org-scoped, auditovatelné, konzistentní s repo patternem SubjectRelation/ContactPerson) místo implicitní Prisma M:N. Sémantika: assignee = VIEW pro LAWYER i TRAINEE; EDIT pouze pro LAWYER assignee (zrcadlí responsibleUser); INTERN zůstává nejomezenější (žádné rozšíření). Změny se soustředí do src/lib/permissions.ts — přidat OR člen `{ assignees: { some: { userId } } }` (resp. přes case/project relaci) do LAWYER/TRAINEE větví dotčených helperů, plus rozšířit in-memory canViewRecord/canEditRecord o pole assignees. Pozor na rekurzi v subjectVisibilityWhere (skládá project/caseVisibilityWhere — ta se opraví automaticky) a na over-broad OR jako zdroj úniku dat.",
+  "assumptions": [
+    "Coding agent VERIFIKUJE strukturu cases/[id]/page.tsx a cases/[id]/edit/page.tsx — nečetl jsem je, předpokládám zrcadlení projects (stejné loadProject/loadProjectEdit + select responsibleUser{name} + users findMany). Pokud se liší, aplikuj stejný princip.",
+    "Vždy platí org isolation: ProjectAssignee/CaseAssignee NESOU organizationId a FK na User. Assignee je člen STEJNÉ organizace jako project/case (žádné cross-org přiřazení).",
+    "Cílem feature je VIEW; EDIT je vedlejší a drží se stávající responsibleUser sémantiky (jen LAWYER edituje project/case). TRAINEE/INTERN nikdy needitují project/case ani jako assignee.",
+    "responsibleUserId ZŮSTÁVÁ (jedna primárně odpovědná osoba). Assignees jsou DOPLŇKOVÍ řešitelé — feature je aditivní, nic neodebírá. responsibleUser se NEpřesouvá do assignees.",
+    "Prisma 7 + PostgreSQL. Migrace je ručně psaná (DB v sandboxu nedostupná), ověření offline přes npm run db:generate + npm run build + npm test. Aplikace na prod jde zvlášť přes Supabase MCP.",
+    "Feature nepřidává žádný enum → není potřeba samostatná enum-ADD-VALUE migrace. Stačí jedna migrace s join tabulkami.",
+    "Cílem NENÍ rozšířit viditelnost odvozených dat NAD rámec dnešní responsibleUser logiky — assignee dostává přesně to, co dnes dostává responsibleUser (zrcadlení každého `responsibleUserId: userId` OR členu)."
+  ],
+  "open_questions": [
+    "Smí přiřazovat/odebírat assignees i odpovědný LAWYER (responsibleUser daného project/case), nebo jen ADMIN/PARTNER? Doporučuji: ADMIN/PARTNER VŽDY + LAWYER, který je responsibleUser NEBO existující assignee s edit právem (tj. canEditRecord === true). To je konzistentní s gate na editaci project/case. Pokud právníci chtějí přiřazování jen pro vedení, omez na canViewAllLegalData. NEBLOKUJE návrh — má bezpečný default (assertCanEditRecord na rodičovský project/case).",
+    "Má přiřazení na PROJECT kaskádovat viditelnost i na CASES daného projektu (a jejich odvozená data)? Dnešní responsibleUser na projektu TO DĚLÁ (caseVisibilityWhere má `{ project: { is: { responsibleUserId: userId } } }`). Doporučuji ANO — zrcadlit i pro project-assignee, ať assignee projektu vidí celý projekt včetně případů. Promítnuto v helper plánu níže. Pokud se nepotvrdí, vynech project-assignee členy v case/task/workLog/reference/deadline/document/courtHearing/dataMessage/invoice helperech a nech jen case-assignee."
+  ],
+  "architecture": {
+    "data_model": [
+      {
+        "decision": "Schéma: EXPLICITNÍ join modely ProjectAssignee + CaseAssignee (DOPORUČENO), NE implicitní Prisma M:N.",
+        "rationale": "1) Repo pattern jednoznačně preferuje explicitní join modely se sloupci (SubjectRelation, ContactPerson, OrganizationMember) — implicitní M:N (_ProjectToUser) by byl jediná výjimka. 2) Org-scoping: implicitní M:N join tabulka NEMÁ organizationId → nelze ji org-filtrovat ani indexovat per-org; explicitní model nese organizationId konzistentně s celým schématem. 3) Auditovatelnost: potřebujeme assignedAt + assignedById pro auditní stopu (advokátní prostředí), implicitní M:N to neumí. 4) Dotazování ve visibility: `{ assignees: { some: { userId } } }` (přes relaci projectAssignees/caseAssignees) je stejně jednoduché jako implicitní varianta. 5) Velikost migrace je malá (2 tabulky). Jediná nevýhoda explicitního modelu (verbosnější API) je v tomto repu naopak standard.",
+        "models": [
+          "model ProjectAssignee {\n  id             String   @id @default(cuid())\n  organizationId String\n  projectId      String\n  userId         String\n  assignedAt     DateTime @default(now())\n  assignedById   String?\n\n  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)\n  project      Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)\n  user         User         @relation(\"ProjectAssigneeUser\", fields: [userId], references: [id], onDelete: Cascade)\n  assignedBy   User?        @relation(\"ProjectAssigneeAssignedBy\", fields: [assignedById], references: [id], onDelete: SetNull)\n\n  @@unique([projectId, userId])\n  @@index([organizationId])\n  @@index([projectId])\n  @@index([userId])\n  @@map(\"projectAssignees\")\n}",
+          "model CaseAssignee {\n  id             String   @id @default(cuid())\n  organizationId String\n  caseId         String\n  userId         String\n  assignedAt     DateTime @default(now())\n  assignedById   String?\n\n  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)\n  case         Case         @relation(fields: [caseId], references: [id], onDelete: Cascade)\n  user         User         @relation(\"CaseAssigneeUser\", fields: [userId], references: [id], onDelete: Cascade)\n  assignedBy   User?        @relation(\"CaseAssigneeAssignedBy\", fields: [assignedById], references: [id], onDelete: SetNull)\n\n  @@unique([caseId, userId])\n  @@index([organizationId])\n  @@index([caseId])\n  @@index([userId])\n  @@map(\"caseAssignees\")\n}"
+        ],
+        "back_relations": [
+          "Project: přidat `assignees ProjectAssignee[]` do bloku relací (vedle cases/tasks/...).",
+          "Case: přidat `assignees CaseAssignee[]` do bloku relací.",
+          "User: přidat `projectAssignees ProjectAssignee[] @relation(\"ProjectAssigneeUser\")`, `caseAssignees CaseAssignee[] @relation(\"CaseAssigneeUser\")`, `assignedProjectAssignees ProjectAssignee[] @relation(\"ProjectAssigneeAssignedBy\")`, `assignedCaseAssignees CaseAssignee[] @relation(\"CaseAssigneeAssignedBy\")`.",
+          "Organization: přidat `projectAssignees ProjectAssignee[]` a `caseAssignees CaseAssignee[]` do bloku relací."
+        ],
+        "onDelete_rationale": "project/case → onDelete: Cascade (přiřazení nemá smysl bez rodiče; rodiče se navíc měkce archivují, ne tvrdě mažou — kaskáda je pojistka). user → onDelete: Cascade na userId (deaktivovaný/smazaný uživatel ztrácí přiřazení; konzistentní s OrganizationMember). assignedById → SetNull (auditní stopa kdo přiřadil přežije smazání uživatele, stejně jako createdById všude jinde). organizationId → Restrict (stejně jako u všech org-scoped modelů)."
+      },
+      {
+        "decision": "Sémantika přiřazení: VIEW vždy, EDIT jen LAWYER.",
+        "rationale": "Assignee uděluje VIEW pro LAWYER i TRAINEE (jádro featuru = 'kdo to vidí'). EDIT na project/case uděluje jen LAWYER-assignee — to PŘESNĚ zrcadlí dnešní responsibleUser sémantiku (canEditRecord: project/case edituje jen LAWYER, který je responsibleUser; TRAINEE/INTERN needitují project/case nikdy). INTERN zůstává nejomezenější: NEPŘIDÁVÁ se do žádné assignee VIEW větve (INTERN dnes project/case nevidí přes responsibility, jen přes vlastní task/workLog — assignee tuto hranici nemění). Tím se nezavádí nový privilege-tier a sémantika je intuitivní: 'být přiřazen jako řešitel = vidím to, a pokud jsem advokát, můžu to i upravovat'."
+      }
+    ],
+    "api_endpoints": [
+      {
+        "note": "Repo nemá REST/tRPC API pro app logiku — vše jsou server actions (thick server actions, thin frontend). 'Endpointy' = nové server actions.",
+        "actions": [
+          {
+            "file": "src/app/actions/project-assignees.ts (NOVÝ)",
+            "exports": [
+              "addProjectAssignee(formData): vstup { projectId, userId }. Načti project (findUnique), assertCanEditRecord(currentUser, 'Project', project) → autorizace přiřazování = stejný gate jako edit projektu (ADMIN/PARTNER/LAWYER-responsible). Ověř, že userId je aktivní uživatel STEJNÉ org (prisma.user → membership / organizationId === currentUser.organizationId). prisma.projectAssignee.create({ data: { organizationId: project.organizationId, projectId, userId, assignedById: currentUser.id } }) — UNIKÁTNÍ [projectId,userId] zabrání duplicitě (catch P2002 → tichý no-op nebo hláška). writeAuditLog({ entityType:'ProjectAssignee', entityId, action:'CREATE', changedById, newValue:{ projectId, userId } }). revalidatePath('/projects'); revalidatePath(`/projects/${projectId}`).",
+              "removeProjectAssignee(formData): vstup { id } nebo { projectId, userId }. Načti záznam + project, assertCanEditRecord(currentUser,'Project',project). prisma.projectAssignee.delete (HARD delete — join řádek nemá vlastní obsah ani archivedAt; auditní stopa kdo/kdy přiřadil je v audit logu). writeAuditLog action:'DELETE'. revalidatePath stejně."
+            ]
+          },
+          {
+            "file": "src/app/actions/case-assignees.ts (NOVÝ)",
+            "exports": [
+              "addCaseAssignee(formData): analogicky k addProjectAssignee, gate assertCanEditRecord(currentUser,'Case',legalCase). revalidatePath('/cases'); revalidatePath(`/cases/${caseId}`); revalidatePath(`/projects/${legalCase.projectId}`).",
+              "removeCaseAssignee(formData): analogicky k removeProjectAssignee."
+            ]
+          }
+        ],
+        "idempotence": "Zápisy jsou idempotentní díky @@unique([projectId,userId]) / @@unique([caseId,userId]) — opakované přidání téhož uživatele neselže destruktivně (zachyť P2002). Žádné finanční/stavové transakce → nepotřebují $transaction obálku (na rozdíl od issueInvoice); jednoduchý create/delete + audit stačí."
+      }
+    ],
+    "folder_structure": [
+      "src/app/actions/project-assignees.ts — NOVÝ (add/removeProjectAssignee).",
+      "src/app/actions/case-assignees.ts — NOVÝ (add/removeCaseAssignee).",
+      "src/lib/permissions.ts — UPRAVIT (viz conflicts/handoff: OR členy + in-memory selecty).",
+      "src/lib/permissions.test.ts — UPRAVIT (rozšířit tvary where fragmentů + canViewRecord/canEditRecord o assignees).",
+      "prisma/schema.prisma — UPRAVIT (2 nové modely + back-relace).",
+      "prisma/migrations/20260630120000_project_case_assignees/migration.sql — NOVÝ.",
+      "src/app/(app)/projects/[id]/page.tsx — UPRAVIT (sekce 'Řešitelé projektu' + select assignees v include).",
+      "src/app/(app)/cases/[id]/page.tsx — UPRAVIT (sekce 'Řešitelé případu') — VERIFIKUJ strukturu.",
+      "src/components/assignee-section.tsx — VOLITELNĚ NOVÝ (sdílená UI sekce pro project i case, vzor ContactPerson sekce).",
+      "src/lib/labels.ts — případně přidat labely pro UI texty (volitelné)."
+    ],
+    "tech_choices": [
+      {
+        "choice": "Explicitní join model (Prisma) — bez nové knihovny.",
+        "rationale": "Žádná nová závislost. Drží se stávajícího Prisma 7 + ručních migrací. Alternativa (implicitní M:N) zamítnuta kvůli chybějícímu org-scopingu a auditu.",
+        "alternative": "Implicitní Prisma M:N (`assignees User[]` ↔ `User.assignedProjects Project[]`) — odmítnuto: bez organizationId/assignedAt/assignedById na join tabulce, nekonzistentní s repo patternem."
+      },
+      {
+        "choice": "UI: serverová sekce na detailu (vzor ContactPerson) s form action + select aktivních uživatelů, NE multiselect v edit formu.",
+        "rationale": "ContactPerson/SubjectRelation sekce na detailu je zavedený vzor (add/remove řádky), funguje bez client state library (repo ji nemá). Multiselect by vyžadoval custom client komponentu a řešení částečných updatů v jednom POST. Sekce add/remove je jednodušší a auditovatelná po jednotlivých změnách.",
+        "alternative": "Multiselect <select multiple> v edit formu projektu/případu — méně kódu v UI, ale horší audit (hromadný diff), nutnost diffovat add/remove v jedné akci a režie revalidate; nedoporučeno pro MVP."
+      }
+    ]
+  },
+  "conflicts": [
+    {
+      "severity": "info",
+      "where": "src/lib/permissions.ts — DEFINICE typů a helper plán (jádro featuru). Toto NENÍ konflikt v existujícím kódu, ale přesný předpis změn.",
+      "detail": "PŘIDAT pomocné where-buildery hned za directTaskUserWhere: `function projectAssigneeWhere(userId): Prisma.ProjectWhereInput { return { assignees: { some: { userId } } }; }` a `function caseAssigneeWhere(userId): Prisma.CaseWhereInput { return { assignees: { some: { userId } } }; }`. Tyto se použijí jako nové OR členy. Pro odvozené helpery se assignee promítá přes relaci na project/case: `{ project: { is: { assignees: { some: { userId } } } } }` a `{ case: { is: { assignees: { some: { userId } } } } }` (a kombinace case→project)."
+    },
+    {
+      "severity": "info",
+      "where": "permissions.ts:projectVisibilityWhere (LAWYER větev ~ř.263-272, TRAINEE větev ~ř.274-281)",
+      "detail": "LAWYER OR: přidat `{ assignees: { some: { userId } } }` vedle `{ responsibleUserId: userId }`. TRAINEE OR: přidat `{ assignees: { some: { userId } } }` (dnes TRAINEE vidí projekt jen přes task/workLog — assignee mu nově zpřístupní přiřazený projekt = záměr featuru). INTERN: BEZE ZMĚNY (projectVisibilityWhere dnes INTERN denies; assignee VIEW se na INTERN nevztahuje)."
+    },
+    {
+      "severity": "info",
+      "where": "permissions.ts:caseVisibilityWhere (LAWYER ~ř.303-312, TRAINEE ~ř.314-321)",
+      "detail": "LAWYER OR: přidat `{ assignees: { some: { userId } } }` (case-assignee) a — pokud se potvrdí kaskáda z projektu (open_question 2) — `{ project: { is: { assignees: { some: { userId } } } } }` vedle stávajícího `{ project: { is: { responsibleUserId: userId } } }`. TRAINEE OR: přidat `{ assignees: { some: { userId } } }` a volitelně project-assignee člen. INTERN: BEZE ZMĚNY (denies)."
+    },
+    {
+      "severity": "info",
+      "where": "permissions.ts:taskVisibilityWhere (LAWYER ~ř.222-234)",
+      "detail": "LAWYER OR má dnes 4 členy (directWhere + project.responsibleUserId + case.responsibleUserId + case.project.responsibleUserId). PŘIDAT zrcadlově: `{ project: { is: { assignees: { some: { userId } } } } }`, `{ case: { is: { assignees: { some: { userId } } } } }`, `{ case: { is: { project: { is: { assignees: { some: { userId } } } } } } }`. TRAINEE/INTERN: BEZE ZMĚNY — úkoly vidí jen přes přímé přiřazení na úkol (assignee na project/case ÚKOL nezpřístupňuje juniorovi; to je dnešní hranice a feature ji u tasků nemění; pokud by se chtělo jinak, je to samostatné rozhodnutí). POZN: test 'LAWYER gets a broader OR' kontroluje OR.length === 4 → po změně bude 7, test AKTUALIZUJ."
+    },
+    {
+      "severity": "info",
+      "where": "permissions.ts:workLogVisibilityWhere (LAWYER ~ř.345-359)",
+      "detail": "LAWYER OR zrcadlí responsibleUserId přes project/case/case.project. PŘIDAT: `{ project: { is: { assignees: { some: { userId } } } } }`, `{ case: { is: { assignees: { some: { userId } } } } }`, `{ case: { is: { project: { is: { assignees: { some: { userId } } } } } } }`. TRAINEE/INTERN: BEZE ZMĚNY (vidí jen vlastní výkazy `{ userId }`)."
+    },
+    {
+      "severity": "info",
+      "where": "permissions.ts:referenceVisibilityWhere (LAWYER ~ř.732-748)",
+      "detail": "LAWYER OR zrcadlí responsibleUserId přes project/case/case.project. PŘIDAT: `{ project: { is: { assignees: { some: { userId } } } } }`, `{ case: { is: { assignees: { some: { userId } } } } }`, `{ case: { is: { project: { is: { assignees: { some: { userId } } } } } } }`. TRAINEE/INTERN: reference helper je LAWYER-only (jinak denies) → beze změny."
+    },
+    {
+      "severity": "info",
+      "where": "permissions.ts:deadlineVisibilityWhere (LAWYER ~ř.506-515), courtHearingVisibilityWhere (LAWYER ~ř.697-706), dataMessageVisibilityWhere (LAWYER ~ř.436-444), documentVisibilityWhere (LAWYER ~ř.570-579), invoiceVisibilityWhere (LAWYER ~ř.387-397)",
+      "detail": "Všechny tyto jsou case-derived (nebo case+project derived) přes responsibleUserId. Do LAWYER OR PŘIDAT case-assignee člen `{ case: { is: { assignees: { some: { userId } } } } }` a (dle open_question 2) project-cestu `{ case: { is: { project: { is: { assignees: { some: { userId } } } } } } }`; u invoice navíc přímý `{ project: { is: { assignees: { some: { userId } } } } }` (invoice má i projectId). documentVisibilityWhere má navíc subject-člen — ten se opraví AUTOMATICKY (skládá subjectVisibilityWhere). TRAINEE/INTERN: tyto helpery juniorům dávají jen own-created → assignee VIEW na ně NErozšiřujeme (sensitive data default-deny zůstává). POZN: testy kontrolující OR.length (dataMessage===3, deadline===4, courtHearing===4, document===4) AKTUALIZUJ."
+    },
+    {
+      "severity": "warning",
+      "where": "permissions.ts:subjectVisibilityWhere (~ř.753-803) — REKURZE",
+      "detail": "subjectVisibilityWhere SKLÁDÁ projectVisibilityWhere(user) a caseVisibilityWhere(user) přes `{ mainProjects: { some: projectWhere } }`, `{ relations: { some: { project: { is: projectWhere } } } }`, `{ relations: { some: { case: { is: caseWhere } } } }`. Jakmile do project/caseVisibilityWhere přidáme assignee člen, subjectVisibilityWhere se ROZŠÍŘÍ AUTOMATICKY a SPRÁVNĚ (assignee projektu/případu uvidí napojený subjekt). NEPŘIDÁVAT do subjectVisibilityWhere žádný přímý assignee člen — jinak hrozí duplicita logiky a drift. INTERN větev subjectu (`{ workLogs: { some: { userId } } }`) zůstává beze změny. Toto je hlavní místo k ohlídání: změna je korektní jen pokud project/caseVisibilityWhere zůstanou jediným zdrojem pravdy."
+    },
+    {
+      "severity": "critical",
+      "where": "permissions.ts:canViewRecord (~ř.805-865) a canEditRecord (~ř.867-916) — in-memory gate",
+      "detail": "Tyto funkce čtou record.responsibleUserId synchronně z předaného objektu. Aby assignee fungoval, MUSÍ volající do project/case recordu načíst `assignees: { select: { userId: true } }`. Pokud se OR členy přidají do where-helperů, ale canViewRecord/canEditRecord se NEUPRAVÍ + volající NEPŘIBALÍ assignees do selectu → vznikne NEKONZISTENCE: assignee projde query-layer filtrem (uvidí záznam v seznamu), ale na detailu/při editaci canViewRecord/canEditRecord vrátí false → buď notFound() (over-restrikce, špatný UX), nebo u editace 'Nemáte oprávnění'. ÚPRAVA: rozšířit ProjectRecord/CaseRecord typy o `assignees?: Array<{ userId: string }> | null`; v canViewRecord pro 'Project'/'Case' přidat OR `|| (role===LAWYER && project.assignees?.some(a=>a.userId===userId))` a pro Case i project-assignee přes record.project (pokud načten); pro TRAINEE u Case/Project — POZOR: canViewRecord dnes pro Project/Case vrací true jen pro LAWYER. Pokud TRAINEE má přes query-layer vidět přiřazený case/project, MUSÍ canViewRecord pro TRAINEE u 'Project'/'Case' také vracet true při assignee match — JINAK detail stránka udělá notFound() pro přiřazeného TRAINEE. To je nutné sladit (viz required_checks). V canEditRecord přidat assignee match POUZE pro LAWYER (TRAINEE/INTERN nikdy needitují project/case)."
+    },
+    {
+      "severity": "warning",
+      "where": "Volající selecty — projects/[id]/page.tsx:loadProject (include), projects/[id]/edit/page.tsx:loadProjectEdit (findUnique), cases ekvivalenty, a kdekoliv se volá canViewRecord/canEditRecord(...,'Project'|'Case',record)",
+      "detail": "Každé místo, kde se výsledek findUnique/findFirst pro Project/Case předává do canEditRecord/canViewRecord, MUSÍ nově includovat `assignees: { select: { userId: true } }`. Konkrétně: projects/[id]/edit/page.tsx ř.31 `prisma.project.findUnique({ where: { id } })` → doplnit select/include assignees, protože ř.49 volá canEditRecord. projects/[id]/page.tsx loadProject už include má — doplnit assignees tam, protože ř.131 volá canEditRecord. updateProject (projects.ts ř.85) a updateCase (cases.ts ř.92) volají findUniqueOrThrow bez assignees → doplnit `include:{ assignees:{ select:{ userId:true } } }` PŘED assertCanEditRecord. NAJDI VŠECHNY výskyty grepem 'canEditRecord' a 'canViewRecord' s type 'Project'/'Case' a doplň assignees do odpovídajícího selectu. Vynechání některého místa = over-restrikce pro assignee (ne únik), ale rozbije UX."
+    }
+  ],
+  "security": [
+    "Org isolation: ProjectAssignee/CaseAssignee nesou organizationId (Restrict FK). add*Assignee MUSÍ ověřit, že přiřazovaný userId patří do currentUser.organizationId (přes membership/active user query) — jinak by ADMIN org A mohl přiřadit usera z org B. Visibility helpery dále org-scopují přes orgClause (assignee člen je VŽDY uvnitř už org-omezeného AND).",
+    "Autorizace přiřazování = assertCanEditRecord(currentUser, 'Project'|'Case', record) na rodičovský záznam. Tím přiřazovat smí jen ten, kdo smí editovat project/case (ADMIN/PARTNER/LAWYER-responsible) — a po zavedení featuru i LAWYER-assignee s edit právem. Žádné samostatné nové oprávnění, žádný privilege creep.",
+    "Default-deny u sensitive modulů zůstává: assignee VIEW se NErozšiřuje do TRAINEE/INTERN větví deadline/courtHearing/dataMessage/document/invoice (tam zůstává own-created). Rozšiřuje se jen LAWYER větev těchto helperů (LAWYER už je zletilá role pro tyto moduly).",
+    "Auditní stopa: každé add/remove assignee píše writeAuditLog (entityType ProjectAssignee/CaseAssignee). assignedById/assignedAt drží 'kdo a kdy přiřadil' i v samotném modelu (SetNull při smazání usera).",
+    "Fail-closed se neporušuje: assignee členy se přidávají DOVNITŘ existující `andWhere(org, { OR: [...] })` struktury — pokud chybí org, helper stále vrací denyWhere PŘED dosažením OR.",
+    "INTERN zůstává nejomezenější rolí — assignee mu nic nezpřístupní (záměrně), aby se nezměnil bezpečnostní profil nejnižší role."
+  ],
+  "scalability": [
+    "Join tabulky jsou malé (řešitelů na project/case jednotky, max desítky). Indexy [projectId],[caseId],[userId],[organizationId] pokrývají jak 'kdo je na tomto projektu' tak 'na čem jsem já přiřazen'.",
+    "Visibility dotazy přidávají do OR členy typu `{ assignees: { some: { userId } } }` → Prisma generuje EXISTS subquery na join tabulku. Indexy ([projectId,userId] unique + [userId]) tyto EXISTS pokryjí. Při růstu OR (taskVisibilityWhere půjde z 4 na 7 členů) sleduj plán dotazu na velkých datech; pro single-tenant instanci (jedna kancelář) je objem nízký a vertikální škálování stačí — žádná předčasná denormalizace.",
+    "Žádná nová cesta k distribuci/cachingu není potřeba; revalidatePath na /projects a /cases pokrývá invalidaci."
+  ],
+  "handoff": {
+    "next_agent": "developer",
+    "context_for_review": "Implementuj multi-assignee viditelnost dle tohoto artefaktu. POŘADÍ KROKŮ: (1) schema.prisma — přidej modely ProjectAssignee/CaseAssignee + back-relace na Project/Case/User/Organization; (2) ručně napiš migraci prisma/migrations/20260630120000_project_case_assignees/migration.sql (CREATE TABLE projectAssignees, caseAssignees + unique [projectId,userId]/[caseId,userId] + indexy org/project/case/user + FK org=Restrict, project/case=Cascade, user=Cascade, assignedBy=SetNull — viz vzor contactPersons migrace); ŽÁDNÝ enum → žádná samostatná enum migrace; (3) npm run db:generate (offline, ověří schema/migrace konzistenci typů); (4) permissions.ts — přidej projectAssigneeWhere/caseAssigneeWhere buildery, vlož assignee OR členy do LAWYER (a u project/caseVisibilityWhere i TRAINEE) větví VŠECH dotčených helperů dle conflicts; rozšiř ProjectRecord/CaseRecord typy o assignees a uprav canViewRecord/canEditRecord (LAWYER+TRAINEE view u project/case match, edit jen LAWYER); (5) doplň assignees:{select:{userId:true}} do VŠECH selectů, jejichž výstup jde do canViewRecord/canEditRecord('Project'|'Case') — grep oba názvy; (6) napiš akce project-assignees.ts/case-assignees.ts (gate assertCanEditRecord na rodiče + ověření org membership přiřazovaného usera + audit + revalidate); (7) UI sekce 'Řešitelé' na project/case detailu (vzor ContactPerson sekce, viditelná když canEdit); (8) aktualizuj permissions.test.ts (OR.length asserty + nové canViewRecord/canEditRecord assignee testy); (9) npm run lint && npm run build && npm test. KLÍČOVÉ RIZIKO: nekonzistence query-layer vs in-memory gate (krok 4+5 musí jít ruku v ruce) a rekurze subjectVisibilityWhere (NEpřidávej tam přímý assignee člen — opraví se přes project/caseVisibilityWhere). Verifikuj strukturu cases/[id]/page.tsx a edit/page.tsx — nebyly čteny, předpokládá se zrcadlení projects.",
+    "required_checks": [
+      "OVĚŘ konzistenci query-layer ↔ in-memory: pro každou roli (LAWYER, TRAINEE) musí platit, že pokud `*VisibilityWhere` propustí přiřazený project/case, pak canViewRecord(...,record s assignees) vrátí true (jinak detail udělá notFound pro přiřazeného usera).",
+      "OVĚŘ, že VŠECHNY selecty feedující canViewRecord/canEditRecord pro Project/Case includují assignees:{select:{userId:true}} — projects/[id]/page.tsx, projects/[id]/edit/page.tsx, cases ekvivalenty, projects.ts:updateProject (findUniqueOrThrow), cases.ts:updateCase (findUniqueOrThrow). Grep 'canEditRecord' a 'canViewRecord'.",
+      "OVĚŘ, že subjectVisibilityWhere NEBYL upraven přímo (žádný nový assignee člen) — rozšíření přichází tranzitivně z project/caseVisibilityWhere; jinak hrozí drift/duplicitní logika.",
+      "OVĚŘ, že assignee VIEW NEBYL přidán do TRAINEE/INTERN větví sensitive helperů (deadline/courtHearing/dataMessage/document/invoice) — tam zůstává own-created/own; rozšiřuje se jen LAWYER větev.",
+      "OVĚŘ org isolation v add*Assignee: přiřazovaný userId musí být aktivní člen currentUser.organizationId; @@unique zabrání duplicitě (zachyť P2002).",
+      "OVĚŘ aktualizaci OR.length assertů v permissions.test.ts: taskVisibilityWhere LAWYER 4→7, dataMessage 3→(4|5), deadline 4→(5|6), courtHearing 4→(5|6), document 4→(5|6) — dle toho, zda se potvrdí project-kaskáda (open_question 2).",
+      "OVĚŘ, že INTERN bezpečnostní profil se NEZMĚNIL (INTERN nevidí project/case přes assignee — žádná INTERN větev se nerozšiřuje).",
+      "SPUSŤ npm run db:generate && npm run lint && npm run build && npm test (cílově 394 + nové testy zelené). DB migrace na prod NEAPLIKUJ — jde zvlášť přes Supabase MCP."
+    ]
+  }
+}

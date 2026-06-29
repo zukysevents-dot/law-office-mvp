@@ -26,13 +26,17 @@ type AssignmentRecord = {
   responsibleUserId?: string | null;
 };
 
+type AssigneeRef = { userId: string };
+
 type ProjectRecord = {
   responsibleUserId?: string | null;
+  assignees?: AssigneeRef[] | null;
 };
 
 type CaseRecord = {
   responsibleUserId?: string | null;
   project?: ProjectRecord | null;
+  assignees?: AssigneeRef[] | null;
 };
 
 type WorkLogRecord = {
@@ -99,6 +103,25 @@ function hasDirectTaskAccess(record: AssignmentRecord, userId: string) {
     record.assignedToId === userId ||
     record.responsibleUserId === userId
   );
+}
+
+// True when the user is one of the record's assignees (additional řešitelé).
+function isAssigneeOf(
+  assignees: AssigneeRef[] | null | undefined,
+  userId: string,
+) {
+  return Array.isArray(assignees) && assignees.some((a) => a.userId === userId);
+}
+
+// Prisma `where` fragments matching a project/case where the user is an
+// assignee. Mirror the responsibleUserId clauses everywhere those appear so an
+// assignee gets exactly the visibility a responsible person would.
+function projectAssigneeWhere(userId: string): Prisma.ProjectWhereInput {
+  return { assignees: { some: { userId } } };
+}
+
+function caseAssigneeWhere(userId: string): Prisma.CaseWhereInput {
+  return { assignees: { some: { userId } } };
 }
 
 export function andWhere<T extends object>(
@@ -230,6 +253,14 @@ export function taskVisibilityWhere(user: PermissionInput): Prisma.TaskWhereInpu
             is: { project: { is: { responsibleUserId: userId } } },
           },
         },
+        // Assignee mirror: tasks of a project/case the user is assigned to.
+        { project: { is: projectAssigneeWhere(userId) } },
+        { case: { is: caseAssigneeWhere(userId) } },
+        {
+          case: {
+            is: { project: { is: projectAssigneeWhere(userId) } },
+          },
+        },
       ],
     });
   }
@@ -264,7 +295,9 @@ export function projectVisibilityWhere(
     return andWhere(org, {
       OR: [
         { responsibleUserId: userId },
+        { assignees: { some: { userId } } },
         { cases: { some: { responsibleUserId: userId } } },
+        { cases: { some: { assignees: { some: { userId } } } } },
         { tasks: { some: directTaskUserWhere(userId) } },
         { workLogs: { some: { userId } } },
       ],
@@ -274,6 +307,10 @@ export function projectVisibilityWhere(
   if (role === UserRole.TRAINEE) {
     return andWhere(org, {
       OR: [
+        // Project view mirrors LAWYER assignee paths so an assigned trainee
+        // sees the whole project (and projects of cases they're assigned to).
+        { assignees: { some: { userId } } },
+        { cases: { some: { assignees: { some: { userId } } } } },
         { tasks: { some: directTaskUserWhere(userId) } },
         { workLogs: { some: { userId } } },
       ],
@@ -304,7 +341,9 @@ export function caseVisibilityWhere(user: PermissionInput): Prisma.CaseWhereInpu
     return andWhere(org, {
       OR: [
         { responsibleUserId: userId },
+        { assignees: { some: { userId } } },
         { project: { is: { responsibleUserId: userId } } },
+        { project: { is: projectAssigneeWhere(userId) } },
         { tasks: { some: directTaskUserWhere(userId) } },
         { workLogs: { some: { userId } } },
       ],
@@ -314,6 +353,10 @@ export function caseVisibilityWhere(user: PermissionInput): Prisma.CaseWhereInpu
   if (role === UserRole.TRAINEE) {
     return andWhere(org, {
       OR: [
+        // Case view mirrors LAWYER assignee paths: assigned to the case, or to
+        // its project (project assignee sees the project's cases).
+        { assignees: { some: { userId } } },
+        { project: { is: projectAssigneeWhere(userId) } },
         { tasks: { some: directTaskUserWhere(userId) } },
         { workLogs: { some: { userId } } },
       ],
@@ -354,6 +397,14 @@ export function workLogVisibilityWhere(
             is: { project: { is: { responsibleUserId: userId } } },
           },
         },
+        // Assignee mirror: work-logs on a project/case the user is assigned to.
+        { project: { is: projectAssigneeWhere(userId) } },
+        { case: { is: caseAssigneeWhere(userId) } },
+        {
+          case: {
+            is: { project: { is: projectAssigneeWhere(userId) } },
+          },
+        },
       ],
     });
   }
@@ -392,6 +443,10 @@ export function invoiceVisibilityWhere(
         { project: { is: { responsibleUserId: userId } } },
         { case: { is: { responsibleUserId: userId } } },
         { case: { is: { project: { is: { responsibleUserId: userId } } } } },
+        // Assignee mirror: invoices on a project/case the user is assigned to.
+        { project: { is: projectAssigneeWhere(userId) } },
+        { case: { is: caseAssigneeWhere(userId) } },
+        { case: { is: { project: { is: projectAssigneeWhere(userId) } } } },
       ],
     });
   }
@@ -439,6 +494,9 @@ export function dataMessageVisibilityWhere(
         { createdById: userId },
         { case: { is: { responsibleUserId: userId } } },
         { case: { is: { project: { is: { responsibleUserId: userId } } } } },
+        // Assignee mirror: data messages on a case the user is assigned to.
+        { case: { is: caseAssigneeWhere(userId) } },
+        { case: { is: { project: { is: projectAssigneeWhere(userId) } } } },
       ],
     });
   }
@@ -510,6 +568,9 @@ export function deadlineVisibilityWhere(
         { createdById: userId },
         { case: { is: { responsibleUserId: userId } } },
         { case: { is: { project: { is: { responsibleUserId: userId } } } } },
+        // Assignee mirror: deadlines on a case the user is assigned to.
+        { case: { is: caseAssigneeWhere(userId) } },
+        { case: { is: { project: { is: projectAssigneeWhere(userId) } } } },
       ],
     });
   }
@@ -573,6 +634,9 @@ export function documentVisibilityWhere(
         { createdById: userId },
         { case: { is: { responsibleUserId: userId } } },
         { case: { is: { project: { is: { responsibleUserId: userId } } } } },
+        // Assignee mirror: documents on a case the user is assigned to.
+        { case: { is: caseAssigneeWhere(userId) } },
+        { case: { is: { project: { is: projectAssigneeWhere(userId) } } } },
         { subject: { is: subjectVisibilityWhere(user) } },
       ],
     });
@@ -701,6 +765,9 @@ export function courtHearingVisibilityWhere(
         { createdById: userId },
         { case: { is: { responsibleUserId: userId } } },
         { case: { is: { project: { is: { responsibleUserId: userId } } } } },
+        // Assignee mirror: court hearings on a case the user is assigned to.
+        { case: { is: caseAssigneeWhere(userId) } },
+        { case: { is: { project: { is: projectAssigneeWhere(userId) } } } },
       ],
     });
   }
@@ -737,6 +804,14 @@ export function referenceVisibilityWhere(
         {
           case: {
             is: { project: { is: { responsibleUserId: userId } } },
+          },
+        },
+        // Assignee mirror: references on a project/case the user is assigned to.
+        { project: { is: projectAssigneeWhere(userId) } },
+        { case: { is: caseAssigneeWhere(userId) } },
+        {
+          case: {
+            is: { project: { is: projectAssigneeWhere(userId) } },
           },
         },
         { project: { is: { tasks: { some: directTaskUserWhere(userId) } } } },
@@ -844,15 +919,31 @@ export function canViewRecord(
 
   if (type === "Project") {
     const project = record as ProjectRecord;
-    return role === UserRole.LAWYER && project.responsibleUserId === userId;
+    if (role === UserRole.LAWYER && project.responsibleUserId === userId) {
+      return true;
+    }
+    // Assignees (LAWYER + TRAINEE) see the project they're assigned to.
+    return (
+      (role === UserRole.LAWYER || role === UserRole.TRAINEE) &&
+      isAssigneeOf(project.assignees, userId)
+    );
   }
 
   if (type === "Case") {
     const legalCase = record as CaseRecord;
-    return (
+    if (
       role === UserRole.LAWYER &&
       (legalCase.responsibleUserId === userId ||
         legalCase.project?.responsibleUserId === userId)
+    ) {
+      return true;
+    }
+    // Assignees (LAWYER + TRAINEE) see a case they're assigned to, or whose
+    // project they're assigned to.
+    return (
+      (role === UserRole.LAWYER || role === UserRole.TRAINEE) &&
+      (isAssigneeOf(legalCase.assignees, userId) ||
+        isAssigneeOf(legalCase.project?.assignees, userId))
     );
   }
 
@@ -895,16 +986,20 @@ export function canEditRecord(
   }
 
   if (type === "Project") {
+    const project = record as ProjectRecord;
     return (
       role === UserRole.LAWYER &&
-      (record as ProjectRecord).responsibleUserId === userId
+      (project.responsibleUserId === userId ||
+        isAssigneeOf(project.assignees, userId))
     );
   }
 
   if (type === "Case") {
+    const legalCase = record as CaseRecord;
     return (
       role === UserRole.LAWYER &&
-      (record as CaseRecord).responsibleUserId === userId
+      (legalCase.responsibleUserId === userId ||
+        isAssigneeOf(legalCase.assignees, userId))
     );
   }
 

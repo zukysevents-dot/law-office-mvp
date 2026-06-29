@@ -16,6 +16,7 @@ export async function addProjectSubjectRelation(formData: FormData) {
   const role = enumValue(SubjectRole, formData.get("role"), SubjectRole.CLIENT);
   const project = await prisma.project.findUniqueOrThrow({
     where: { id: projectId },
+    include: { assignees: { select: { userId: true } } },
   });
   assertCanEditRecord(currentUser, "Project", project);
 
@@ -58,6 +59,7 @@ export async function addCaseSubjectRelation(formData: FormData) {
   const role = enumValue(SubjectRole, formData.get("role"), SubjectRole.CLIENT);
   const legalCase = await prisma.case.findUniqueOrThrow({
     where: { id: caseId },
+    include: { assignees: { select: { userId: true } } },
   });
   assertCanEditRecord(currentUser, "Case", legalCase);
 

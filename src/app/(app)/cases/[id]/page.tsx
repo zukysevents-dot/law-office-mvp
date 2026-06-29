@@ -2,10 +2,15 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { archiveCase, restoreCase } from "@/app/actions/cases";
+import {
+  addCaseAssignee,
+  removeCaseAssignee,
+} from "@/app/actions/case-assignees";
 import { shareCase } from "@/app/actions/portal";
 import { addCaseSubjectRelation } from "@/app/actions/subject-relations";
 import { ArchiveActionForm } from "@/components/archive-action-form";
 import { ArchiveNotice } from "@/components/archive-notice";
+import { AssigneeSection } from "@/components/assignee-section";
 import { CaseDeadlinesSection } from "@/components/case-deadlines-section";
 import { CaseDocumentsSection } from "@/components/case-documents-section";
 import { Field, SelectInput, TextArea } from "@/components/form-field";
@@ -59,7 +64,7 @@ async function loadCase(id: string) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
 
-  const [legalCase, subjects] = await Promise.all([
+  const [legalCase, subjects, candidateRows] = await Promise.all([
     prisma.case.findFirst({
       where: andWhere({ id }, caseVisibilityWhere(currentUser)),
       include: {
@@ -71,6 +76,14 @@ async function loadCase(id: string) {
           },
         },
         responsibleUser: { select: { name: true } },
+        assignees: {
+          orderBy: { assignedAt: "asc" },
+          select: {
+            id: true,
+            userId: true,
+            user: { select: { id: true, name: true } },
+          },
+        },
         subjectRelations: {
           orderBy: { createdAt: "desc" },
           include: {
@@ -112,6 +125,15 @@ async function loadCase(id: string) {
       ),
       orderBy: { name: "asc" },
       select: { id: true, name: true, ico: true },
+    }),
+    // Kandidáti na řešitele = aktivní členové stejné kanceláře (org-scoped).
+    prisma.organizationMember.findMany({
+      where: {
+        organizationId: currentUser.organizationId ?? undefined,
+        status: "ACTIVE",
+      },
+      orderBy: { user: { name: "asc" } },
+      select: { user: { select: { id: true, name: true } } },
     }),
   ]);
 
@@ -214,6 +236,7 @@ async function loadCase(id: string) {
   return {
     legalCase,
     subjects,
+    assigneeCandidates: candidateRows.map((row) => row.user),
     canArchive: canViewAllLegalData(currentUser),
     canEdit: legalCase ? canEditRecord(currentUser, "Case", legalCase) : false,
     deadlinesEnabled,
@@ -234,6 +257,7 @@ type CaseDetailData = Awaited<ReturnType<typeof loadCase>>;
 const emptyCaseDetail: CaseDetailData = {
   legalCase: null,
   subjects: [],
+  assigneeCandidates: [],
   canArchive: false,
   canEdit: false,
   deadlinesEnabled: false,
@@ -266,6 +290,7 @@ export default async function CaseDetailPage({
   const {
     legalCase,
     subjects,
+    assigneeCandidates,
     canArchive,
     canEdit,
     deadlinesEnabled,
@@ -372,6 +397,16 @@ export default async function CaseDetailPage({
               </div>
             </div>
           </Section>
+          <AssigneeSection
+            title="Řešitelé případu"
+            assignees={legalCase.assignees}
+            candidates={assigneeCandidates}
+            parentField="caseId"
+            parentId={legalCase.id}
+            addAction={addCaseAssignee}
+            removeAction={removeCaseAssignee}
+            canEdit={canEdit}
+          />
           <Section title="Role subjektů">
             {legalCase.subjectRelations.length > 0 ? (
               <div className="overflow-x-auto">
