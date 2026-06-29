@@ -30,6 +30,7 @@ import {
   formatHours,
   formatMoney,
 } from "@/lib/format";
+import { DAY_MS, fulfillmentPercent, weekStartUtcMs } from "@/lib/hours-plan";
 import { firstParam } from "@/lib/search-params";
 import {
   approvalStatusLabels,
@@ -116,6 +117,9 @@ type WorkLogsPageData = {
     total: number;
   };
   weekHours: number;
+  // Cíle z plánu hodin (null = nenastaveno) pro „% plnění".
+  weeklyTarget: number | null;
+  monthlyTarget: number | null;
 };
 
 function numberParam(value: string) {
@@ -157,28 +161,34 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
       canSetBillable: false,
       monthSummary: { billable: 0, needsApproval: 0, internal: 0, total: 0 },
       weekHours: 0,
+      weeklyTarget: null,
+      monthlyTarget: null,
     },
     async () => {
       const prisma = getPrisma();
       const currentUser = await getCurrentUser();
       const tableView = await getCurrentTableView("workLogs");
       // Hranice pro souhrn: aktuální měsíc a aktuální týden (od pondělí).
+      // Týden přes sdílený weekStartUtcMs helper, aby karta „Tento týden" a
+      // týdenní graf na dashboardu počítaly vždy stejný interval (workDate je
+      // uložený na UTC půlnoc, takže UTC hranice je pro výběr správná).
       const now = new Date();
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
       const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-      const weekday = (now.getDay() + 6) % 7; // pondělí = 0
-      const weekStart = new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        now.getDate() - weekday,
-      );
-      const nextWeekStart = new Date(
-        weekStart.getFullYear(),
-        weekStart.getMonth(),
-        weekStart.getDate() + 7,
-      );
-      const [workLogs, subjects, projects, cases, tasks, users, monthGroups, weekAgg] =
-        await Promise.all([
+      const weekStartMs = weekStartUtcMs(now);
+      const weekStart = new Date(weekStartMs);
+      const nextWeekStart = new Date(weekStartMs + 7 * DAY_MS);
+      const [
+        workLogs,
+        subjects,
+        projects,
+        cases,
+        tasks,
+        users,
+        monthGroups,
+        weekAgg,
+        hoursPlan,
+      ] = await Promise.all([
         prisma.workLog.findMany({
           where: andWhere(
             archivedWhere(archive),
@@ -296,6 +306,10 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
           },
           _sum: { hours: true },
         }),
+        prisma.userHoursPlan.findUnique({
+          where: { userId: currentUser.id },
+          select: { weeklyHoursTarget: true, monthlyHoursTarget: true },
+        }),
       ]);
 
       const sumForStatus = (status: BillingStatus) =>
@@ -336,6 +350,14 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
         canSetBillable: canSetBillableStatus(currentUser),
         monthSummary,
         weekHours,
+        weeklyTarget:
+          hoursPlan?.weeklyHoursTarget != null
+            ? Number(hoursPlan.weeklyHoursTarget)
+            : null,
+        monthlyTarget:
+          hoursPlan?.monthlyHoursTarget != null
+            ? Number(hoursPlan.monthlyHoursTarget)
+            : null,
       };
     },
   );
@@ -356,6 +378,15 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
   const defaultBillingStatus = result.data.canSetBillable
     ? BillingStatus.BILLABLE
     : BillingStatus.NEEDS_APPROVAL;
+  // % plnění týdenního a měsíčního plánu hodin (null = plán nenastaven).
+  const weekPct = fulfillmentPercent(
+    result.data.weekHours,
+    result.data.weeklyTarget,
+  );
+  const monthPct = fulfillmentPercent(
+    result.data.monthSummary.total,
+    result.data.monthlyTarget,
+  );
 
   return (
     <>
@@ -376,19 +407,35 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
       <Section title="Můj přehled hodin">
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
           {[
-            { label: "Tento týden", value: result.data.weekHours },
-            { label: "Tento měsíc celkem", value: result.data.monthSummary.total },
+            {
+              label: "Tento týden",
+              value: result.data.weekHours,
+              target: result.data.weeklyTarget,
+              pct: weekPct,
+            },
+            {
+              label: "Tento měsíc celkem",
+              value: result.data.monthSummary.total,
+              target: result.data.monthlyTarget,
+              pct: monthPct,
+            },
             {
               label: "Fakturovatelné (měsíc)",
               value: result.data.monthSummary.billable,
+              target: null,
+              pct: null,
             },
             {
               label: "Ke schválení (měsíc)",
               value: result.data.monthSummary.needsApproval,
+              target: null,
+              pct: null,
             },
             {
               label: "Interní / odpis (měsíc)",
               value: result.data.monthSummary.internal,
+              target: null,
+              pct: null,
             },
           ].map((cell) => (
             <div
@@ -399,6 +446,12 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
               <p className="mt-2 text-2xl font-semibold text-[#072924]">
                 {formatHours(cell.value)}
               </p>
+              {cell.target != null ? (
+                <p className="mt-1 text-xs text-[#5f756e]">
+                  z {formatHours(cell.target)} h plánu
+                  {cell.pct != null ? ` · ${cell.pct} % plnění` : ""}
+                </p>
+              ) : null}
             </div>
           ))}
         </div>

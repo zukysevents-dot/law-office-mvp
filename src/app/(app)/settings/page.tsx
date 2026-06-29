@@ -3,6 +3,7 @@ import {
   createUser,
   setUserPassword,
   updateNotificationPreference,
+  updateUserHoursPlan,
 } from "@/app/actions/users";
 import { Field, SelectInput, TextInput } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
@@ -36,6 +37,10 @@ type SettingsData = {
     microsoftId: string | null;
     active: boolean;
     createdAt: Date;
+    hoursPlan: {
+      weeklyHoursTarget: number | null;
+      monthlyHoursTarget: number | null;
+    } | null;
   }>;
   auditLogCount: number;
   allowed: boolean;
@@ -89,6 +94,12 @@ export default async function SettingsPage() {
                 microsoftId: true,
                 active: true,
                 createdAt: true,
+                hoursPlan: {
+                  select: {
+                    weeklyHoursTarget: true,
+                    monthlyHoursTarget: true,
+                  },
+                },
               },
             })
           : Promise.resolve([]),
@@ -98,7 +109,21 @@ export default async function SettingsPage() {
       return {
         currentUserName: currentUser.name,
         notificationPreference,
-        users,
+        users: users.map((user) => ({
+          ...user,
+          hoursPlan: user.hoursPlan
+            ? {
+                weeklyHoursTarget:
+                  user.hoursPlan.weeklyHoursTarget != null
+                    ? Number(user.hoursPlan.weeklyHoursTarget)
+                    : null,
+                monthlyHoursTarget:
+                  user.hoursPlan.monthlyHoursTarget != null
+                    ? Number(user.hoursPlan.monthlyHoursTarget)
+                    : null,
+              }
+            : null,
+        })),
         auditLogCount,
         allowed,
       };
@@ -339,6 +364,56 @@ export default async function SettingsPage() {
                   <Button type="submit">Nastavit heslo</Button>
                 </div>
               </form>
+            </Section>
+          ) : null}
+          {result.data.users.length > 0 ? (
+            <Section title="Plán hodin pracovníků">
+              <p className="mb-4 text-sm text-stone-600">
+                Týdenní a měsíční cíl vykázaných hodin pro „% plnění“ na
+                výkazech a týdenní graf na dashboardu. Prázdné pole cíl zruší.
+              </p>
+              <div className="grid gap-3">
+                {result.data.users.map((user) => (
+                  <form
+                    key={user.id}
+                    action={updateUserHoursPlan}
+                    className="grid items-end gap-3 rounded-md border border-stone-200 p-3 sm:grid-cols-[1fr_140px_140px_auto]"
+                  >
+                    <input type="hidden" name="userId" value={user.id} />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-stone-950">
+                        {user.name}
+                      </p>
+                      <p className="truncate text-xs text-stone-500">
+                        {userRoleLabels[user.role]}
+                      </p>
+                    </div>
+                    <Field label="Týdně (h)">
+                      <TextInput
+                        name="weeklyHoursTarget"
+                        type="number"
+                        min={0}
+                        step="0.5"
+                        defaultValue={user.hoursPlan?.weeklyHoursTarget ?? undefined}
+                      />
+                    </Field>
+                    <Field label="Měsíčně (h)">
+                      <TextInput
+                        name="monthlyHoursTarget"
+                        type="number"
+                        min={0}
+                        step="0.5"
+                        defaultValue={
+                          user.hoursPlan?.monthlyHoursTarget ?? undefined
+                        }
+                      />
+                    </Field>
+                    <Button type="submit" variant="secondary" className="self-end">
+                      Uložit
+                    </Button>
+                  </form>
+                ))}
+              </div>
             </Section>
           ) : null}
           <Section title="Audit">

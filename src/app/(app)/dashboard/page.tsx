@@ -12,6 +12,7 @@ import {
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
 import { StatCard } from "@/components/stat-card";
+import { WeeklyHoursChart } from "@/components/weekly-hours-chart";
 import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
@@ -36,6 +37,12 @@ import {
   getVisibleDashboardColumns,
 } from "@/lib/dashboard-widgets";
 import { formatDate, formatHours, formatMoney } from "@/lib/format";
+import {
+  DAY_MS,
+  weekStartUtcMs,
+  weeklyHoursBuckets,
+  type DayBucket,
+} from "@/lib/hours-plan";
 import {
   approvalStatusLabels,
   billingStatusLabels,
@@ -168,6 +175,8 @@ type DashboardData = {
     status: TaskStatus;
     project: { id: string; name: string } | null;
   }>;
+  weeklyHours: DayBucket[];
+  weeklyHoursTarget: number | null;
   canViewRates: boolean;
 };
 
@@ -189,6 +198,8 @@ const fallbackData: DashboardData = {
   references: [],
   recentChecks: [],
   calendarTasks: [],
+  weeklyHours: [],
+  weeklyHoursTarget: null,
   canViewRates: false,
 };
 
@@ -551,6 +562,15 @@ function renderWidget(widget: DashboardWidgetView, data: DashboardData) {
           href={dashboardWidgetHref(widget.type)}
         />
       );
+    case DashboardWidgetType.WEEKLY_HOURS_CHART:
+      return (
+        <Section title={widget.title}>
+          <WeeklyHoursChart
+            buckets={data.weeklyHours}
+            weeklyTarget={data.weeklyHoursTarget}
+          />
+        </Section>
+      );
     case DashboardWidgetType.MY_TASKS_TABLE:
       return (
         <Section title={widget.title}>
@@ -760,6 +780,11 @@ export default async function DashboardPage() {
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  // Týden pro graf počítáme v UTC (workDate je uložený na UTC půlnoc), aby úkon
+  // nespadl do vedlejšího dne kvůli posunu.
+  const weekStartMs = weekStartUtcMs(now);
+  const weekStartDate = new Date(weekStartMs);
+  const weekEndDate = new Date(weekStartMs + 7 * DAY_MS);
 
   const result = await safeQuery<DashboardData>(fallbackData, async () => {
     const prisma = getPrisma();
@@ -793,6 +818,8 @@ export default async function DashboardPage() {
       references,
       recentChecks,
       calendarTasks,
+      weeklyHoursGroups,
+      hoursPlan,
     ] = await Promise.all([
       prisma.dashboardWidget.findMany({
         where: {
@@ -984,6 +1011,20 @@ export default async function DashboardPage() {
           project: { select: { id: true, name: true } },
         },
       }),
+      // Vlastní výkazy přihlášeného uživatele za aktuální týden pro graf.
+      prisma.workLog.groupBy({
+        by: ["workDate"],
+        where: {
+          userId: currentUser.id,
+          archivedAt: null,
+          workDate: { gte: weekStartDate, lt: weekEndDate },
+        },
+        _sum: { hours: true },
+      }),
+      prisma.userHoursPlan.findUnique({
+        where: { userId: currentUser.id },
+        select: { weeklyHoursTarget: true },
+      }),
     ]);
 
     return {
@@ -1010,6 +1051,17 @@ export default async function DashboardPage() {
       references,
       recentChecks,
       calendarTasks,
+      weeklyHours: weeklyHoursBuckets(
+        weekStartMs,
+        weeklyHoursGroups.map((group) => ({
+          workDate: group.workDate,
+          hours: Number(group._sum.hours ?? 0),
+        })),
+      ),
+      weeklyHoursTarget:
+        hoursPlan?.weeklyHoursTarget != null
+          ? Number(hoursPlan.weeklyHoursTarget)
+          : null,
       canViewRates: canViewRates(currentUser),
     };
   });

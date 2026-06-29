@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { redirect } from "next/navigation";
 
-import { UserRole } from "@/generated/prisma/enums";
+import { OrganizationMemberStatus, UserRole } from "@/generated/prisma/enums";
 import { auditJson } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
 import {
@@ -126,6 +126,80 @@ export async function changeOwnPassword(formData: FormData) {
   });
 
   redirect("/settings");
+}
+
+// Kladné hodiny, jinak null. Prázdné pole i zadaná 0 ruší cíl — ukládá se
+// jediná reprezentace „bez cíle" (NULL), konzistentně s fulfillmentPercent,
+// které cíl <= 0 bere jako nenastavený.
+function sanitizeHoursTarget(value: number | null) {
+  if (value == null || !Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+
+  return value;
+}
+
+// Admin/partner nastaví týdenní/měsíční plán hodin pracovníka (UserHoursPlan)
+// pro „% plnění" na výkazech a týdenní graf na dashboardu.
+export async function updateUserHoursPlan(formData: FormData) {
+  const prisma = getPrisma();
+  const currentUser = await getCurrentUser();
+  assertCanManageUsers(currentUser);
+
+  const userId = requiredString(formData, "userId");
+
+  // userId přichází z FormData — assertCanManageUsers ověřuje jen roli, ne
+  // organizaci. Proto explicitně potvrdíme, že cílový uživatel je aktivním
+  // členem stejné kanceláře (jinak by ADMIN/PARTNER mohl zapsat plán uživateli
+  // jiné kanceláře). Uživatel nemá přímé organizationId — řeší se přes členství.
+  const membership = await prisma.organizationMember.findFirst({
+    where: {
+      userId,
+      organizationId: currentUser.organizationId,
+      status: OrganizationMemberStatus.ACTIVE,
+    },
+    select: { id: true },
+  });
+  if (!membership) {
+    throw new Error("Uživatel nepatří do vaší kanceláře.");
+  }
+
+  const weeklyHoursTarget = sanitizeHoursTarget(
+    optionalNumber(formData, "weeklyHoursTarget"),
+  );
+  const monthlyHoursTarget = sanitizeHoursTarget(
+    optionalNumber(formData, "monthlyHoursTarget"),
+  );
+
+  const previous = await prisma.userHoursPlan.findUnique({
+    where: { userId },
+  });
+
+  const plan = await prisma.userHoursPlan.upsert({
+    where: { userId },
+    update: { weeklyHoursTarget, monthlyHoursTarget },
+    create: {
+      userId,
+      organizationId: currentUser.organizationId ?? null,
+      weeklyHoursTarget,
+      monthlyHoursTarget,
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      entityType: "UserHoursPlan",
+      entityId: plan.id,
+      action: "UPDATE",
+      changedById: currentUser.id,
+      oldValue: previous ? auditJson(previous) : undefined,
+      newValue: auditJson(plan),
+    },
+  });
+
+  revalidatePath("/settings");
+  revalidatePath("/work-logs");
+  revalidatePath("/dashboard");
 }
 
 export async function updateNotificationPreference(formData: FormData) {

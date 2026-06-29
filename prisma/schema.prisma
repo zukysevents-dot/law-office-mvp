@@ -190,6 +190,7 @@ enum DashboardWidgetType {
   REFERENCES_TABLE
   RECENT_CONFLICT_CHECKS
   CALENDAR_PREVIEW
+  WEEKLY_HOURS_CHART
 }
 
 enum DashboardWidgetSize {
@@ -349,6 +350,7 @@ model User {
   dashboardWidgets        DashboardWidget[]
   tableViewPreferences    TableViewPreference[]
   notificationPreference  NotificationPreference?
+  hoursPlan               UserHoursPlan?
   notifications           Notification[]      @relation("NotificationRecipient")
   memberships             OrganizationMember[]
   createdInvoices         Invoice[]           @relation("InvoiceCreatedBy")
@@ -833,6 +835,26 @@ model NotificationPreference {
   @@map("notificationPreferences")
 }
 
+// Cíl vykázaných hodin pracovníka (týden/měsíc) pro „% plnění" na výkazech
+// a týdenní graf na dashboardu. Satelit 1:1 na uživatele jako
+// NotificationPreference. Cíle jsou volitelné — když nejsou nastavené,
+// % plnění se nepočítá. Liší se od HrEmployee.weeklyHours (smluvní úvazek).
+model UserHoursPlan {
+  id                 String   @id @default(cuid())
+  organizationId     String?
+  userId             String   @unique
+  weeklyHoursTarget  Decimal? @db.Decimal(6, 2)
+  monthlyHoursTarget Decimal? @db.Decimal(7, 2)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("userHoursPlans")
+}
+
 model Notification {
   id              String             @id @default(cuid())
   recipientUserId String
@@ -915,6 +937,7 @@ model Organization {
   sanctionsScreenings  SanctionsScreening[]
   sanctionsScreeningMatches SanctionsScreeningMatch[]
   contactPersons       ContactPerson[]
+  userHoursPlans       UserHoursPlan[]
 
   @@index([status])
   @@map("organizations")

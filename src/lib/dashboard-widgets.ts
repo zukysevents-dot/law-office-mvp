@@ -19,6 +19,7 @@ export const dashboardWidgetTypes = [
   DashboardWidgetType.REFERENCES_TABLE,
   DashboardWidgetType.RECENT_CONFLICT_CHECKS,
   DashboardWidgetType.CALENDAR_PREVIEW,
+  DashboardWidgetType.WEEKLY_HOURS_CHART,
 ] as const;
 
 export const dashboardWidgetSizes = [
@@ -43,6 +44,7 @@ export const dashboardWidgetTypeLabels: Record<DashboardWidgetType, string> = {
   [DashboardWidgetType.REFERENCES_TABLE]: "Reference",
   [DashboardWidgetType.RECENT_CONFLICT_CHECKS]: "Poslední conflict checky",
   [DashboardWidgetType.CALENDAR_PREVIEW]: "Kalendář",
+  [DashboardWidgetType.WEEKLY_HOURS_CHART]: "Můj týden v hodinách",
 };
 
 export const dashboardWidgetSizeLabels: Record<DashboardWidgetSize, string> = {
@@ -261,6 +263,11 @@ export const defaultDashboardWidgets = [
     type: DashboardWidgetType.WORK_LOGS_SUMMARY,
     title: "Hodiny tento měsíc",
     size: DashboardWidgetSize.SMALL,
+  },
+  {
+    type: DashboardWidgetType.WEEKLY_HOURS_CHART,
+    title: "Můj týden v hodinách",
+    size: DashboardWidgetSize.MEDIUM,
   },
   {
     type: DashboardWidgetType.RECENT_CONFLICT_CHECKS,
