@@ -33,6 +33,8 @@ type NewInvoiceData = {
   subjects: Array<{ id: string; name: string }>;
   workLogs: BillingWorkLog[];
   selectedSubjectId: string;
+  issuers: Array<{ id: string; legalName: string }>;
+  defaultIssuerName: string;
 };
 
 type NewInvoiceProps = {
@@ -44,21 +46,41 @@ export default async function NewInvoicePage({ searchParams }: NewInvoiceProps) 
   const selectedSubjectId = firstParam(params, "subjectId") ?? "";
 
   const result = await safeQuery<NewInvoiceData>(
-    { subjects: [], workLogs: [], selectedSubjectId },
+    {
+      subjects: [],
+      workLogs: [],
+      selectedSubjectId,
+      issuers: [],
+      defaultIssuerName: "Kancelář",
+    },
     async () => {
       const prisma = getPrisma();
       const currentUser = await getCurrentUser();
       await assertModuleEnabled(currentUser, ModuleKey.BILLING);
 
-      const subjects = await prisma.subject.findMany({
-        where: {
-          organizationId: currentUser.organizationId,
-          workLogs: { some: invoiceableWorkLogWhere },
-        },
-        orderBy: { name: "asc" },
-        select: { id: true, name: true },
-        take: 500,
-      });
+      const [subjects, issuers, profile] = await Promise.all([
+        prisma.subject.findMany({
+          where: {
+            organizationId: currentUser.organizationId,
+            workLogs: { some: invoiceableWorkLogWhere },
+          },
+          orderBy: { name: "asc" },
+          select: { id: true, name: true },
+          take: 500,
+        }),
+        prisma.billingIssuer.findMany({
+          where: {
+            organizationId: currentUser.organizationId,
+            archivedAt: null,
+          },
+          orderBy: { legalName: "asc" },
+          select: { id: true, legalName: true },
+        }),
+        prisma.organizationBillingProfile.findUnique({
+          where: { organizationId: currentUser.organizationId },
+          select: { legalName: true },
+        }),
+      ]);
 
       const workLogs = selectedSubjectId
         ? await prisma.workLog.findMany({
@@ -73,7 +95,13 @@ export default async function NewInvoicePage({ searchParams }: NewInvoiceProps) 
           })
         : [];
 
-      return { subjects, workLogs, selectedSubjectId };
+      return {
+        subjects,
+        workLogs,
+        selectedSubjectId,
+        issuers,
+        defaultIssuerName: profile?.legalName ?? "Kancelář",
+      };
     },
   );
 
@@ -81,6 +109,8 @@ export default async function NewInvoicePage({ searchParams }: NewInvoiceProps) 
     subjects: [],
     workLogs: [],
     selectedSubjectId,
+    issuers: [],
+    defaultIssuerName: "Kancelář",
   };
 
   return (
@@ -129,6 +159,16 @@ export default async function NewInvoicePage({ searchParams }: NewInvoiceProps) 
                 name="subjectId"
                 value={data.selectedSubjectId}
               />
+              <Field label="Fakturující subjekt" className="max-w-md">
+                <SelectInput name="issuerId" defaultValue="">
+                  <option value="">{data.defaultIssuerName} (kancelář)</option>
+                  {data.issuers.map((issuer) => (
+                    <option key={issuer.id} value={issuer.id}>
+                      {issuer.legalName}
+                    </option>
+                  ))}
+                </SelectInput>
+              </Field>
               <div className="table-scroll">
                 <table className="w-max min-w-full">
                   <thead>

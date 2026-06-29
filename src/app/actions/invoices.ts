@@ -40,6 +40,8 @@ export async function createInvoiceFromWorkLogs(formData: FormData) {
 
   const organizationId = currentUser.organizationId;
   const subjectId = requiredString(formData, "subjectId");
+  // Volitelný fakturující subjekt (jinak hlavní profil kanceláře).
+  const issuerId = optionalString(formData, "issuerId");
   // Dedupe: a repeated id in the POST must not trip the count check below
   // (Prisma `id: { in }` collapses duplicates, so the raw list could be longer).
   const workLogIds = [
@@ -91,7 +93,19 @@ export async function createInvoiceFromWorkLogs(formData: FormData) {
     const profile = await tx.organizationBillingProfile.findUnique({
       where: { organizationId },
     });
-    const vatMode = vatModeForProfile(profile?.vatPayer);
+    // DPH režim se řídí zvoleným fakturujícím subjektem (nebo profilem kanceláře).
+    let issuerVatPayer = profile?.vatPayer ?? false;
+    if (issuerId) {
+      const issuer = await tx.billingIssuer.findFirst({
+        where: { id: issuerId, organizationId, archivedAt: null },
+        select: { vatPayer: true },
+      });
+      if (!issuer) {
+        throw new Error("Vybraný fakturující subjekt nenalezen.");
+      }
+      issuerVatPayer = issuer.vatPayer;
+    }
+    const vatMode = vatModeForProfile(issuerVatPayer);
 
     const lineInputs = workLogs.map((wl) => {
       const hours = toNum(wl.hours);
@@ -130,6 +144,7 @@ export async function createInvoiceFromWorkLogs(formData: FormData) {
         vatCzk: totals.vat,
         totalCzk: totals.total,
         createdById: currentUser.id,
+        issuerId: issuerId || null,
         lines: {
           create: lineInputs.map((li, index) => {
             const r = computeLine(li, vatMode);
@@ -212,9 +227,35 @@ export async function issueInvoice(formData: FormData) {
         "Nejprve vyplňte fakturační údaje kanceláře (Nastavení → Fakturační údaje).",
       );
     }
-    // vatMode is authoritative from the issuer's profile — never trust client
-    // input. A non-VAT-payer can never issue an invoice with VAT, and vice versa.
-    const vatMode = vatModeForProfile(profile.vatPayer);
+    // Resolve the issuer (supplier) for this invoice: a selected additional
+    // issuer or the office's main profile. Determines vatMode + the frozen
+    // supplier snapshot. vatMode is authoritative — never trust client input;
+    // a non-VAT-payer can never issue an invoice with VAT, and vice versa.
+    const issuer = {
+      legalName: profile.legalName,
+      ico: profile.ico,
+      dic: profile.dic,
+      address: profile.address,
+      bankAccount: profile.bankAccount,
+      iban: profile.iban,
+      vatPayer: profile.vatPayer,
+    };
+    if (invoice.issuerId) {
+      const selected = await tx.billingIssuer.findFirst({
+        where: { id: invoice.issuerId, organizationId },
+      });
+      if (!selected) {
+        throw new Error("Vybraný fakturující subjekt nenalezen.");
+      }
+      issuer.legalName = selected.legalName;
+      issuer.ico = selected.ico;
+      issuer.dic = selected.dic;
+      issuer.address = selected.address;
+      issuer.bankAccount = selected.bankAccount;
+      issuer.iban = selected.iban;
+      issuer.vatPayer = selected.vatPayer;
+    }
+    const vatMode = vatModeForProfile(issuer.vatPayer);
 
     const year = issueDate.getUTCFullYear();
     const month = issueDate.getUTCMonth() + 1;
@@ -331,13 +372,13 @@ export async function issueInvoice(formData: FormData) {
         vatCzk: totals.vat,
         totalCzk: totals.total,
         supplierSnapshot: {
-          legalName: profile.legalName,
-          ico: profile.ico,
-          dic: profile.dic,
-          address: profile.address,
-          bankAccount: profile.bankAccount,
-          iban: profile.iban,
-          vatPayer: profile.vatPayer,
+          legalName: issuer.legalName,
+          ico: issuer.ico,
+          dic: issuer.dic,
+          address: issuer.address,
+          bankAccount: issuer.bankAccount,
+          iban: issuer.iban,
+          vatPayer: issuer.vatPayer,
         },
         customerSnapshot: subject
           ? {

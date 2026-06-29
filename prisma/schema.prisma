@@ -888,6 +888,7 @@ model Organization {
   subscription         Subscription?
   billingProfile       OrganizationBillingProfile?
   invoiceSequences     InvoiceNumberSequence[]
+  billingIssuers       BillingIssuer[]
   invoices             Invoice[]
   payments             Payment[]
   reminders            Reminder[]
@@ -1061,6 +1062,31 @@ model OrganizationBillingProfile {
   @@map("organizationBillingProfiles")
 }
 
+// Další fakturující subjekty kanceláře (kromě hlavního profilu): jednotliví
+// advokáti, poradenská společnost apod. Pro konkrétní fakturu se vybere, kdo ji
+// vystavuje; jeho údaje + DPH režim se při vystavení zamrazí do faktury.
+model BillingIssuer {
+  id             String   @id @default(cuid())
+  organizationId String
+  legalName      String
+  ico            String?
+  dic            String?
+  address        String?
+  bankAccount    String?
+  iban           String?
+  vatPayer       Boolean  @default(false)
+  note           String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  archivedAt     DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invoices     Invoice[]
+
+  @@index([organizationId])
+  @@map("billingIssuers")
+}
+
 // Gap-free invoice number series, unique per org+year. lastNumber is bumped
 // under a FOR UPDATE row lock inside the issueInvoice transaction (B-3).
 model InvoiceNumberSequence {
@@ -1085,6 +1111,9 @@ model Invoice {
   subjectId      String
   projectId      String?
   caseId         String?
+  // Kdo fakturu vystavuje. NULL = hlavní fakturační profil kanceláře; jinak
+  // vybraný další fakturující subjekt (advokát/poradenská společnost).
+  issuerId       String?
 
   // number/VS are NULL in DRAFT; assigned under the sequence lock at ISSUE.
   number         String?
@@ -1122,6 +1151,7 @@ model Invoice {
   subject      Subject      @relation(fields: [subjectId], references: [id], onDelete: Restrict)
   project      Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
   case         Case?        @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  issuer       BillingIssuer? @relation(fields: [issuerId], references: [id], onDelete: SetNull)
   createdBy    User?        @relation("InvoiceCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   issuedBy     User?        @relation("InvoiceIssuedBy", fields: [issuedById], references: [id], onDelete: SetNull)
   lines        InvoiceLine[]
@@ -1134,6 +1164,7 @@ model Invoice {
   @@index([subjectId])
   @@index([projectId])
   @@index([caseId])
+  @@index([issuerId])
   @@index([status])
   @@index([issueDate])
   @@map("invoices")
