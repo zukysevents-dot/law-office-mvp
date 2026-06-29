@@ -39,6 +39,17 @@
 
 `law-office-mvp` je modulární SaaS pro správu advokátní kanceláře, který funkčně dohání zavedené české systémy — primárně **SingleCase**, dále **Praetor**, **MarkTime** a (HR doména) **Alveno**. Jádro (subjekty, spisy/kauzy, úkoly, výkazy práce, reporty, konflikt-check, ARES) už stojí na multi-tenant základu s org-scoped autorizací a auditní stopou. Produkt se prodává po **modulech**, které si organizace zapíná zvlášť (fakturace, datové schránky, AML, lhůtník, dokumenty+šablony, klientský portál, HR/docházka). Software-only přístup: žádný hardware (biometrické terminály), jen importy a integrace na existující státní/účetní rozhraní. Prioritou je **transakční integrita financí a lhůt**, **izolace dat mezi kancelářemi** a **dodržení zákonných povinností** (advokátní mlčenlivost, AML, datové schránky, archivace).
 
+### 1.1 Dlouhodobý cíl: umět všechno, co umí Praetor (TODO, 2026-06-30)
+
+**Záměr (od uživatele):** postupně dodělat *všechny* funkce, které má [Praetor](https://www.praetor.cz/), aby `law-office-mvp` **uměl to stejné co Praetor** — Praetor je referenční srovnávací produkt pro úplnost feature setu. Nejde o marketingovou „paritu", ale o věcný cíl pokrýt celý rozsah toho, co Praetor nabízí, ne jen vybrané moduly.
+
+Co je k tomu potřeba (zatím neuděláno — jen poznamenáno):
+- **Feature-gap audit proti Praetoru** — projít kompletní nabídku Praetoru (správa kontaktů/spisů, time-tracking & výkazy, fakturace, datové schránky, generování dokumentů & šablon, kalendář/lhůty, reporting, klientský portál, mobilní app, účetní napojení, ADIS/insolvenční rejstřík, sledování změn v justici aj.) a zmapovat ji na stávající epiky/moduly níže.
+- Pro každou chybějící funkci založit epik/úkol a zařadit do sekvenování (sekce 4) — neimplementovat naslepo, ale podle priority pilotních klientů.
+- Hlídat, aby honba za šířkou featur nepřebila **právní/bezpečnostní priority** (transakční integrita financí a lhůt, izolace dat, zákonné povinnosti) — ty mají přednost.
+
+> Tohle je **otevřený dlouhodobý směr**, ne naplánovaná fáze. Konkrétní epiky vzniknou až z gap-auditu výše.
+
 ---
 
 ## 2. Epik 0 (PRVNÍ): Architektura produktizace / entitlements
