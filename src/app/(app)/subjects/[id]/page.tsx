@@ -14,6 +14,7 @@ import { Section } from "@/components/section";
 import { SharepointFolderField } from "@/components/sharepoint-folder-field";
 import { SharepointNotice } from "@/components/sharepoint-notice";
 import { SubjectAmlSection } from "@/components/subject-aml-section";
+import type { ScreeningWithMatches } from "@/components/sanctions-screening-panel";
 import { SubjectPortalSection } from "@/components/subject-portal-section";
 import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
@@ -127,16 +128,22 @@ async function loadSubject(id: string) {
       ReturnType<typeof prisma.amlIdentification.findMany>
     >;
     assessment: Awaited<ReturnType<typeof prisma.amlAssessment.findUnique>>;
+    screening: ScreeningWithMatches | null;
   } | null = null;
   if (canAml && subject) {
-    const [identifications, assessment] = await Promise.all([
+    const [identifications, assessment, screening] = await Promise.all([
       prisma.amlIdentification.findMany({
         where: { subjectId: subject.id },
         orderBy: { createdAt: "desc" },
       }),
       prisma.amlAssessment.findUnique({ where: { subjectId: subject.id } }),
+      prisma.sanctionsScreening.findFirst({
+        where: { subjectId: subject.id },
+        orderBy: { createdAt: "desc" },
+        include: { matches: { orderBy: { score: "desc" } } },
+      }),
     ]);
-    aml = { identifications, assessment };
+    aml = { identifications, assessment, screening };
   }
 
   const portalEnabled =
@@ -554,6 +561,7 @@ export default async function SubjectDetailPage({
               subjectId={subject.id}
               identifications={aml.identifications}
               assessment={aml.assessment}
+              screening={aml.screening}
             />
           ) : null}
           {portalEnabled ? (
