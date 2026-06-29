@@ -86,8 +86,9 @@ export const tableViewConfigs = {
     label: "Projekty",
     path: "/projects",
     columns: [
+      // Client first — lawyers scan the project list by client, not name.
+      { id: "mainSubject", label: "Klient", defaultVisible: true },
       { id: "name", label: "Název", defaultVisible: true },
-      { id: "mainSubject", label: "Hlavní subjekt", defaultVisible: true },
       {
         id: "responsibleUser",
         label: "Odpovědný uživatel",
@@ -105,6 +106,9 @@ export const tableViewConfigs = {
     label: "Případy",
     path: "/cases",
     columns: [
+      // Client first — a case named "Právní služby" only makes sense next to
+      // its client; the project name alone isn't a strong distinguisher.
+      { id: "mainSubject", label: "Klient", defaultVisible: true },
       { id: "name", label: "Název", defaultVisible: true },
       { id: "project", label: "Projekt", defaultVisible: true },
       { id: "fileNumber", label: "Spisová značka", defaultVisible: true },

@@ -166,6 +166,18 @@ export default async function ProjectDetailPage({
         action={
           project ? (
             <>
+              <ButtonLink
+                href={`/cases?projectId=${project.id}#new-case`}
+                variant="secondary"
+              >
+                Nový případ
+              </ButtonLink>
+              <ButtonLink
+                href={`/tasks?projectId=${project.id}#new-task`}
+                variant="secondary"
+              >
+                Nový úkol
+              </ButtonLink>
               {canEdit ? (
                 <ButtonLink href={`/projects/${project.id}/edit`}>
                   Upravit projekt
@@ -198,7 +210,7 @@ export default async function ProjectDetailPage({
               </div>
               <div>
                 <p className="text-xs font-semibold uppercase text-stone-500">
-                  Hlavní subjekt
+                  Klient
                 </p>
                 <Link
                   href={`/subjects/${project.mainSubject.id}`}

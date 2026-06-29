@@ -158,6 +158,29 @@ const defaultTableColumns: Partial<Record<DashboardWidgetType, string[]>> = {
   ],
 };
 
+// Stat-card widgets link to the matching filtered list so the dashboard boxes
+// are clickable (lawyer request: "kliknu na po termínu a vidím úkoly po termínu").
+export function dashboardWidgetHref(
+  type: DashboardWidgetType,
+): string | undefined {
+  switch (type) {
+    case DashboardWidgetType.ACTIVE_TASKS:
+      return "/tasks";
+    case DashboardWidgetType.OVERDUE_TASKS:
+      return "/tasks?overdue=1";
+    case DashboardWidgetType.FOR_REVIEW_TASKS:
+      return "/tasks?status=FOR_REVIEW";
+    case DashboardWidgetType.WAITING_FOR_CLIENT_TASKS:
+      return "/tasks?status=WAITING_FOR_CLIENT";
+    case DashboardWidgetType.WAITING_FOR_COUNTERPARTY_TASKS:
+      return "/tasks?status=WAITING_FOR_COUNTERPARTY";
+    case DashboardWidgetType.WORK_LOGS_SUMMARY:
+      return "/work-logs";
+    default:
+      return undefined;
+  }
+}
+
 export function isDashboardTableWidget(type: DashboardWidgetType) {
   return Boolean(dashboardTableColumns[type]);
 }

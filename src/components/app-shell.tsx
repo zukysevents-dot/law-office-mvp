@@ -26,7 +26,7 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
         enabledModules={enabledModules}
       />
       <main className="min-w-0 flex-1 overflow-x-hidden">
-        <div className="mx-auto flex w-full max-w-7xl min-w-0 flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
+        <div className="mx-auto flex w-full max-w-[1800px] min-w-0 flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
           {children}
         </div>
       </main>

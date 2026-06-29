@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 
+import { archiveFilterValue, archivedWhere } from "@/lib/archive-filter";
 import { getCurrentUser } from "@/lib/auth";
 import { buildCsvBody, csvNumber, csvResponse } from "@/lib/export/csv";
 import { buildXlsx, xlsxResponse, type XlsxColumn } from "@/lib/export/xlsx";
@@ -51,6 +52,63 @@ function toNumber(value: unknown) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+// Parse a money filter value (accepts comma decimals), mirroring the list page.
+function parseAmount(value: string | null) {
+  if (!value) {
+    return null;
+  }
+  const parsed = Number(value.replace(",", "."));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+// Build the same where fragment the /references list page uses, so "export"
+// honors whatever the user has filtered to (lawyers wanted filtered exports).
+function referenceFilterWhere(searchParams: URLSearchParams) {
+  const query = (searchParams.get("q") ?? "").trim();
+  const legalArea = searchParams.get("legalArea") ?? "";
+  const minValue = parseAmount(searchParams.get("minValue"));
+  const maxValue = parseAmount(searchParams.get("maxValue"));
+  const period = searchParams.get("period") ?? "";
+
+  return {
+    ...(query
+      ? {
+          OR: [
+            { title: { contains: query, mode: "insensitive" as const } },
+            { description: { contains: query, mode: "insensitive" as const } },
+            { legalArea: { contains: query, mode: "insensitive" as const } },
+            {
+              project: {
+                is: { name: { contains: query, mode: "insensitive" as const } },
+              },
+            },
+            {
+              case: {
+                is: { name: { contains: query, mode: "insensitive" as const } },
+              },
+            },
+            {
+              subject: {
+                is: { name: { contains: query, mode: "insensitive" as const } },
+              },
+            },
+          ],
+        }
+      : {}),
+    ...(legalArea ? { legalArea } : {}),
+    ...(minValue !== null || maxValue !== null
+      ? {
+          valueCzk: {
+            ...(minValue !== null ? { gte: minValue } : {}),
+            ...(maxValue !== null ? { lte: maxValue } : {}),
+          },
+        }
+      : {}),
+    ...(period === "ongoing" ? { endDate: null } : {}),
+    ...(period === "finished" ? { endDate: { not: null } } : {}),
+  };
+}
+
 function dateCell(value: Date | null) {
   return value ? formatDateUtc(value) : "";
 }
@@ -61,13 +119,18 @@ export async function GET(request: NextRequest) {
     ? "csv"
     : "xlsx";
 
+  const archive = archiveFilterValue(
+    request.nextUrl.searchParams.get("archive") ?? undefined,
+  );
+
   let rows;
   try {
     const prisma = getPrisma();
     rows = await prisma.reference.findMany({
       where: andWhere(
-        { archivedAt: null },
+        archivedWhere(archive),
         referenceVisibilityWhere(currentUser),
+        referenceFilterWhere(request.nextUrl.searchParams),
       ),
       orderBy: [{ endDate: "asc" }, { startDate: "desc" }],
       include: exportInclude,

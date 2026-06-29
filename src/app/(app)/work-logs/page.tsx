@@ -6,6 +6,7 @@ import {
   restoreWorkLog,
 } from "@/app/actions/work-logs";
 import { ArchiveActionForm } from "@/components/archive-action-form";
+import { CascadingMatterSelect } from "@/components/cascading-matter-select";
 import { ColumnVisibilityPanel } from "@/components/column-visibility-panel";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
@@ -40,12 +41,16 @@ import { billingStatusTone } from "@/lib/status-tones";
 import {
   getCurrentTableView,
   getDefaultTableView,
+  restrictTableView,
 } from "@/lib/table-view-preference-service";
 import type { TableViewState } from "@/lib/table-view-preferences";
+import { BillingStatus } from "@/generated/prisma/enums";
 import {
   andWhere,
   canViewAllLegalData,
   canEditRecord,
+  canSetBillableStatus,
+  canViewRates,
   caseVisibilityWhere,
   projectVisibilityWhere,
   subjectVisibilityWhere,
@@ -82,12 +87,24 @@ type WorkLogsPageData = {
     canEdit: boolean;
   }>;
   subjects: Array<{ id: string; name: string; ico: string | null }>;
-  projects: Array<{ id: string; name: string }>;
-  cases: Array<{ id: string; name: string; project: { name: string } }>;
-  tasks: Array<{ id: string; title: string }>;
+  projects: Array<{ id: string; name: string; mainSubjectId: string }>;
+  cases: Array<{
+    id: string;
+    name: string;
+    projectId: string;
+    project: { name: string };
+  }>;
+  tasks: Array<{
+    id: string;
+    title: string;
+    projectId: string | null;
+    caseId: string | null;
+  }>;
   users: Array<{ id: string; name: string }>;
   tableView: TableViewState;
   canArchive: boolean;
+  canViewRates: boolean;
+  canSetBillable: boolean;
 };
 
 function numberParam(value: string) {
@@ -125,6 +142,8 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
       users: [],
       tableView: getDefaultTableView("workLogs"),
       canArchive: false,
+      canViewRates: false,
+      canSetBillable: false,
     },
     async () => {
       const prisma = getPrisma();
@@ -202,7 +221,7 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
             projectVisibilityWhere(currentUser),
           ),
           orderBy: { name: "asc" },
-          select: { id: true, name: true },
+          select: { id: true, name: true, mainSubjectId: true },
         }),
         prisma.case.findMany({
           where: andWhere(
@@ -210,7 +229,12 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
             caseVisibilityWhere(currentUser),
           ),
           orderBy: { name: "asc" },
-          select: { id: true, name: true, project: { select: { name: true } } },
+          select: {
+            id: true,
+            name: true,
+            projectId: true,
+            project: { select: { name: true } },
+          },
         }),
         prisma.task.findMany({
           where: andWhere(
@@ -218,7 +242,7 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
             taskVisibilityWhere(currentUser),
           ),
           orderBy: { createdAt: "desc" },
-          select: { id: true, title: true },
+          select: { id: true, title: true, projectId: true, caseId: true },
         }),
         prisma.user.findMany({
           where: { active: true },
@@ -239,10 +263,23 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
         users,
         tableView,
         canArchive: canViewAllLegalData(currentUser),
+        canViewRates: canViewRates(currentUser),
+        canSetBillable: canSetBillableStatus(currentUser),
       };
     },
   );
-  const visibleColumnSet = new Set(result.data.tableView.visibleColumns);
+  // Hide rate + amount for roles that may not see pricing.
+  const tableView = result.data.canViewRates
+    ? result.data.tableView
+    : restrictTableView(result.data.tableView, ["hourlyRate", "amount"]);
+  const visibleColumnSet = new Set(tableView.visibleColumns);
+  // Junior roles file work only as "ke schválení" / "interní".
+  const billingStatusChoices = result.data.canSetBillable
+    ? options.billingStatuses
+    : [BillingStatus.NEEDS_APPROVAL, BillingStatus.INTERNAL_NON_BILLABLE];
+  const defaultBillingStatus = result.data.canSetBillable
+    ? BillingStatus.BILLABLE
+    : BillingStatus.NEEDS_APPROVAL;
 
   return (
     <>
@@ -376,15 +413,15 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
       <Section title="Seznam výkazů práce">
         <ColumnVisibilityPanel
           tableKey="workLogs"
-          columns={result.data.tableView.columns}
-          visibleColumns={result.data.tableView.visibleColumns}
+          columns={tableView.columns}
+          visibleColumns={tableView.visibleColumns}
         />
         {result.data.workLogs.length > 0 ? (
           <div className="table-scroll">
             <table className="w-max min-w-full">
               <thead>
                 <tr>
-                  {result.data.tableView.columns
+                  {tableView.columns
                     .filter((column) => visibleColumnSet.has(column.id))
                     .map((column) => (
                       <th key={column.id}>{column.label}</th>
@@ -480,64 +517,49 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
       </Section>
       <Section title="Nový výkaz práce" id="new-work-log" className="scroll-mt-6">
         <form action={createWorkLog} className="grid gap-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Subjekt">
-              <SelectInput name="subjectId">
-                <option value="">Bez subjektu</option>
-                {result.data.subjects.map((subject) => (
-                  <option key={subject.id} value={subject.id}>
-                    {subject.name}
-                    {subject.ico ? `, IČO ${subject.ico}` : ""}
-                  </option>
-                ))}
-              </SelectInput>
-            </Field>
-            <Field label="Projekt">
-              <SelectInput name="projectId">
-                <option value="">Bez projektu</option>
-                {result.data.projects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-              </SelectInput>
-            </Field>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Případ">
-              <SelectInput name="caseId">
-                <option value="">Bez případu</option>
-                {result.data.cases.map((legalCase) => (
-                  <option key={legalCase.id} value={legalCase.id}>
-                    {legalCase.name} / {legalCase.project.name}
-                  </option>
-                ))}
-              </SelectInput>
-            </Field>
-            <Field label="Úkol">
-              <SelectInput name="taskId">
-                <option value="">Bez úkolu</option>
-                {result.data.tasks.map((task) => (
-                  <option key={task.id} value={task.id}>
-                    {task.title}
-                  </option>
-                ))}
-              </SelectInput>
-            </Field>
-          </div>
-          <div className="grid gap-4 md:grid-cols-5">
+          {/* Cascading subject → project → case → task. Choosing a project/case
+              narrows the task list to only that matter's tasks. */}
+          <CascadingMatterSelect
+            subjects={result.data.subjects.map((subject) => ({
+              id: subject.id,
+              name: subject.ico
+                ? `${subject.name}, IČO ${subject.ico}`
+                : subject.name,
+            }))}
+            projects={result.data.projects}
+            cases={result.data.cases.map((legalCase) => ({
+              id: legalCase.id,
+              name: legalCase.name,
+              projectId: legalCase.projectId,
+              projectName: legalCase.project.name,
+            }))}
+            tasks={result.data.tasks}
+            includeTask
+            subjectLabel="Subjekt"
+          />
+          <div
+            className={
+              result.data.canViewRates
+                ? "grid gap-4 md:grid-cols-5"
+                : "grid gap-4 md:grid-cols-4"
+            }
+          >
             <Field label="Datum práce">
               <TextInput name="workDate" type="date" required />
             </Field>
             <Field label="Hodiny">
               <TextInput name="hours" type="number" min="0" step="0.25" required />
             </Field>
-            <Field label="Sazba">
-              <TextInput name="hourlyRate" type="number" min="0" step="0.01" />
-            </Field>
+            {/* Rate is hidden during reporting for non-partners — it is derived
+                from the case/project and they shouldn't see (or set) pricing. */}
+            {result.data.canViewRates ? (
+              <Field label="Sazba">
+                <TextInput name="hourlyRate" type="number" min="0" step="0.01" />
+              </Field>
+            ) : null}
             <Field label="Billing status">
-              <SelectInput name="billingStatus" defaultValue="BILLABLE">
-                {options.billingStatuses.map((status) => (
+              <SelectInput name="billingStatus" defaultValue={defaultBillingStatus}>
+                {billingStatusChoices.map((status) => (
                   <option key={status} value={status}>
                     {billingStatusLabels[status]}
                   </option>

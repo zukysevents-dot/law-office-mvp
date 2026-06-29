@@ -21,6 +21,7 @@ import { formatDate, formatMoney } from "@/lib/format";
 import { options, projectStatusLabels } from "@/lib/labels";
 import {
   andWhere,
+  canViewRates,
   projectVisibilityWhere,
   subjectVisibilityWhere,
 } from "@/lib/permissions";
@@ -28,13 +29,14 @@ import { getPrisma } from "@/lib/prisma";
 import {
   getCurrentTableView,
   getDefaultTableView,
+  restrictTableView,
 } from "@/lib/table-view-preference-service";
 import type { TableViewState } from "@/lib/table-view-preferences";
 
 export const dynamic = "force-dynamic";
 
 type ProjectsPageProps = {
-  searchParams: Promise<{ archive?: string }>;
+  searchParams: Promise<{ archive?: string; subjectId?: string }>;
 };
 
 type ProjectPageData = {
@@ -53,17 +55,20 @@ type ProjectPageData = {
   subjects: Array<{ id: string; name: string; ico: string | null }>;
   users: Array<{ id: string; name: string }>;
   tableView: TableViewState;
+  canViewRates: boolean;
 };
 
 export default async function ProjectsPage({ searchParams }: ProjectsPageProps) {
   const params = await searchParams;
   const archive = archiveFilterValue(params.archive);
+  const subjectId = params.subjectId ?? "";
   const result = await safeQuery<ProjectPageData>(
     {
       projects: [],
       subjects: [],
       users: [],
       tableView: getDefaultTableView("projects"),
+      canViewRates: false,
     },
     async () => {
       const prisma = getPrisma();
@@ -74,6 +79,7 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
           where: andWhere(
             archivedWhere(archive),
             projectVisibilityWhere(currentUser),
+            subjectId ? { mainSubjectId: subjectId } : {},
           ),
           orderBy: { createdAt: "desc" },
           include: {
@@ -96,10 +102,20 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
         }),
       ]);
 
-      return { projects, subjects, users, tableView };
+      return {
+        projects,
+        subjects,
+        users,
+        tableView,
+        canViewRates: canViewRates(currentUser),
+      };
     },
   );
-  const visibleColumnSet = new Set(result.data.tableView.visibleColumns);
+  // Strip the rate column for roles that may not see pricing.
+  const tableView = result.data.canViewRates
+    ? result.data.tableView
+    : restrictTableView(result.data.tableView, ["hourlyRate"]);
+  const visibleColumnSet = new Set(tableView.visibleColumns);
 
   return (
     <>
@@ -118,7 +134,17 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
         error={result.error}
       />
       <Section>
-        <form className="grid gap-3 md:grid-cols-[220px_auto]">
+        <form className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <Field label="Klient">
+            <SelectInput name="subjectId" defaultValue={subjectId}>
+              <option value="">Všichni klienti</option>
+              {result.data.subjects.map((subject) => (
+                <option key={subject.id} value={subject.id}>
+                  {subject.name}
+                </option>
+              ))}
+            </SelectInput>
+          </Field>
           <Field label="Archiv">
             <SelectInput name="archive" defaultValue={archive}>
               {Object.entries(archiveFilterLabels).map(([value, label]) => (
@@ -136,15 +162,15 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
       <Section title="Seznam projektů">
         <ColumnVisibilityPanel
           tableKey="projects"
-          columns={result.data.tableView.columns}
-          visibleColumns={result.data.tableView.visibleColumns}
+          columns={tableView.columns}
+          visibleColumns={tableView.visibleColumns}
         />
         {result.data.projects.length > 0 ? (
           <div className="table-scroll">
             <table className="w-max min-w-full">
               <thead>
                 <tr>
-                  {result.data.tableView.columns
+                  {tableView.columns
                     .filter((column) => visibleColumnSet.has(column.id))
                     .map((column) => (
                       <th key={column.id}>{column.label}</th>
@@ -228,7 +254,7 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
             </Field>
           </div>
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Hlavní subjekt">
+            <Field label="Klient">
               <SelectInput name="mainSubjectId" required>
                 <option value="">Vyberte subjekt</option>
                 {result.data.subjects.map((subject) => (

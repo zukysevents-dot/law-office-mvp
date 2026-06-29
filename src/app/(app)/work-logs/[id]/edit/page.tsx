@@ -22,10 +22,13 @@ import {
   options,
 } from "@/lib/labels";
 import { safeQuery } from "@/lib/db-safe";
+import { BillingStatus } from "@/generated/prisma/enums";
 import {
   andWhere,
   canViewAllLegalData,
   canEditRecord,
+  canSetBillableStatus,
+  canViewRates,
   caseVisibilityWhere,
   projectVisibilityWhere,
   subjectVisibilityWhere,
@@ -88,6 +91,8 @@ async function loadWorkLogEdit(id: string) {
     cases,
     tasks,
     canArchive: canViewAllLegalData(currentUser),
+    canViewRates: canViewRates(currentUser),
+    canSetBillable: canSetBillableStatus(currentUser),
   };
 }
 
@@ -100,6 +105,8 @@ const emptyWorkLogEdit: WorkLogEditData = {
   cases: [],
   tasks: [],
   canArchive: false,
+  canViewRates: false,
+  canSetBillable: false,
 };
 
 export default async function WorkLogEditPage({ params }: WorkLogEditProps) {
@@ -113,7 +120,19 @@ export default async function WorkLogEditPage({ params }: WorkLogEditProps) {
     notFound();
   }
 
-  const { workLog, subjects, projects, cases, tasks, canArchive } = result.data;
+  const {
+    workLog,
+    subjects,
+    projects,
+    cases,
+    tasks,
+    canArchive,
+    canViewRates: showRates,
+    canSetBillable,
+  } = result.data;
+  const billingStatusChoices = canSetBillable
+    ? options.billingStatuses
+    : [BillingStatus.NEEDS_APPROVAL, BillingStatus.INTERNAL_NON_BILLABLE];
 
   return (
     <>
@@ -210,32 +229,36 @@ export default async function WorkLogEditPage({ params }: WorkLogEditProps) {
                   required
                 />
               </Field>
-              <Field label="Sazba">
-                <TextInput
-                  name="hourlyRate"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  defaultValue={numberInputValue(workLog.hourlyRate)}
-                />
-              </Field>
+              {showRates ? (
+                <Field label="Sazba">
+                  <TextInput
+                    name="hourlyRate"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    defaultValue={numberInputValue(workLog.hourlyRate)}
+                  />
+                </Field>
+              ) : null}
             </div>
             <div className="grid gap-4 md:grid-cols-3">
-              <Field label="Částka">
-                <TextInput
-                  name="amountCzk"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  defaultValue={numberInputValue(workLog.amountCzk)}
-                />
-              </Field>
+              {showRates ? (
+                <Field label="Částka">
+                  <TextInput
+                    name="amountCzk"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    defaultValue={numberInputValue(workLog.amountCzk)}
+                  />
+                </Field>
+              ) : null}
               <Field label="Billing status">
                 <SelectInput
                   name="billingStatus"
                   defaultValue={workLog.billingStatus}
                 >
-                  {options.billingStatuses.map((status) => (
+                  {billingStatusChoices.map((status) => (
                     <option key={status} value={status}>
                       {billingStatusLabels[status]}
                     </option>

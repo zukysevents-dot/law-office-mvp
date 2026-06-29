@@ -137,6 +137,19 @@ export function canViewAllLegalData(user: PermissionInput) {
   return isAdmin(user) || isPartner(user);
 }
 
+// Hourly rates / billed amounts are partner-level information. Lawyers asked
+// that anyone who is not admin/partner not even see the rate column — those who
+// merely report hours shouldn't know (or be distracted by) the pricing.
+export function canViewRates(user: PermissionInput) {
+  return canViewAllLegalData(user);
+}
+
+// Who may mark work directly billable. Junior roles (trainee, intern) only get
+// "ke schválení" / "interní" — a partner/advokát decides what gets billed.
+export function canSetBillableStatus(user: PermissionInput) {
+  return canViewAllLegalData(user) || roleOf(user) === UserRole.LAWYER;
+}
+
 export function assertCanArchiveRecords(user: PermissionInput) {
   if (!canViewAllLegalData(user)) {
     throw new Error("Nemáte oprávnění archivovat ani obnovovat záznamy.");

@@ -124,6 +124,29 @@ export async function updateTask(formData: FormData) {
   });
   assertCanEditRecord(currentUser, "Task", oldTask);
 
+  // Re-filing the task must respect visibility — can't move it onto a
+  // project/case the user can't see (IDOR guard, mirrors createTask).
+  const projectId = optionalString(formData, "projectId");
+  const caseId = optionalString(formData, "caseId");
+  if (projectId) {
+    const project = await prisma.project.findFirst({
+      where: andWhere({ id: projectId }, projectVisibilityWhere(currentUser)),
+      select: { id: true },
+    });
+    if (!project) {
+      throw new Error("Projekt nenalezen nebo k němu nemáte oprávnění.");
+    }
+  }
+  if (caseId) {
+    const legalCase = await prisma.case.findFirst({
+      where: andWhere({ id: caseId }, caseVisibilityWhere(currentUser)),
+      select: { id: true },
+    });
+    if (!legalCase) {
+      throw new Error("Případ nenalezen nebo k němu nemáte oprávnění.");
+    }
+  }
+
   const statusChanged = oldTask.status !== newStatus;
   const completedAt =
     statusChanged && newStatus === TaskStatus.COMPLETED ? new Date() : undefined;
@@ -137,8 +160,8 @@ export async function updateTask(formData: FormData) {
       where: { id: taskId },
       data: {
         title: requiredString(formData, "title"),
-        projectId: optionalString(formData, "projectId"),
-        caseId: optionalString(formData, "caseId"),
+        projectId,
+        caseId,
         assignedToId: optionalString(formData, "assignedToId"),
         responsibleUserId: optionalString(formData, "responsibleUserId"),
         status: newStatus,

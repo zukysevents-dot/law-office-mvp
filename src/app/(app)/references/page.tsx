@@ -217,16 +217,38 @@ export default async function ReferencesPage({ searchParams }: ReferencesProps) 
   );
   const visibleColumnSet = new Set(result.data.tableView.visibleColumns);
 
+  // Carry the active filters into the export so "Export" gives exactly the rows
+  // currently shown (filtered export was a lawyer request).
+  const exportParams = new URLSearchParams();
+  if (query) exportParams.set("q", query);
+  if (legalArea) exportParams.set("legalArea", legalArea);
+  if (params.minValue) exportParams.set("minValue", params.minValue);
+  if (params.maxValue) exportParams.set("maxValue", params.maxValue);
+  if (period) exportParams.set("period", period);
+  if (archive) exportParams.set("archive", archive);
+  const exportSuffix = exportParams.toString() ? `?${exportParams.toString()}` : "";
+  const exportBase = "/reports/references/export";
+  const xlsxHref = `${exportBase}${exportSuffix}`;
+  const csvHref = `${exportBase}${exportSuffix ? `${exportSuffix}&` : "?"}format=csv`;
+
   return (
     <>
       <PageHeader
         title="Reference"
         description="Vyhledávání referencí podle právního odvětví, hodnoty a období pro veřejné zakázky i obchodní nabídky."
         action={
-          <ButtonLink href="#new-reference">
-            <Plus className="h-4 w-4" aria-hidden="true" />
-            Nová reference
-          </ButtonLink>
+          <>
+            <ButtonLink href={xlsxHref} variant="secondary">
+              Export XLSX
+            </ButtonLink>
+            <ButtonLink href={csvHref} variant="secondary">
+              Export CSV
+            </ButtonLink>
+            <ButtonLink href="#new-reference">
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              Nová reference
+            </ButtonLink>
+          </>
         }
       />
       <DatabaseNotice

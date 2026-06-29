@@ -31,6 +31,7 @@ import { activeTaskCount, statusCount } from "@/lib/dashboard/task-counts";
 import { cn } from "@/lib/utils";
 import {
   dashboardTableColumns,
+  dashboardWidgetHref,
   ensureDefaultDashboardWidgets,
   getVisibleDashboardColumns,
 } from "@/lib/dashboard-widgets";
@@ -48,6 +49,7 @@ import { safeQuery } from "@/lib/db-safe";
 import { getCurrentUser } from "@/lib/auth";
 import {
   andWhere,
+  canViewRates,
   caseVisibilityWhere,
   projectVisibilityWhere,
   referenceVisibilityWhere,
@@ -166,6 +168,7 @@ type DashboardData = {
     status: TaskStatus;
     project: { id: string; name: string } | null;
   }>;
+  canViewRates: boolean;
 };
 
 const fallbackData: DashboardData = {
@@ -186,6 +189,7 @@ const fallbackData: DashboardData = {
   references: [],
   recentChecks: [],
   calendarTasks: [],
+  canViewRates: false,
 };
 
 const sizeClasses: Record<DashboardWidgetSize, string> = {
@@ -498,6 +502,7 @@ function renderWidget(widget: DashboardWidgetView, data: DashboardData) {
           label={widget.title}
           value={data.counts.activeTasks}
           icon={ListTodo}
+          href={dashboardWidgetHref(widget.type)}
         />
       );
     case DashboardWidgetType.OVERDUE_TASKS:
@@ -507,6 +512,7 @@ function renderWidget(widget: DashboardWidgetView, data: DashboardData) {
           value={data.counts.overdueTasks}
           icon={Clock3}
           tone="danger"
+          href={dashboardWidgetHref(widget.type)}
         />
       );
     case DashboardWidgetType.FOR_REVIEW_TASKS:
@@ -515,6 +521,7 @@ function renderWidget(widget: DashboardWidgetView, data: DashboardData) {
           label={widget.title}
           value={data.counts.reviewTasks}
           icon={ListChecks}
+          href={dashboardWidgetHref(widget.type)}
         />
       );
     case DashboardWidgetType.WAITING_FOR_CLIENT_TASKS:
@@ -523,6 +530,7 @@ function renderWidget(widget: DashboardWidgetView, data: DashboardData) {
           label={widget.title}
           value={data.counts.waitingForClientTasks}
           icon={UserRound}
+          href={dashboardWidgetHref(widget.type)}
         />
       );
     case DashboardWidgetType.WAITING_FOR_COUNTERPARTY_TASKS:
@@ -531,6 +539,7 @@ function renderWidget(widget: DashboardWidgetView, data: DashboardData) {
           label={widget.title}
           value={data.counts.waitingForCounterpartyTasks}
           icon={ShieldAlert}
+          href={dashboardWidgetHref(widget.type)}
         />
       );
     case DashboardWidgetType.WORK_LOGS_SUMMARY:
@@ -539,6 +548,7 @@ function renderWidget(widget: DashboardWidgetView, data: DashboardData) {
           label={widget.title}
           value={`${data.monthHours} h`}
           icon={CheckCircle2}
+          href={dashboardWidgetHref(widget.type)}
         />
       );
     case DashboardWidgetType.MY_TASKS_TABLE:
@@ -561,14 +571,20 @@ function renderWidget(widget: DashboardWidgetView, data: DashboardData) {
           )}
         </Section>
       );
-    case DashboardWidgetType.WORK_LOGS_TABLE:
+    case DashboardWidgetType.WORK_LOGS_TABLE: {
+      // Drop rate/amount columns for roles that may not see pricing.
+      const workLogColumns = data.canViewRates
+        ? columns
+        : columns.filter(
+            (column) => column !== "hourlyRate" && column !== "amount",
+          );
       return (
         <Section title={widget.title}>
           {data.workLogs.length > 0 ? (
-            <DashboardTable type={widget.type} columns={columns}>
+            <DashboardTable type={widget.type} columns={workLogColumns}>
               {data.workLogs.map((log) => (
                 <tr key={log.id}>
-                  {columns.map((column) => (
+                  {workLogColumns.map((column) => (
                     <td key={column} className={cellClass(column)}>
                       {renderWorkLogCell(log, column)}
                     </td>
@@ -581,6 +597,7 @@ function renderWidget(widget: DashboardWidgetView, data: DashboardData) {
           )}
         </Section>
       );
+    }
     case DashboardWidgetType.SUBJECTS_TABLE:
       return (
         <Section title={widget.title}>
@@ -993,6 +1010,7 @@ export default async function DashboardPage() {
       references,
       recentChecks,
       calendarTasks,
+      canViewRates: canViewRates(currentUser),
     };
   });
 

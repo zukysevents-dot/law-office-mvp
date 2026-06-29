@@ -77,4 +77,23 @@ export async function getCurrentTableView(
   };
 }
 
+// Drop specific columns from a resolved table view (both the column list that
+// drives the header/picker and the visible set). Used to enforce role-based
+// hiding of rate/amount columns without touching the user's stored preference.
+export function restrictTableView(
+  view: TableViewState,
+  hiddenColumnIds: readonly string[],
+): TableViewState {
+  if (hiddenColumnIds.length === 0) {
+    return view;
+  }
+
+  const hidden = new Set(hiddenColumnIds);
+
+  return {
+    columns: view.columns.filter((column) => !hidden.has(column.id)),
+    visibleColumns: view.visibleColumns.filter((id) => !hidden.has(id)),
+  };
+}
+
 export { getDefaultTableView };

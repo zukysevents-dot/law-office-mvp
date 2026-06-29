@@ -254,12 +254,15 @@ export const legalAreaOptions = [
   "Civilní právo",
   "Obchodní právo",
   "Pracovní právo",
+  "Rodinné právo",
   "Správní právo",
   "Trestní právo",
   "Insolvence",
   "Veřejné zakázky",
   "Soudní spor",
   "Compliance",
+  "Ztráta času cestováním",
+  "Jednání s klientem",
   "Jiné",
 ];
 

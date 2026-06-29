@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 
 import { createTask, updateTaskStatus } from "@/app/actions/tasks";
+import { CascadingMatterSelect } from "@/components/cascading-matter-select";
 import { ColumnVisibilityPanel } from "@/components/column-visibility-panel";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
@@ -43,11 +44,13 @@ import {
   canEditRecord,
   caseVisibilityWhere,
   projectVisibilityWhere,
+  subjectVisibilityWhere,
   taskVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import {
   taskDeadlineTypeTone,
+  taskStatusRowClass,
   taskStatusTone,
 } from "@/lib/status-tones";
 import { applyTaskLimit } from "@/lib/tasks/list-truncation";
@@ -65,9 +68,11 @@ type TasksProps = {
     priority?: string;
     assignedToId?: string;
     responsibleUserId?: string;
+    subjectId?: string;
     projectId?: string;
     caseId?: string;
     deadlineType?: string;
+    overdue?: string;
     sort?: string;
     archive?: string;
   }>;
@@ -104,8 +109,14 @@ type TasksPageData = {
   tasks: TaskRow[];
   truncated: boolean;
   users: Array<{ id: string; name: string }>;
-  projects: Array<{ id: string; name: string }>;
-  cases: Array<{ id: string; name: string; project: { name: string } }>;
+  subjects: Array<{ id: string; name: string }>;
+  projects: Array<{ id: string; name: string; mainSubjectId: string }>;
+  cases: Array<{
+    id: string;
+    name: string;
+    projectId: string;
+    project: { name: string };
+  }>;
   cards: {
     review: number;
     waitingClient: number;
@@ -182,8 +193,10 @@ export default async function TasksPage({ searchParams }: TasksProps) {
   const deadlineType = validEnum(TaskDeadlineType, params.deadlineType);
   const assignedToId = params.assignedToId ?? "";
   const responsibleUserId = params.responsibleUserId ?? "";
+  const subjectId = params.subjectId ?? "";
   const projectId = params.projectId ?? "";
   const caseId = params.caseId ?? "";
+  const overdueOnly = params.overdue === "1" || params.overdue === "true";
   const sort = params.sort ?? "deadline";
   const archive = archiveFilterValue(params.archive);
   const now = new Date();
@@ -192,6 +205,7 @@ export default async function TasksPage({ searchParams }: TasksProps) {
     {
       tasks: [],
       users: [],
+      subjects: [],
       projects: [],
       cases: [],
       truncated: false,
@@ -218,10 +232,28 @@ export default async function TasksPage({ searchParams }: TasksProps) {
           ...(responsibleUserId ? { responsibleUserId } : {}),
           ...(projectId ? { projectId } : {}),
           ...(caseId ? { caseId } : {}),
+          // "Po termínu" card links here: overdue = past deadline and not yet
+          // done. Don't clobber an explicit status filter if one is also set.
+          ...(overdueOnly
+            ? {
+                deadline: { lt: now },
+                ...(status ? {} : { status: { not: TaskStatus.COMPLETED } }),
+              }
+            : {}),
         },
+        // Client filter: task hangs under a project (direct) or a case (whose
+        // project carries the client). Match either path.
+        subjectId
+          ? {
+              OR: [
+                { project: { mainSubjectId: subjectId } },
+                { case: { project: { mainSubjectId: subjectId } } },
+              ],
+            }
+          : {},
       );
 
-      const [tasks, users, projects, cases, statusGroups, overdue] =
+      const [tasks, users, subjects, projects, cases, statusGroups, overdue] =
         await Promise.all([
         prisma.task.findMany({
           where,
@@ -275,13 +307,21 @@ export default async function TasksPage({ searchParams }: TasksProps) {
           orderBy: { name: "asc" },
           select: { id: true, name: true },
         }),
+        prisma.subject.findMany({
+          where: andWhere(
+            { archivedAt: null },
+            subjectVisibilityWhere(currentUser),
+          ),
+          orderBy: { name: "asc" },
+          select: { id: true, name: true },
+        }),
         prisma.project.findMany({
           where: andWhere(
             { archivedAt: null },
             projectVisibilityWhere(currentUser),
           ),
           orderBy: { name: "asc" },
-          select: { id: true, name: true },
+          select: { id: true, name: true, mainSubjectId: true },
         }),
         prisma.case.findMany({
           where: andWhere(
@@ -289,7 +329,12 @@ export default async function TasksPage({ searchParams }: TasksProps) {
             caseVisibilityWhere(currentUser),
           ),
           orderBy: { name: "asc" },
-          select: { id: true, name: true, project: { select: { name: true } } },
+          select: {
+            id: true,
+            name: true,
+            projectId: true,
+            project: { select: { name: true } },
+          },
         }),
         // One grouped scan covers the three status cards; overdue keeps its own
         // count because it filters on deadline rather than a single status.
@@ -319,6 +364,7 @@ export default async function TasksPage({ searchParams }: TasksProps) {
         })),
         truncated,
         users,
+        subjects,
         projects,
         cases,
         cards: {
@@ -360,22 +406,30 @@ export default async function TasksPage({ searchParams }: TasksProps) {
         error={result.error}
       />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Ke kontrole" value={result.data.cards.review} icon={ClipboardCheck} />
+        <StatCard
+          label="Ke kontrole"
+          value={result.data.cards.review}
+          icon={ClipboardCheck}
+          href="/tasks?status=FOR_REVIEW"
+        />
         <StatCard
           label="Čeká na klienta"
           value={result.data.cards.waitingClient}
           icon={Hourglass}
+          href="/tasks?status=WAITING_FOR_CLIENT"
         />
         <StatCard
           label="Čeká na protistranu"
           value={result.data.cards.waitingCounterparty}
           icon={Clock3}
+          href="/tasks?status=WAITING_FOR_COUNTERPARTY"
         />
         <StatCard
           label="Po termínu"
           value={result.data.cards.overdue}
           icon={AlertTriangle}
           tone="danger"
+          href="/tasks?overdue=1"
         />
       </div>
       <Section>
@@ -396,6 +450,16 @@ export default async function TasksPage({ searchParams }: TasksProps) {
               {options.taskPriorities.map((item) => (
                 <option key={item} value={item}>
                   {taskPriorityLabels[item]}
+                </option>
+              ))}
+            </SelectInput>
+          </Field>
+          <Field label="Klient">
+            <SelectInput name="subjectId" defaultValue={subjectId}>
+              <option value="">Všichni klienti</option>
+              {result.data.subjects.map((subject) => (
+                <option key={subject.id} value={subject.id}>
+                  {subject.name}
                 </option>
               ))}
             </SelectInput>
@@ -500,7 +564,10 @@ export default async function TasksPage({ searchParams }: TasksProps) {
               </thead>
               <tbody>
                 {result.data.tasks.map((task) => (
-                  <tr key={task.id}>
+                  <tr
+                    key={task.id}
+                    className={taskStatusRowClass(task.status) || undefined}
+                  >
                     {visibleColumnSet.has("title") ? (
                       <td className="max-w-xs">
                         <Link
@@ -661,27 +728,22 @@ export default async function TasksPage({ searchParams }: TasksProps) {
               </SelectInput>
             </Field>
           </div>
+          {/* Cascading: pick the client first, then only their projects, then
+              only that project's cases. Project can arrive pre-filled via
+              ?projectId= when creating from a project. */}
+          <CascadingMatterSelect
+            subjects={result.data.subjects}
+            projects={result.data.projects}
+            cases={result.data.cases.map((legalCase) => ({
+              id: legalCase.id,
+              name: legalCase.name,
+              projectId: legalCase.projectId,
+              projectName: legalCase.project.name,
+            }))}
+            defaultProjectId={projectId}
+            defaultCaseId={caseId}
+          />
           <div className="grid gap-4 md:grid-cols-3">
-            <Field label="Projekt">
-              <SelectInput name="projectId">
-                <option value="">Bez projektu</option>
-                {result.data.projects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-              </SelectInput>
-            </Field>
-            <Field label="Případ">
-              <SelectInput name="caseId">
-                <option value="">Bez případu</option>
-                {result.data.cases.map((legalCase) => (
-                  <option key={legalCase.id} value={legalCase.id}>
-                    {legalCase.name} / {legalCase.project.name}
-                  </option>
-                ))}
-              </SelectInput>
-            </Field>
             <Field label="Typ lhůty">
               <SelectInput name="deadlineType" defaultValue="INTERNAL">
                 {options.taskDeadlineTypes.map((type) => (
@@ -691,8 +753,6 @@ export default async function TasksPage({ searchParams }: TasksProps) {
                 ))}
               </SelectInput>
             </Field>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
             <Field label="Začátek">
               <TextInput name="startDate" type="date" />
             </Field>

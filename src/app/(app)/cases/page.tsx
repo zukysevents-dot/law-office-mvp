@@ -19,7 +19,12 @@ import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import { formatDate } from "@/lib/format";
 import { caseStatusLabels, options } from "@/lib/labels";
-import { andWhere, caseVisibilityWhere, projectVisibilityWhere } from "@/lib/permissions";
+import {
+  andWhere,
+  caseVisibilityWhere,
+  projectVisibilityWhere,
+  subjectVisibilityWhere,
+} from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import {
   getCurrentTableView,
@@ -30,7 +35,11 @@ import type { TableViewState } from "@/lib/table-view-preferences";
 export const dynamic = "force-dynamic";
 
 type CasesPageProps = {
-  searchParams: Promise<{ archive?: string }>;
+  searchParams: Promise<{
+    archive?: string;
+    projectId?: string;
+    subjectId?: string;
+  }>;
 };
 
 type CasesPageData = {
@@ -43,10 +52,15 @@ type CasesPageData = {
     note: string | null;
     createdAt: Date;
     updatedAt: Date;
-    project: { id: string; name: string };
+    project: {
+      id: string;
+      name: string;
+      mainSubject: { id: string; name: string } | null;
+    };
     responsibleUser: { name: string } | null;
   }>;
   projects: Array<{ id: string; name: string }>;
+  subjects: Array<{ id: string; name: string }>;
   users: Array<{ id: string; name: string }>;
   tableView: TableViewState;
 };
@@ -54,10 +68,13 @@ type CasesPageData = {
 export default async function CasesPage({ searchParams }: CasesPageProps) {
   const params = await searchParams;
   const archive = archiveFilterValue(params.archive);
+  const projectId = params.projectId ?? "";
+  const subjectId = params.subjectId ?? "";
   const result = await safeQuery<CasesPageData>(
     {
       cases: [],
       projects: [],
+      subjects: [],
       users: [],
       tableView: getDefaultTableView("cases"),
     },
@@ -65,15 +82,27 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
       const prisma = getPrisma();
       const currentUser = await getCurrentUser();
       const tableView = await getCurrentTableView("cases");
-      const [cases, projects, users] = await Promise.all([
+      const [cases, projects, subjects, users] = await Promise.all([
         prisma.case.findMany({
           where: andWhere(
             archivedWhere(archive),
             caseVisibilityWhere(currentUser),
+            {
+              ...(projectId ? { projectId } : {}),
+              ...(subjectId
+                ? { project: { mainSubjectId: subjectId } }
+                : {}),
+            },
           ),
           orderBy: { createdAt: "desc" },
           include: {
-            project: { select: { id: true, name: true } },
+            project: {
+              select: {
+                id: true,
+                name: true,
+                mainSubject: { select: { id: true, name: true } },
+              },
+            },
             responsibleUser: { select: { name: true } },
           },
         }),
@@ -85,6 +114,14 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
           orderBy: { name: "asc" },
           select: { id: true, name: true },
         }),
+        prisma.subject.findMany({
+          where: andWhere(
+            { archivedAt: null },
+            subjectVisibilityWhere(currentUser),
+          ),
+          orderBy: { name: "asc" },
+          select: { id: true, name: true },
+        }),
         prisma.user.findMany({
           where: { active: true },
           orderBy: { name: "asc" },
@@ -92,7 +129,7 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
         }),
       ]);
 
-      return { cases, projects, users, tableView };
+      return { cases, projects, subjects, users, tableView };
     },
   );
   const visibleColumnSet = new Set(result.data.tableView.visibleColumns);
@@ -114,7 +151,27 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
         error={result.error}
       />
       <Section>
-        <form className="grid gap-3 md:grid-cols-[220px_auto]">
+        <form className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <Field label="Klient">
+            <SelectInput name="subjectId" defaultValue={subjectId}>
+              <option value="">Všichni klienti</option>
+              {result.data.subjects.map((subject) => (
+                <option key={subject.id} value={subject.id}>
+                  {subject.name}
+                </option>
+              ))}
+            </SelectInput>
+          </Field>
+          <Field label="Projekt">
+            <SelectInput name="projectId" defaultValue={projectId}>
+              <option value="">Všechny projekty</option>
+              {result.data.projects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
+            </SelectInput>
+          </Field>
           <Field label="Archiv">
             <SelectInput name="archive" defaultValue={archive}>
               {Object.entries(archiveFilterLabels).map(([value, label]) => (
@@ -151,6 +208,20 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
               <tbody>
                 {result.data.cases.map((legalCase) => (
                   <tr key={legalCase.id}>
+                    {visibleColumnSet.has("mainSubject") ? (
+                      <td>
+                        {legalCase.project.mainSubject ? (
+                          <Link
+                            href={`/subjects/${legalCase.project.mainSubject.id}`}
+                            className="text-emerald-950 hover:underline"
+                          >
+                            {legalCase.project.mainSubject.name}
+                          </Link>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                    ) : null}
                     {visibleColumnSet.has("name") ? (
                       <td className="max-w-xs">
                         <Link
@@ -220,7 +291,7 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
         <form action={createCase} className="grid gap-4">
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Projekt">
-              <SelectInput name="projectId" required>
+              <SelectInput name="projectId" defaultValue={projectId} required>
                 <option value="">Vyberte projekt</option>
                 {result.data.projects.map((project) => (
                   <option key={project.id} value={project.id}>

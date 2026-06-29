@@ -15,6 +15,20 @@ function Bar({ className }: { className?: string }) {
 export default function AppLoading() {
   return (
     <>
+      {/* Visible "your click registered" indicator: a spinning circle shown the
+          instant a navigation starts (lawyers asked for a loading kolečko so it's
+          clear something is happening). The skeleton below fills in the layout. */}
+      <div
+        role="status"
+        className="flex items-center gap-3 text-sm font-medium text-[#5f756e]"
+      >
+        <span
+          className="h-5 w-5 animate-spin rounded-full border-2 border-[#B9DCC6] border-t-[#072924]"
+          aria-hidden="true"
+        />
+        Načítání…
+      </div>
+
       <div
         aria-hidden="true"
         className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"
@@ -47,10 +61,6 @@ export default function AppLoading() {
           </div>
         ))}
       </div>
-
-      <span className="sr-only" role="status">
-        Načítání…
-      </span>
     </>
   );
 }

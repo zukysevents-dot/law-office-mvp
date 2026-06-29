@@ -18,11 +18,29 @@ import {
 import {
   andWhere,
   assertCanEditRecord,
+  canSetBillableStatus,
+  canViewRates,
   caseVisibilityWhere,
   projectVisibilityWhere,
   taskVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+
+// Junior roles may only file work as "ke schválení" or "interní" — never
+// directly billable. Coerce any other request down to NEEDS_APPROVAL so a
+// crafted POST can't bypass the UI restriction.
+function resolveBillingStatus(
+  user: Parameters<typeof canSetBillableStatus>[0],
+  requested: BillingStatus,
+): BillingStatus {
+  if (canSetBillableStatus(user)) {
+    return requested;
+  }
+
+  return requested === BillingStatus.INTERNAL_NON_BILLABLE
+    ? BillingStatus.INTERNAL_NON_BILLABLE
+    : BillingStatus.NEEDS_APPROVAL;
+}
 
 type RateInput = {
   caseRate?: number | string | { toString(): string } | null;
@@ -43,7 +61,11 @@ export async function createWorkLog(formData: FormData) {
   const caseId = optionalString(formData, "caseId");
   const taskId = optionalString(formData, "taskId");
   const hours = requiredNumber(formData, "hours");
-  const manualHourlyRate = optionalNumber(formData, "hourlyRate");
+  // Only rate-viewers (admin/partner) may override the rate; for everyone else
+  // the rate is derived from the case/project/subject and the field is hidden.
+  const manualHourlyRate = canViewRates(currentUser)
+    ? optionalNumber(formData, "hourlyRate")
+    : null;
 
   // Case/project/task lookups are scoped by visibility — a user can't log work
   // against a matter they can't see. subjectId is the shared registry.
@@ -107,10 +129,13 @@ export async function createWorkLog(formData: FormData) {
       hourlyRate,
       amountCzk,
       description: optionalString(formData, "description"),
-      billingStatus: enumValue(
-        BillingStatus,
-        formData.get("billingStatus"),
-        BillingStatus.BILLABLE,
+      billingStatus: resolveBillingStatus(
+        currentUser,
+        enumValue(
+          BillingStatus,
+          formData.get("billingStatus"),
+          BillingStatus.BILLABLE,
+        ),
       ),
       approvalStatus: enumValue(
         ApprovalStatus,
@@ -161,40 +186,99 @@ export async function updateWorkLog(formData: FormData) {
   const currentUser = await getCurrentUser();
   const workLogId = requiredString(formData, "id");
   const hours = requiredNumber(formData, "hours");
-  const hourlyRate = optionalNumber(formData, "hourlyRate");
   const manualAmount = optionalNumber(formData, "amountCzk");
+  const subjectId = optionalString(formData, "subjectId");
+  const projectId = optionalString(formData, "projectId");
+  const caseId = optionalString(formData, "caseId");
+  const taskId = optionalString(formData, "taskId");
 
   const oldWorkLog = await prisma.workLog.findUniqueOrThrow({
     where: { id: workLogId },
   });
   assertCanEditRecord(currentUser, "WorkLog", oldWorkLog);
 
+  // Re-assigning the matter must respect visibility — a user can't move a work
+  // log onto a case/project/task they can't see (IDOR guard, mirrors create).
+  const [legalCase, project, task] = await Promise.all([
+    caseId
+      ? prisma.case.findFirst({
+          where: andWhere({ id: caseId }, caseVisibilityWhere(currentUser)),
+          select: { id: true },
+        })
+      : null,
+    projectId
+      ? prisma.project.findFirst({
+          where: andWhere({ id: projectId }, projectVisibilityWhere(currentUser)),
+          select: { id: true },
+        })
+      : null,
+    taskId
+      ? prisma.task.findFirst({
+          where: andWhere({ id: taskId }, taskVisibilityWhere(currentUser)),
+          select: { id: true },
+        })
+      : null,
+  ]);
+  if (caseId && !legalCase) {
+    throw new Error("Případ nenalezen nebo k němu nemáte oprávnění.");
+  }
+  if (projectId && !project) {
+    throw new Error("Projekt nenalezen nebo k němu nemáte oprávnění.");
+  }
+  if (taskId && !task) {
+    throw new Error("Úkol nenalezen nebo k němu nemáte oprávnění.");
+  }
+
+  // Non rate-viewers cannot change the rate — keep the stored value.
+  const hourlyRate = canViewRates(currentUser)
+    ? optionalNumber(formData, "hourlyRate")
+    : oldWorkLog.hourlyRate != null
+      ? Number(oldWorkLog.hourlyRate)
+      : null;
+
   const hoursChanged = !sameNumber(hours, oldWorkLog.hours);
   const rateChanged = !sameNumber(hourlyRate, oldWorkLog.hourlyRate);
+  // When neither hours nor rate changed, keep the stored amount. Non rate-viewers
+  // don't submit amountCzk, so fall back to the existing value rather than
+  // silently nulling it during an unrelated edit (e.g. fixing the description).
+  const keepAmount = canViewRates(currentUser)
+    ? manualAmount
+    : oldWorkLog.amountCzk != null
+      ? Number(oldWorkLog.amountCzk)
+      : null;
   const amountCzk =
     hoursChanged || rateChanged
       ? hourlyRate !== null
         ? hours * hourlyRate
         : null
-      : manualAmount;
+      : keepAmount;
+
+  // Junior roles may switch between their own statuses but must never silently
+  // downgrade a partner-approved BILLABLE item just by saving the form.
+  const requestedBillingStatus = enumValue(
+    BillingStatus,
+    formData.get("billingStatus"),
+    oldWorkLog.billingStatus,
+  );
+  const billingStatus = canSetBillableStatus(currentUser)
+    ? requestedBillingStatus
+    : oldWorkLog.billingStatus === BillingStatus.BILLABLE
+      ? BillingStatus.BILLABLE
+      : resolveBillingStatus(currentUser, requestedBillingStatus);
 
   const workLog = await prisma.workLog.update({
     where: { id: workLogId },
     data: {
-      subjectId: optionalString(formData, "subjectId"),
-      projectId: optionalString(formData, "projectId"),
-      caseId: optionalString(formData, "caseId"),
-      taskId: optionalString(formData, "taskId"),
+      subjectId,
+      projectId,
+      caseId,
+      taskId,
       workDate: requiredDate(formData, "workDate"),
       hours,
       hourlyRate,
       amountCzk,
       description: optionalString(formData, "description"),
-      billingStatus: enumValue(
-        BillingStatus,
-        formData.get("billingStatus"),
-        BillingStatus.BILLABLE,
-      ),
+      billingStatus,
       approvalStatus: enumValue(
         ApprovalStatus,
         formData.get("approvalStatus"),

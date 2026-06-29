@@ -65,6 +65,26 @@ export function taskStatusTone(status: TaskStatus): BadgeTone {
   return tones[status];
 }
 
+// Whole-row background tint for task tables, keyed by status. Lawyers asked for
+// the *entire row* to be colored (not just the badge) so the list can be scanned
+// at a glance. Kept as subtle/translucent tints so text stays readable. Returns a
+// Tailwind class applied to <tr>; empty string = no tint (default rows).
+export function taskStatusRowClass(status: TaskStatus): string {
+  const classes: Record<TaskStatus, string> = {
+    CREATED: "bg-amber-50",
+    ACCEPTED: "bg-sky-50",
+    IN_PROGRESS: "bg-yellow-50",
+    FOR_REVIEW: "bg-blue-50",
+    WAITING_FOR_CLIENT: "bg-indigo-50",
+    WAITING_FOR_COUNTERPARTY: "bg-purple-50",
+    POSTPONED: "bg-stone-100",
+    FILED: "bg-emerald-50",
+    COMPLETED: "bg-green-50",
+  };
+
+  return classes[status] ?? "";
+}
+
 export function billingStatusTone(status: BillingStatus): BadgeTone {
   const tones: Record<BillingStatus, BadgeTone> = {
     BILLABLE: "dark",

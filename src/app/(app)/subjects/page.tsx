@@ -20,11 +20,16 @@ import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import { formatDate, formatMoney } from "@/lib/format";
 import { feeTypeLabels, options, subjectTypeLabels } from "@/lib/labels";
-import { andWhere, subjectVisibilityWhere } from "@/lib/permissions";
+import {
+  andWhere,
+  canViewRates,
+  subjectVisibilityWhere,
+} from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import {
   getCurrentTableView,
   getDefaultTableView,
+  restrictTableView,
 } from "@/lib/table-view-preference-service";
 import type { TableViewState } from "@/lib/table-view-preferences";
 
@@ -56,6 +61,7 @@ type SubjectRow = {
 type SubjectsPageData = {
   subjects: SubjectRow[];
   tableView: TableViewState;
+  canViewRates: boolean;
 };
 
 export default async function SubjectsPage({ searchParams }: SubjectsPageProps) {
@@ -64,7 +70,11 @@ export default async function SubjectsPage({ searchParams }: SubjectsPageProps) 
   const archive = archiveFilterValue(params.archive);
 
   const result = await safeQuery<SubjectsPageData>(
-    { subjects: [], tableView: getDefaultTableView("subjects") },
+    {
+      subjects: [],
+      tableView: getDefaultTableView("subjects"),
+      canViewRates: false,
+    },
     async () => {
       const prisma = getPrisma();
       const currentUser = await getCurrentUser();
@@ -87,10 +97,13 @@ export default async function SubjectsPage({ searchParams }: SubjectsPageProps) 
         orderBy: { name: "asc" },
       });
 
-      return { subjects, tableView };
+      return { subjects, tableView, canViewRates: canViewRates(currentUser) };
     },
   );
-  const visibleColumnSet = new Set(result.data.tableView.visibleColumns);
+  const tableView = result.data.canViewRates
+    ? result.data.tableView
+    : restrictTableView(result.data.tableView, ["hourlyRate", "flatFee"]);
+  const visibleColumnSet = new Set(tableView.visibleColumns);
 
   return (
     <>
@@ -139,15 +152,15 @@ export default async function SubjectsPage({ searchParams }: SubjectsPageProps) 
       <Section title="Seznam subjektů">
         <ColumnVisibilityPanel
           tableKey="subjects"
-          columns={result.data.tableView.columns}
-          visibleColumns={result.data.tableView.visibleColumns}
+          columns={tableView.columns}
+          visibleColumns={tableView.visibleColumns}
         />
         {result.data.subjects.length > 0 ? (
           <div className="table-scroll">
             <table className="w-max min-w-full">
               <thead>
                 <tr>
-                  {result.data.tableView.columns
+                  {tableView.columns
                     .filter((column) => visibleColumnSet.has(column.id))
                     .map((column) => (
                       <th key={column.id}>{column.label}</th>
