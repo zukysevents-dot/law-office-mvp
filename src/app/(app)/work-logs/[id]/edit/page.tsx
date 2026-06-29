@@ -8,6 +8,7 @@ import {
 import { ArchiveActionForm } from "@/components/archive-action-form";
 import { ArchiveNotice } from "@/components/archive-notice";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
+import { WorkLogCategoryFields } from "@/components/work-log-category-fields";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
 import { Button, ButtonLink } from "@/components/ui/button";
@@ -18,6 +19,7 @@ import { dateInputValue, numberInputValue } from "@/lib/form-values";
 import {
   approvalStatusLabels,
   billingStatusLabels,
+  internalTaskCategoryLabels,
   legalAreaOptions,
   options,
 } from "@/lib/labels";
@@ -133,6 +135,14 @@ export default async function WorkLogEditPage({ params }: WorkLogEditProps) {
   const billingStatusChoices = canSetBillable
     ? options.billingStatuses
     : [BillingStatus.NEEDS_APPROVAL, BillingStatus.INTERNAL_NON_BILLABLE];
+  // Keep the current status selectable even if the role couldn't normally set it
+  // (e.g. a junior editing a partner-approved BILLABLE item).
+  const currentBillingStatus = workLog?.billingStatus;
+  const billingStatusOptions = (
+    currentBillingStatus && !billingStatusChoices.includes(currentBillingStatus)
+      ? [currentBillingStatus, ...billingStatusChoices]
+      : billingStatusChoices
+  ).map((status) => ({ value: status, label: billingStatusLabels[status] }));
 
   return (
     <>
@@ -241,7 +251,7 @@ export default async function WorkLogEditPage({ params }: WorkLogEditProps) {
                 </Field>
               ) : null}
             </div>
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-2">
               {showRates ? (
                 <Field label="Částka">
                   <TextInput
@@ -253,18 +263,6 @@ export default async function WorkLogEditPage({ params }: WorkLogEditProps) {
                   />
                 </Field>
               ) : null}
-              <Field label="Billing status">
-                <SelectInput
-                  name="billingStatus"
-                  defaultValue={workLog.billingStatus}
-                >
-                  {billingStatusChoices.map((status) => (
-                    <option key={status} value={status}>
-                      {billingStatusLabels[status]}
-                    </option>
-                  ))}
-                </SelectInput>
-              </Field>
               <Field label="Approval status">
                 <SelectInput
                   name="approvalStatus"
@@ -278,16 +276,20 @@ export default async function WorkLogEditPage({ params }: WorkLogEditProps) {
                 </SelectInput>
               </Field>
             </div>
-            <Field label="Právní oblast">
-              <SelectInput name="legalArea" defaultValue={workLog.legalArea ?? ""}>
-                <option value="">Vyberte oblast</option>
-                {legalAreaOptions.map((area) => (
-                  <option key={area} value={area}>
-                    {area}
-                  </option>
-                ))}
-              </SelectInput>
-            </Field>
+            {/* Interní hodiny nabízejí interní kategorie místo právní oblasti. */}
+            <WorkLogCategoryFields
+              billingStatusOptions={billingStatusOptions}
+              defaultBillingStatus={workLog.billingStatus}
+              legalAreas={legalAreaOptions}
+              internalCategories={options.internalTaskCategories.map(
+                (category) => ({
+                  value: category,
+                  label: internalTaskCategoryLabels[category],
+                }),
+              )}
+              defaultLegalArea={workLog.legalArea ?? ""}
+              defaultInternalCategory={workLog.internalCategory ?? ""}
+            />
             <Field label="Popis">
               <TextArea name="description" defaultValue={workLog.description ?? ""} />
             </Field>

@@ -3,7 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { ApprovalStatus, BillingStatus } from "@/generated/prisma/enums";
+import {
+  ApprovalStatus,
+  BillingStatus,
+  InternalTaskCategory,
+} from "@/generated/prisma/enums";
 import { setArchived } from "@/lib/archive";
 import { auditJson } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
@@ -25,6 +29,20 @@ import {
   taskVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+
+// Internal (non-billable) hours carry an internal category instead of a legal
+// area; the form only renders one of the two, so the unused one isn't submitted
+// and gets stored as null. Returns null for anything not a valid enum value.
+function parseInternalCategory(formData: FormData): InternalTaskCategory | null {
+  const raw = formData.get("internalCategory");
+  if (
+    typeof raw === "string" &&
+    (Object.values(InternalTaskCategory) as string[]).includes(raw)
+  ) {
+    return raw as InternalTaskCategory;
+  }
+  return null;
+}
 
 // Junior roles may only file work as "ke schválení" or "interní" — never
 // directly billable. Coerce any other request down to NEEDS_APPROVAL so a
@@ -143,6 +161,7 @@ export async function createWorkLog(formData: FormData) {
         ApprovalStatus.DRAFT,
       ),
       legalArea: optionalString(formData, "legalArea"),
+      internalCategory: parseInternalCategory(formData),
     },
   });
 
@@ -285,6 +304,7 @@ export async function updateWorkLog(formData: FormData) {
         ApprovalStatus.DRAFT,
       ),
       legalArea: optionalString(formData, "legalArea"),
+      internalCategory: parseInternalCategory(formData),
     },
   });
 

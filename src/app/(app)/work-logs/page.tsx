@@ -8,6 +8,7 @@ import {
 import { ArchiveActionForm } from "@/components/archive-action-form";
 import { CascadingMatterSelect } from "@/components/cascading-matter-select";
 import { ColumnVisibilityPanel } from "@/components/column-visibility-panel";
+import { WorkLogCategoryFields } from "@/components/work-log-category-fields";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
@@ -33,6 +34,7 @@ import { firstParam } from "@/lib/search-params";
 import {
   approvalStatusLabels,
   billingStatusLabels,
+  internalTaskCategoryLabels,
   legalAreaOptions,
   options,
 } from "@/lib/labels";
@@ -76,6 +78,7 @@ type WorkLogsPageData = {
     billingStatus: keyof typeof billingStatusLabels;
     approvalStatus: keyof typeof approvalStatusLabels;
     legalArea: string | null;
+    internalCategory: keyof typeof internalTaskCategoryLabels | null;
     createdAt: Date;
     updatedAt: Date;
     archivedAt: Date | null;
@@ -197,6 +200,7 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
             billingStatus: true,
             approvalStatus: true,
             legalArea: true,
+            internalCategory: true,
             createdAt: true,
             updatedAt: true,
             archivedAt: true,
@@ -463,7 +467,12 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
                       <td className="max-w-md">{log.description ?? "—"}</td>
                     ) : null}
                     {visibleColumnSet.has("legalArea") ? (
-                      <td>{log.legalArea ?? "—"}</td>
+                      <td>
+                        {log.legalArea ??
+                          (log.internalCategory
+                            ? internalTaskCategoryLabels[log.internalCategory]
+                            : "—")}
+                      </td>
                     ) : null}
                     {visibleColumnSet.has("billingStatus") ? (
                       <td>
@@ -540,8 +549,8 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
           <div
             className={
               result.data.canViewRates
-                ? "grid gap-4 md:grid-cols-5"
-                : "grid gap-4 md:grid-cols-4"
+                ? "grid gap-4 md:grid-cols-4"
+                : "grid gap-4 md:grid-cols-3"
             }
           >
             <Field label="Datum práce">
@@ -557,15 +566,6 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
                 <TextInput name="hourlyRate" type="number" min="0" step="0.01" />
               </Field>
             ) : null}
-            <Field label="Billing status">
-              <SelectInput name="billingStatus" defaultValue={defaultBillingStatus}>
-                {billingStatusChoices.map((status) => (
-                  <option key={status} value={status}>
-                    {billingStatusLabels[status]}
-                  </option>
-                ))}
-              </SelectInput>
-            </Field>
             <Field label="Approval status">
               <SelectInput name="approvalStatus" defaultValue="DRAFT">
                 {options.approvalStatuses.map((status) => (
@@ -576,16 +576,19 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
               </SelectInput>
             </Field>
           </div>
-          <Field label="Právní oblast">
-            <SelectInput name="legalArea" defaultValue="">
-              <option value="">Vyberte oblast</option>
-              {legalAreaOptions.map((area) => (
-                <option key={area} value={area}>
-                  {area}
-                </option>
-              ))}
-            </SelectInput>
-          </Field>
+          {/* Interní hodiny nabízejí interní kategorie místo právní oblasti. */}
+          <WorkLogCategoryFields
+            billingStatusOptions={billingStatusChoices.map((status) => ({
+              value: status,
+              label: billingStatusLabels[status],
+            }))}
+            defaultBillingStatus={defaultBillingStatus}
+            legalAreas={legalAreaOptions}
+            internalCategories={options.internalTaskCategories.map((category) => ({
+              value: category,
+              label: internalTaskCategoryLabels[category],
+            }))}
+          />
           <Field label="Popis práce">
             <TextArea name="description" />
           </Field>

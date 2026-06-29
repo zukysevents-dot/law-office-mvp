@@ -13,6 +13,7 @@ import {
   HrAbsenceType,
   HrAttendanceSource,
   HrEmploymentType,
+  InternalTaskCategory,
   InvoiceStatus,
   ModuleKey,
   ModuleStatus,
@@ -111,7 +112,19 @@ export const hrAbsenceTypeLabels: Record<HrAbsenceType, string> = {
   HOME_OFFICE: "Home office",
   DOCTOR: "Lékař",
   UNPAID: "Neplacené volno",
+  SEMINAR_CAK: "Seminář ČAK",
+  BAR_EXAM: "Advokátní zkoušky",
+  EDUCATION: "Vzdělávání",
   OTHER: "Jiné",
+};
+
+export const internalTaskCategoryLabels: Record<InternalTaskCategory, string> = {
+  ADMINISTRATION: "Administrativa",
+  EDUCATION: "Vzdělávání",
+  ERRAND: "Pochůzka",
+  ACQUISITION: "Akviziční činnost",
+  REPORTING: "Vykazování",
+  OFFICE_MANAGEMENT: "Správa kanceláře",
 };
 
 export const hrAbsenceStatusLabels: Record<HrAbsenceStatus, string> = {
@@ -286,6 +299,7 @@ export const options = {
   documentKinds: Object.values(DocumentKind),
   hrEmploymentTypes: Object.values(HrEmploymentType),
   hrAbsenceTypes: Object.values(HrAbsenceType),
+  internalTaskCategories: Object.values(InternalTaskCategory),
   taskPriorities: Object.values(TaskPriority),
   billingStatuses: Object.values(BillingStatus),
   approvalStatuses: Object.values(ApprovalStatus),

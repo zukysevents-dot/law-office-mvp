@@ -121,7 +121,21 @@ enum HrAbsenceType {
   HOME_OFFICE
   DOCTOR
   UNPAID
+  SEMINAR_CAK // seminář ČAK
+  BAR_EXAM // advokátní zkoušky
+  EDUCATION // vzdělávání
   OTHER
+}
+
+// Druhy interních (nefakturovatelných) úkonů — nabízí se místo právní oblasti,
+// když je výkaz veden jako interní hodiny.
+enum InternalTaskCategory {
+  ADMINISTRATION // administrativa
+  EDUCATION // vzdělávání
+  ERRAND // pochůzka
+  ACQUISITION // akviziční činnost
+  REPORTING // vykazování
+  OFFICE_MANAGEMENT // správa kanceláře
 }
 
 enum HrAbsenceStatus {
@@ -626,6 +640,8 @@ model WorkLog {
   billingStatus  BillingStatus  @default(BILLABLE)
   approvalStatus ApprovalStatus @default(DRAFT)
   legalArea      String?
+  // Vyplněno místo legalArea u interních (nefakturovatelných) hodin.
+  internalCategory InternalTaskCategory?
   // Set inside the issueInvoice transaction so a work-log can't be invoiced
   // twice; cleared again when that invoice is cancelled. Orthogonal to
   // approvalStatus/billingStatus (a separate dimension). invoicedInvoiceId is
