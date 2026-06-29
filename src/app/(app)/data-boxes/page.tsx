@@ -73,6 +73,13 @@ export default async function DataBoxesPage() {
       />
       <DatabaseNotice databaseReady={result.databaseReady} error={result.error} />
 
+      <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <strong>Zatím jen evidence zpráv.</strong> Živá integrace datových schránek
+        (automatické odesílání/příjem) čeká na rozhodnutí{" "}
+        <strong>oficiální ISDS API vs partner (např. EXevido)</strong> — k vyřešení
+        s právníky. Do té doby zprávy evidujte ručně.
+      </div>
+
       <Section title="Zprávy">
         {data.messages.length > 0 ? (
           <div className="table-scroll">

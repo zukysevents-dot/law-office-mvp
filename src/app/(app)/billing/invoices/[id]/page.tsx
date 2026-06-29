@@ -92,6 +92,14 @@ export default async function InvoiceDetailPage({
                 Export ISDOC
               </ButtonLink>
             ) : null}
+            {invoice && !isDraft && !isCancelled ? (
+              <ButtonLink
+                href={`/billing/invoices/${invoice.id}/pohoda`}
+                variant="ghost"
+              >
+                Export Pohoda
+              </ButtonLink>
+            ) : null}
           </div>
         }
       />

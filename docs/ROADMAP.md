@@ -381,7 +381,7 @@ Pravidlo: každá fáze končí zeleným `build` (vč. typecheck) + `lint` + tes
 
 - [ ] **Předplatné:** Stripe vs česká fakturace předplatného? A vůbec self-service onboarding, nebo napořád manuální zapínání z `/admin`? (ovlivní F0-9 a F8) — *stále otevřené*
 - [ ] **Úložiště dokumentů:** SharePoint (už máme hranice) vs blob storage? Rozcestník pro celý Epik 5/6 (DOC-6 ADR). — *MVP jede na SharePoint odkazech; dlouhodobé rozhodnutí (blob) stále otevřené*
-- [ ] **Datové schránky:** oficiální ISDS API vs partner à la EXevido? Ovlivní rozsah a riziko Epiku 2. — *stále otevřené; teď jen evidence zpráv, bez živé ISDS integrace*
+- [ ] **Datové schránky — ⚖️ VYŘEŠIT S PRÁVNÍKY:** oficiální ISDS API vs partner à la EXevido? Ovlivní rozsah a riziko Epiku 2. Nesprávné nakládání s DS má právní/legislativní následky → způsob integrace musí projít právním posouzením. Teď jen evidence zpráv (UI banner na `/data-boxes` na to upozorňuje), bez živé ISDS integrace.
 
 ---
 
