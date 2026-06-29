@@ -277,9 +277,14 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
     ? result.data.tableView
     : restrictTableView(result.data.tableView, ["hourlyRate", "amount"]);
   const visibleColumnSet = new Set(tableView.visibleColumns);
-  // Junior roles file work only as "ke schválení" / "interní".
+  // Junior roles file work only as "ke schválení" / "interní". Odpisové statusy
+  // (skrytý/viditelný odpis) se nastavují jen ve schvalování, ne tady.
   const billingStatusChoices = result.data.canSetBillable
-    ? options.billingStatuses
+    ? [
+        BillingStatus.BILLABLE,
+        BillingStatus.NEEDS_APPROVAL,
+        BillingStatus.INTERNAL_NON_BILLABLE,
+      ]
     : [BillingStatus.NEEDS_APPROVAL, BillingStatus.INTERNAL_NON_BILLABLE];
   const defaultBillingStatus = result.data.canSetBillable
     ? BillingStatus.BILLABLE

@@ -149,6 +149,8 @@ enum BillingStatus {
   BILLABLE
   NEEDS_APPROVAL
   INTERNAL_NON_BILLABLE
+  HIDDEN_WRITE_OFF // skrytý odpis: v archivu, není na faktuře ani na výkazu klienta
+  VISIBLE_WRITE_OFF // viditelný odpis: na výkazu klienta s 0 Kč, není na faktuře
 }
 
 enum ApprovalStatus {

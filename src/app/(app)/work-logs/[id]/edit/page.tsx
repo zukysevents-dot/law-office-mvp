@@ -132,8 +132,12 @@ export default async function WorkLogEditPage({ params }: WorkLogEditProps) {
     canViewRates: showRates,
     canSetBillable,
   } = result.data;
-  const billingStatusChoices = canSetBillable
-    ? options.billingStatuses
+  const billingStatusChoices: BillingStatus[] = canSetBillable
+    ? [
+        BillingStatus.BILLABLE,
+        BillingStatus.NEEDS_APPROVAL,
+        BillingStatus.INTERNAL_NON_BILLABLE,
+      ]
     : [BillingStatus.NEEDS_APPROVAL, BillingStatus.INTERNAL_NON_BILLABLE];
   // Keep the current status selectable even if the role couldn't normally set it
   // (e.g. a junior editing a partner-approved BILLABLE item).

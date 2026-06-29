@@ -90,6 +90,8 @@ export function billingStatusTone(status: BillingStatus): BadgeTone {
     BILLABLE: "dark",
     NEEDS_APPROVAL: "amber",
     INTERNAL_NON_BILLABLE: "neutral",
+    HIDDEN_WRITE_OFF: "neutral",
+    VISIBLE_WRITE_OFF: "purple",
   };
 
   return tones[status];

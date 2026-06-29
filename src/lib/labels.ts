@@ -224,6 +224,8 @@ export const billingStatusLabels: Record<BillingStatus, string> = {
   BILLABLE: "Fakturovatelné",
   NEEDS_APPROVAL: "Ke schválení",
   INTERNAL_NON_BILLABLE: "Interní nefakturovatelné",
+  HIDDEN_WRITE_OFF: "Skrytý odpis",
+  VISIBLE_WRITE_OFF: "Viditelný odpis",
 };
 
 export const approvalStatusLabels: Record<ApprovalStatus, string> = {
