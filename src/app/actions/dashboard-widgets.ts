@@ -14,9 +14,12 @@ import {
   defaultDashboardWidgetData,
   getDefaultDashboardColumns,
   isDashboardTableWidget,
+  parseDashboardLayoutPayload,
 } from "@/lib/dashboard-widgets";
-import { checkboxValue, enumValue, optionalString, requiredString } from "@/lib/form";
+import { enumValue, requiredString } from "@/lib/form";
 import { getPrisma } from "@/lib/prisma";
+
+const MAX_WIDGET_TITLE = 200;
 
 function revalidateDashboard() {
   revalidatePath("/dashboard");
@@ -51,90 +54,68 @@ export async function addDashboardWidget(formData: FormData) {
   revalidateDashboard();
 }
 
-export async function updateDashboardWidget(formData: FormData) {
+// Single-save for the drag-drop dashboard editor: persist order (= submitted
+// index) plus each widget's title/size/visibility/columns in one transaction.
+// Replaces the per-widget save + up/down moves. Order in the JSON payload is the
+// new position; only the user's OWN widgets are touched (updateMany guards by
+// userId), foreign/stale ids are ignored.
+export async function saveDashboardLayout(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  const widgetId = requiredString(formData, "id");
-  const existingWidget = await prisma.dashboardWidget.findFirstOrThrow({
-    where: {
-      id: widgetId,
-      userId: currentUser.id,
-    },
-  });
-  const size = enumValue(
-    DashboardWidgetSize,
-    formData.get("size"),
-    existingWidget.size,
-  );
-  const availableColumns = new Set(
-    dashboardTableColumns[existingWidget.type]?.map((column) => column.key) ?? [],
-  );
-  const selectedColumns = formData
-    .getAll("columns")
-    .filter(
-      (column): column is string =>
-        typeof column === "string" && availableColumns.has(column),
-    );
 
-  await prisma.dashboardWidget.update({
-    where: { id: existingWidget.id },
-    data: {
-      title:
-        optionalString(formData, "title") ??
-        dashboardWidgetTypeLabels[existingWidget.type],
-      size,
-      visible: checkboxValue(formData, "visible"),
-      config: isDashboardTableWidget(existingWidget.type)
-        ? {
-            columns:
-              selectedColumns.length > 0
-                ? selectedColumns
-                : getDefaultDashboardColumns(existingWidget.type),
-          }
-        : dashboardWidgetConfigForType(existingWidget.type),
-    },
-  });
-
-  revalidateDashboard();
-}
-
-export async function moveDashboardWidget(formData: FormData) {
-  const prisma = getPrisma();
-  const currentUser = await getCurrentUser();
-  const widgetId = requiredString(formData, "id");
-  const direction = formData.get("direction") === "down" ? "down" : "up";
-  const widgets = await prisma.dashboardWidget.findMany({
-    where: { userId: currentUser.id },
-    orderBy: [{ position: "asc" }, { createdAt: "asc" }],
-    select: {
-      id: true,
-      position: true,
-    },
-  });
-  const currentIndex = widgets.findIndex((widget) => widget.id === widgetId);
-  const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
-
-  if (
-    currentIndex === -1 ||
-    targetIndex < 0 ||
-    targetIndex >= widgets.length
-  ) {
-    return;
+  const items = parseDashboardLayoutPayload(requiredString(formData, "payload"));
+  if (!items) {
+    throw new Error("Neplatná data rozložení dashboardu.");
   }
 
-  const currentWidget = widgets[currentIndex];
-  const targetWidget = widgets[targetIndex];
+  const owned = await prisma.dashboardWidget.findMany({
+    where: { userId: currentUser.id },
+    select: { id: true, type: true },
+  });
+  const ownedById = new Map(owned.map((widget) => [widget.id, widget.type]));
 
-  await prisma.$transaction([
-    prisma.dashboardWidget.update({
-      where: { id: currentWidget.id },
-      data: { position: targetWidget.position },
-    }),
-    prisma.dashboardWidget.update({
-      where: { id: targetWidget.id },
-      data: { position: currentWidget.position },
-    }),
-  ]);
+  const updates = [];
+  const seen = new Set<string>();
+  let position = 0;
+  for (const item of items) {
+    const type = ownedById.get(item.id);
+    if (!type || seen.has(item.id)) {
+      // Foreign / stale id (never write to another user's widget) or a duplicate
+      // id in a forged payload (process each widget once).
+      continue;
+    }
+    seen.add(item.id);
+    const size = enumValue(DashboardWidgetSize, item.size, DashboardWidgetSize.MEDIUM);
+    const title =
+      item.title.trim().slice(0, MAX_WIDGET_TITLE) ||
+      dashboardWidgetTypeLabels[type];
+    const availableColumns = new Set(
+      dashboardTableColumns[type]?.map((column) => column.key) ?? [],
+    );
+    const selectedColumns = item.columns.filter((column) =>
+      availableColumns.has(column),
+    );
+    const config = isDashboardTableWidget(type)
+      ? {
+          columns:
+            selectedColumns.length > 0
+              ? selectedColumns
+              : getDefaultDashboardColumns(type),
+        }
+      : dashboardWidgetConfigForType(type);
+
+    updates.push(
+      prisma.dashboardWidget.updateMany({
+        where: { id: item.id, userId: currentUser.id },
+        data: { position, title, size, visible: item.visible, config },
+      }),
+    );
+    position += 1;
+  }
+
+  if (updates.length > 0) {
+    await prisma.$transaction(updates);
+  }
 
   revalidateDashboard();
 }
