@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { AmlRiskLevel, ModuleKey } from "@/generated/prisma/enums";
 import { deriveRiskFlag, maskDocumentNumber } from "@/lib/aml";
+import { normalizeScanFields } from "@/lib/aml-scan";
 import { auditJson } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
 import { encryptSecret, isEncryptionConfigured } from "@/lib/crypto";
@@ -17,34 +18,19 @@ import {
 } from "@/lib/form";
 import { assertCanManageAml } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
-import { isSafeHttpUrl } from "@/lib/utils";
 
 // Sken dokladu = odkaz (http/https) do externího úložiště, ne soubor v DB.
-// Vrací validovaná pole; prázdný/neplatný odkaz odmítne.
+// Vrací validovaná pole; prázdný/neplatný odkaz odmítne. Čistá validace +
+// normalizace žije v @/lib/aml-scan (unit-testovatelné).
 function parseScanFields(formData: FormData) {
-  const scanUrl = optionalString(formData, "scanUrl");
-  if (scanUrl) {
-    if (!isSafeHttpUrl(scanUrl)) {
-      throw new Error("Odkaz na sken musí být platná http(s) adresa.");
-    }
-    if (scanUrl.length > 2000) {
-      throw new Error("Odkaz na sken je příliš dlouhý.");
-    }
-  }
-  const scanFileName = scanUrl
-    ? optionalString(formData, "scanFileName")
-    : null;
-  // Poznámka ke skenu má smysl jen se skenem (prázdná URL → null), s limitem.
-  const scanNote = scanUrl ? optionalString(formData, "scanNote") : null;
-  if (scanNote && scanNote.length > 2000) {
-    throw new Error("Poznámka ke skenu je příliš dlouhá.");
-  }
-  return {
-    scanUrl,
-    scanFileName,
-    scanNote,
-    scanUploadedAt: scanUrl ? new Date() : null,
-  };
+  return normalizeScanFields(
+    {
+      scanUrl: optionalString(formData, "scanUrl"),
+      scanFileName: optionalString(formData, "scanFileName"),
+      scanNote: optionalString(formData, "scanNote"),
+    },
+    new Date(),
+  );
 }
 
 async function loadOrgSubject(

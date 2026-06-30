@@ -9,7 +9,6 @@ import {
   HrAttendanceSource,
   HrEmploymentType,
   ModuleKey,
-  SalaryTaxMode,
 } from "@/generated/prisma/enums";
 import { auditJson } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
@@ -39,6 +38,7 @@ import {
   hrEmployeeVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { parseSalaryTaxMode, validateGrossSalary } from "@/lib/salary";
 
 type CurrentUser = Awaited<ReturnType<typeof getCurrentUser>>;
 
@@ -97,20 +97,12 @@ async function validateEmployeeUser(
 // Mzdové údaje z formuláře (revize ř.114) — citlivé, jen ADMIN/PARTNER.
 // Prázdná pole → null. grossSalaryCzk = hrubá měsíční mzda/odměna.
 function parseSalaryFields(formData: FormData) {
-  const grossSalaryCzk = optionalNumber(formData, "grossSalaryCzk");
-  if (
-    grossSalaryCzk != null &&
-    (grossSalaryCzk < 0 || grossSalaryCzk > 99_999_999)
-  ) {
-    throw new Error("Neplatná výše mzdy.");
-  }
-  const salaryTaxMode = optionalString(formData, "salaryTaxMode")
-    ? enumValue(
-        SalaryTaxMode,
-        formData.get("salaryTaxMode"),
-        SalaryTaxMode.EMPLOYMENT,
-      )
-    : null;
+  const grossSalaryCzk = validateGrossSalary(
+    optionalNumber(formData, "grossSalaryCzk"),
+  );
+  const salaryTaxMode = parseSalaryTaxMode(
+    optionalString(formData, "salaryTaxMode"),
+  );
   const salaryNote = clampText(optionalString(formData, "salaryNote"), 500);
   return { grossSalaryCzk, salaryTaxMode, salaryNote };
 }
