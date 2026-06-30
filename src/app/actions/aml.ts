@@ -17,6 +17,35 @@ import {
 } from "@/lib/form";
 import { assertCanManageAml } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { isSafeHttpUrl } from "@/lib/utils";
+
+// Sken dokladu = odkaz (http/https) do externího úložiště, ne soubor v DB.
+// Vrací validovaná pole; prázdný/neplatný odkaz odmítne.
+function parseScanFields(formData: FormData) {
+  const scanUrl = optionalString(formData, "scanUrl");
+  if (scanUrl) {
+    if (!isSafeHttpUrl(scanUrl)) {
+      throw new Error("Odkaz na sken musí být platná http(s) adresa.");
+    }
+    if (scanUrl.length > 2000) {
+      throw new Error("Odkaz na sken je příliš dlouhý.");
+    }
+  }
+  const scanFileName = scanUrl
+    ? optionalString(formData, "scanFileName")
+    : null;
+  // Poznámka ke skenu má smysl jen se skenem (prázdná URL → null), s limitem.
+  const scanNote = scanUrl ? optionalString(formData, "scanNote") : null;
+  if (scanNote && scanNote.length > 2000) {
+    throw new Error("Poznámka ke skenu je příliš dlouhá.");
+  }
+  return {
+    scanUrl,
+    scanFileName,
+    scanNote,
+    scanUploadedAt: scanUrl ? new Date() : null,
+  };
+}
 
 async function loadOrgSubject(
   organizationId: string,
@@ -61,6 +90,8 @@ export async function recordIdentification(formData: FormData) {
   const verifiedAt = optionalDate(formData, "verifiedAt") ?? new Date();
   const method = optionalString(formData, "method");
   const note = optionalString(formData, "note");
+  const { scanUrl, scanFileName, scanNote, scanUploadedAt } =
+    parseScanFields(formData);
 
   const subject = await loadOrgSubject(organizationId, subjectId);
   if (!subject) {
@@ -81,6 +112,10 @@ export async function recordIdentification(formData: FormData) {
         verifiedAt,
         method,
         note,
+        scanUrl,
+        scanFileName,
+        scanNote,
+        scanUploadedAt,
         createdById: currentUser.id,
       },
     });
@@ -91,7 +126,7 @@ export async function recordIdentification(formData: FormData) {
         entityId: subjectId,
         action: "AML_IDENTIFY",
         changedById: currentUser.id,
-        // Metadata only — the document number is NEVER logged.
+        // Metadata only — document number AND scan URL are NEVER logged.
         newValue: auditJson({
           identificationId: created.id,
           documentType,
@@ -99,12 +134,62 @@ export async function recordIdentification(formData: FormData) {
           verifiedAt: verifiedAt.toISOString(),
           expiresAt: expiresAt?.toISOString() ?? null,
           issueCountry,
+          hasScan: Boolean(scanUrl),
+          scanFileName,
         }),
       },
     });
   });
 
   revalidatePath(`/subjects/${subjectId}`);
+  revalidatePath("/aml");
+}
+
+// A-3b: doplnit / změnit odkaz na sken dokladu u existující identifikace (ř.26).
+export async function updateIdentificationScan(formData: FormData) {
+  const prisma = getPrisma();
+  const currentUser = await getCurrentUser();
+  await assertModuleEnabled(currentUser, ModuleKey.AML);
+  assertCanManageAml(currentUser);
+
+  const organizationId = currentUser.organizationId;
+  if (!organizationId) {
+    throw new Error("Chybí organizace.");
+  }
+  const identificationId = requiredString(formData, "identificationId");
+  const { scanUrl, scanFileName, scanNote, scanUploadedAt } =
+    parseScanFields(formData);
+
+  // Org-scope: findFirst, nikdy findUnique({id}) — žádný cross-org únik.
+  const existing = await prisma.amlIdentification.findFirst({
+    where: { id: identificationId, organizationId },
+    select: { id: true, subjectId: true },
+  });
+  if (!existing) {
+    throw new Error("Identifikace nenalezena.");
+  }
+
+  await prisma.amlIdentification.update({
+    where: { id: existing.id },
+    data: { scanUrl, scanFileName, scanNote, scanUploadedAt },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      entityType: "Subject",
+      entityId: existing.subjectId,
+      action: "AML_SCAN_UPDATE",
+      changedById: currentUser.id,
+      // Metadata only — never the scan URL itself.
+      newValue: auditJson({
+        identificationId: existing.id,
+        hasScan: Boolean(scanUrl),
+        scanFileName,
+      }),
+    },
+  });
+
+  revalidatePath(`/subjects/${existing.subjectId}`);
   revalidatePath("/aml");
 }
 

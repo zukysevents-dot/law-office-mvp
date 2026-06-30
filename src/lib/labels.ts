@@ -23,6 +23,7 @@ import {
   PaymentMethod,
   ProjectStatus,
   ReminderLevel,
+  SalaryTaxMode,
   SubjectRole,
   SubjectType,
   SubscriptionStatus,
@@ -32,6 +33,14 @@ import {
   UserRole,
   VatMode,
 } from "@/generated/prisma/enums";
+
+export const salaryTaxModeLabels: Record<SalaryTaxMode, string> = {
+  [SalaryTaxMode.EMPLOYMENT]: "Závislá činnost (zaměstnanec)",
+  [SalaryTaxMode.DPP]: "DPP (dohoda o provedení práce)",
+  [SalaryTaxMode.DPC]: "DPČ (dohoda o pracovní činnosti)",
+  [SalaryTaxMode.CONTRACTOR]: "OSVČ / fakturuje",
+  [SalaryTaxMode.OTHER]: "Jiné",
+};
 
 export const capabilityOptions = [
   Capability.MANAGE_INVOICES,
@@ -318,6 +327,7 @@ export const options = {
   deadlineTypes: Object.values(DeadlineType),
   documentKinds: Object.values(DocumentKind),
   hrEmploymentTypes: Object.values(HrEmploymentType),
+  salaryTaxModes: Object.values(SalaryTaxMode),
   hrAbsenceTypes: Object.values(HrAbsenceType),
   internalTaskCategories: Object.values(InternalTaskCategory),
   taskPriorities: Object.values(TaskPriority),

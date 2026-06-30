@@ -1,6 +1,8 @@
+import { Field, TextInput } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
 import type { Prisma } from "@/generated/prisma/client";
@@ -32,24 +34,67 @@ type AssessmentRow = Prisma.AmlAssessmentGetPayload<{
   include: typeof assessmentInclude;
 }>;
 
+type SubjectHit = { id: string; name: string; ico: string | null };
+
 type Data = {
   allowed: boolean;
   risky: AssessmentRow[];
   dueSoon: AssessmentRow[];
+  query: string;
+  searchResults: SubjectHit[];
 };
 
-export default async function AmlPage() {
+export default async function AmlPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>;
+}) {
+  const params = await searchParams;
+  const query = (params.q ?? "").trim().slice(0, 100);
+
   const result = await safeQuery<Data>(
-    { allowed: false, risky: [], dueSoon: [] },
+    { allowed: false, risky: [], dueSoon: [], query, searchResults: [] },
     async () => {
       const currentUser = await getCurrentUser();
       await assertModuleEnabled(currentUser, ModuleKey.AML);
       if (!canManageAml(currentUser)) {
-        return { allowed: false, risky: [], dueSoon: [] };
+        return {
+          allowed: false,
+          risky: [],
+          dueSoon: [],
+          query,
+          searchResults: [],
+        };
+      }
+      const organizationId = currentUser.organizationId;
+      // Fail-closed: admin/partner bez aktivní org nesmí spustit žádný dotaz.
+      if (!organizationId) {
+        return {
+          allowed: false,
+          risky: [],
+          dueSoon: [],
+          query,
+          searchResults: [],
+        };
       }
       const prisma = getPrisma();
-      const organizationId = currentUser.organizationId;
       const dueBoundary = reviewDueBoundary();
+      // „Nová kontrola / identifikace": vyhledej zapsaný subjekt dle jména/IČO.
+      const searchResults = query
+        ? await prisma.subject.findMany({
+            where: {
+              organizationId,
+              archivedAt: null,
+              OR: [
+                { name: { contains: query, mode: "insensitive" } },
+                { ico: { contains: query } },
+              ],
+            },
+            orderBy: { name: "asc" },
+            take: 20,
+            select: { id: true, name: true, ico: true },
+          })
+        : [];
       const [risky, dueSoon] = await Promise.all([
         prisma.amlAssessment.findMany({
           where: {
@@ -67,11 +112,17 @@ export default async function AmlPage() {
           take: 500,
         }),
       ]);
-      return { allowed: true, risky, dueSoon };
+      return { allowed: true, risky, dueSoon, query, searchResults };
     },
   );
 
-  const data = result.data ?? { allowed: false, risky: [], dueSoon: [] };
+  const data = result.data ?? {
+    allowed: false,
+    risky: [],
+    dueSoon: [],
+    query,
+    searchResults: [],
+  };
 
   return (
     <>
@@ -91,6 +142,59 @@ export default async function AmlPage() {
 
       {data.allowed ? (
         <>
+          <Section title="Nová kontrola / identifikace">
+            <form method="get" className="flex flex-wrap items-end gap-3">
+              <Field label="Vyhledat klienta (jméno nebo IČO)">
+                <TextInput
+                  name="q"
+                  defaultValue={data.query}
+                  placeholder="Jméno nebo IČO…"
+                />
+              </Field>
+              <Button type="submit" variant="secondary">
+                Vyhledat
+              </Button>
+            </form>
+            {data.query ? (
+              data.searchResults.length > 0 ? (
+                <ul className="mt-4 grid gap-2">
+                  {data.searchResults.map((hit) => (
+                    <li
+                      key={hit.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[#d4e2dc] bg-[#EEF5F1]/55 px-3 py-2"
+                    >
+                      <span className="font-medium text-[#072924]">
+                        {hit.name}
+                        {hit.ico ? `, IČO ${hit.ico}` : ""}
+                      </span>
+                      <a
+                        href={`/subjects/${hit.id}#aml`}
+                        className="text-emerald-800 underline"
+                      >
+                        Nový zápis AML →
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
+                  Pro „{data.query}“ nebyl nalezen žádný subjekt.{" "}
+                  <a
+                    href={`/subjects?q=${encodeURIComponent(data.query)}#new-subject`}
+                    className="font-medium underline"
+                  >
+                    Založit nový subjekt
+                  </a>
+                </div>
+              )
+            ) : (
+              <p className="mt-3 text-sm text-stone-500">
+                Zadejte jméno nebo IČO klienta a otevřete jeho AML identifikaci /
+                kontrolu.
+              </p>
+            )}
+          </Section>
+
           <Section title="Rizikoví klienti (vysoké riziko / PEP / sankce)">
             {data.risky.length > 0 ? (
               <div className="table-scroll">

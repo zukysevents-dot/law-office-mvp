@@ -1,4 +1,8 @@
-import { assessRisk, recordIdentification } from "@/app/actions/aml";
+import {
+  assessRisk,
+  recordIdentification,
+  updateIdentificationScan,
+} from "@/app/actions/aml";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
 import {
   SanctionsScreeningPanel,
@@ -30,7 +34,7 @@ export function SubjectAmlSection({
 }) {
   return (
     <>
-      <Section title="AML — hodnocení rizik">
+      <Section title="AML — hodnocení rizik" id="aml" className="scroll-mt-6">
         {assessment ? (
           <dl className="mb-4 grid gap-4 sm:grid-cols-4">
             <div>
@@ -142,6 +146,7 @@ export function SubjectAmlSection({
                   <th>Číslo</th>
                   <th>Platnost do</th>
                   <th>Ověřeno</th>
+                  <th>Sken</th>
                 </tr>
               </thead>
               <tbody>
@@ -155,6 +160,20 @@ export function SubjectAmlSection({
                     </td>
                     <td>{formatDate(identification.expiresAt)}</td>
                     <td>{formatDate(identification.verifiedAt)}</td>
+                    <td>
+                      {identification.scanUrl ? (
+                        <a
+                          href={identification.scanUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-emerald-800 underline"
+                        >
+                          {identification.scanFileName ?? "Otevřít sken"}
+                        </a>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -201,14 +220,74 @@ export function SubjectAmlSection({
           <Field label="Poznámka (volitelné)">
             <TextArea name="note" />
           </Field>
+          <Field label="Odkaz na sken dokladu (https, volitelné)">
+            <TextInput
+              name="scanUrl"
+              type="url"
+              placeholder="https://…"
+              autoComplete="off"
+            />
+          </Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Název souboru skenu (volitelné)">
+              <TextInput name="scanFileName" />
+            </Field>
+            <Field label="Poznámka ke skenu (volitelné)">
+              <TextInput name="scanNote" />
+            </Field>
+          </div>
           <div>
             <Button type="submit">Zaevidovat identifikaci</Button>
           </div>
         </form>
         <p className="mt-2 text-xs text-stone-400">
           Číslo dokladu se ukládá šifrovaně; v přehledu se zobrazuje pouze
-          maskované. Dnešní datum se zaznamená jako datum ověření.
+          maskované. Sken dokladu se ukládá jako odkaz do úložiště (např.
+          SharePoint), ne jako soubor v aplikaci. Dnešní datum se zaznamená jako
+          datum ověření.
         </p>
+
+        {identifications.length > 0 ? (
+          <form
+            action={updateIdentificationScan}
+            className="mt-6 grid gap-4 sm:max-w-2xl"
+          >
+            <p className="text-sm font-medium text-[#072924]">
+              Doplnit / změnit sken u existující identifikace
+            </p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Identifikace">
+                <SelectInput name="identificationId" required>
+                  {identifications.map((identification) => (
+                    <option key={identification.id} value={identification.id}>
+                      {identification.documentType} ·{" "}
+                      {identification.documentNumberMasked}
+                    </option>
+                  ))}
+                </SelectInput>
+              </Field>
+              <Field label="Odkaz na sken (https)">
+                <TextInput
+                  name="scanUrl"
+                  type="url"
+                  placeholder="https://…"
+                  autoComplete="off"
+                />
+              </Field>
+              <Field label="Název souboru (volitelné)">
+                <TextInput name="scanFileName" />
+              </Field>
+              <Field label="Poznámka ke skenu (volitelné)">
+                <TextInput name="scanNote" />
+              </Field>
+            </div>
+            <div>
+              <Button type="submit" variant="secondary">
+                Uložit sken
+              </Button>
+            </div>
+          </form>
+        ) : null}
       </Section>
     </>
   );

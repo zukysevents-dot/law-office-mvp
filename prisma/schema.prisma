@@ -110,6 +110,16 @@ enum HrEmploymentType {
   CONTRACTOR // OSVČ
 }
 
+// Jak se mzda/odměna zaměstnance daní (revize ř.114 — admin zadává výši mzdy
+// a způsob zdanění). Citlivý mzdový údaj — jen ADMIN/PARTNER (canManageHr).
+enum SalaryTaxMode {
+  EMPLOYMENT // závislá činnost (zaměstnanec, zálohová daň)
+  DPP // dohoda o provedení práce
+  DPC // dohoda o pracovní činnosti
+  CONTRACTOR // OSVČ / fakturuje (daní si sám)
+  OTHER // jiné
+}
+
 enum HrAttendanceSource {
   MANUAL
   IMPORT
@@ -1507,6 +1517,13 @@ model AmlIdentification {
   verifiedAt              DateTime?
   method                  String? // způsob ověření (osobně, na dálku…)
   note                    String?
+  // Sken dokladu (revize ř.26). MVP: odkaz (https) do externího úložiště
+  // (SharePoint), NE binární soubor v DB — citlivý OÚ, AML retence 10 let.
+  // Skutečný upload = Wave 3. Čtení/zápis jen ADMIN/PARTNER (canManageAml).
+  scanUrl                 String?
+  scanFileName            String?
+  scanUploadedAt          DateTime?
+  scanNote                String?
   createdById             String?
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
@@ -1930,6 +1947,11 @@ model HrEmployee {
   employmentType HrEmploymentType @default(FULL_TIME)
   weeklyHours    Decimal          @default(40) @db.Decimal(5, 2)
   dailyHours     Decimal          @default(8) @db.Decimal(4, 2)
+  // Mzda/odměna (revize ř.114) — citlivý údaj, jen ADMIN/PARTNER. grossSalaryCzk
+  // = hrubá měsíční mzda/odměna; salaryTaxMode = jak se daní.
+  grossSalaryCzk Decimal?         @db.Decimal(12, 2)
+  salaryTaxMode  SalaryTaxMode?
+  salaryNote     String?
   startDate      DateTime?
   endDate        DateTime?
   active         Boolean          @default(true)

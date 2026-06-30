@@ -11,12 +11,17 @@ import { Button } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
 import type { Prisma } from "@/generated/prisma/client";
-import { HrEmploymentType, ModuleKey } from "@/generated/prisma/enums";
+import {
+  HrEmploymentType,
+  ModuleKey,
+  SalaryTaxMode,
+} from "@/generated/prisma/enums";
 import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import { assertModuleEnabled } from "@/lib/entitlements";
+import { formatMoney } from "@/lib/format";
 import { computeRemainingHours } from "@/lib/hr/leave-balance";
-import { hrEmploymentTypeLabels } from "@/lib/labels";
+import { hrEmploymentTypeLabels, salaryTaxModeLabels } from "@/lib/labels";
 import {
   andWhere,
   canManageHr,
@@ -111,6 +116,7 @@ export default async function HrEmployeesPage() {
                   <th>Úvazek</th>
                   <th>Účet</th>
                   <th>Dovolená {data.year} (zbývá h)</th>
+                  {data.canManage ? <th>Mzda</th> : null}
                   {data.canManage ? <th>Akce</th> : null}
                 </tr>
               </thead>
@@ -141,6 +147,18 @@ export default async function HrEmployeesPage() {
                       </td>
                       <td>{employee.user?.name ?? "—"}</td>
                       <td>{remaining ?? "—"}</td>
+                      {data.canManage ? (
+                        <td>
+                          {employee.grossSalaryCzk != null
+                            ? formatMoney(employee.grossSalaryCzk)
+                            : "—"}
+                          {employee.salaryTaxMode ? (
+                            <span className="block text-xs text-stone-500">
+                              {salaryTaxModeLabels[employee.salaryTaxMode]}
+                            </span>
+                          ) : null}
+                        </td>
+                      ) : null}
                       {data.canManage ? (
                         <td>
                           <form action={archiveEmployee}>
@@ -213,6 +231,27 @@ export default async function HrEmployeesPage() {
                 </Field>
                 <Field label="Nástup (volitelné)">
                   <TextInput name="startDate" type="date" />
+                </Field>
+                <Field label="Hrubá mzda / měsíc (Kč)">
+                  <TextInput
+                    name="grossSalaryCzk"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                  />
+                </Field>
+                <Field label="Jak se daní">
+                  <SelectInput name="salaryTaxMode" defaultValue="">
+                    <option value="">—</option>
+                    {Object.values(SalaryTaxMode).map((mode) => (
+                      <option key={mode} value={mode}>
+                        {salaryTaxModeLabels[mode]}
+                      </option>
+                    ))}
+                  </SelectInput>
+                </Field>
+                <Field label="Poznámka ke mzdě (volitelné)">
+                  <TextInput name="salaryNote" />
                 </Field>
               </div>
               <div>

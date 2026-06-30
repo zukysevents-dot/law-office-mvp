@@ -1,0 +1,152 @@
+{
+  "mode": "design",
+  "status": "approved",
+  "summary": "Feature AML – nová kontrola/identifikace + odkaz na sken dokladu. MVP: na AmlIdentification přidat odkaz na sken (scanUrl + scanFileName + scanUploadedAt + scanNote), uložený jako URL do externího úložiště (SharePoint), NE binární upload do DB. Vstupní bod 'Nová kontrola / identifikace' na /aml: server-side vyhledávací lišta subjektů (?q=) s odkazem na /subjects/{id}#aml-identifikace; pokud nic nenajde, nabídne 'Založit nový subjekt' (link na /subjects?q={q}#new-subject). Vše gated assertCanManageAml (ADMIN/PARTNER). Skutečný binární upload skenu se šifrováním = Wave 3.",
+  "assumptions": [
+    "Žádné wired blob/binary úložiště v repu neexistuje: Document.storageUrl i DocumentVersion.storageUrl jsou pouze odkazy do SharePointu ('žádný soubor u nás'), SharePoint integrace jen odvozuje URL (PENDING dle ROADMAP/paměti). Závěr: MVP nemůže reálně přijmout binární soubor.",
+    "AmlIdentification.documentNumber se šifruje přes encryptSecret() a maskuje; sken je samostatný citlivý artefakt (osobní doklad), retence AML 10 let.",
+    "AML je compliance-citlivé: čtení i zápis AML dat je vázáno na ADMIN/PARTNER (canManageAml / canViewAllLegalData). Subject detail načítá AML sekci jen pro canViewAllLegalData; /aml gatuje canManageAml.",
+    "ZÁVAZNÝ princip zachován: hasSanctions/riskFlag nastavuje výhradně advokát přes assessRisk; tento feature se assessRisk ani screeningu nedotýká.",
+    "Vyhledávání subjektů už existuje na /subjects (?q= → name/ico contains, mode insensitive) — stejný pattern použijeme pro vyhledávací lištu na /aml. AML uživatel je ADMIN/PARTNER, vidí vše, ale where stejně skládat přes subjectVisibilityWhere(user) + andWhere() kvůli konzistenci.",
+    "Subject detail má kotvu pro AML přes komponentu SubjectAmlSection; přidáme stabilní id (anchor) na sekci identifikace.",
+    "Migrace ručním SQL: pouze ALTER TABLE ADD COLUMN nullable, žádný nový enum value (žádný enum-ADD-VALUE problém), žádný backfill.",
+    "Single-tenant: AmlIdentification je org-scoped (organizationId), izolace zachována; scanUrl je odkaz do org-vlastního SharePointu."
+  ],
+  "open_questions": [
+    {
+      "question": "Má scanUrl být omezena na povolené domény (allowlist interního SharePointu) místo libovolného http(s) odkazu?",
+      "safe_default": "MVP: validovat jen že je to absolutní https URL (stejně jako stávající SharePoint/URL pole jinde, např. legalServicesContractUrl, document.storageUrl). Allowlist domén navrhnout jako follow-up, ne blocker.",
+      "blocking": false
+    },
+    {
+      "question": "Má se scanUrl šifrovat at-rest jako documentNumber?",
+      "safe_default": "NE. URL na interní storage není tajemství samo o sobě a šifrování by znemožnilo klikatelný odkaz v UI. Citlivost je v samotném souboru na SharePointu (chráněn ACL SharePointu) a v audit/přístupovém gate (ADMIN/PARTNER). Šifrovat scanUrl = zbytečná abstrakce.",
+      "blocking": false
+    },
+    {
+      "question": "Wave 3 binární upload: kam (SharePoint Graph API přímý upload vs. server-side blob + šifrování na disku)?",
+      "safe_default": "Dle paměti 'docs+backup na SharePointu' → Wave 3 = nahrání souboru přes SharePoint Graph API a uložení vrácené URL do scanUrl. Žádný binární soubor v Postgresu. Rozhodne se ve Wave 3, mimo rozsah tohoto MVP.",
+      "blocking": false
+    },
+    {
+      "question": "Předvyplnit jméno v 'Založit nový subjekt' z vyhledávacího dotazu?",
+      "safe_default": "MVP: odkaz na /subjects?q={q}#new-subject (q se promítne do search lišty seznamu). Skutečné předvyplnění name v new-subject formuláři vyžaduje úpravu SubjectAresFields, aby přijal defaultValue z searchParams — volitelný follow-up, ne blocker."
+    }
+  ],
+  "architecture": {
+    "data_model": [
+      {
+        "entity": "AmlIdentification",
+        "change": "Přidat 4 nullable sloupce pro odkaz na sken dokladu. ŽÁDNÝ binární obsah.",
+        "new_fields": [
+          "scanUrl String?  // absolutní https odkaz do externího úložiště (SharePoint). NE soubor u nás. NEšifrováno.",
+          "scanFileName String?  // uživatelský popisek souboru pro UI (např. 'obcanka_novak.pdf')",
+          "scanUploadedAt DateTime?  // kdy byl odkaz na sken zaevidován",
+          "scanNote String?  // volitelná poznámka ke skenu (např. 'oboustranný sken, kopie pro AML složku')"
+        ],
+        "no_change": "documentNumberEncrypted/Masked beze změny — sken je samostatný odkaz, doklad zůstává šifrovaný/maskovaný.",
+        "retention": "AML 10 let: scanUrl/metadata zůstávají vázané na AmlIdentification (org-scoped). Mazání řešit v rámci retenční politiky subjektu (mimo tento feature).",
+        "indexes": "Žádné nové indexy nutné (scan pole se nefiltrují/nesortují)."
+      }
+    ],
+    "api_endpoints": [
+      {
+        "note": "Architektura repa = thick server actions, žádné REST/tRPC. Žádný nový HTTP endpoint.",
+        "actions": [
+          {
+            "action": "recordIdentification (rozšířit) — src/app/actions/aml.ts",
+            "input_added": "scanUrl, scanFileName, scanNote (FormData, optionalString). Validace: scanUrl je-li vyplněno, musí být absolutní https URL; max délka (např. 2048).",
+            "behavior": "Uvnitř existující $transaction uložit scanUrl/scanFileName/scanNote a scanUploadedAt = new Date() pouze pokud scanUrl vyplněno. Do auditu (AML_IDENTIFY newValue) přidat hasScan: boolean + scanFileName (NE plný obsah; URL do auditu lze, ale stačí příznak hasScan + fileName). Gate assertCanManageAml beze změny.",
+            "auth": "assertModuleEnabled(AML) + assertCanManageAml (ADMIN/PARTNER) — beze změny."
+          },
+          {
+            "action": "updateIdentificationScan (NOVÁ, volitelná) — src/app/actions/aml.ts",
+            "purpose": "Doplnit/změnit odkaz na sken u JIŽ existující identifikace (ř.26 'doplnit možnost uložení skenu' i zpětně).",
+            "input": "identificationId (requiredString), scanUrl/scanFileName/scanNote (optionalString).",
+            "behavior": "Najít AmlIdentification přes findFirst({ id, organizationId }) (org-scope guard). Update scan polí + scanUploadedAt. Audit action 'AML_SCAN_UPDATE' s oldValue/newValue { hasScan, scanFileName }. revalidatePath subject + /aml.",
+            "auth": "assertCanManageAml. Pokud se rozhodne MVP minimalizovat, lze tuto akci vynechat a sken doplňovat jen při založení identifikace (recordIdentification) — viz acceptance."
+          }
+        ]
+      }
+    ],
+    "folder_structure": [
+      "src/app/actions/aml.ts — rozšířit recordIdentification, příp. přidat updateIdentificationScan (existující soubor, AML akce).",
+      "src/components/subject-aml-section.tsx — přidat pole 'Odkaz na sken dokladu' do identifikačního formuláře, zobrazení odkazu ve výpisu identifikací, a stabilní anchor id na sekci identifikace (id=\"aml-identifikace\") + na celý AML blok (id=\"aml\").",
+      "src/app/(app)/aml/page.tsx — přidat sekci 'Nová kontrola / identifikace' s vyhledávací lištou (server-side, ?q=) a výsledky/CTA.",
+      "src/components/aml-new-check.tsx (NOVÁ) — server-renderovaná komponenta: GET form s name=q (Search ikona), výpis nalezených subjektů jako odkazy na /subjects/{id}#aml-identifikace; když 0 výsledků a q neprázdné → CTA 'Založit nový subjekt' (ButtonLink na /subjects?q={q}#new-subject). Žádný client state.",
+      "prisma/schema.prisma — 4 nová pole na AmlIdentification.",
+      "prisma/migrations/<timestamp>_aml_identification_scan/migration.sql — ruční ALTER TABLE.",
+      "src/generated/prisma/ — po změně schématu spustit npm run db:generate (commitnutý klient)."
+    ],
+    "tech_choices": [
+      {
+        "decision": "Úložiště skenu = URL odkaz (scanUrl) do externího SharePointu, NE binární upload.",
+        "rationale": "V repu NEEXISTUJE wired blob storage (Document.storageUrl/DocumentVersion.storageUrl jsou jen odkazy 'žádný soubor u nás', SharePoint upload PENDING). Konzistentní se zavedeným vzorem dokumentů. Base64/bytea sken do Postgresu = anti-pattern (citlivý osobní doklad, 10y retence, bobtnání DB, šifrování megabajtů) → explicitně NEdoporučeno pro MVP.",
+        "alternatives": [
+          "Document model (subjectId, kind): zvažováno, ale Document je 'odkaz do SharePointu' bez vlastního úložiště a navíc Document sekce není AML-gated (viditelnější vrstva) → sken dokladu by unikl z ADMIN/PARTNER gate. Zamítnuto: scan musí žít na AmlIdentification pod AML gate.",
+          "Binární upload do DB/disku se šifrováním: odloženo na Wave 3 (vyžaduje storage backend + šifrování souboru + retenční/mazací politiku)."
+        ],
+        "mvp_vs_wave3": "MVP = scanUrl + metadata + UI odkaz + audit + gate. Wave 3 = skutečný binární upload (SharePoint Graph API nahraje soubor a vrátí URL do scanUrl); schéma se NEMĚNÍ, mění se jen způsob, jak scanUrl vznikne."
+      },
+      {
+        "decision": "Vyhledávací lišta = nativní HTML GET <form> + server-side Prisma query (stejný pattern jako /subjects ?q=).",
+        "rationale": "Repo nemá client state library; thick server actions / Server Components. Žádná nová závislost.",
+        "alternatives": ["Client-side autocomplete/typeahead — zamítnuto (zbytečná složitost, porušuje konvenci, AML data nesmí téct do nadbytečných client fetchů)."]
+      }
+    ]
+  },
+  "conflicts": [],
+  "security": [
+    {
+      "severity": "critical",
+      "topic": "Přístup ke skenu citlivého dokladu",
+      "detail": "scanUrl/scanFileName a celá AML identifikace se smí zobrazovat i ukládat POUZE pro ADMIN/PARTNER. Subject detail už načítá AML sekci jen pod canViewAllLegalData; /aml pod canManageAml. Nová komponenta aml-new-check i akce updateIdentificationScan MUSÍ volat assertCanManageAml. Vyhledávací lišta na /aml nesmí AML data leaknout neoprávněnému uživateli (stránka už dělá allowed=false fallback)."
+    },
+    {
+      "severity": "warning",
+      "topic": "Audit citlivého artefaktu",
+      "detail": "Uložení/změna skenu = auditní zápis (AML_IDENTIFY rozšířit o hasScan/scanFileName; nebo AML_SCAN_UPDATE). NEukládat do auditu obsah dokladu. URL lze do auditu zapsat, ale doporučení: zapsat jen hasScan:boolean + scanFileName, aby audit nešířil přímý odkaz na citlivý soubor."
+    },
+    {
+      "severity": "warning",
+      "topic": "Validace scanUrl",
+      "detail": "Přijmout jen absolutní https URL (zabránit javascript:/data: a relativním cestám). Max délka. Follow-up: allowlist domén interního SharePointu."
+    },
+    {
+      "severity": "info",
+      "topic": "GDPR / retence",
+      "detail": "Sken dokladu = zvláštní kategorie citlivého osobního údaje, AML retence 10 let. Samotný soubor leží na SharePointu (chráněn jeho ACL); v aplikaci držíme jen odkaz + metadata pod AML gate. Mazání/retenci řešit v rámci retenční politiky subjektu (mimo tento feature, zaznamenat jako follow-up)."
+    },
+    {
+      "severity": "info",
+      "topic": "Izolace dat (single-tenant + org-scope)",
+      "detail": "AmlIdentification je org-scoped; updateIdentificationScan musí načítat přes findFirst({ id, organizationId }) — nikdy findUnique({ id }) bez org guardu, aby nedošlo ke cross-org úniku."
+    }
+  ],
+  "scalability": [
+    {
+      "topic": "Vyhledávací lišta",
+      "detail": "name/ico contains insensitive — stejné jako /subjects; pro objem subjektů jedné kanceláře dostačující. take limit (např. 20) na výsledky. Žádné nové škálovací riziko."
+    },
+    {
+      "topic": "Velikost DB",
+      "detail": "Tím, že NEukládáme binární sken do Postgresu, se vyhýbáme bobtnání DB a nákladnému šifrování blobů — klíčový důvod pro URL-only MVP."
+    }
+  ],
+  "handoff": {
+    "next_agent": "developer",
+    "context_for_review": "Implementuj URL-only sken na AmlIdentification (4 nullable pole) + vstupní bod 'Nová kontrola / identifikace' na /aml s server-side vyhledávací lištou a CTA 'Založit nový subjekt'. NEimplementuj binární upload (Wave 3). Drž AML gate (ADMIN/PARTNER) na všech nových čteních i zápisech. Nedotýkej se assessRisk/screening — hasSanctions/riskFlag nastavuje výhradně advokát. Audit každou změnu skenu, ale neloguj obsah dokladu. updateIdentificationScan a recordIdentification musí org-scopovat přes findFirst({ id/subjectId, organizationId }). Po změně schématu: npm run db:generate; migrace je ruční ALTER TABLE ADD COLUMN (DB v sandboxu nedostupná, db:migrate doběhne mimo sandbox — viz pending index migrace v paměti).",
+    "required_checks": [
+      "scanUrl validace: jen absolutní https, max délka; relativní/javascript:/data: odmítnuto.",
+      "Všechny nové čtecí i zápisové cesty (aml-new-check, recordIdentification scan, updateIdentificationScan) volají assertModuleEnabled(AML) + assertCanManageAml.",
+      "updateIdentificationScan používá findFirst({ id, organizationId }) — žádný cross-org únik.",
+      "Audit: uložení/změna skenu zapsáno (AML_IDENTIFY rozšířeno o hasScan/scanFileName nebo nová akce AML_SCAN_UPDATE); obsah dokladu NIKDY v auditu.",
+      "assessRisk / sanctions screening NEzměněno; hasSanctions/riskFlag dál výhradně přes assessRisk.",
+      "Subject detail AML sekce má stabilní anchor (id=\"aml-identifikace\" / id=\"aml\") a odkazy z /aml na ni míří přes #kotvu.",
+      "0-výsledků flow: prázdná lišta s neprázdným q nabídne 'Založit nový subjekt' → /subjects?q={q}#new-subject.",
+      "Žádný nový HTTP endpoint; žádná client state library; UI stringy česky; použity Section/Field/Button/TextInput dle konvence.",
+      "Migrace = pouze ALTER TABLE ADD COLUMN nullable (žádný enum ADD VALUE, žádný backfill); npm run db:generate spuštěn; npm run lint + npm run build projdou.",
+      "scanUrl NEšifrováno (odkaz, ne tajemství) — citlivost je v souboru na SharePointu + v gate; potvrď, že to odpovídá rozhodnutí."
+    ]
+  }
+}

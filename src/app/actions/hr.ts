@@ -9,6 +9,7 @@ import {
   HrAttendanceSource,
   HrEmploymentType,
   ModuleKey,
+  SalaryTaxMode,
 } from "@/generated/prisma/enums";
 import { auditJson } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
@@ -93,6 +94,27 @@ async function validateEmployeeUser(
 
 // --- Employees (HR-3) --------------------------------------------------------
 
+// Mzdové údaje z formuláře (revize ř.114) — citlivé, jen ADMIN/PARTNER.
+// Prázdná pole → null. grossSalaryCzk = hrubá měsíční mzda/odměna.
+function parseSalaryFields(formData: FormData) {
+  const grossSalaryCzk = optionalNumber(formData, "grossSalaryCzk");
+  if (
+    grossSalaryCzk != null &&
+    (grossSalaryCzk < 0 || grossSalaryCzk > 99_999_999)
+  ) {
+    throw new Error("Neplatná výše mzdy.");
+  }
+  const salaryTaxMode = optionalString(formData, "salaryTaxMode")
+    ? enumValue(
+        SalaryTaxMode,
+        formData.get("salaryTaxMode"),
+        SalaryTaxMode.EMPLOYMENT,
+      )
+    : null;
+  const salaryNote = clampText(optionalString(formData, "salaryNote"), 500);
+  return { grossSalaryCzk, salaryTaxMode, salaryNote };
+}
+
 export async function createEmployee(formData: FormData) {
   const prisma = getPrisma();
   const { currentUser, organizationId } = await authorize();
@@ -113,6 +135,8 @@ export async function createEmployee(formData: FormData) {
     throw new Error("Neplatný fond pracovní doby.");
   }
   const startDate = optionalDate(formData, "startDate");
+  const { grossSalaryCzk, salaryTaxMode, salaryNote } =
+    parseSalaryFields(formData);
   const userId = await validateEmployeeUser(
     organizationId,
     optionalString(formData, "userId"),
@@ -129,6 +153,9 @@ export async function createEmployee(formData: FormData) {
       employmentType,
       weeklyHours,
       dailyHours,
+      grossSalaryCzk,
+      salaryTaxMode,
+      salaryNote,
       startDate,
       userId,
       createdById: currentUser.id,
@@ -175,6 +202,8 @@ export async function updateEmployee(formData: FormData) {
   if (weeklyHours < 0 || weeklyHours > 168 || dailyHours < 0 || dailyHours > 24) {
     throw new Error("Neplatný fond pracovní doby.");
   }
+  const { grossSalaryCzk, salaryTaxMode, salaryNote } =
+    parseSalaryFields(formData);
   const userId = await validateEmployeeUser(
     organizationId,
     optionalString(formData, "userId"),
@@ -184,7 +213,18 @@ export async function updateEmployee(formData: FormData) {
   await prisma.$transaction(async (tx) => {
     await tx.hrEmployee.update({
       where: { id: employeeId },
-      data: { firstName, lastName, position, employmentType, weeklyHours, dailyHours, userId },
+      data: {
+        firstName,
+        lastName,
+        position,
+        employmentType,
+        weeklyHours,
+        dailyHours,
+        grossSalaryCzk,
+        salaryTaxMode,
+        salaryNote,
+        userId,
+      },
     });
     await tx.auditLog.create({
       data: {
