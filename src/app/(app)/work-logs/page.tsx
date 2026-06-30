@@ -1,4 +1,4 @@
-import { Plus, WandSparkles } from "lucide-react";
+import { FileText, Plus, WandSparkles } from "lucide-react";
 
 import {
   archiveWorkLog,
@@ -388,16 +388,32 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
     result.data.monthlyTarget,
   );
 
+  // Carry the active matter/date filters into the client timesheet (print) view.
+  const timesheetParams = new URLSearchParams(
+    Object.entries({ subjectId, projectId, caseId, dateFrom, dateTo }).filter(
+      (entry): entry is [string, string] => Boolean(entry[1]),
+    ),
+  ).toString();
+  const timesheetHref = timesheetParams
+    ? `/work-logs/timesheet?${timesheetParams}`
+    : "/work-logs/timesheet";
+
   return (
     <>
       <PageHeader
         title="Výkazy práce"
         description="Evidence vykázané práce se sazbou a částkou jako příprava pro budoucí fakturaci."
         action={
-          <ButtonLink href="#new-work-log">
-            <Plus className="h-4 w-4" aria-hidden="true" />
-            Nový výkaz
-          </ButtonLink>
+          <div className="flex gap-2">
+            <ButtonLink href={timesheetHref} variant="secondary">
+              <FileText className="h-4 w-4" aria-hidden="true" />
+              Výkaz pro klienta
+            </ButtonLink>
+            <ButtonLink href="#new-work-log">
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              Nový výkaz
+            </ButtonLink>
+          </div>
         }
       />
       <DatabaseNotice
