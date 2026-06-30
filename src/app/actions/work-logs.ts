@@ -215,6 +215,14 @@ export async function updateWorkLog(formData: FormData) {
     where: { id: workLogId },
   });
   assertCanEditRecord(currentUser, "WorkLog", oldWorkLog);
+  // Výkaz zamčený fakturou (vystavenou nebo rozpracovaným retainerovým draftem)
+  // nelze editovat — jinak by se rozešel doklad/RetainerInvoicePeriod se
+  // skutečnou prací. Uvolní se stornem/smazáním faktury (invoicedAt → null).
+  if (oldWorkLog.invoicedAt) {
+    throw new Error(
+      "Výkaz je navázán na fakturu — nejprve fakturu stornujte nebo smažte.",
+    );
+  }
 
   // Re-assigning the matter must respect visibility — a user can't move a work
   // log onto a case/project/task they can't see (IDOR guard, mirrors create).
@@ -325,6 +333,19 @@ export async function updateWorkLog(formData: FormData) {
 
 async function setWorkLogArchived(formData: FormData, archived: boolean) {
   const prisma = getPrisma();
+  // Zamčený výkaz (navázaný na fakturu/draft) nelze archivovat — bil by se
+  // doklad od podkladu. Restore (archived=false) nech projít.
+  if (archived) {
+    const existing = await prisma.workLog.findUnique({
+      where: { id: requiredString(formData, "id") },
+      select: { invoicedAt: true },
+    });
+    if (existing?.invoicedAt) {
+      throw new Error(
+        "Výkaz je navázán na fakturu — nejprve fakturu stornujte nebo smažte.",
+      );
+    }
+  }
   const workLog = await setArchived(formData, "WorkLog", archived, {
     find: (id) => prisma.workLog.findUniqueOrThrow({ where: { id } }),
     update: (id, data) => prisma.workLog.update({ where: { id }, data }),

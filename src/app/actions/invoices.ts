@@ -468,15 +468,16 @@ export async function cancelInvoice(formData: FormData) {
       },
     });
 
-    const workLogIds = invoice.lines
-      .map((l) => l.workLogId)
-      .filter((id): id is string => !!id);
-    if (workLogIds.length > 0) {
-      await tx.workLog.updateMany({
-        where: { id: { in: workLogIds }, invoicedInvoiceId: invoice.id },
-        data: { invoicedAt: null, invoicedInvoiceId: null },
-      });
-    }
+    // Uvolni VŠECHNY work-logy zamčené touto fakturou — řádkové i retainerové
+    // (kryté/přesahové bez vlastního řádku) — aby je šlo znovu vyfakturovat.
+    await tx.workLog.updateMany({
+      where: { invoicedInvoiceId: invoice.id },
+      data: { invoicedAt: null, invoicedInvoiceId: null },
+    });
+    // Retainerové období smaž, aby unique neblokoval re-fakturaci měsíce.
+    await tx.retainerInvoicePeriod.deleteMany({
+      where: { invoiceId: invoice.id },
+    });
 
     await tx.auditLog.create({
       data: {
@@ -504,25 +505,36 @@ export async function deleteDraftInvoice(formData: FormData) {
 
   const invoiceId = requiredString(formData, "invoiceId");
 
-  const invoice = await prisma.invoice.findFirst({
-    where: andWhere(invoiceVisibilityWhere(currentUser), { id: invoiceId }),
-  });
-  if (!invoice) {
-    throw new Error("Faktura nenalezena.");
-  }
-  if (invoice.status !== InvoiceStatus.DRAFT) {
-    throw new Error("Smazat lze pouze rozpracovanou fakturu.");
-  }
+  await prisma.$transaction(async (tx) => {
+    // Načtení i kontrola statusu UVNITŘ tx (atomické, jako cancel/issue) —
+    // brání souběžnému smazání faktury, která mezitím přešla do ISSUED.
+    const invoice = await tx.invoice.findFirst({
+      where: andWhere(invoiceVisibilityWhere(currentUser), { id: invoiceId }),
+    });
+    if (!invoice) {
+      throw new Error("Faktura nenalezena.");
+    }
+    if (invoice.status !== InvoiceStatus.DRAFT) {
+      throw new Error("Smazat lze pouze rozpracovanou fakturu.");
+    }
 
-  await prisma.invoice.delete({ where: { id: invoiceId } });
-  await prisma.auditLog.create({
-    data: {
-      entityType: "Invoice",
-      entityId: invoiceId,
-      action: "DELETE",
-      changedById: currentUser.id,
-      oldValue: auditJson({ status: invoice.status, number: invoice.number }),
-    },
+    // Retainerový DRAFT zamyká kryté/přesahové work-logy (na rozdíl od běžného
+    // draftu) — uvolni je před smazáním, ať je lze znovu vyfakturovat.
+    await tx.workLog.updateMany({
+      where: { invoicedInvoiceId: invoiceId },
+      data: { invoicedAt: null, invoicedInvoiceId: null },
+    });
+    // Cascade smaže řádky i případný RetainerInvoicePeriod.
+    await tx.invoice.delete({ where: { id: invoiceId } });
+    await tx.auditLog.create({
+      data: {
+        entityType: "Invoice",
+        entityId: invoiceId,
+        action: "DELETE",
+        changedById: currentUser.id,
+        oldValue: auditJson({ status: invoice.status, number: invoice.number }),
+      },
+    });
   });
 
   revalidatePath("/billing/invoices");

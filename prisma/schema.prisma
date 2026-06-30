@@ -1023,6 +1023,7 @@ model Organization {
   projectAssignees     ProjectAssignee[]
   caseAssignees        CaseAssignee[]
   capabilityGrants     UserCapabilityGrant[]
+  retainerInvoicePeriods RetainerInvoicePeriod[]
 
   @@index([status])
   @@map("organizations")
@@ -1265,6 +1266,7 @@ model Invoice {
   lines        InvoiceLine[]
   payments     Payment[]
   reminders    Reminder[]
+  retainerPeriod RetainerInvoicePeriod?
 
   // Number unique per org; NULL drafts don't collide (Postgres NULLs distinct).
   @@unique([organizationId, number])
@@ -1364,10 +1366,36 @@ model RetainerAgreement {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   subject      Subject      @relation(fields: [subjectId], references: [id], onDelete: Restrict)
   project      Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  invoicePeriods RetainerInvoicePeriod[]
 
   @@index([organizationId])
   @@index([subjectId])
   @@map("retainerAgreements")
+}
+
+// Měsíční vyúčtování paušálu navázané na konkrétní fakturu. Tvrdá idempotence:
+// @@unique([retainerId, periodYear, periodMonth]) brání vyfakturování paušálu
+// 2× za stejný měsíc (nahrazuje křehkou note-based kontrolu). Drží i agregát
+// krytých/přesahových hodin. Smazání faktury kaskádou ruší řádek; storno faktury
+// ho maže explicitně (cancelInvoice), aby šlo měsíc znovu vyfakturovat.
+model RetainerInvoicePeriod {
+  id             String   @id @default(cuid())
+  organizationId String
+  retainerId     String
+  invoiceId      String   @unique
+  periodYear     Int
+  periodMonth    Int
+  coveredHours   Decimal  @db.Decimal(8, 2)
+  overageHours   Decimal  @db.Decimal(8, 2)
+  createdAt      DateTime @default(now())
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  retainer     RetainerAgreement @relation(fields: [retainerId], references: [id], onDelete: Restrict)
+  invoice      Invoice           @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@unique([retainerId, periodYear, periodMonth])
+  @@index([organizationId])
+  @@map("retainerInvoicePeriods")
 }
 
 // --- DATA_BOXES models (F2 / Datové schránky ISDS) ---------------------------
