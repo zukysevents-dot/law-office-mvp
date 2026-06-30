@@ -15,7 +15,11 @@ import {
 import { csvCell, csvNumber } from "@/lib/export/csv";
 import { formatCaseLabel, formatDateUtc } from "@/lib/format";
 import { getPrisma } from "@/lib/prisma";
-import { andWhere, workLogVisibilityWhere } from "@/lib/permissions";
+import {
+  andWhere,
+  assertCanManageInvoices,
+  workLogVisibilityWhere,
+} from "@/lib/permissions";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -123,6 +127,7 @@ export async function GET(request: NextRequest) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
   await assertModuleEnabled(currentUser, ModuleKey.BILLING);
+  assertCanManageInvoices(currentUser);
   const searchParams = request.nextUrl.searchParams;
   const format = searchParams.get("format") === "csv" ? "csv" : "xlsx";
   const filters = readBillingFilters((key) => searchParams.get(key) ?? "");

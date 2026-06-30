@@ -28,7 +28,11 @@ import {
   invoiceDetailInclude,
   type InvoiceDetail,
 } from "@/lib/invoices";
-import { andWhere, invoiceVisibilityWhere } from "@/lib/permissions";
+import {
+  andWhere,
+  assertCanManageInvoices,
+  invoiceVisibilityWhere,
+} from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { invoiceStatusTone } from "@/lib/status-tones";
 
@@ -48,6 +52,7 @@ export default async function InvoiceDetailPage({
   const result = await safeQuery<InvoiceDetail | null>(null, async () => {
     const currentUser = await getCurrentUser();
     await assertModuleEnabled(currentUser, ModuleKey.BILLING);
+    assertCanManageInvoices(currentUser);
     return getPrisma().invoice.findFirst({
       where: andWhere(invoiceVisibilityWhere(currentUser), { id }),
       include: invoiceDetailInclude,

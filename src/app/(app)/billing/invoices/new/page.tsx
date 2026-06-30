@@ -22,6 +22,7 @@ import {
 } from "@/lib/format";
 import {
   andWhere,
+  assertCanManageInvoices,
   workLogVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
@@ -57,6 +58,7 @@ export default async function NewInvoicePage({ searchParams }: NewInvoiceProps) 
       const prisma = getPrisma();
       const currentUser = await getCurrentUser();
       await assertModuleEnabled(currentUser, ModuleKey.BILLING);
+      assertCanManageInvoices(currentUser);
 
       const [subjects, issuers, profile] = await Promise.all([
         prisma.subject.findMany({

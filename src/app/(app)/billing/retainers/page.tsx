@@ -19,7 +19,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import { assertModuleEnabled } from "@/lib/entitlements";
 import { formatDate, formatHours, formatMoney } from "@/lib/format";
-import { canViewAllLegalData } from "@/lib/permissions";
+import { canManageInvoices } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -38,8 +38,8 @@ export default async function RetainersPage() {
     async () => {
       const currentUser = await getCurrentUser();
       await assertModuleEnabled(currentUser, ModuleKey.BILLING);
-      const allowed =
-        canViewAllLegalData(currentUser) || currentUser.role === "LAWYER";
+      // Fakturace jen pro ADMIN/PARTNER + grant MANAGE_INVOICES (revize ř.77).
+      const allowed = canManageInvoices(currentUser);
       if (!allowed) {
         return { allowed: false, retainers: [], subjects: [] };
       }

@@ -4,7 +4,11 @@ import { revalidatePath } from "next/cache";
 
 import { redirect } from "next/navigation";
 
-import { OrganizationMemberStatus, UserRole } from "@/generated/prisma/enums";
+import {
+  Capability,
+  OrganizationMemberStatus,
+  UserRole,
+} from "@/generated/prisma/enums";
 import { auditJson } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
 import {
@@ -200,6 +204,79 @@ export async function updateUserHoursPlan(formData: FormData) {
   revalidatePath("/settings");
   revalidatePath("/work-logs");
   revalidatePath("/dashboard");
+}
+
+const ALL_CAPABILITIES = [Capability.MANAGE_INVOICES, Capability.VIEW_RATES];
+
+// Admin/partner nastaví granulární oprávnění (capability granty) uživatele —
+// desired-state save: smaž vše a vytvoř vybrané v jedné transakci (jeden
+// společný „uložit", revize ř.4). Allow-only nad rámec role.
+export async function setUserCapabilities(formData: FormData) {
+  const prisma = getPrisma();
+  const currentUser = await getCurrentUser();
+  assertCanManageUsers(currentUser);
+
+  const userId = requiredString(formData, "userId");
+  const organizationId = currentUser.organizationId;
+
+  // Cross-org guard: cílový uživatel musí být aktivním členem stejné kanceláře.
+  const membership = organizationId
+    ? await prisma.organizationMember.findFirst({
+        where: {
+          userId,
+          organizationId,
+          status: OrganizationMemberStatus.ACTIVE,
+        },
+        select: { id: true },
+      })
+    : null;
+  if (!organizationId || !membership) {
+    throw new Error("Uživatel nepatří do vaší kanceláře.");
+  }
+
+  // Jen platné Capability hodnoty z formuláře (zbytek ignoruj).
+  const selected = formData
+    .getAll("capabilities")
+    .filter((value): value is string => typeof value === "string");
+  const capabilities = ALL_CAPABILITIES.filter((capability) =>
+    selected.includes(capability),
+  );
+
+  const previous = await prisma.userCapabilityGrant.findMany({
+    where: { userId },
+    select: { capability: true },
+  });
+
+  await prisma.$transaction([
+    prisma.userCapabilityGrant.deleteMany({ where: { userId } }),
+    ...(capabilities.length > 0
+      ? [
+          prisma.userCapabilityGrant.createMany({
+            data: capabilities.map((capability) => ({
+              organizationId,
+              userId,
+              capability,
+              grantedById: currentUser.id,
+            })),
+          }),
+        ]
+      : []),
+  ]);
+
+  await prisma.auditLog.create({
+    data: {
+      entityType: "UserCapabilityGrant",
+      entityId: userId,
+      action: "UPDATE",
+      changedById: currentUser.id,
+      oldValue: previous.map((grant) => grant.capability).sort(),
+      newValue: [...capabilities].sort(),
+    },
+  });
+
+  revalidatePath("/settings");
+  revalidatePath("/work-logs");
+  revalidatePath("/billing");
 }
 
 export async function updateNotificationPreference(formData: FormData) {

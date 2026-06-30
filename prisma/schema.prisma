@@ -355,6 +355,8 @@ model User {
   tableViewPreferences    TableViewPreference[]
   notificationPreference  NotificationPreference?
   hoursPlan               UserHoursPlan?
+  capabilityGrants        UserCapabilityGrant[] @relation("UserCapabilityGrantUser")
+  grantedCapabilities     UserCapabilityGrant[] @relation("UserCapabilityGrantGrantedBy")
   notifications           Notification[]      @relation("NotificationRecipient")
   memberships             OrganizationMember[]
   createdInvoices         Invoice[]           @relation("InvoiceCreatedBy")
@@ -861,6 +863,34 @@ model UserHoursPlan {
   @@map("userHoursPlans")
 }
 
+// Udělitelné schopnosti nad rámec role (per-user granty). Přidání hodnoty =
+// ALTER TYPE migrace + úprava příslušného can*/assert* helperu, aby grant četl
+// (role-default fallback). MVP: 2 hodnoty.
+enum Capability {
+  MANAGE_INVOICES // přístup k fakturaci nad rámec ADMIN/PARTNER (revize ř.77)
+  VIEW_RATES      // zobrazení hodinových sazeb a částek (revize ř.35/62)
+}
+
+// Per-user × capability grant. Přítomnost řádku = grant udělen. Role dává
+// baseline, grant ho ADITIVNĚ rozšiřuje (allow-only). Org-scoped pro izolaci.
+model UserCapabilityGrant {
+  id             String     @id @default(cuid())
+  organizationId String
+  userId         String
+  capability     Capability
+  grantedAt      DateTime   @default(now())
+  grantedById    String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation("UserCapabilityGrantUser", fields: [userId], references: [id], onDelete: Cascade)
+  grantedBy    User?        @relation("UserCapabilityGrantGrantedBy", fields: [grantedById], references: [id], onDelete: SetNull)
+
+  @@unique([userId, capability])
+  @@index([organizationId])
+  @@index([userId])
+  @@map("userCapabilityGrants")
+}
+
 // Doplňkoví řešitelé projektu (vedle jediného responsibleUser). Přiřazení
 // uděluje VIEW na projekt a jeho odvozená data (zrcadlí responsibleUser);
 // LAWYER řešitel může projekt i editovat. Org-scoped + auditní stopa
@@ -992,6 +1022,7 @@ model Organization {
   userHoursPlans       UserHoursPlan[]
   projectAssignees     ProjectAssignee[]
   caseAssignees        CaseAssignee[]
+  capabilityGrants     UserCapabilityGrant[]
 
   @@index([status])
   @@map("organizations")

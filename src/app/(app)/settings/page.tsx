@@ -1,6 +1,7 @@
 import {
   changeOwnPassword,
   createUser,
+  setUserCapabilities,
   setUserPassword,
   updateNotificationPreference,
   updateUserHoursPlan,
@@ -12,10 +13,17 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Capability, UserRole } from "@/generated/prisma/enums";
 import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import { formatDate } from "@/lib/format";
-import { options, userRoleLabels } from "@/lib/labels";
+import {
+  capabilityDescriptions,
+  capabilityLabels,
+  capabilityOptions,
+  options,
+  userRoleLabels,
+} from "@/lib/labels";
 import { getNotificationPreference } from "@/lib/notifications/notification-service";
 import { canViewAllLegalData } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
@@ -41,6 +49,7 @@ type SettingsData = {
       weeklyHoursTarget: number | null;
       monthlyHoursTarget: number | null;
     } | null;
+    capabilities: Capability[];
   }>;
   auditLogCount: number;
   allowed: boolean;
@@ -100,6 +109,7 @@ export default async function SettingsPage() {
                     monthlyHoursTarget: true,
                   },
                 },
+                capabilityGrants: { select: { capability: true } },
               },
             })
           : Promise.resolve([]),
@@ -123,6 +133,7 @@ export default async function SettingsPage() {
                     : null,
               }
             : null,
+          capabilities: user.capabilityGrants.map((grant) => grant.capability),
         })),
         auditLogCount,
         allowed,
@@ -413,6 +424,68 @@ export default async function SettingsPage() {
                     </Button>
                   </form>
                 ))}
+              </div>
+            </Section>
+          ) : null}
+          {result.data.users.length > 0 ? (
+            <Section title="Oprávnění uživatelů">
+              <p className="mb-4 text-sm text-stone-600">
+                Granty nad rámec role — např. přístup k fakturaci pro vybrané
+                advokáty nebo zobrazení sazeb. Admin a partner mají plný přístup
+                automaticky dle role.
+              </p>
+              <div className="grid gap-3">
+                {result.data.users.map((user) => {
+                  const fullByRole =
+                    user.role === UserRole.ADMIN ||
+                    user.role === UserRole.PARTNER;
+                  return (
+                    <div
+                      key={user.id}
+                      className="grid gap-3 rounded-md border border-stone-200 p-3 sm:grid-cols-[1fr_auto] sm:items-center"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-stone-950">
+                          {user.name}
+                        </p>
+                        <p className="truncate text-xs text-stone-500">
+                          {userRoleLabels[user.role]}
+                        </p>
+                      </div>
+                      {fullByRole ? (
+                        <Badge tone="green">Plný přístup dle role</Badge>
+                      ) : (
+                        <form
+                          action={setUserCapabilities}
+                          className="flex flex-wrap items-center gap-4"
+                        >
+                          <input type="hidden" name="userId" value={user.id} />
+                          {capabilityOptions.map((capability) => (
+                            <label
+                              key={capability}
+                              className="flex items-center gap-2 text-sm text-stone-700"
+                              title={capabilityDescriptions[capability]}
+                            >
+                              <input
+                                type="checkbox"
+                                name="capabilities"
+                                value={capability}
+                                defaultChecked={user.capabilities.includes(
+                                  capability,
+                                )}
+                                className="h-4 w-4 rounded border-stone-300 text-emerald-950"
+                              />
+                              {capabilityLabels[capability]}
+                            </label>
+                          ))}
+                          <Button type="submit" variant="secondary">
+                            Uložit
+                          </Button>
+                        </form>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </Section>
           ) : null}

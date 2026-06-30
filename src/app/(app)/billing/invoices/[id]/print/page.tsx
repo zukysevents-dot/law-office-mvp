@@ -10,7 +10,11 @@ import { assertModuleEnabled } from "@/lib/entitlements";
 import { formatDate, formatHours, formatMoney } from "@/lib/format";
 import { vatModeLabels } from "@/lib/labels";
 import { invoiceDetailInclude, type InvoiceDetail } from "@/lib/invoices";
-import { andWhere, invoiceVisibilityWhere } from "@/lib/permissions";
+import {
+  andWhere,
+  assertCanManageInvoices,
+  invoiceVisibilityWhere,
+} from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -70,6 +74,7 @@ export default async function InvoicePrintPage({
   const result = await safeQuery<PrintData | null>(null, async () => {
     const currentUser = await getCurrentUser();
     await assertModuleEnabled(currentUser, ModuleKey.BILLING);
+    assertCanManageInvoices(currentUser);
     const prisma = getPrisma();
     const invoice = await prisma.invoice.findFirst({
       where: andWhere(invoiceVisibilityWhere(currentUser), { id }),

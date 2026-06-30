@@ -28,6 +28,7 @@ import { getPrisma } from "@/lib/prisma";
 import { filterQuery, firstParam } from "@/lib/search-params";
 import {
   andWhere,
+  assertCanManageInvoices,
   caseVisibilityWhere,
   projectVisibilityWhere,
   subjectVisibilityWhere,
@@ -92,6 +93,8 @@ export default async function BillingPage({ searchParams }: BillingProps) {
       const prisma = getPrisma();
       const currentUser = await getCurrentUser();
       await assertModuleEnabled(currentUser, ModuleKey.BILLING);
+      // Fakturace jen pro ADMIN/PARTNER + uživatele s grantem MANAGE_INVOICES.
+      assertCanManageInvoices(currentUser);
       const [rows, subjects, projects, cases, users] = await Promise.all([
         prisma.workLog.findMany({
           where: andWhere(

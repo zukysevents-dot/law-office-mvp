@@ -1,12 +1,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { UserRole } from "@/generated/prisma/enums";
+import { Capability, UserRole } from "@/generated/prisma/enums";
 
 import {
   andWhere,
   assertCanManageAml,
   assertCanManageDeadlines,
+  assertCanManageInvoices,
+  canManageInvoices,
+  canViewRates,
+  hasCapability,
   assertCanManageHr,
   assertCanManagePortal,
   canEditRecord,
@@ -652,6 +656,57 @@ test("invoiceVisibilityWhere: LAWYER gains assignee paths; juniors stay created-
   assert.deepEqual(invoiceVisibilityWhere(intern), {
     AND: [{ organizationId: org }, { createdById: "u-intern" }],
   });
+});
+
+// --- Granular per-user capabilities (grants beyond role) ---
+const lawyerWithInvoices = {
+  id: "u-lawyer",
+  role: UserRole.LAWYER,
+  organizationId: org,
+  capabilities: [Capability.MANAGE_INVOICES],
+};
+const traineeWithRates = {
+  id: "u-trainee",
+  role: UserRole.TRAINEE,
+  organizationId: org,
+  capabilities: [Capability.VIEW_RATES],
+};
+
+test("hasCapability: true only when grant present; fail-closed otherwise", () => {
+  assert.equal(hasCapability(lawyerWithInvoices, Capability.MANAGE_INVOICES), true);
+  assert.equal(hasCapability(lawyerWithInvoices, Capability.VIEW_RATES), false);
+  // role-only object / string role / null / missing field → false
+  assert.equal(hasCapability(lawyer, Capability.MANAGE_INVOICES), false);
+  assert.equal(hasCapability(UserRole.LAWYER, Capability.MANAGE_INVOICES), false);
+  assert.equal(hasCapability(null, Capability.MANAGE_INVOICES), false);
+});
+
+test("canViewRates: ADMIN/PARTNER by role; others only with VIEW_RATES grant", () => {
+  assert.equal(canViewRates(admin), true);
+  assert.equal(canViewRates(partner), true);
+  assert.equal(canViewRates(lawyer), false);
+  assert.equal(canViewRates(trainee), false);
+  assert.equal(canViewRates(intern), false);
+  assert.equal(canViewRates(traineeWithRates), true);
+});
+
+test("canManageInvoices: ADMIN/PARTNER by role; LAWYER only with MANAGE_INVOICES grant", () => {
+  assert.equal(canManageInvoices(admin), true);
+  assert.equal(canManageInvoices(partner), true);
+  // Default tightened (revize ř.77): a bare LAWYER no longer manages invoices.
+  assert.equal(canManageInvoices(lawyer), false);
+  assert.equal(canManageInvoices(lawyerWithInvoices), true);
+  assert.equal(canManageInvoices(trainee), false);
+  assert.equal(canManageInvoices(null), false);
+});
+
+test("assertCanManageInvoices: throws without role/grant, passes with grant", () => {
+  assert.doesNotThrow(() => assertCanManageInvoices(admin));
+  assert.doesNotThrow(() => assertCanManageInvoices(lawyerWithInvoices));
+  const expected = { message: "Nemáte oprávnění spravovat faktury." };
+  assert.throws(() => assertCanManageInvoices(lawyer), expected);
+  assert.throws(() => assertCanManageInvoices(trainee), expected);
+  assert.throws(() => assertCanManageInvoices(UserRole.LAWYER), expected);
 });
 
 test("canViewRecord: LAWYER and TRAINEE see a project/case they're assigned to", () => {

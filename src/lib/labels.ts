@@ -2,6 +2,7 @@ import {
   AmlRiskLevel,
   ApprovalStatus,
   BillingStatus,
+  Capability,
   CaseStatus,
   DataMessageDirection,
   DataMessageStatus,
@@ -31,6 +32,23 @@ import {
   UserRole,
   VatMode,
 } from "@/generated/prisma/enums";
+
+export const capabilityOptions = [
+  Capability.MANAGE_INVOICES,
+  Capability.VIEW_RATES,
+] as const;
+
+export const capabilityLabels: Record<Capability, string> = {
+  [Capability.MANAGE_INVOICES]: "Správa faktur",
+  [Capability.VIEW_RATES]: "Zobrazení sazeb a částek",
+};
+
+export const capabilityDescriptions: Record<Capability, string> = {
+  [Capability.MANAGE_INVOICES]:
+    "Vystavování a správa faktur, plateb, upomínek a paušálů.",
+  [Capability.VIEW_RATES]:
+    "Vidí hodinové sazby a fakturované částky (jinak skryté).",
+};
 
 export const invoiceStatusLabels: Record<InvoiceStatus, string> = {
   DRAFT: "Rozpracovaná",

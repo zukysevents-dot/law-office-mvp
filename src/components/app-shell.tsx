@@ -2,7 +2,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { getCurrentUser } from "@/lib/auth";
 import { getEnabledModules } from "@/lib/entitlements";
 import { userRoleLabels } from "@/lib/labels";
-import { canViewAllLegalData } from "@/lib/permissions";
+import { canManageInvoices, canViewAllLegalData } from "@/lib/permissions";
 
 export async function AppShell({ children }: { children: React.ReactNode }) {
   // Middleware guarantees a valid session on (app) routes, so this resolves a
@@ -21,6 +21,7 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
     <div className="app-shell min-h-screen w-full max-w-full overflow-x-hidden bg-background text-foreground lg:flex">
       <AppSidebar
         showAuditLog={showAuditLog}
+        canManageInvoices={canManageInvoices(currentUser)}
         userName={currentUser.name}
         userRole={userRoleLabels[currentUser.role]}
         enabledModules={enabledModules}

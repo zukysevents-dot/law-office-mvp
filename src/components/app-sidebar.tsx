@@ -46,6 +46,9 @@ type NavItem = {
   // Gate this item behind a bought module (UX only). Items without `module`
   // are always visible (CORE).
   module?: ModuleKey;
+  // Skryj, pokud uživatel nemá oprávnění spravovat faktury (ADMIN/PARTNER nebo
+  // grant MANAGE_INVOICES). UX-only; akce/stránka gatují server-side.
+  requiresInvoiceAccess?: boolean;
 };
 
 // Grouped navigation. Sections give the (now 20+) items a hierarchy instead of
@@ -90,7 +93,13 @@ const navSections: NavSection[] = [
       { href: "/tasks/my", label: "Moje úkoly", icon: ListChecks },
       { href: "/tasks/archive", label: "Archiv úkolů", icon: Archive },
       { href: "/work-logs", label: "Výkazy práce", icon: Clock3 },
-      { href: "/billing", label: "Fakturace", icon: Receipt, module: ModuleKey.BILLING },
+      {
+        href: "/billing",
+        label: "Fakturace",
+        icon: Receipt,
+        module: ModuleKey.BILLING,
+        requiresInvoiceAccess: true,
+      },
       { href: "/reports", label: "Reporty", icon: BarChart3 },
       { href: "/references", label: "Reference", icon: LibraryBig },
     ],
@@ -138,11 +147,13 @@ function getActiveHref(pathname: string, items: NavItem[]) {
 
 export function AppSidebar({
   showAuditLog,
+  canManageInvoices,
   userName,
   userRole,
   enabledModules,
 }: {
   showAuditLog?: boolean;
+  canManageInvoices?: boolean;
   userName?: string;
   userRole?: string;
   enabledModules?: string[];
@@ -161,6 +172,7 @@ export function AppSidebar({
       items: section.items.filter((item) => {
         if (item.adminOnly && !showAuditLog) return false;
         if (item.module && !enabled.includes(item.module)) return false;
+        if (item.requiresInvoiceAccess && !canManageInvoices) return false;
         return true;
       }),
     }))

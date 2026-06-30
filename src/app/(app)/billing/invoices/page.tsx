@@ -15,7 +15,11 @@ import {
   isPastDue,
   type InvoiceListRow,
 } from "@/lib/invoices";
-import { andWhere, invoiceVisibilityWhere } from "@/lib/permissions";
+import {
+  andWhere,
+  assertCanManageInvoices,
+  invoiceVisibilityWhere,
+} from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { invoiceStatusTone } from "@/lib/status-tones";
 
@@ -29,6 +33,7 @@ export default async function InvoicesPage() {
     async () => {
       const currentUser = await getCurrentUser();
       await assertModuleEnabled(currentUser, ModuleKey.BILLING);
+      assertCanManageInvoices(currentUser);
       const rows = await getPrisma().invoice.findMany({
         where: andWhere(invoiceVisibilityWhere(currentUser)),
         orderBy: [{ createdAt: "desc" }],

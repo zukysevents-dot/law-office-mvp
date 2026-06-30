@@ -1,0 +1,169 @@
+{
+  "mode": "design",
+  "status": "approved",
+  "summary": "Granularni per-user capability granty nad ramec role pro law-office-mvp. Role dava baseline; grant ji ADITIVNE rozsiruje (allow-only). Granty se ukladaji do nove tabulky UserCapabilityGrant (org-scoped, 1:N user x capability, presence = grant), nacitaji se v getCurrentUser a pribali se na usera jako capabilities: Capability[], takze vsechny synchronni can*/assert* helpery v permissions.ts je vidi. MVP implementuje 2 capability: MANAGE_INVOICES a VIEW_RATES; enum je rozsiritelny. Pro fakturaci (R.77) se MENI default helperu z {ADMIN,PARTNER,LAWYER} na {ADMIN,PARTNER} a LAWYERi/ostatni dostavaji pristup pres grant MANAGE_INVOICES -> behavior change, resena data-migraci (grant vsem stavajicim aktivnim LAWYER). Admin UI je nova sekce v /settings (jen ADMIN/PARTNER) s jednim spolecnym ulozenim (setUserCapabilities).",
+  "assumptions": [
+    "Allow-only granty staci pro MVP: jediny pripad, kde je potreba ZUZIT default (fakturace pro LAWYER), se resi zmenou role-defaultu helperu + data-migraci, ne explicit-deny. Tri-stav (allow/deny/inherit) se NEzavadi.",
+    "Granty jsou org-scoped pres organizationId na grant radku (stejne jako UserHoursPlan/ProjectAssignee), aby zustala izolace dat mezi kancelarmi single-tenant logiky a aby grant nemohl prelezt do jine org membershipu.",
+    "Capability VIEW_RATES je striktni rozsireni: default zustava 'jen ADMIN/PARTNER vidi sazby'; grant umozni i LAWYER/TRAINEE/INTERN videt sloupce sazeb (R.35 chce naopak SKRYT konkretnim lidem -> kdo nema grant a neni ADMIN/PARTNER, sazby nevidi, coz uz dnes plati pro ne-admin/partner).",
+    "Helpery v permissions.ts musi zustat synchronni a ciste; grant se k nim dostane VYHRADNE pres user objekt nesouci capabilities. String-only / role-only caller nema granty -> hasCapability=false -> fail-closed na role baseline.",
+    "DB v sandboxu neni dostupna -> migrace se pise rucne jako SQL (CREATE TYPE + CREATE TABLE), ne pres prisma migrate dev.",
+    "getCurrentUser je v React cache() -> jeden dotaz na granty za request, vykonove zanedbatelne.",
+    "Self-escalation: akce setUserCapabilities gatuje assertCanManageUsers (ADMIN/PARTNER) + overeni org membershipu ciloveho usera; ADMIN/PARTNER uz maji vse pres roli, takze grant sami sobe nic nepridava nad jejich roli (nemohou se povysit nad ADMIN)."
+  ],
+  "open_questions": [
+    {
+      "question": "Data-migrace stavajicich LAWYER -> MANAGE_INVOICES: udelit automaticky vsem aktivnim LAWYER (zachova soucasne chovani), nebo nechat na adminovi (ciste naplni zadani R.77, ale advokati hned ztrati fakturaci)?",
+      "safe_default": "Udelit automaticky vsem aktivnim LAWYER membershipum v ramci migrace (no-regression). Admin je pak muze odebrat v /settings. Toto je bezpecny default proti provoznimu vypadku; pokud pravnici chteji opak, je to jednoradkova zmena WHERE v data-migraci."
+    },
+    {
+      "question": "Ma se odkaz Fakturace v app-sidebar.tsx skryt uzivatelum bez MANAGE_INVOICES, nebo zustat viditelny (gate je jen na modulu BILLING)? Dnes billing/page.tsx gatuje pouze assertModuleEnabled, NE assertCanManageInvoices -> po zuzeni defaultu by LAWYER bez grantu videl stranku, ale akce by hazely chybu.",
+      "safe_default": "Pridat do sidebaru per-link 'capability' guard (vedle 'module') a zaroven do billing/page.tsx pridat assertCanManageInvoices, aby se stranka nezobrazila uzivateli bez opravneni misto vyhozeni chyby az pri akci. Bez tohoto kroku vznika UX regrese, proto je soucasti required_checks."
+    },
+    {
+      "question": "Audit grantu: staci jeden AuditLog radek per save (entityType 'UserCapabilityGrant', diff added/removed), nebo radek per jednotlivy grant/revoke?",
+      "safe_default": "Jeden radek per save s oldValue/newValue = serazene pole capabilities (pred/po). Konzistentni s updateUserHoursPlan a mene sumu v auditu."
+    }
+  ],
+  "architecture": {
+    "data_model": [
+      {
+        "name": "enum Capability",
+        "purpose": "Rozsiritelny vycet udelitelnych schopnosti nad ramec role. MVP: 2 hodnoty; dalsi se pridavaji jako nova enum value (samostatna migrace ALTER TYPE ... ADD VALUE).",
+        "prisma": "enum Capability {\n  MANAGE_INVOICES // R.77 - sprava faktur nad ramec ADMIN/PARTNER\n  VIEW_RATES      // R.35/62 - zobrazeni hodinovych sazeb a castek\n}",
+        "notes": "Nepridavej hned MANAGE_AML/DEADLINES/DOCUMENTS/PORTAL/DATA_BOXES - enum je pripraven je prijmout, ale MVP implementuje jen 2, aby se vyhnulo predcasne abstrakci. Komentar u enumu uved: 'Pridani hodnoty = ALTER TYPE migrace + uprava prislusneho can*/assert* helperu, aby grant cetl + role-default fallback.'"
+      },
+      {
+        "name": "model UserCapabilityGrant",
+        "purpose": "Per-user x capability grant. Presence radku = grant udelen. 1:N (user ma 0..N grantu). Org-scoped pro izolaci a pro overeni, ze grant nesahá mimo membership usera.",
+        "prisma": "model UserCapabilityGrant {\n  id             String     @id @default(cuid())\n  organizationId String\n  userId         String\n  capability     Capability\n  grantedAt      DateTime   @default(now())\n  grantedById    String?\n\n  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)\n  user         User         @relation(\"UserCapabilityGrantUser\", fields: [userId], references: [id], onDelete: Cascade)\n  grantedBy    User?        @relation(\"UserCapabilityGrantGrantedBy\", fields: [grantedById], references: [id], onDelete: SetNull)\n\n  @@unique([userId, capability])\n  @@index([organizationId])\n  @@index([userId])\n  @@map(\"userCapabilityGrants\")\n}",
+        "notes": "@@unique([userId, capability]) brani duplikatum a umoznuje deleteMany/createMany v jedne transakci pri save. organizationId je povinne (na rozdil od UserHoursPlan.organizationId? ktery je nullable kvuli legacy) - granty jsou citlive na izolaci. onDelete: Cascade na user i org. grantedById = SetNull (audit kdo udelil; nesmi blokovat smazani usera)."
+      },
+      {
+        "name": "model User (relace)",
+        "purpose": "Pridat zpetne relace pro grant.",
+        "prisma": "  capabilityGrants     UserCapabilityGrant[] @relation(\"UserCapabilityGrantUser\")\n  grantedCapabilities  UserCapabilityGrant[] @relation(\"UserCapabilityGrantGrantedBy\")",
+        "notes": "Vlozit do bloku relaci modelu User (kolem r.338-384 schema.prisma)."
+      },
+      {
+        "name": "model Organization (relace)",
+        "purpose": "Pridat zpetnou relaci org -> granty (kvuli onDelete: Cascade a konzistenci se vzorem ostatnich org-scoped satelitu).",
+        "prisma": "  capabilityGrants UserCapabilityGrant[]",
+        "notes": "Vlozit do bloku relaci modelu Organization."
+      }
+    ],
+    "api_endpoints": [
+      {
+        "style": "server action (thick server action, zadne REST/tRPC - viz CLAUDE.md)",
+        "name": "setUserCapabilities",
+        "file": "src/app/actions/users.ts",
+        "signature": "export async function setUserCapabilities(formData: FormData): Promise<void>",
+        "input": "userId: string (z FormData); capability checkboxy: jedno pole 'capabilities' (multi-value getAll) NEBO per-capability checkbox 'cap:MANAGE_INVOICES'/'cap:VIEW_RATES'. Doporuceno: formData.getAll('capabilities') -> string[] -> filtr na platne Capability hodnoty.",
+        "authz": "assertCanManageUsers(currentUser) (ADMIN/PARTNER) + overeni, ze cilovy userId je ACTIVE OrganizationMember v currentUser.organizationId (stejny pattern jako updateUserHoursPlan r.155-165). Bez tohoto by ADMIN/PARTNER mohl udelit grant uzivateli jine kancelare.",
+        "idempotence": "Idempotentni desired-state save: v jedne prisma.$transaction smazat vsechny granty usera (deleteMany where userId) a vytvorit createMany pro vybrane capability s organizationId = currentUser.organizationId. Tim odpada parovani allow/revoke a je to bezpecne vuci @@unique.",
+        "side_effects": "writeAuditLog/auditLog.create (entityType 'UserCapabilityGrant', entityId = userId, action 'UPDATE', oldValue/newValue = serazene pole capability stringu pred/po); revalidatePath('/settings') + revalidatePath('/work-logs') + revalidatePath('/billing') (aby se promitla zmena viditelnosti sazeb a fakturace).",
+        "notes": "Jeden spolecny save (R.4 doc: prilis mnoho tlacitek 'ulozit') - NE per-toggle akce. grantCapability/revokeCapability NEimplementovat jako verejne akce; desired-state save je jednodussi a atomicky."
+      }
+    ],
+    "folder_structure": [
+      "src/lib/permissions.ts - rozsireni PermissionUser o capabilities + helper hasCapability + uprava canViewRates a assertCanManageInvoices/canManageInvoices",
+      "src/lib/auth.ts - getCurrentUser nacte granty a pribali capabilities[] na vraceny objekt",
+      "src/app/actions/users.ts - nova akce setUserCapabilities",
+      "src/app/(app)/settings/page.tsx - nova sekce 'Opravneni uzivatelu' (jen ADMIN/PARTNER) s checkboxy per uzivatel a jednim save",
+      "src/lib/labels.ts - capabilityLabels (Czech) pro UI popisky",
+      "prisma/schema.prisma - enum Capability + model UserCapabilityGrant + relace na User/Organization",
+      "prisma/migrations/<timestamp>_user_capability_grants/migration.sql - rucni SQL (CREATE TYPE + CREATE TABLE + indexy + FK + data-migrace)",
+      "src/lib/permissions.test.ts - rozsireni testu o hasCapability a grant-aware can*/assert*"
+    ],
+    "tech_choices": [
+      {
+        "choice": "Allow-only granty + zmena role-defaultu pro zuzeni (varianta a), NE tri-stav allow/deny/inherit (varianta b).",
+        "reason": "MVP jednoduchost: jediny pripad zuzeni (fakturace pro LAWYER) lze vyresit zmenou defaultu helperu + data-migraci. Tri-stav by zavedl porovnavaci logiku a precedenci do kazdeho helperu predcasne. Rozsiritelne pozdeji bez breaking change (deny by se pridal jako samostatny model/sloupec, kdyby vznikl realny pozadavek)."
+      },
+      {
+        "choice": "Granty na usera nese getCurrentUser, helpery zustavaji synchronni.",
+        "reason": "permissions.ts je jedina autorita a vsechny *VisibilityWhere/can*/assert* jsou synchronni ciste funkce volane napric repem. Async-load uvnitr helperu by vynutil prepsani stovek callsite. Pribaleni capabilities[] na user objekt je minimalni zmena s fail-closed chovanim pro role-only callery."
+      },
+      {
+        "choice": "Desired-state save (deleteMany+createMany v transakci) misto inkrementalniho grant/revoke.",
+        "reason": "Atomicke, idempotentni, odolne vuci @@unique, jedno tlacitko ulozit (R.4). Konzistentni s thick-server-action vzorem (validace -> mutace v transakci -> audit -> revalidate)."
+      },
+      {
+        "choice": "Zadne nove knihovny.",
+        "reason": "Pouziva se Prisma, existujici form helpers (src/lib/form.ts), writeAuditLog, node:test. Zadny Zod (repo ho nepouziva)."
+      }
+    ]
+  },
+  "conflicts": [
+    {
+      "severity": "critical",
+      "where": "src/lib/permissions.ts assertCanManageInvoices/canManageInvoices + vsechny callsite v src/app/actions/{invoices,payments,reminders,retainers}.ts",
+      "why": "Zuzeni defaultu z {ADMIN,PARTNER,LAWYER} na {ADMIN,PARTNER} JE behavior change: stavajici advokati (LAWYER) okamzite ztrati pravo vystavovat/upravovat/stornovat faktury, evidovat platby, posilat upominky a spravovat zalohy, dokud jim ADMIN nepridel MANAGE_INVOICES. Bez data-migrace (grant vsem aktivnim LAWYER) to je provozni regrese fakturacniho modulu. Resi se data-migraci v same migration.sql (viz open_question #1, bezpecny default = udelit)."
+    },
+    {
+      "severity": "warning",
+      "where": "src/app/(app)/billing/page.tsx + src/components/app-sidebar.tsx",
+      "why": "billing/page.tsx gatuje jen assertModuleEnabled(BILLING), ne assertCanManageInvoices, a sidebar gatuje odkaz Fakturace jen na modul BILLING. Po zuzeni defaultu by LAWYER bez grantu videl odkaz i stranku, ale akce by hazely 'Nemate opravneni spravovat faktury'. Nutno pridat capability guard do sidebaru a assertCanManageInvoices do billing/page.tsx (a pripadne podstranek), aby se predeslo matoucimu UX. Neni to bezpecnostni dira (akce gate drzi), ale UX/konzistencni dluh."
+    },
+    {
+      "severity": "warning",
+      "where": "src/app/actions/work-logs.ts (canViewRates r.84/252/263) + page-level restrictTableView v projects/work-logs/subjects/dashboard",
+      "why": "VIEW_RATES grant musi byt promitnut JAK do server-side zpracovani (work-logs.ts neulozi manualHourlyRate/amount, kdyz uzivatel sazby nevidi - r.84,252,263), TAK do page-level restrictTableView (skryti sloupcu). Pokud se grant promitne jen do UI a ne do work-logs.ts, advokat s grantem by nemohl zadat sazbu, kterou vidi -> nekonzistence. Jelikoz canViewRates(user) cte capabilities z user objektu, staci aby getCurrentUser nesl granty - pak vsechny tyto callsite zacnou respektovat grant automaticky bez zmeny. Overit pri review, ze vsech 5+ callsite dostava usera z getCurrentUser (nesouciho capabilities), ne role-only string."
+    },
+    {
+      "severity": "info",
+      "where": "src/lib/permissions.ts PermissionUser typ + role-only/string callery",
+      "why": "Pridani capabilities?: Capability[] na PermissionUser je optional -> string/role-only caller (testy, interni volani s UserRole) ho nema -> hasCapability vraci false -> fail-closed na role baseline. Zadna regrese pro existujici role-only volani, ale je treba to explicitne otestovat."
+    }
+  ],
+  "security": [
+    {
+      "topic": "Privilege escalation / self-grant",
+      "control": "setUserCapabilities gatuje assertCanManageUsers (jen ADMIN/PARTNER). ADMIN/PARTNER maji vse pres roli, takze udeleni grantu sami sobe je no-op nad jejich opravnenimi - nelze se povysit nad ADMIN. Grant nikdy nemeni roli ani nepridava ADMIN/PARTNER schopnosti mimo definovany Capability enum."
+    },
+    {
+      "topic": "Cross-org izolace",
+      "control": "Pred zapisem overit, ze cilovy userId je ACTIVE OrganizationMember v currentUser.organizationId (pattern z updateUserHoursPlan). organizationId na grant radku = currentUser.organizationId. getCurrentUser nacita granty filtrované na membership.organizationId, takze grant z jine org se nikdy neaplikuje, i kdyby v DB existoval."
+    },
+    {
+      "topic": "Fail-closed",
+      "control": "hasCapability(user, cap) vraci false pro string/role-only/null usera a pro usera bez capabilities pole. can*/assert* helpery: 'hasCapability(user, cap) || roleDefault(user)'. Grant muze jen ROZSIRIT, nikdy nezuzi to, co dava role (allow-only)."
+    },
+    {
+      "topic": "Audit",
+      "control": "Kazdy save zapise AuditLog (kdo, kdy, komu, pred/po seznam capability). Grant radek navic nese grantedById + grantedAt pro forenzni stopu."
+    },
+    {
+      "topic": "Citlive sazby (R.35)",
+      "control": "VIEW_RATES je rozsiritelne pravo nad default 'jen ADMIN/PARTNER'. Skryti sloupce sazby je vynuceno server-side (restrictTableView + work-logs.ts nezapise sazbu), ne jen v CSS - uzivatel bez grantu sazby fakticky neziska."
+    }
+  ],
+  "scalability": [
+    {
+      "topic": "Nacitani grantu v getCurrentUser",
+      "note": "Jeden dotaz findMany(userCapabilityGrant where userId+org) za request, deduplikovany React cache(). Pocet grantu na usera je radove jednotky -> zanedbatelne. Zadny N+1."
+    },
+    {
+      "topic": "Rust poctu capability",
+      "note": "Enum roste pomalu (jednotky az nizke desitky). Model 1:N zvlada libovolny pocet bez schema zmeny krome ALTER TYPE ADD VALUE. Single-tenant per-klient DB -> zadny tlak na sdileni."
+    }
+  ],
+  "handoff": {
+    "next_agent": "developer",
+    "context_for_review": "Implementuj per-user capability granty striktne v poradi z 'required_checks' / 'steps'. Klicove invarianty: (1) permissions.ts helpery ZUSTAVAJI synchronni a ciste - grant cti VYHRADNE z user.capabilities, nikdy async-load uvnitr helperu; (2) zmena defaultu assertCanManageInvoices/canManageInvoices z {ADMIN,PARTNER,LAWYER} na {ADMIN,PARTNER} JE behavior change a MUSI jit ruku v ruce s data-migraci grantujici MANAGE_INVOICES vsem aktivnim LAWYER (no-regression); (3) cross-org guard v setUserCapabilities pres overeni membershipu ciloveho usera; (4) jeden spolecny save, ne per-toggle; (5) DB v sandboxu nedostupna -> migrace rucne jako SQL. Po dokonceni predej invoice-code-reviewer s durazem na regresi fakturace a konzistenci vsech callsite dotcenych helperu. NEimplementuj tri-stav deny ani dalsi capability nad MANAGE_INVOICES/VIEW_RATES.",
+    "required_checks": [
+      "schema.prisma: enum Capability {MANAGE_INVOICES, VIEW_RATES} + model UserCapabilityGrant (@@unique([userId,capability]), org-scoped, indexy, FK Cascade/SetNull) + relace na User a Organization; pote npm run db:generate.",
+      "Rucni migrace prisma/migrations/<ts>_user_capability_grants/migration.sql: CREATE TYPE \"Capability\" AS ENUM (...); CREATE TABLE \"userCapabilityGrants\" (...) s PK, FK na users(id) ON DELETE CASCADE, organizations(id) ON DELETE CASCADE, grantedById -> users(id) ON DELETE SET NULL; UNIQUE (userId, capability); CREATE INDEX na organizationId a userId. Pote data-migrace: INSERT MANAGE_INVOICES pro vsechny userId z organizationMembers se status='ACTIVE' a role='LAWYER' (id = gen, organizationId z membershipu, grantedById NULL). CREATE TYPE i CREATE TABLE smi byt v jedne migraci; ADD VALUE pravidlo se zde netyka (novy typ).",
+      "src/lib/permissions.ts: PermissionUser += 'capabilities?: Capability[]'; pridat 'export function hasCapability(user: PermissionInput, cap: Capability): boolean' (false pro string/null/chybejici pole = fail-closed); upravit canViewRates -> 'canViewAllLegalData(user) || hasCapability(user, Capability.VIEW_RATES)'; upravit canManageInvoices/assertCanManageInvoices: novy default 'canViewAllLegalData(user) || hasCapability(user, Capability.MANAGE_INVOICES)' (ODSTRANIT '|| roleOf(user)===LAWYER').",
+      "src/lib/auth.ts getCurrentUser: po nacteni membershipu nacist prisma.userCapabilityGrant.findMany({where:{userId:user.id, organizationId: membership.organizationId}, select:{capability:true}}) a vratit '{...user, role, organizationId, capabilities: grants.map(g=>g.capability)}'. Zachovat cache().",
+      "src/app/actions/users.ts: setUserCapabilities(formData) - assertCanManageUsers + overeni ACTIVE membershipu ciloveho usera v currentUser.organizationId; prisma.$transaction([deleteMany where userId, createMany vybrane capability s organizationId+grantedById]); auditLog.create; revalidatePath('/settings','/work-logs','/billing'). Parsovat capability pres formData.getAll a filtr na platne Capability hodnoty.",
+      "src/app/(app)/settings/page.tsx: nova Section 'Opravneni uzivatelu' viditelna jen kdyz canViewAllLegalData(currentUser); per uzivatel checkboxy (MANAGE_INVOICES, VIEW_RATES) s aktualnim stavem z nactenych grantu; jeden submit na setUserCapabilities. Nacist granty vsech uzivatelu org pres safeQuery.",
+      "src/lib/labels.ts: capabilityLabels = {MANAGE_INVOICES:'Sprava faktur', VIEW_RATES:'Zobrazeni sazeb a castek'} (over presne ceske formulace s navrhem UI).",
+      "src/app/(app)/billing/page.tsx (+ podstranky invoices/approvals/retainers/export dle gate): pridat assertCanManageInvoices(currentUser) vedle assertModuleEnabled, aby uzivatel bez opravneni nedostal stranku s nefunkcnimi akcemi (viz open_question #2).",
+      "src/components/app-sidebar.tsx: pridat per-link capability guard pro odkaz Fakturace (skryt bez MANAGE_INVOICES a bez ADMIN/PARTNER) - vyzaduje protlacit capabilities/can-helper do sidebaru; over jak sidebar dostava usera.",
+      "src/lib/permissions.test.ts: testy - hasCapability (false pro string/null/bez pole, true kdyz capability v poli); canViewRates (ADMIN/PARTNER true bez grantu; LAWYER/TRAINEE/INTERN false bez grantu, true s VIEW_RATES grantem); assertCanManageInvoices (ADMIN/PARTNER ok; LAWYER bez grantu THROW; LAWYER s MANAGE_INVOICES grantem ok; TRAINEE/INTERN bez grantu THROW); fail-closed pro role-only string caller.",
+      "Verifikace: npm run lint && npm run build && node --test (permissions.test.ts). Over, ze vsech ~10 callsite canViewRates a vsech ~10 callsite assertCanManageInvoices dostava usera z getCurrentUser (nesouci capabilities), ne role-only string.",
+      "MEMORY: migrace user_capability_grants pridava polozku k 'migration pending' (DB v sandboxu nedostupna -> spustit db:migrate na prostredi s DB)."
+    ]
+  }
+}

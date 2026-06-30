@@ -7,7 +7,11 @@ import {
   mapInvoiceToIsdocInput,
 } from "@/lib/export/invoice-export-mapper";
 import { buildPohodaXml } from "@/lib/export/pohoda";
-import { andWhere, invoiceVisibilityWhere } from "@/lib/permissions";
+import {
+  andWhere,
+  assertCanManageInvoices,
+  invoiceVisibilityWhere,
+} from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -25,6 +29,7 @@ export async function GET(
   const { id } = await params;
   const currentUser = await getCurrentUser();
   await assertModuleEnabled(currentUser, ModuleKey.BILLING);
+  assertCanManageInvoices(currentUser);
 
   const prisma = getPrisma();
   // Same visibility gate as the invoice detail page (org + role isolation).

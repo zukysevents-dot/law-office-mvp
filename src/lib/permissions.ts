@@ -1,5 +1,5 @@
 import type { Prisma } from "@/generated/prisma/client";
-import { UserRole } from "@/generated/prisma/enums";
+import { Capability, UserRole } from "@/generated/prisma/enums";
 
 type PermissionUser = {
   id: string;
@@ -8,6 +8,9 @@ type PermissionUser = {
   // passed. Visibility helpers DENY when it's missing (fail closed).
   organizationId?: string | null;
   isPlatformAdmin?: boolean;
+  // Per-user granty nad rámec role (allow-only). Chybí u role-only callerů →
+  // hasCapability fail-closed na false → spadne se na role baseline.
+  capabilities?: Capability[];
 };
 
 type PermissionInput = PermissionUser | UserRole | null | undefined;
@@ -67,6 +70,18 @@ function userIdOf(user: PermissionInput) {
 
 function orgIdOf(user: PermissionInput): string | null {
   return typeof user === "string" ? null : user?.organizationId ?? null;
+}
+
+// True když uživatel nese daný per-user grant. Fail-closed: string/role-only/
+// null user nebo chybějící pole → false (can* helpery pak spadnou na role
+// baseline). Grant může jen ROZŠÍŘIT, nikdy nezužuje to, co dává role.
+export function hasCapability(user: PermissionInput, capability: Capability) {
+  if (!user || typeof user === "string") {
+    return false;
+  }
+  return (
+    Array.isArray(user.capabilities) && user.capabilities.includes(capability)
+  );
 }
 
 // Org filter for a user's visibility query, or null when they have no org
@@ -160,11 +175,12 @@ export function canViewAllLegalData(user: PermissionInput) {
   return isAdmin(user) || isPartner(user);
 }
 
-// Hourly rates / billed amounts are partner-level information. Lawyers asked
-// that anyone who is not admin/partner not even see the rate column — those who
-// merely report hours shouldn't know (or be distracted by) the pricing.
+// Hourly rates / billed amounts are partner-level information. Default: only
+// ADMIN/PARTNER see the rate column. Admin can additionally grant VIEW_RATES to
+// a specific user (revize ř.35/62) — granted users then see rates everywhere
+// canViewRates is checked (work-logs server-side + page-level restrictTableView).
 export function canViewRates(user: PermissionInput) {
-  return canViewAllLegalData(user);
+  return canViewAllLegalData(user) || hasCapability(user, Capability.VIEW_RATES);
 }
 
 // Who may mark work directly billable. Junior roles (trainee, intern) only get
@@ -455,11 +471,19 @@ export function invoiceVisibilityWhere(
   return andWhere(org, { createdById: userId });
 }
 
-// Who may create/issue/cancel client invoices: ADMIN, PARTNER, LAWYER.
-// TRAINEE/INTERN are excluded. Org isolation is enforced separately per record.
+// Who may create/issue/cancel client invoices, record payments, send reminders
+// and manage retainers. Default: ADMIN/PARTNER only (revize ř.77 — fakturace jen
+// pro vedení a vybrané osoby). Other users (incl. LAWYER) need an explicit
+// MANAGE_INVOICES grant — existing active lawyers were granted it by the
+// data-migration, so admin can revoke from those who shouldn't invoice.
+export function canManageInvoices(user: PermissionInput) {
+  return (
+    canViewAllLegalData(user) || hasCapability(user, Capability.MANAGE_INVOICES)
+  );
+}
+
 export function assertCanManageInvoices(user: PermissionInput) {
-  const ok = canViewAllLegalData(user) || roleOf(user) === UserRole.LAWYER;
-  if (!ok) {
+  if (!canManageInvoices(user)) {
     throw new Error("Nemáte oprávnění spravovat faktury.");
   }
 }

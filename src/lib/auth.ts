@@ -51,7 +51,18 @@ export const getCurrentUser = cache(async function getCurrentUser() {
   });
 
   if (membership) {
-    return { ...user, role: membership.role, organizationId: membership.organizationId };
+    // Per-user granty (capability) v rámci aktivní org — přibalíme je na usera,
+    // ať je synchronní can*/assert* helpery v permissions.ts vidí.
+    const grants = await prisma.userCapabilityGrant.findMany({
+      where: { userId: user.id, organizationId: membership.organizationId },
+      select: { capability: true },
+    });
+    return {
+      ...user,
+      role: membership.role,
+      organizationId: membership.organizationId,
+      capabilities: grants.map((grant) => grant.capability),
+    };
   }
 
   // No active org: platform admins manage orgs from /admin, everyone else joins.
