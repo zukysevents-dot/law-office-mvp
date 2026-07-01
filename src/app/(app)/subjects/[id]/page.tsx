@@ -17,6 +17,7 @@ import { SubjectAmlSection } from "@/components/subject-aml-section";
 import { SubjectContactPersons } from "@/components/subject-contact-persons";
 import type { ScreeningWithMatches } from "@/components/sanctions-screening-panel";
 import { SubjectPortalSection } from "@/components/subject-portal-section";
+import { SubjectRegistrySection } from "@/components/subject-registry-section";
 import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
@@ -125,6 +126,11 @@ async function loadSubject(id: string) {
           project: { select: { name: true } },
           case: { select: { name: true } },
         },
+      },
+      registryChangeEvents: {
+        orderBy: { detectedAt: "desc" },
+        take: 10,
+        include: { acknowledgedBy: { select: { name: true } } },
       },
     },
   });
@@ -455,6 +461,14 @@ export default async function SubjectDetailPage({
               </div>
             </div>
           </Section>
+          <SubjectRegistrySection
+            subjectId={subject.id}
+            watchEnabled={subject.registryWatchEnabled}
+            checkedAt={subject.registryCheckedAt}
+            hasIco={Boolean(subject.ico)}
+            events={subject.registryChangeEvents}
+            canEdit={canEdit}
+          />
           <SubjectContactPersons
             subjectId={subject.id}
             contacts={subject.contactPersons}

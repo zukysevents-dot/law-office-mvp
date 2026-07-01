@@ -26,6 +26,7 @@ import {
   ListTodo,
   LogOut,
   Menu,
+  Radar,
   Receipt,
   ScrollText,
   Settings,
@@ -69,6 +70,7 @@ const navSections: NavSection[] = [
     items: [
       { href: "/subjects", label: "Subjekty", icon: Building2 },
       { href: "/conflict-check", label: "Conflict check", icon: ShieldCheck },
+      { href: "/registry", label: "Hlídání rejstříků", icon: Radar },
       {
         href: "/aml",
         label: "AML / KYC",

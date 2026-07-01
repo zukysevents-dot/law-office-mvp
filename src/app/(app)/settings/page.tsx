@@ -201,6 +201,11 @@ export default async function SettingsPage() {
                 label="Blížící se soudní jednání"
                 defaultChecked={preference.courtHearingSoonEmail}
               />
+              <PreferenceCheckbox
+                name="registryChangeEmail"
+                label="Změna v rejstříku (ISIR/OR)"
+                defaultChecked={preference.registryChangeEmail}
+              />
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               <Field label="Upozornit kolik dní před deadlinem">

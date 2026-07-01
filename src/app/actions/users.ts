@@ -303,6 +303,7 @@ export async function updateNotificationPreference(formData: FormData) {
     deadlineSoonEmail: checkboxValue(formData, "deadlineSoonEmail"),
     deadlineOverdueEmail: checkboxValue(formData, "deadlineOverdueEmail"),
     courtHearingSoonEmail: checkboxValue(formData, "courtHearingSoonEmail"),
+    registryChangeEmail: checkboxValue(formData, "registryChangeEmail"),
     deadlineWatchDaysBefore: boundedDays(
       optionalNumber(formData, "deadlineWatchDaysBefore"),
       3,

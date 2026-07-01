@@ -34,6 +34,7 @@ export type NotificationPreferenceShape = {
   deadlineOverdueEmail: boolean;
   courtHearingSoonEmail: boolean;
   deadlineWatchDaysBefore: number;
+  registryChangeEmail: boolean;
 };
 
 export type NotificationPayload = {
@@ -70,6 +71,7 @@ const defaultPreference: NotificationPreferenceShape = {
   deadlineOverdueEmail: true,
   courtHearingSoonEmail: true,
   deadlineWatchDaysBefore: DEFAULT_DEADLINE_WATCH_DAYS,
+  registryChangeEmail: true,
 };
 
 export function uniqueRecipients(
@@ -127,6 +129,10 @@ export function preferenceAllows(
 
   if (type === NotificationType.COURT_HEARING_SOON) {
     return current.courtHearingSoonEmail;
+  }
+
+  if (type === NotificationType.REGISTRY_CHANGE) {
+    return current.registryChangeEmail;
   }
 
   return false;

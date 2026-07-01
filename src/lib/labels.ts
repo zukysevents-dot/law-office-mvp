@@ -22,6 +22,7 @@ import {
   OrganizationStatus,
   PaymentMethod,
   ProjectStatus,
+  RegistryChangeType,
   ReminderLevel,
   SalaryTaxMode,
   SubjectRole,
@@ -275,6 +276,14 @@ export const caseStatusLabels: Record<CaseStatus, string> = {
   PAUSED: "Pozastavený",
   COMPLETED: "Dokončený",
   ARCHIVED: "Archivovaný",
+};
+
+export const registryChangeTypeLabels: Record<RegistryChangeType, string> = {
+  INSOLVENCY: "Insolvence",
+  DISSOLVED: "Zánik subjektu",
+  LIQUIDATION: "Likvidace",
+  RISK_CLEARED: "Riziko pominulo",
+  OTHER: "Změna v rejstříku",
 };
 
 export const organizationStatusLabels: Record<OrganizationStatus, string> = {
