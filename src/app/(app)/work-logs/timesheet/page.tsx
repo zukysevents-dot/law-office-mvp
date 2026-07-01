@@ -42,8 +42,25 @@ type TimesheetRow = {
   description: string | null;
   project: { name: string } | null;
   case: { name: string; fileNumber: string | null } | null;
-  user: { name: string } | null;
+  user: { name: string; role: string } | null;
 };
+
+// Klientský výkaz zásadně neuvádí konkrétní jméno pracovníka, jen pozici.
+function positionLabel(role: string | null | undefined): string {
+  switch (role) {
+    case "ADMIN":
+    case "PARTNER":
+      return "Partner";
+    case "LAWYER":
+      return "Advokát";
+    case "TRAINEE":
+      return "Koncipient";
+    case "INTERN":
+      return "Student";
+    default:
+      return "—";
+  }
+}
 
 type TimesheetData = {
   rows: TimesheetRow[];
@@ -68,6 +85,8 @@ export default async function ClientTimesheetPage({ searchParams }: Props) {
   // Show-amounts is requested via URL but only honored when the role may see
   // pricing — resolved against canViewRates below (never trust the query alone).
   const amountsRequested = parseBoolean(firstParam(params, "amounts"), true);
+  // Volitelně zobrazit pozici pracovníka (ne jméno). Výchozí vypnuto.
+  const showPosition = parseBoolean(firstParam(params, "worker"), false);
   // Validate dates via the shared helper so a malformed query string yields
   // undefined (filter skipped) instead of an Invalid Date → Prisma error.
   const from = parseDateBoundary(dateFrom, false);
@@ -115,7 +134,7 @@ export default async function ClientTimesheetPage({ searchParams }: Props) {
           description: true,
           project: { select: { name: true } },
           case: { select: { name: true, fileNumber: true } },
-          user: { select: { name: true } },
+          user: { select: { name: true, role: true } },
         },
       });
 
@@ -214,6 +233,12 @@ export default async function ClientTimesheetPage({ searchParams }: Props) {
                   </SelectInput>
                 </Field>
               ) : null}
+              <Field label="Pracovník (pozice)">
+                <SelectInput name="worker" defaultValue={showPosition ? "1" : "0"}>
+                  <option value="0">Skrýt</option>
+                  <option value="1">Zobrazit</option>
+                </SelectInput>
+              </Field>
             </div>
             <div>
               <Button type="submit" variant="secondary">
@@ -253,6 +278,7 @@ export default async function ClientTimesheetPage({ searchParams }: Props) {
                   <th className="py-2">Datum</th>
                   <th className="py-2">Případ</th>
                   <th className="py-2">Popis</th>
+                  {showPosition ? <th className="py-2">Pozice</th> : null}
                   <th className="py-2 text-right">Hodiny</th>
                   {showAmounts ? (
                     <>
@@ -272,6 +298,11 @@ export default async function ClientTimesheetPage({ searchParams }: Props) {
                       {formatCaseLabel(row.case, row.project?.name ?? "—")}
                     </td>
                     <td className="py-2">{row.description ?? "—"}</td>
+                    {showPosition ? (
+                      <td className="py-2 whitespace-nowrap">
+                        {positionLabel(row.user?.role)}
+                      </td>
+                    ) : null}
                     <td className="py-2 text-right whitespace-nowrap">
                       {formatHours(row.hours as never)}
                     </td>
@@ -290,7 +321,7 @@ export default async function ClientTimesheetPage({ searchParams }: Props) {
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-stone-300 font-semibold text-[#072924]">
-                  <td className="py-2" colSpan={3}>
+                  <td className="py-2" colSpan={showPosition ? 4 : 3}>
                     Celkem ({data.totals.count} položek)
                   </td>
                   <td className="py-2 text-right whitespace-nowrap">

@@ -13,6 +13,7 @@ import { CascadingMatterSelect } from "@/components/cascading-matter-select";
 import { ColumnVisibilityPanel } from "@/components/column-visibility-panel";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
+import { RowDblClickNav } from "@/components/row-dblclick-nav";
 import { Section } from "@/components/section";
 import { StatCard } from "@/components/stat-card";
 import { Badge } from "@/components/ui/badge";
@@ -550,6 +551,7 @@ export default async function TasksPage({ searchParams }: TasksProps) {
           </p>
         ) : null}
         {result.data.tasks.length > 0 ? (
+          <RowDblClickNav>
           <div className="table-scroll">
             <table className="w-max min-w-full [&_td]:align-top">
               <thead>
@@ -566,6 +568,8 @@ export default async function TasksPage({ searchParams }: TasksProps) {
                 {result.data.tasks.map((task) => (
                   <tr
                     key={task.id}
+                    data-href={`/tasks/${task.id}`}
+                    title="Dvojklik otevře podrobnosti úkolu"
                     className={taskStatusRowClass(task.status) || undefined}
                   >
                     {visibleColumnSet.has("title") ? (
@@ -678,7 +682,7 @@ export default async function TasksPage({ searchParams }: TasksProps) {
                         variant="ghost"
                         className="h-8 px-3"
                       >
-                        Detail
+                        Podrobnosti
                       </ButtonLink>
                     </td>
                   </tr>
@@ -686,6 +690,7 @@ export default async function TasksPage({ searchParams }: TasksProps) {
               </tbody>
             </table>
           </div>
+          </RowDblClickNav>
         ) : (
           <EmptyState>Žádné úkoly neodpovídají filtrům.</EmptyState>
         )}

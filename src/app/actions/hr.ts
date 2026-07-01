@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import type { Prisma } from "@/generated/prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import {
   HrAbsenceStatus,
   HrAbsenceType,
@@ -24,7 +24,7 @@ import {
   requiredString,
 } from "@/lib/form";
 import { computeAbsenceHours } from "@/lib/hr/absence-calc";
-import { computeWorkedHours } from "@/lib/hr/attendance-calc";
+import { computeWorkedHours, officeWorkDate } from "@/lib/hr/attendance-calc";
 import {
   assertNoOverdraw,
   computeRemainingHours,
@@ -370,6 +370,99 @@ export async function recordAttendance(formData: FormData) {
       },
     });
   });
+
+  revalidatePath("/hr/attendance");
+}
+
+// Píchačky (revize): samoobslužné zaznamenání příchodu/odchodu pro přihlášeného
+// uživatele s navázanou kartou zaměstnance. NEvyžaduje canManageHr — každý píchá
+// sám za sebe; ostatním zaměstnancům zapisuje docházku admin přes recordAttendance.
+export async function punchAttendance(formData: FormData) {
+  const prisma = getPrisma();
+  const { currentUser, organizationId } = await authorize();
+  const direction = formData.get("direction") === "out" ? "out" : "in";
+
+  const employee = await prisma.hrEmployee.findFirst({
+    where: { userId: currentUser.id, organizationId, archivedAt: null },
+    select: { id: true },
+  });
+  if (!employee) {
+    throw new Error(
+      "Nemáte navázanou kartu zaměstnance — kontaktujte správce kanceláře.",
+    );
+  }
+
+  // „Dnešek" v kancelářské časové zóně (Europe/Prague), ne z UTC složek — jinak
+  // by píchnutí kolem půlnoci spadlo na jiný kalendářní den, než zaměstnanec vidí.
+  const now = new Date();
+  const workDate = officeWorkDate(now);
+  const key = { employeeId_workDate: { employeeId: employee.id, workDate } };
+
+  const existing = await prisma.hrAttendanceRecord.findUnique({
+    where: key,
+    select: { checkIn: true, checkOut: true, breakHours: true },
+  });
+
+  // Předpoklady ověříme před transakcí (čtou `existing`).
+  if (direction === "in" && existing?.checkIn) {
+    throw new Error("Příchod už je dnes zaznamenaný.");
+  }
+  if (direction === "out") {
+    if (!existing?.checkIn) {
+      throw new Error("Nejdřív zaznamenejte příchod.");
+    }
+    if (existing.checkOut) {
+      throw new Error("Odchod už je dnes zaznamenaný.");
+    }
+  }
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      if (direction === "in") {
+        await tx.hrAttendanceRecord.upsert({
+          where: key,
+          update: { checkIn: now, source: HrAttendanceSource.MANUAL },
+          create: {
+            organizationId,
+            employeeId: employee.id,
+            workDate,
+            checkIn: now,
+            source: HrAttendanceSource.MANUAL,
+            createdById: currentUser.id,
+          },
+        });
+      } else {
+        const breakHours = Number(existing?.breakHours ?? 0);
+        const workedHours = computeWorkedHours(
+          existing!.checkIn!,
+          now,
+          breakHours,
+        );
+        await tx.hrAttendanceRecord.update({
+          where: key,
+          data: { checkOut: now, workedHours },
+        });
+      }
+      await tx.auditLog.create({
+        data: {
+          entityType: "HrAttendanceRecord",
+          entityId: employee.id,
+          action: direction === "in" ? "PUNCH_IN" : "PUNCH_OUT",
+          changedById: currentUser.id,
+          newValue: auditJson({ workDate: workDate.toISOString() }),
+        },
+      });
+    });
+  } catch (error) {
+    // Souběžný dvojklik: druhý příchod narazí na @@unique — přelož na hlášku.
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      throw new Error("Příchod už je dnes zaznamenaný.");
+    }
+    throw error;
+  }
 
   revalidatePath("/hr/attendance");
 }

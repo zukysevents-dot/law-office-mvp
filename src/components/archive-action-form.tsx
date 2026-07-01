@@ -16,12 +16,9 @@ type ArchiveActionFormProps = {
   idFieldName?: string;
 };
 
-const messages = {
-  archive:
-    "Opravdu chcete archivovat tento záznam? Záznam nebude smazán, pouze se přesune do archivu.",
-  restore: "Opravdu chcete obnovit tento záznam z archivu?",
-};
-
+// Bez potvrzovacího dialogu (revize): archivace je vratná (tlačítko „Obnovit
+// z archivu"), takže extra „opravdu chcete?" okno jen zdržuje. Samotné kliknutí
+// na tlačítko je vědomá akce.
 export function ArchiveActionForm({
   action,
   id,
@@ -31,15 +28,7 @@ export function ArchiveActionForm({
   idFieldName = "id",
 }: ArchiveActionFormProps) {
   return (
-    <form
-      action={action}
-      className={cn("inline-flex", className)}
-      onSubmit={(event) => {
-        if (!window.confirm(messages[mode])) {
-          event.preventDefault();
-        }
-      }}
-    >
+    <form action={action} className={cn("inline-flex", className)}>
       <input type="hidden" name={idFieldName} value={id} />
       <Button
         type="submit"

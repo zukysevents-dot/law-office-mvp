@@ -1,9 +1,45 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { computeOvertimeHours, computeWorkedHours } from "./attendance-calc";
+import {
+  computeOvertimeHours,
+  computeWorkedHours,
+  officeWorkDate,
+} from "./attendance-calc";
 
 const t = (iso: string) => new Date(iso);
+
+// --- officeWorkDate (pražská TZ, hranice půlnoci) ---------------------------
+
+test("officeWorkDate: CET (zima) — 23:30 UTC = 00:30 lokálně → další den", () => {
+  // 2026-01-15 23:30 UTC, CET (+1) → lokálně 2026-01-16 00:30 → den 16.
+  assert.equal(
+    officeWorkDate(t("2026-01-15T23:30:00Z")).toISOString(),
+    "2026-01-16T00:00:00.000Z",
+  );
+});
+
+test("officeWorkDate: CEST (léto) — 22:30 UTC = 00:30 lokálně → další den", () => {
+  // 2026-06-15 22:30 UTC, CEST (+2) → lokálně 2026-06-16 00:30 → den 16.
+  assert.equal(
+    officeWorkDate(t("2026-06-15T22:30:00Z")).toISOString(),
+    "2026-06-16T00:00:00.000Z",
+  );
+});
+
+test("officeWorkDate: CEST — 21:30 UTC = 23:30 lokálně → týž den", () => {
+  assert.equal(
+    officeWorkDate(t("2026-06-15T21:30:00Z")).toISOString(),
+    "2026-06-15T00:00:00.000Z",
+  );
+});
+
+test("officeWorkDate: poledne UTC → týž kalendářní den", () => {
+  assert.equal(
+    officeWorkDate(t("2026-03-10T12:00:00Z")).toISOString(),
+    "2026-03-10T00:00:00.000Z",
+  );
+});
 
 test("computeWorkedHours: out - in - break, never negative", () => {
   assert.equal(

@@ -1,4 +1,8 @@
-import { importAttendance, recordAttendance } from "@/app/actions/hr";
+import {
+  importAttendance,
+  punchAttendance,
+  recordAttendance,
+} from "@/app/actions/hr";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
@@ -11,7 +15,8 @@ import { ModuleKey } from "@/generated/prisma/enums";
 import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import { assertModuleEnabled } from "@/lib/entitlements";
-import { formatDateUtc } from "@/lib/format";
+import { formatDateTime, formatDateUtc } from "@/lib/format";
+import { officeWorkDate } from "@/lib/hr/attendance-calc";
 import { hrAttendanceSourceLabels } from "@/lib/labels";
 import {
   andWhere,
@@ -35,9 +40,16 @@ type Data = {
   records: RecordRow[];
   employees: Array<{ id: string; firstName: string; lastName: string }>;
   canManage: boolean;
+  // Samoobslužné píchačky: stav dnešního záznamu navázaného zaměstnance.
+  punch: { checkIn: Date | null; checkOut: Date | null } | null;
 };
 
-const emptyData: Data = { records: [], employees: [], canManage: false };
+const emptyData: Data = {
+  records: [],
+  employees: [],
+  canManage: false,
+  punch: null,
+};
 
 export default async function HrAttendancePage() {
   const result = await safeQuery<Data>(emptyData, async () => {
@@ -46,7 +58,7 @@ export default async function HrAttendancePage() {
     const prisma = getPrisma();
     const canManage = canManageHr(currentUser);
 
-    const [records, employees] = await Promise.all([
+    const [records, employees, myEmployee] = await Promise.all([
       prisma.hrAttendanceRecord.findMany({
         where: hrAttendanceVisibilityWhere(currentUser),
         orderBy: { workDate: "desc" },
@@ -63,9 +75,30 @@ export default async function HrAttendancePage() {
             select: { id: true, firstName: true, lastName: true },
           })
         : Promise.resolve([]),
+      // Karta zaměstnance přihlášeného uživatele — pro píchačky (self-service).
+      prisma.hrEmployee.findFirst({
+        where: {
+          userId: currentUser.id,
+          organizationId: currentUser.organizationId ?? undefined,
+          archivedAt: null,
+        },
+        select: { id: true },
+      }),
     ]);
 
-    return { records, employees, canManage };
+    let punch: Data["punch"] = null;
+    if (myEmployee) {
+      const workDate = officeWorkDate(new Date());
+      const today = await prisma.hrAttendanceRecord.findUnique({
+        where: {
+          employeeId_workDate: { employeeId: myEmployee.id, workDate },
+        },
+        select: { checkIn: true, checkOut: true },
+      });
+      punch = { checkIn: today?.checkIn ?? null, checkOut: today?.checkOut ?? null };
+    }
+
+    return { records, employees, canManage, punch };
   });
 
   const data = result.data ?? emptyData;
@@ -77,6 +110,40 @@ export default async function HrAttendancePage() {
         description="Evidence odpracovaných hodin (ruční zadání nebo import)."
       />
       <DatabaseNotice databaseReady={result.databaseReady} error={result.error} />
+
+      {data.punch ? (
+        <Section title="Moje píchačky">
+          <div className="flex flex-wrap items-center gap-3">
+            <form action={punchAttendance}>
+              <input type="hidden" name="direction" value="in" />
+              <Button type="submit" disabled={Boolean(data.punch.checkIn)}>
+                Příchod
+              </Button>
+            </form>
+            <form action={punchAttendance}>
+              <input type="hidden" name="direction" value="out" />
+              <Button
+                type="submit"
+                variant="secondary"
+                disabled={
+                  !data.punch.checkIn || Boolean(data.punch.checkOut)
+                }
+              >
+                Odchod
+              </Button>
+            </form>
+            <span className="text-sm text-stone-600">
+              Dnes:{" "}
+              {data.punch.checkIn
+                ? `příchod ${formatDateTime(data.punch.checkIn)}`
+                : "příchod nezaznamenán"}
+              {data.punch.checkOut
+                ? ` · odchod ${formatDateTime(data.punch.checkOut)}`
+                : ""}
+            </span>
+          </div>
+        </Section>
+      ) : null}
 
       {data.canManage ? (
         <Section title="Zapsat docházku">
@@ -94,6 +161,12 @@ export default async function HrAttendancePage() {
               <Field label="Datum">
                 <TextInput name="workDate" type="date" required />
               </Field>
+              <Field label="Příchod (volitelné)">
+                <TextInput name="checkIn" type="datetime-local" />
+              </Field>
+              <Field label="Odchod (volitelné)">
+                <TextInput name="checkOut" type="datetime-local" />
+              </Field>
               <Field label="Odpracováno (h)">
                 <TextInput name="workedHours" type="number" defaultValue="8" />
               </Field>
@@ -101,6 +174,10 @@ export default async function HrAttendancePage() {
                 <TextInput name="breakHours" type="number" defaultValue="0" />
               </Field>
             </div>
+            <p className="text-xs text-stone-400">
+              Když vyplníte příchod i odchod, odpracované hodiny se dopočítají
+              automaticky (minus přestávka).
+            </p>
             <Field label="Poznámka (volitelné)">
               <TextInput name="note" />
             </Field>
@@ -143,6 +220,8 @@ export default async function HrAttendancePage() {
                 <tr>
                   <th>Datum</th>
                   <th>Zaměstnanec</th>
+                  <th>Příchod</th>
+                  <th>Odchod</th>
                   <th>Odpracováno</th>
                   <th>Přestávka</th>
                   <th>Zdroj</th>
@@ -155,6 +234,8 @@ export default async function HrAttendancePage() {
                     <td className="font-medium text-stone-950">
                       {record.employee.lastName} {record.employee.firstName}
                     </td>
+                    <td>{record.checkIn ? formatDateTime(record.checkIn) : "—"}</td>
+                    <td>{record.checkOut ? formatDateTime(record.checkOut) : "—"}</td>
                     <td>{Number(record.workedHours)} h</td>
                     <td>{Number(record.breakHours)} h</td>
                     <td>
