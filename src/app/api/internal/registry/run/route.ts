@@ -1,17 +1,7 @@
-import { timingSafeEqual } from "node:crypto";
-
 import { NextResponse, type NextRequest } from "next/server";
 
+import { authorizeCronRequest } from "@/lib/cron-auth";
 import { runRegistryChecks } from "@/lib/registry/registry-monitor-service";
-
-// Reuses NOTIFICATION_RUN_SECRET — the same trusted cron caller drives both the
-// notification and registry-monitoring runs.
-function safeEqual(a: string, b: string): boolean {
-  const aBuf = Buffer.from(a);
-  const bBuf = Buffer.from(b);
-  if (aBuf.length !== bBuf.length) return false;
-  return timingSafeEqual(aBuf, bBuf);
-}
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,23 +10,16 @@ export const dynamic = "force-dynamic";
 // enough that the oldest-checked-first rotation covers everyone.
 export const maxDuration = 300;
 
-function unauthorized() {
-  return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
-}
-
 export async function POST(request: NextRequest) {
-  const secret = process.env.NOTIFICATION_RUN_SECRET?.trim();
-
-  if (!secret || secret === "change-me-locally") {
+  const auth = authorizeCronRequest(request.headers.get("authorization") ?? "");
+  if (auth === "not_configured") {
     return NextResponse.json(
-      { ok: false, error: "NOTIFICATION_RUN_SECRET_NOT_CONFIGURED" },
+      { ok: false, error: "CRON_SECRET_NOT_CONFIGURED" },
       { status: 503 },
     );
   }
-
-  const authorization = request.headers.get("authorization") ?? "";
-  if (!safeEqual(authorization, `Bearer ${secret}`)) {
-    return unauthorized();
+  if (auth !== "ok") {
+    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
   }
 
   const result = await runRegistryChecks();
