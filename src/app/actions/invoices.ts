@@ -8,12 +8,23 @@ import { auditJson } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
 import { computeInvoiceTotals, computeLine, round2 } from "@/lib/billing-calc";
 import { assertModuleEnabled } from "@/lib/entitlements";
+import { buildIsdocXml } from "@/lib/export/isdoc";
+import {
+  IsdocExportError,
+  mapInvoiceToIsdocInput,
+} from "@/lib/export/invoice-export-mapper";
 import { optionalDate, optionalString, requiredString } from "@/lib/form";
+import {
+  buildInvoiceEmail,
+  isValidEmail,
+  isWithinResendDedupeWindow,
+} from "@/lib/invoice-email";
 import {
   DEFAULT_VAT_RATE,
   formatInvoiceNumber,
   vatModeForProfile,
 } from "@/lib/invoices";
+import { getSmtpTransporter } from "@/lib/notifications/notification-service";
 import {
   andWhere,
   assertCanManageInvoices,
@@ -487,6 +498,197 @@ export async function cancelInvoice(formData: FormData) {
         changedById: currentUser.id,
         oldValue: auditJson({ status: invoice.status }),
         newValue: auditJson({ status: updated.status, reason }),
+      },
+    });
+  });
+
+  revalidatePath("/billing/invoices");
+  revalidatePath(`/billing/invoices/${invoiceId}`);
+  revalidatePath("/billing");
+}
+
+// Invoices that may be e-mailed to the client — same set ISDOC export allows
+// (immutable, issued documents). DRAFT (no number/snapshot) and CANCELLED are
+// excluded.
+const EMAILABLE_STATUSES = new Set<InvoiceStatus>([
+  InvoiceStatus.ISSUED,
+  InvoiceStatus.SENT,
+  InvoiceStatus.PARTIALLY_PAID,
+  InvoiceStatus.PAID,
+]);
+
+// Content-Disposition / attachment filename must stay ASCII-safe.
+function isdocAttachmentFilename(invoiceNumber: string | null): string {
+  const safe = (invoiceNumber ?? "").replace(/[^A-Za-z0-9_-]/g, "_");
+  return `faktura_${safe || "export"}.isdoc`;
+}
+
+// Pull the bank/issuer fields out of the frozen supplierSnapshot (Json) defensively.
+function supplierFromSnapshot(snapshot: unknown) {
+  if (!snapshot || typeof snapshot !== "object") {
+    return null;
+  }
+  const s = snapshot as Record<string, unknown>;
+  const str = (v: unknown) => (typeof v === "string" ? v : null);
+  return {
+    legalName: str(s.legalName),
+    bankAccount: str(s.bankAccount),
+    iban: str(s.iban),
+  };
+}
+
+// B-3b: send an issued invoice to the client by e-mail (ISDOC attached). Reuses
+// the SMTP transporter from the notification service — one mail config. On a
+// successful send an ISSUED invoice transitions to SENT; re-sending a SENT/paid
+// invoice is allowed and only re-audited. Degrades loudly when SMTP is not
+// configured (matching the rest of the e-mail stack).
+export async function emailInvoice(formData: FormData) {
+  const prisma = getPrisma();
+  const currentUser = await getCurrentUser();
+  await assertModuleEnabled(currentUser, ModuleKey.BILLING);
+  assertCanManageInvoices(currentUser);
+
+  const invoiceId = requiredString(formData, "invoiceId");
+  const recipientOverride = optionalString(formData, "recipientEmail");
+  const customMessage = optionalString(formData, "message");
+
+  const invoice = await prisma.invoice.findFirst({
+    where: andWhere(invoiceVisibilityWhere(currentUser), { id: invoiceId }),
+    include: {
+      lines: { orderBy: { position: "asc" } },
+      subject: { select: { id: true, name: true, email: true } },
+    },
+  });
+  if (!invoice) {
+    throw new Error("Faktura nenalezena.");
+  }
+  if (!EMAILABLE_STATUSES.has(invoice.status)) {
+    throw new Error("E-mailem lze odeslat jen vystavenou fakturu.");
+  }
+
+  const subjectEmail = (invoice.subject.email ?? "").trim();
+  const recipient = (recipientOverride ?? subjectEmail).trim();
+  if (!isValidEmail(recipient)) {
+    throw new Error(
+      "Klient nemá platnou e-mailovou adresu — zadejte ji ručně do pole příjemce.",
+    );
+  }
+  // Příjemce odlišný od adresy evidované u klienta — auditujeme zvlášť, ať jde
+  // dohledat, kam doklad skutečně šel a že šlo o ruční přepis.
+  const recipientOverridden = recipient !== subjectEmail;
+
+  // Idempotence: odmítni opakované odeslání těsně po předchozím (dvojí klik /
+  // retry akce). Okno je krátké, vědomé pozdější přeposlání zůstává možné.
+  const lastSent = await prisma.auditLog.findFirst({
+    where: { entityType: "Invoice", entityId: invoice.id, action: "EMAIL_SENT" },
+    orderBy: { createdAt: "desc" },
+    select: { createdAt: true },
+  });
+  if (
+    isWithinResendDedupeWindow(lastSent?.createdAt.getTime() ?? null, Date.now())
+  ) {
+    throw new Error(
+      "Faktura byla právě odeslána. Pokud chcete e-mail poslat znovu, zkuste to za chvíli.",
+    );
+  }
+
+  const transporter = getSmtpTransporter();
+  if (!transporter) {
+    throw new Error(
+      "Odesílání e-mailů není nakonfigurováno (SMTP). Kontaktujte správce systému.",
+    );
+  }
+
+  // ISDOC attachment — if it can't be built (missing snapshot etc.), send the
+  // summary e-mail without it rather than failing the whole send.
+  const attachments: Array<{
+    filename: string;
+    content: string;
+    contentType: string;
+  }> = [];
+  let hadIsdoc = false;
+  try {
+    const xml = buildIsdocXml(mapInvoiceToIsdocInput(invoice));
+    attachments.push({
+      filename: isdocAttachmentFilename(invoice.number),
+      content: xml,
+      contentType: "application/xml; charset=utf-8",
+    });
+    hadIsdoc = true;
+  } catch (error) {
+    if (!(error instanceof IsdocExportError)) {
+      throw error;
+    }
+  }
+
+  const supplier = supplierFromSnapshot(invoice.supplierSnapshot);
+  const email = buildInvoiceEmail(
+    {
+      number: invoice.number,
+      issueDate: invoice.issueDate,
+      dueDate: invoice.dueDate,
+      variableSymbol: invoice.variableSymbol,
+      subtotalCzk: invoice.subtotalCzk,
+      vatCzk: invoice.vatCzk,
+      totalCzk: invoice.totalCzk,
+      vatMode: invoice.vatMode,
+      supplier,
+    },
+    { senderName: supplier?.legalName, customMessage },
+  );
+
+  try {
+    await transporter.sendMail({
+      from: process.env.SMTP_FROM,
+      to: recipient,
+      subject: email.subject,
+      text: email.text,
+      html: email.html,
+      attachments,
+    });
+  } catch (error) {
+    // SMTP je nakonfigurované, ale doručení selhalo (timeout/auth/relay). Nech
+    // stopu (bez PII obsahu) a vyhoď srozumitelnou hlášku; status zůstane ISSUED.
+    await prisma.auditLog.create({
+      data: {
+        entityType: "Invoice",
+        entityId: invoice.id,
+        action: "EMAIL_FAILED",
+        changedById: currentUser.id,
+        newValue: auditJson({
+          recipient,
+          reason: (error instanceof Error ? error.message : String(error)).slice(
+            0,
+            200,
+          ),
+        }),
+      },
+    });
+    throw new Error(
+      "Odeslání e-mailu selhalo. Zkontrolujte nastavení SMTP a zkuste to znovu.",
+    );
+  }
+
+  // The mail is out; record it and advance the status atomically. The update is
+  // guarded by status=ISSUED (TOCTOU: faktura mohla být mezitím stornována — pak
+  // ji do SENT nepřeklápíme). Re-send vystavené/zaplacené faktury jen audituje.
+  await prisma.$transaction(async (tx) => {
+    await tx.invoice.updateMany({
+      where: { id: invoice.id, status: InvoiceStatus.ISSUED },
+      data: { status: InvoiceStatus.SENT },
+    });
+    await tx.auditLog.create({
+      data: {
+        entityType: "Invoice",
+        entityId: invoice.id,
+        action: "EMAIL_SENT",
+        changedById: currentUser.id,
+        newValue: auditJson({
+          recipient,
+          override: recipientOverridden,
+          hadIsdoc,
+          subjectId: invoice.subject.id,
+        }),
       },
     });
   });

@@ -7,6 +7,10 @@ import { writeAuditLog } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
 import { requiredString } from "@/lib/form";
 import {
+  ensureSharepointFolder,
+  isSharepointUploadConfigured,
+} from "@/lib/microsoft/graph-drive";
+import {
   buildSharepointFolderUrl,
   sharepointFolderSegments,
   type SharepointEntityInput,
@@ -105,9 +109,28 @@ export async function provisionSharepointFolder(formData: FormData) {
   const segments = sharepointFolderSegments(input);
   const conventionUrl = buildSharepointFolderUrl(segments);
 
-  // Only fill in a convention URL when nothing is stored yet — never overwrite
-  // an existing URL on a stale resubmit.
-  const sharepointUrl = oldUrl ?? conventionUrl;
+  // With Graph configured, actually CREATE the folder and use its real webUrl.
+  // Without Graph it stays URL-only (today's convention behavior).
+  let createdUrl: string | null = null;
+  let graphFailed = false;
+  if (isSharepointUploadConfigured()) {
+    try {
+      createdUrl = await ensureSharepointFolder(segments);
+    } catch {
+      graphFailed = true;
+    }
+  }
+
+  // Graph was supposed to create the folder but failed — don't silently store a
+  // convention URL that may not match the (possibly partially created) folder.
+  // Surface the failure so the user can retry instead of getting a dead link.
+  if (graphFailed && !oldUrl) {
+    redirect(`${detailPath}?sharepoint=failed`);
+  }
+
+  // Only fill in a URL when nothing is stored yet — never overwrite an existing
+  // URL on a stale resubmit. Prefer the real (created) folder URL.
+  const sharepointUrl = oldUrl ?? createdUrl ?? conventionUrl;
 
   // Nothing could be derived (SharePoint site URL not configured).
   if (!sharepointUrl) {

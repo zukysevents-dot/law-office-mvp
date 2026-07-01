@@ -109,7 +109,7 @@ const navSections: NavSection[] = [
     items: [
       { href: "/deadlines", label: "Lhůtník", icon: AlarmClock, module: ModuleKey.DEADLINES },
       { href: "/calendar", label: "Kalendář", icon: CalendarDays, module: ModuleKey.DEADLINES },
-      { href: "/documents", label: "Dokumenty", icon: FolderOpen, module: ModuleKey.DOCUMENTS },
+      { href: "/documents", label: "Spisy", icon: FolderOpen, module: ModuleKey.DOCUMENTS },
     ],
   },
   {

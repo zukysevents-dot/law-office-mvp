@@ -187,6 +187,57 @@ export function isDashboardTableWidget(type: DashboardWidgetType) {
   return Boolean(dashboardTableColumns[type]);
 }
 
+// One widget's desired state in a bulk dashboard-layout save. Position is the
+// item's index in the submitted (drag-ordered) array, not carried here.
+export type DashboardLayoutItem = {
+  id: string;
+  title: string;
+  size: string;
+  visible: boolean;
+  columns: string[];
+};
+
+/**
+ * Parse the JSON `payload` of the single-save dashboard editor into a typed,
+ * shallowly-validated list. Returns null for malformed JSON or shape (so the
+ * action can reject loudly). Ownership / enum / column validation happens in the
+ * action against the DB — this only guarantees the structure. Pure + testable.
+ */
+export function parseDashboardLayoutPayload(
+  raw: string,
+): DashboardLayoutItem[] | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(parsed)) {
+    return null;
+  }
+
+  const items: DashboardLayoutItem[] = [];
+  for (const entry of parsed) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      return null;
+    }
+    const record = entry as Record<string, unknown>;
+    if (typeof record.id !== "string" || record.id === "") {
+      return null;
+    }
+    items.push({
+      id: record.id,
+      title: typeof record.title === "string" ? record.title : "",
+      size: typeof record.size === "string" ? record.size : "",
+      visible: record.visible === true,
+      columns: Array.isArray(record.columns)
+        ? record.columns.filter((c): c is string => typeof c === "string")
+        : [],
+    });
+  }
+  return items;
+}
+
 export function getDefaultDashboardColumns(type: DashboardWidgetType) {
   return (
     defaultTableColumns[type] ??

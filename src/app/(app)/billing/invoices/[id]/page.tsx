@@ -8,6 +8,7 @@ import {
 import { recordPayment } from "@/app/actions/payments";
 import { markInvoiceSent, sendReminder } from "@/app/actions/reminders";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
+import { InvoiceEmailForm } from "@/components/invoice-email-form";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
 import { Badge } from "@/components/ui/badge";
@@ -263,16 +264,20 @@ export default async function InvoiceDetailPage({
 
           {!isDraft && !isCancelled ? (
             <>
-              {invoice.status === "ISSUED" ? (
-                <Section title="Odeslání klientovi">
-                  <form action={markInvoiceSent}>
+              <Section title="Odeslání klientovi">
+                <InvoiceEmailForm
+                  invoiceId={invoice.id}
+                  defaultRecipient={invoice.subject.email ?? ""}
+                />
+                {invoice.status === "ISSUED" ? (
+                  <form action={markInvoiceSent} className="mt-4">
                     <input type="hidden" name="invoiceId" value={invoice.id} />
-                    <Button type="submit" variant="secondary">
-                      Označit jako odeslanou
+                    <Button type="submit" variant="ghost">
+                      Jen označit jako odeslanou (bez e-mailu)
                     </Button>
                   </form>
-                </Section>
-              ) : null}
+                ) : null}
+              </Section>
 
               <Section title="Úhrady">
                 <dl className="mb-4 grid gap-4 sm:grid-cols-3">

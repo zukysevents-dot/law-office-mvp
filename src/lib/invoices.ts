@@ -16,6 +16,7 @@ export const invoiceDetailInclude = {
       ico: true,
       dic: true,
       address: true,
+      email: true,
       vatPayer: true,
     },
   },
