@@ -1,4 +1,7 @@
+import { Suspense } from "react";
+
 import { AppSidebar } from "@/components/app-sidebar";
+import { NavigationCursor } from "@/components/navigation-cursor";
 import { getCurrentUser } from "@/lib/auth";
 import { getEnabledModules } from "@/lib/entitlements";
 import { userRoleLabels } from "@/lib/labels";
@@ -19,6 +22,9 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="app-shell min-h-screen w-full max-w-full overflow-x-hidden bg-background text-foreground lg:flex">
+      <Suspense fallback={null}>
+        <NavigationCursor />
+      </Suspense>
       <AppSidebar
         showAuditLog={showAuditLog}
         canManageInvoices={canManageInvoices(currentUser)}
