@@ -221,6 +221,8 @@ enum NotificationType {
   DEADLINE_SOON
   DEADLINE_OVERDUE
   COURT_HEARING_SOON
+  // Hlídání rejstříků: zjištěná změna v ISIR/OR u sledovaného subjektu.
+  REGISTRY_CHANGE
 }
 
 enum NotificationStatus {
@@ -387,6 +389,7 @@ model User {
   createdDocumentTemplates DocumentTemplate[] @relation("DocumentTemplateCreatedBy")
   createdPortalAccesses    PortalAccess[]     @relation("PortalAccessCreatedBy")
   sharedPortalShares       PortalShare[]      @relation("PortalShareSharedBy")
+  acknowledgedRegistryChanges RegistryChangeEvent[] @relation("RegistryChangeAcknowledgedBy")
   hrEmployee               HrEmployee?        @relation("HrEmployeeUser")
   createdHrEmployees       HrEmployee[]       @relation("HrEmployeeCreatedBy")
   requestedHrAbsences      HrAbsenceRequest[] @relation("HrAbsenceRequestedBy")
@@ -423,6 +426,11 @@ model Subject {
   // does NOT drive our VAT calc — that follows the issuer (billing profile).
   vatPayer         Boolean     @default(false)
   aresVerifiedAt   DateTime?
+  // Hlídání rejstříků (ISIR/OR přes ARES). watchEnabled se řídí přítomností IČO;
+  // registryCheckedAt = poslední kontrola (nastavuje se i při chybě, ať runner
+  // nehamruje jeden subjekt dokola).
+  registryWatchEnabled Boolean @default(true)
+  registryCheckedAt DateTime?
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
   archivedAt       DateTime?
@@ -442,6 +450,7 @@ model Subject {
   portalAccess   PortalAccess?
   sanctionsScreenings SanctionsScreening[]
   contactPersons ContactPerson[]
+  registryChangeEvents RegistryChangeEvent[]
 
   // IČO is unique PER organization, not globally — the same company can be a
   // subject of more than one law office (multi-tenant). NULL ico is allowed
@@ -451,7 +460,43 @@ model Subject {
   @@index([name])
   @@index([ico])
   @@index([riskFlag])
+  // Runner selects watch-enabled subjects ordered by oldest check first.
+  @@index([registryWatchEnabled, registryCheckedAt])
   @@map("subjects")
+}
+
+// Hlídání rejstříků: typ zjištěné změny v registru (ISIR/OR přes ARES).
+enum RegistryChangeType {
+  INSOLVENCY   // aktivní záznam v insolvenčním rejstříku
+  DISSOLVED    // subjekt zanikl (datum zániku)
+  LIQUIDATION  // v likvidaci
+  RISK_CLEARED // rizikový signál pominul (subjekt už není v riziku)
+  OTHER
+}
+
+// Jedna zaznamenaná změna v rejstříku u subjektu — auditní stopa hlídání a
+// podklad pro notifikaci. Org-scoped; potvrzení (acknowledge) advokátem.
+model RegistryChangeEvent {
+  id               String             @id @default(cuid())
+  organizationId   String
+  subjectId        String
+  changeType       RegistryChangeType
+  summary          String             // česky, human-readable
+  oldValue         String?
+  newValue         String?
+  detectedAt       DateTime           @default(now())
+  acknowledgedAt   DateTime?
+  acknowledgedById String?
+  createdAt        DateTime           @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  subject        Subject      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  acknowledgedBy User?        @relation("RegistryChangeAcknowledgedBy", fields: [acknowledgedById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([subjectId])
+  @@index([acknowledgedAt])
+  @@map("registryChangeEvents")
 }
 
 model SubjectRelation {
@@ -845,6 +890,8 @@ model NotificationPreference {
   deadlineOverdueEmail   Boolean  @default(true)
   courtHearingSoonEmail  Boolean  @default(true)
   deadlineWatchDaysBefore Int     @default(3)
+  // Hlídání rejstříků: e-mail při zjištěné změně v ISIR/OR.
+  registryChangeEmail    Boolean  @default(true)
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 
@@ -1019,6 +1066,7 @@ model Organization {
   documentTemplates    DocumentTemplate[]
   portalAccesses       PortalAccess[]
   portalLoginTokens    PortalLoginToken[]
+  registryChangeEvents RegistryChangeEvent[]
   portalSessions       PortalSession[]
   portalShares         PortalShare[]
   hrEmployees          HrEmployee[]

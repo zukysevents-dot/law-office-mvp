@@ -9,6 +9,7 @@ import type {
   DocumentKind,
   HrAbsenceStatus,
   InvoiceStatus,
+  RegistryChangeType,
   SubjectRole,
   TaskDeadlineType,
   TaskStatus,
@@ -107,6 +108,17 @@ export function approvalStatusTone(status: ApprovalStatus): BadgeTone {
   };
 
   return tones[status];
+}
+
+export function registryChangeTypeTone(type: RegistryChangeType): BadgeTone {
+  const tones: Record<RegistryChangeType, BadgeTone> = {
+    INSOLVENCY: "red",
+    DISSOLVED: "red",
+    LIQUIDATION: "amber",
+    RISK_CLEARED: "green",
+    OTHER: "neutral",
+  };
+  return tones[type];
 }
 
 export function subjectRoleTone(role: SubjectRole): BadgeTone {
