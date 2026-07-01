@@ -301,3 +301,10 @@ html:has(.landing-root) {
     display: none !important;
   }
 }
+
+/* Během klientské navigace nahradí kurzor „nabíhací kolečko" (NavigationCursor).
+   Skryje systémový kurzor, aby ho spinner opravdu nahradil (revize). */
+body.nav-loading,
+body.nav-loading * {
+  cursor: none !important;
+}
