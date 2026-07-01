@@ -181,6 +181,12 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
               <tbody>
                 {result.data.projects.map((project) => (
                   <tr key={project.id}>
+                    {/* Pořadí buněk MUSÍ odpovídat pořadí sloupců v configu
+                        (table-view-preferences: Klient první, pak Název), jinak
+                        hlavička nesedí na obsah — „Klient" nad názvem projektu. */}
+                    {visibleColumnSet.has("mainSubject") ? (
+                      <td>{project.mainSubject.name}</td>
+                    ) : null}
                     {visibleColumnSet.has("name") ? (
                       <td className="max-w-xs">
                         <Link
@@ -190,9 +196,6 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
                           {project.name}
                         </Link>
                       </td>
-                    ) : null}
-                    {visibleColumnSet.has("mainSubject") ? (
-                      <td>{project.mainSubject.name}</td>
                     ) : null}
                     {visibleColumnSet.has("responsibleUser") ? (
                       <td>{project.responsibleUser?.name ?? "—"}</td>
