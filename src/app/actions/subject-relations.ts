@@ -5,7 +5,11 @@ import { revalidatePath } from "next/cache";
 import { SubjectRole } from "@/generated/prisma/enums";
 import { getCurrentUser } from "@/lib/auth";
 import { enumValue, optionalString, requiredString } from "@/lib/form";
-import { assertCanEditRecord } from "@/lib/permissions";
+import {
+  andWhere,
+  assertCanEditRecord,
+  subjectVisibilityWhere,
+} from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 export async function addProjectSubjectRelation(formData: FormData) {
@@ -19,6 +23,16 @@ export async function addProjectSubjectRelation(formData: FormData) {
     include: { assignees: { select: { userId: true } } },
   });
   assertCanEditRecord(currentUser, "Project", project);
+
+  // The subject must be one the user can see — otherwise attaching it here would
+  // leak the subject's data via the relation (IDOR / cross-tenant guard).
+  const subject = await prisma.subject.findFirst({
+    where: andWhere({ id: subjectId }, subjectVisibilityWhere(currentUser)),
+    select: { id: true },
+  });
+  if (!subject) {
+    throw new Error("Subjekt nenalezen nebo k němu nemáte oprávnění.");
+  }
 
   await prisma.subjectRelation.create({
     data: {
@@ -62,6 +76,16 @@ export async function addCaseSubjectRelation(formData: FormData) {
     include: { assignees: { select: { userId: true } } },
   });
   assertCanEditRecord(currentUser, "Case", legalCase);
+
+  // The subject must be one the user can see — otherwise attaching it here would
+  // leak the subject's data via the relation (IDOR / cross-tenant guard).
+  const subject = await prisma.subject.findFirst({
+    where: andWhere({ id: subjectId }, subjectVisibilityWhere(currentUser)),
+    select: { id: true },
+  });
+  if (!subject) {
+    throw new Error("Subjekt nenalezen nebo k němu nemáte oprávnění.");
+  }
 
   await prisma.subjectRelation.create({
     data: {

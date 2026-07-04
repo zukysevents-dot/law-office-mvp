@@ -17,6 +17,7 @@ import {
 } from "@/lib/billing";
 import { safeQuery } from "@/lib/db-safe";
 import { numberInputValue } from "@/lib/form-values";
+import { getOrgUserOptions } from "@/lib/org-users";
 import { formatCaseLabel, formatDateUtc } from "@/lib/format";
 import { approvalStatusLabels, billingStatusLabels } from "@/lib/labels";
 import { getPrisma } from "@/lib/prisma";
@@ -53,11 +54,7 @@ export default async function BillingApprovalsPage() {
           include: billingWorkLogInclude,
           take: BILLING_ROW_LIMIT,
         }),
-        prisma.user.findMany({
-          where: { active: true },
-          orderBy: { name: "asc" },
-          select: { id: true, name: true },
-        }),
+        getOrgUserOptions(currentUser),
       ]);
 
       return {

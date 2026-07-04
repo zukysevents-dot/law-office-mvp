@@ -16,6 +16,7 @@ import {
   taskStatusLabels,
 } from "@/lib/labels";
 import { safeQuery } from "@/lib/db-safe";
+import { getOrgUserOptions } from "@/lib/org-users";
 import {
   andWhere,
   canEditRecord,
@@ -56,11 +57,7 @@ async function loadTaskEdit(id: string) {
         project: { select: { name: true } },
       },
     }),
-    prisma.user.findMany({
-      where: { active: true },
-      orderBy: { name: "asc" },
-      select: { id: true, name: true },
-    }),
+    getOrgUserOptions(currentUser),
   ]);
 
   return {

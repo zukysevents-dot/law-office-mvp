@@ -13,7 +13,11 @@ import {
   optionalString,
   requiredString,
 } from "@/lib/form";
-import { assertCanEditRecord } from "@/lib/permissions";
+import {
+  andWhere,
+  assertCanEditRecord,
+  subjectVisibilityWhere,
+} from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 export async function createProject(formData: FormData) {
@@ -27,6 +31,16 @@ export async function createProject(formData: FormData) {
   const mainSubjectId = requiredString(formData, "mainSubjectId");
 
   const project = await prisma.$transaction(async (tx) => {
+    // The main subject must be one the user can see — otherwise a crafted POST
+    // could attach (and thereby expose) a subject from another matter/tenant.
+    const subject = await tx.subject.findFirst({
+      where: andWhere({ id: mainSubjectId }, subjectVisibilityWhere(currentUser)),
+      select: { id: true },
+    });
+    if (!subject) {
+      throw new Error("Subjekt nenalezen nebo k němu nemáte oprávnění.");
+    }
+
     const created = await tx.project.create({
       data: {
         organizationId: currentUser.organizationId,
@@ -82,17 +96,29 @@ export async function updateProject(formData: FormData) {
     ProjectStatus.ACTIVE,
   );
 
+  const mainSubjectId = requiredString(formData, "mainSubjectId");
+
   const oldProject = await prisma.project.findUniqueOrThrow({
     where: { id: projectId },
     include: { assignees: { select: { userId: true } } },
   });
   assertCanEditRecord(currentUser, "Project", oldProject);
 
+  // Re-pointing the main subject must respect visibility — can't attach a
+  // subject the user can't see (IDOR guard, mirrors createProject).
+  const subject = await prisma.subject.findFirst({
+    where: andWhere({ id: mainSubjectId }, subjectVisibilityWhere(currentUser)),
+    select: { id: true },
+  });
+  if (!subject) {
+    throw new Error("Subjekt nenalezen nebo k němu nemáte oprávnění.");
+  }
+
   const project = await prisma.project.update({
     where: { id: projectId },
     data: {
       name: requiredString(formData, "name"),
-      mainSubjectId: requiredString(formData, "mainSubjectId"),
+      mainSubjectId,
       responsibleUserId: optionalString(formData, "responsibleUserId"),
       status,
       hourlyRate: optionalNumber(formData, "hourlyRate"),

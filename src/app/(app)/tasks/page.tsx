@@ -33,7 +33,8 @@ import {
 import { getCurrentUser } from "@/lib/auth";
 import { statusCount } from "@/lib/dashboard/task-counts";
 import { safeQuery } from "@/lib/db-safe";
-import { formatDate } from "@/lib/format";
+import { getOrgUserOptions } from "@/lib/org-users";
+import { formatDate, formatDateUtc } from "@/lib/format";
 import {
   options,
   taskDeadlineTypeLabels,
@@ -303,11 +304,7 @@ export default async function TasksPage({ searchParams }: TasksProps) {
             responsibleUser: { select: { name: true } },
           },
         }),
-        prisma.user.findMany({
-          where: { active: true },
-          orderBy: { name: "asc" },
-          select: { id: true, name: true },
-        }),
+        getOrgUserOptions(currentUser),
         prisma.subject.findMany({
           where: andWhere(
             { archivedAt: null },
@@ -660,10 +657,10 @@ export default async function TasksPage({ searchParams }: TasksProps) {
                       </td>
                     ) : null}
                     {visibleColumnSet.has("startDate") ? (
-                      <td>{formatDate(task.startDate)}</td>
+                      <td>{formatDateUtc(task.startDate)}</td>
                     ) : null}
                     {visibleColumnSet.has("deadline") ? (
-                      <td>{formatDate(task.deadline)}</td>
+                      <td>{formatDateUtc(task.deadline)}</td>
                     ) : null}
                     {visibleColumnSet.has("sharePointUrl") ? (
                       <td className="max-w-xs truncate">

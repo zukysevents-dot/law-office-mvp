@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { redirect } from "next/navigation";
 
+import { Prisma } from "@/generated/prisma/client";
 import {
   Capability,
   OrganizationMemberStatus,
@@ -19,6 +20,7 @@ import {
   requiredString,
 } from "@/lib/form";
 import { defaultNotificationPreferenceData } from "@/lib/notifications/notification-service";
+import { assertUserInOrg } from "@/lib/org-users";
 import { hashPassword, verifyPassword } from "@/lib/password";
 import { assertCanManageUsers } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
@@ -33,26 +35,65 @@ function boundedDays(value: number | null, fallback: number) {
   return Math.max(0, Math.min(30, Math.round(value ?? fallback)));
 }
 
+// Map the per-org unique e-mail violation to a readable Czech message instead
+// of a raw Prisma stack trace. Anything else rethrows unchanged.
+function rethrowDuplicateEmail(error: unknown): never {
+  if (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === "P2002"
+  ) {
+    throw new Error("Uživatel s tímto e-mailem už existuje.");
+  }
+  throw error;
+}
+
 export async function createUser(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
   assertCanManageUsers(currentUser);
+
+  // Bez aktivní kanceláře nemá smysl uživatele zakládat — členství (a tím i
+  // celý účet) musí patřit do konkrétní organizace.
+  if (!currentUser.organizationId) {
+    throw new Error("Nejste členem žádné kanceláře.");
+  }
+  const organizationId = currentUser.organizationId;
 
   const password = String(formData.get("password") ?? "");
   if (password.length < MIN_PASSWORD_LENGTH) {
     throw new Error(`Heslo musí mít alespoň ${MIN_PASSWORD_LENGTH} znaků.`);
   }
 
-  const created = await prisma.user.create({
-    data: {
-      name: requiredString(formData, "name"),
-      email: requiredString(formData, "email").trim().toLowerCase(),
-      role: enumValue(UserRole, formData.get("role"), UserRole.LAWYER),
-      microsoftId: optionalString(formData, "microsoftId"),
-      passwordHash: await hashPassword(password),
-      active: checkboxValue(formData, "active"),
-    },
-  });
+  const role = enumValue(UserRole, formData.get("role"), UserRole.LAWYER);
+  const passwordHash = await hashPassword(password);
+
+  // Uživatel + jeho členství v kanceláři musí vzniknout atomicky — jinak by
+  // selhání druhého kroku zanechalo osiřelý účet bez organizace.
+  const created = await prisma
+    .$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          name: requiredString(formData, "name"),
+          email: requiredString(formData, "email").trim().toLowerCase(),
+          role,
+          microsoftId: optionalString(formData, "microsoftId"),
+          passwordHash,
+          active: checkboxValue(formData, "active"),
+        },
+      });
+
+      await tx.organizationMember.create({
+        data: {
+          organizationId,
+          userId: user.id,
+          role,
+          status: OrganizationMemberStatus.ACTIVE,
+        },
+      });
+
+      return user;
+    })
+    .catch(rethrowDuplicateEmail);
 
   await prisma.auditLog.create({
     data: {
@@ -83,6 +124,11 @@ export async function setUserPassword(formData: FormData) {
   if (password.length < MIN_PASSWORD_LENGTH) {
     throw new Error(`Heslo musí mít alespoň ${MIN_PASSWORD_LENGTH} znaků.`);
   }
+
+  // userId přichází z FormData — assertCanManageUsers ověřuje jen roli, ne
+  // organizaci. Bez tohoto guardu by ADMIN/PARTNER mohl resetovat heslo
+  // uživatele z cizí kanceláře.
+  await assertUserInOrg(userId, currentUser.organizationId);
 
   await prisma.user.update({
     where: { id: userId },

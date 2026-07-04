@@ -79,6 +79,11 @@ export async function createWorkLog(formData: FormData) {
   const caseId = optionalString(formData, "caseId");
   const taskId = optionalString(formData, "taskId");
   const hours = requiredNumber(formData, "hours");
+  // Guard against negative/zero or absurd hour counts (a crafted POST could
+  // otherwise yield a negative amountCzk). Upper bound 24 = one day's work.
+  if (!(hours > 0) || hours > 24) {
+    throw new Error("Počet hodin musí být větší než 0 a nejvýše 24.");
+  }
   // Only rate-viewers (admin/partner) may override the rate; for everyone else
   // the rate is derived from the case/project/subject and the field is hidden.
   const manualHourlyRate = canViewRates(currentUser)
@@ -205,6 +210,11 @@ export async function updateWorkLog(formData: FormData) {
   const currentUser = await getCurrentUser();
   const workLogId = requiredString(formData, "id");
   const hours = requiredNumber(formData, "hours");
+  // Guard against negative/zero or absurd hour counts (a crafted POST could
+  // otherwise yield a negative amountCzk). Upper bound 24 = one day's work.
+  if (!(hours > 0) || hours > 24) {
+    throw new Error("Počet hodin musí být větší než 0 a nejvýše 24.");
+  }
   const manualAmount = optionalNumber(formData, "amountCzk");
   const subjectId = optionalString(formData, "subjectId");
   const projectId = optionalString(formData, "projectId");
@@ -273,6 +283,9 @@ export async function updateWorkLog(formData: FormData) {
     : oldWorkLog.amountCzk != null
       ? Number(oldWorkLog.amountCzk)
       : null;
+  // amountCzk se z formuláře (manualAmount) bere jen pro rate-viewery
+  // (ADMIN/PARTNER); junioři nikdy neurčují částku ručně — dostanou dopočet
+  // z hodin×sazba, nebo zachování dříve uložené hodnoty.
   const amountCzk =
     hoursChanged || rateChanged
       ? hourlyRate !== null

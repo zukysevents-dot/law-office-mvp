@@ -26,7 +26,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ModuleKey } from "@/generated/prisma/enums";
 import { getCurrentUser } from "@/lib/auth";
 import { isModuleEnabled } from "@/lib/entitlements";
-import { formatDate, formatMoney } from "@/lib/format";
+import { formatDate, formatDateUtc, formatMoney } from "@/lib/format";
 import {
   caseStatusLabels,
   options,
@@ -507,9 +507,9 @@ export default async function CaseDetailPage({
                         <td>{reference.legalArea ?? "—"}</td>
                         <td>{formatMoney(reference.valueCzk)}</td>
                         <td>
-                          {formatDate(reference.startDate)} –{" "}
+                          {formatDateUtc(reference.startDate)} –{" "}
                           {reference.endDate
-                            ? formatDate(reference.endDate)
+                            ? formatDateUtc(reference.endDate)
                             : "Probíhající"}
                         </td>
                         <td>{reference.subject?.name ?? "—"}</td>
@@ -558,7 +558,7 @@ export default async function CaseDetailPage({
                         </td>
                         <td>{task.assignedTo?.name ?? "—"}</td>
                         <td>{taskStatusLabels[task.status]}</td>
-                        <td>{formatDate(task.deadline)}</td>
+                        <td>{formatDateUtc(task.deadline)}</td>
                       </tr>
                     ))}
                   </tbody>

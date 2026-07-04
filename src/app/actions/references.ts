@@ -17,6 +17,7 @@ import {
   assertCanEditRecord,
   caseVisibilityWhere,
   projectVisibilityWhere,
+  subjectVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
@@ -45,6 +46,15 @@ export async function createReference(formData: FormData) {
     });
     if (!legalCase) {
       throw new Error("Případ nenalezen nebo k němu nemáte oprávnění.");
+    }
+  }
+  if (subjectId) {
+    const subject = await prisma.subject.findFirst({
+      where: andWhere({ id: subjectId }, subjectVisibilityWhere(currentUser)),
+      select: { id: true },
+    });
+    if (!subject) {
+      throw new Error("Subjekt nenalezen nebo k němu nemáte oprávnění.");
     }
   }
 
@@ -101,18 +111,52 @@ export async function updateReference(formData: FormData) {
   const currentUser = await getCurrentUser();
   const referenceId = requiredString(formData, "id");
 
+  const projectId = optionalString(formData, "projectId");
+  const caseId = optionalString(formData, "caseId");
+  const subjectId = optionalString(formData, "subjectId");
+
   const oldReference = await prisma.reference.findUniqueOrThrow({
     where: { id: referenceId },
   });
   assertCanEditRecord(currentUser, "Reference", oldReference);
 
+  // Re-filing the reference must respect visibility — can't graft it onto a
+  // project/case/subject the user can't see (IDOR guard, mirrors createReference).
+  if (projectId) {
+    const project = await prisma.project.findFirst({
+      where: andWhere({ id: projectId }, projectVisibilityWhere(currentUser)),
+      select: { id: true },
+    });
+    if (!project) {
+      throw new Error("Projekt nenalezen nebo k němu nemáte oprávnění.");
+    }
+  }
+  if (caseId) {
+    const legalCase = await prisma.case.findFirst({
+      where: andWhere({ id: caseId }, caseVisibilityWhere(currentUser)),
+      select: { id: true },
+    });
+    if (!legalCase) {
+      throw new Error("Případ nenalezen nebo k němu nemáte oprávnění.");
+    }
+  }
+  if (subjectId) {
+    const subject = await prisma.subject.findFirst({
+      where: andWhere({ id: subjectId }, subjectVisibilityWhere(currentUser)),
+      select: { id: true },
+    });
+    if (!subject) {
+      throw new Error("Subjekt nenalezen nebo k němu nemáte oprávnění.");
+    }
+  }
+
   const reference = await prisma.reference.update({
     where: { id: referenceId },
     data: {
       title: requiredString(formData, "title"),
-      projectId: optionalString(formData, "projectId"),
-      caseId: optionalString(formData, "caseId"),
-      subjectId: optionalString(formData, "subjectId"),
+      projectId,
+      caseId,
+      subjectId,
       legalArea: optionalString(formData, "legalArea"),
       valueCzk: optionalNumber(formData, "valueCzk"),
       startDate: optionalDate(formData, "startDate"),
