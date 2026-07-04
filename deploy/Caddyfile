@@ -1,0 +1,15 @@
+# Reverse proxy for the app container.
+#
+# APP_DOMAIN controls TLS behaviour (set it in ./.env, read from Caddy's env):
+#   - A real hostname  (e.g. app.kancelar.cz) -> automatic Let's Encrypt HTTPS.
+#   - ":80"            -> plain HTTP only (IP-only / pre-DNS testing).
+# ACME_EMAIL is used for Let's Encrypt notifications when a domain is set.
+
+{
+	email {$ACME_EMAIL:admin@example.com}
+}
+
+{$APP_DOMAIN::80} {
+	encode zstd gzip
+	reverse_proxy app:3000
+}
