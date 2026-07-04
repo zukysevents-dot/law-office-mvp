@@ -9,7 +9,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { TaskStatus } from "@/generated/prisma/enums";
 import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
-import { formatDate } from "@/lib/format";
+import { formatDateUtc } from "@/lib/format";
 import {
   taskDeadlineTypeLabels,
   taskPriorityLabels,
@@ -135,7 +135,7 @@ export default async function MyTasksPage() {
                         {taskDeadlineTypeLabels[task.deadlineType]}
                       </Badge>
                     </td>
-                    <td>{formatDate(task.deadline)}</td>
+                    <td>{formatDateUtc(task.deadline)}</td>
                     <td>
                       <Badge tone={taskStatusTone(task.status)}>
                         {taskStatusLabels[task.status]}

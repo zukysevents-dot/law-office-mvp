@@ -1,4 +1,4 @@
-import { FileText, Plus, WandSparkles } from "lucide-react";
+import { FileText, Plus } from "lucide-react";
 
 import {
   archiveWorkLog,
@@ -31,6 +31,7 @@ import {
   formatMoney,
 } from "@/lib/format";
 import { DAY_MS, fulfillmentPercent, weekStartUtcMs } from "@/lib/hours-plan";
+import { getOrgUserOptions } from "@/lib/org-users";
 import { firstParam } from "@/lib/search-params";
 import {
   approvalStatusLabels,
@@ -284,11 +285,7 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
           orderBy: { createdAt: "desc" },
           select: { id: true, title: true, projectId: true, caseId: true },
         }),
-        prisma.user.findMany({
-          where: { active: true },
-          orderBy: { name: "asc" },
-          select: { id: true, name: true },
-        }),
+        getOrgUserOptions(currentUser),
         prisma.workLog.groupBy({
           by: ["billingStatus"],
           where: {
@@ -765,10 +762,6 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
           </Field>
           <div className="flex flex-wrap gap-2">
             <Button type="submit">Vytvořit výkaz</Button>
-            <Button type="button" variant="secondary" disabled>
-              <WandSparkles className="h-4 w-4" aria-hidden="true" />
-              Vylepšit text
-            </Button>
           </div>
         </form>
       </Section>

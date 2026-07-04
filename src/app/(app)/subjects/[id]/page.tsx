@@ -44,6 +44,7 @@ import {
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { subjectRoleTone } from "@/lib/status-tones";
+import { isSafeHttpUrl } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -301,6 +302,11 @@ export default async function SubjectDetailPage({
   } = result.data;
   const projects = subject ? projectGroups(subject) : { active: [], inactive: [] };
   const links = subject?.ico ? icoLinks(subject.ico) : null;
+  // Only render the stored contract URL as a live link when it's an http(s)
+  // URL, so a manually-entered javascript:/data: value can't execute on click.
+  const contractUrl = isSafeHttpUrl(subject?.legalServicesContractUrl)
+    ? subject.legalServicesContractUrl
+    : null;
 
   return (
     <>
@@ -482,14 +488,14 @@ export default async function SubjectDetailPage({
                 <p className="text-xs font-semibold uppercase text-stone-500">
                   Smlouva o poskytování právních služeb
                 </p>
-                {subject.legalServicesContractUrl ? (
+                {contractUrl ? (
                   <a
-                    href={subject.legalServicesContractUrl}
+                    href={contractUrl}
                     target="_blank"
                     rel="noreferrer"
                     className="break-all font-medium text-emerald-950 hover:underline"
                   >
-                    {subject.legalServicesContractUrl}
+                    {contractUrl}
                   </a>
                 ) : (
                   <p>—</p>

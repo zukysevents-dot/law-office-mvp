@@ -38,7 +38,9 @@ export async function loginAction(formData: FormData) {
 
   const prisma = getPrisma();
   const user = await prisma.user.findFirst({ where: { email, active: true } });
-  const ok = user ? await verifyPassword(password, user.passwordHash) : false;
+  // Spusť scrypt i pro neexistující e-mail (konstantní čas, bug #13) — jinak
+  // rychlá odpověď prozradí, že účet neexistuje.
+  const ok = await verifyPassword(password, user?.passwordHash ?? null);
 
   if (!user || !ok) {
     redirect(`/login?error=1&from=${encodeURIComponent(target)}`);

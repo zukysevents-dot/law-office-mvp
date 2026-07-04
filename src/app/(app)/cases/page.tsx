@@ -18,6 +18,7 @@ import {
 import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import { formatDate } from "@/lib/format";
+import { getOrgUserOptions } from "@/lib/org-users";
 import { caseStatusLabels, options } from "@/lib/labels";
 import {
   andWhere,
@@ -122,11 +123,7 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
           orderBy: { name: "asc" },
           select: { id: true, name: true },
         }),
-        prisma.user.findMany({
-          where: { active: true },
-          orderBy: { name: "asc" },
-          select: { id: true, name: true },
-        }),
+        getOrgUserOptions(currentUser),
       ]);
 
       return { cases, projects, subjects, users, tableView };

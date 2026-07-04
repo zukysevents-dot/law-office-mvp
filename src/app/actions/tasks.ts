@@ -21,6 +21,7 @@ import {
   queueTaskCreatedNotifications,
   queueTaskStatusNotifications,
 } from "@/lib/notifications/notification-service";
+import { assertUserInOrg } from "@/lib/org-users";
 import {
   andWhere,
   assertCanEditRecord,
@@ -56,6 +57,10 @@ export async function createTask(formData: FormData) {
       throw new Error("Případ nenalezen nebo k němu nemáte oprávnění.");
     }
   }
+
+  // Assignee / responsible must belong to the caller's org (no-op when empty).
+  await assertUserInOrg(assignedToId, currentUser.organizationId);
+  await assertUserInOrg(responsibleUserId, currentUser.organizationId);
 
   const task = await prisma.task.create({
     data: {
@@ -128,6 +133,8 @@ export async function updateTask(formData: FormData) {
   // project/case the user can't see (IDOR guard, mirrors createTask).
   const projectId = optionalString(formData, "projectId");
   const caseId = optionalString(formData, "caseId");
+  const assignedToId = optionalString(formData, "assignedToId");
+  const responsibleUserId = optionalString(formData, "responsibleUserId");
   if (projectId) {
     const project = await prisma.project.findFirst({
       where: andWhere({ id: projectId }, projectVisibilityWhere(currentUser)),
@@ -147,6 +154,10 @@ export async function updateTask(formData: FormData) {
     }
   }
 
+  // Assignee / responsible must belong to the caller's org (no-op when empty).
+  await assertUserInOrg(assignedToId, currentUser.organizationId);
+  await assertUserInOrg(responsibleUserId, currentUser.organizationId);
+
   const statusChanged = oldTask.status !== newStatus;
   const completedAt =
     statusChanged && newStatus === TaskStatus.COMPLETED ? new Date() : undefined;
@@ -162,8 +173,8 @@ export async function updateTask(formData: FormData) {
         title: requiredString(formData, "title"),
         projectId,
         caseId,
-        assignedToId: optionalString(formData, "assignedToId"),
-        responsibleUserId: optionalString(formData, "responsibleUserId"),
+        assignedToId,
+        responsibleUserId,
         status: newStatus,
         priority: enumValue(
           TaskPriority,

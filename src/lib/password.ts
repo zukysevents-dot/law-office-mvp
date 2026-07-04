@@ -16,9 +16,15 @@ export async function verifyPassword(
   password: string,
   stored: string | null | undefined,
 ): Promise<boolean> {
-  if (!stored) return false;
-  const [scheme, salt, hash] = stored.split("$");
-  if (scheme !== "scrypt" || !salt || !hash) return false;
+  const [scheme, salt, hash] = (stored ?? "").split("$");
+
+  // Always run scrypt (constant time) — pro chybějící/neplatný hash i pro
+  // neexistujícího uživatele. Bez toho by rychlé odmítnutí prozradilo, které
+  // e-maily/hesla existují (timing oracle, bug #13).
+  if (scheme !== "scrypt" || !salt || !hash) {
+    await scryptAsync(password, "invalid", KEY_LENGTH);
+    return false;
+  }
 
   const derived = (await scryptAsync(password, salt, KEY_LENGTH)) as Buffer;
   const expected = Buffer.from(hash, "hex");

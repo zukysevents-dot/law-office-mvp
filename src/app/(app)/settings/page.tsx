@@ -94,6 +94,11 @@ export default async function SettingsPage() {
         getNotificationPreference(currentUser.id),
         allowed
           ? prisma.user.findMany({
+              where: {
+                memberships: {
+                  some: { organizationId: currentUser.organizationId },
+                },
+              },
               orderBy: { createdAt: "asc" },
               select: {
                 id: true,
@@ -113,7 +118,19 @@ export default async function SettingsPage() {
               },
             })
           : Promise.resolve([]),
-        allowed ? prisma.auditLog.count() : Promise.resolve(0),
+        allowed
+          ? prisma.auditLog.count({
+              where: {
+                changedBy: {
+                  is: {
+                    memberships: {
+                      some: { organizationId: currentUser.organizationId },
+                    },
+                  },
+                },
+              },
+            })
+          : Promise.resolve(0),
       ]);
 
       return {

@@ -17,15 +17,26 @@ import {
 } from "@/lib/form";
 import { assertCanEditRecord } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { isSafeHttpUrl } from "@/lib/utils";
 
 // Map the per-org unique IČO violation to a readable Czech message instead of a
-// raw Prisma stack trace. Anything else rethrows unchanged.
+// raw Prisma stack trace. Only IČO-scoped P2002s get the friendly message —
+// any other unique constraint (or non-P2002 error) rethrows unchanged.
 function rethrowDuplicateIco(error: unknown): never {
   if (
     error instanceof Prisma.PrismaClientKnownRequestError &&
     error.code === "P2002"
   ) {
-    throw new Error("Subjekt s tímto IČO už ve vaší kanceláři existuje.");
+    // meta.target is the offending field(s): a string[] (or occasionally a
+    // string) naming the columns. Only claim "duplicate IČO" when it's the
+    // ico column that collided.
+    const target = error.meta?.target;
+    const targetsIco = Array.isArray(target)
+      ? target.includes("ico")
+      : target === "ico";
+    if (targetsIco) {
+      throw new Error("Subjekt s tímto IČO už ve vaší kanceláři existuje.");
+    }
   }
   throw error;
 }
@@ -34,6 +45,13 @@ export async function createSubject(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
   const type = enumValue(SubjectType, formData.get("type"), SubjectType.COMPANY);
+
+  // Defense-in-depth: never persist a non-http(s) URL (e.g. javascript:/data:)
+  // so it can't later be rendered as a clickable link.
+  const rawContractUrl = optionalString(formData, "legalServicesContractUrl");
+  const legalServicesContractUrl = isSafeHttpUrl(rawContractUrl)
+    ? rawContractUrl
+    : null;
 
   const subject = await prisma.subject.create({
     data: {
@@ -50,10 +68,7 @@ export async function createSubject(formData: FormData) {
       insolvencyStatus: optionalString(formData, "insolvencyStatus"),
       riskFlag: checkboxValue(formData, "riskFlag"),
       internalNote: optionalString(formData, "internalNote"),
-      legalServicesContractUrl: optionalString(
-        formData,
-        "legalServicesContractUrl",
-      ),
+      legalServicesContractUrl,
       sharepointUrl: optionalString(formData, "sharepointUrl"),
       feeType: enumValue(FeeType, formData.get("feeType"), FeeType.HOURLY),
       hourlyRate: optionalNumber(formData, "hourlyRate"),
@@ -92,6 +107,13 @@ export async function updateSubject(formData: FormData) {
   });
   assertCanEditRecord(currentUser, "Subject", oldSubject);
 
+  // Defense-in-depth: never persist a non-http(s) URL (e.g. javascript:/data:)
+  // so it can't later be rendered as a clickable link.
+  const rawContractUrl = optionalString(formData, "legalServicesContractUrl");
+  const legalServicesContractUrl = isSafeHttpUrl(rawContractUrl)
+    ? rawContractUrl
+    : null;
+
   const subject = await prisma.subject.update({
     where: { id: subjectId },
     data: {
@@ -107,10 +129,7 @@ export async function updateSubject(formData: FormData) {
       insolvencyStatus: optionalString(formData, "insolvencyStatus"),
       riskFlag: checkboxValue(formData, "riskFlag"),
       internalNote: optionalString(formData, "internalNote"),
-      legalServicesContractUrl: optionalString(
-        formData,
-        "legalServicesContractUrl",
-      ),
+      legalServicesContractUrl,
       sharepointUrl: optionalString(formData, "sharepointUrl"),
       feeType: enumValue(FeeType, formData.get("feeType"), FeeType.HOURLY),
       hourlyRate: optionalNumber(formData, "hourlyRate"),

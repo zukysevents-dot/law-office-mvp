@@ -9,7 +9,11 @@ import type { getPrisma } from "@/lib/prisma";
 import type { UserRole } from "@/generated/prisma/enums";
 
 type PrismaClient = ReturnType<typeof getPrisma>;
-type PermissionUser = { id: string; role: UserRole };
+type PermissionUser = {
+  id: string;
+  role: UserRole;
+  organizationId?: string | null;
+};
 
 export type ReportFilterOptions = {
   subjects: Array<{ id: string; name: string; ico: string | null }>;
@@ -40,11 +44,18 @@ export async function loadReportFilterOptions(
       select: { id: true, name: true, project: { select: { name: true } } },
     }),
     prisma.user.findMany({
-      // Only ADMIN/PARTNER may enumerate the firm's user directory; lower roles
-      // can filter reports by themselves only.
-      where: canViewAllLegalData(currentUser)
-        ? { active: true }
-        : { id: currentUser.id, active: true },
+      // Only ADMIN/PARTNER may enumerate the firm's user directory (scoped to
+      // their own organization); lower roles — and anyone without an active org
+      // — can filter reports by themselves only.
+      where:
+        canViewAllLegalData(currentUser) && currentUser.organizationId
+          ? {
+              active: true,
+              memberships: {
+                some: { organizationId: currentUser.organizationId },
+              },
+            }
+          : { id: currentUser.id, active: true },
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),

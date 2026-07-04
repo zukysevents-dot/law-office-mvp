@@ -24,6 +24,7 @@ import {
   formatHours,
   formatMoney,
 } from "@/lib/format";
+import { getOrgUserOptions } from "@/lib/org-users";
 import { getPrisma } from "@/lib/prisma";
 import { filterQuery, firstParam } from "@/lib/search-params";
 import {
@@ -121,11 +122,7 @@ export default async function BillingPage({ searchParams }: BillingProps) {
           orderBy: { name: "asc" },
           select: { id: true, name: true, project: { select: { name: true } } },
         }),
-        prisma.user.findMany({
-          where: { active: true },
-          orderBy: { name: "asc" },
-          select: { id: true, name: true },
-        }),
+        getOrgUserOptions(currentUser),
       ]);
 
       const totals = rows.reduce(

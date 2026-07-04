@@ -36,7 +36,7 @@ import {
   ensureDefaultDashboardWidgets,
   getVisibleDashboardColumns,
 } from "@/lib/dashboard-widgets";
-import { formatDate, formatHours, formatMoney } from "@/lib/format";
+import { formatDate, formatDateUtc, formatHours, formatMoney } from "@/lib/format";
 import {
   DAY_MS,
   weekStartUtcMs,
@@ -302,7 +302,7 @@ function renderTaskCell(
         </Badge>
       );
     case "deadline":
-      return formatDate(task.deadline);
+      return formatDateUtc(task.deadline);
     case "responsibleUser":
       return task.responsibleUser?.name ?? "—";
     case "assignedTo":
@@ -320,7 +320,7 @@ function renderWorkLogCell(
 ) {
   switch (column) {
     case "date":
-      return formatDate(log.workDate);
+      return formatDateUtc(log.workDate);
     case "subject":
       return log.subject?.name ?? "—";
     case "project":
@@ -468,8 +468,8 @@ function renderReferenceCell(
     case "value":
       return formatMoney(reference.valueCzk as never);
     case "period":
-      return `${formatDate(reference.startDate)} – ${
-        reference.endDate ? formatDate(reference.endDate) : "Probíhající"
+      return `${formatDateUtc(reference.startDate)} – ${
+        reference.endDate ? formatDateUtc(reference.endDate) : "Probíhající"
       }`;
     case "subject":
       return reference.subject ? (
@@ -762,7 +762,7 @@ function renderWidget(widget: DashboardWidgetView, data: DashboardData) {
                     <Badge tone={taskStatusTone(task.status)}>
                       {taskStatusLabels[task.status]}
                     </Badge>
-                    <span>{formatDate(task.deadline)}</span>
+                    <span>{formatDateUtc(task.deadline)}</span>
                     {task.project ? <span>{task.project.name}</span> : null}
                   </div>
                 </div>

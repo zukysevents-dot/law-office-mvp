@@ -18,7 +18,7 @@ import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getCurrentUser } from "@/lib/auth";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatDateUtc } from "@/lib/format";
 import {
   options,
   taskDeadlineTypeLabels,
@@ -216,7 +216,7 @@ export default async function TaskDetailPage({ params }: TaskDetailProps) {
                   {taskDeadlineTypeLabels[task.deadlineType]}
                 </Badge>
               </div>
-              <Info label="Deadline" value={formatDate(task.deadline)} />
+              <Info label="Deadline" value={formatDateUtc(task.deadline)} />
               <div className="md:col-span-2">
                 <p className="text-xs font-semibold uppercase text-stone-500">
                   SharePoint URL
