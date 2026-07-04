@@ -1,0 +1,4 @@
+# min hour dom mon dow  command
+# Mirrors vercel.json: notifications hourly, registry checks at :30.
+0  * * * * /usr/local/bin/run.sh notifications
+30 * * * * /usr/local/bin/run.sh registry

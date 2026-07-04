@@ -1,0 +1,86 @@
+# Production compose for a single VPS: app (Next.js) behind Caddy (auto-HTTPS),
+# plus a small cron sidecar that replaces the two Vercel cron jobs.
+#
+# Named compose.prod.yaml (NOT the default compose.yaml) so it doesn't collide
+# with the local-dev docker-compose.yml. Always pass it explicitly:
+#   docker compose -f compose.prod.yaml <cmd>
+#
+# Postgres is OPTIONAL and gated behind the `local-db` profile:
+#   - Managed DB (e.g. Supabase): leave it off, point DATABASE_URL at the host.
+#       docker compose -f compose.prod.yaml up -d --build
+#   - Self-hosted Postgres on the VPS:
+#       docker compose -f compose.prod.yaml --profile local-db up -d --build
+#       (set POSTGRES_PASSWORD in .env and point DATABASE_URL at postgres:5432)
+#
+# All secrets/config come from ./.env (never committed). See deploy/DEPLOY.md.
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: law-office-mvp:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+    expose:
+      - "3000"
+    healthcheck:
+      # Next serves the /login route once ready (a logged-out user is redirected
+      # there). status < 400 => healthy.
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.status<400?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - app
+    env_file: .env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+  cron:
+    build:
+      context: ./deploy/cron
+      dockerfile: Dockerfile
+    image: law-office-mvp-cron:latest
+    restart: unless-stopped
+    depends_on:
+      - app
+    env_file: .env
+
+  postgres:
+    image: postgres:17
+    profiles: ["local-db"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      # Empty by default so the Supabase path (no local Postgres) parses fine.
+      # When you actually run --profile local-db, set POSTGRES_PASSWORD in .env —
+      # the postgres image refuses to start with an empty password.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+      POSTGRES_DB: ${POSTGRES_DB:-law_office_mvp}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-law_office_mvp}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  caddy-data:
+  caddy-config:
+  postgres-data:

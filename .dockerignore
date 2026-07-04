@@ -1,0 +1,27 @@
+# Build context hygiene — keep secrets and local cruft out of the image.
+node_modules
+.next
+.git
+.gitignore
+npm-debug.log*
+
+# Env files: NEVER bake into the image. Provided at runtime via compose env_file.
+.env
+.env.*
+!.env.example
+
+# Local / editor / OS
+.vscode
+.idea
+.DS_Store
+*.log
+
+# Deploy + docs not needed inside the app image
+deploy
+*.md
+!README.md
+
+# Vercel leftovers (moving off Vercel)
+.vercel
+.vercelignore
+vercel.json
