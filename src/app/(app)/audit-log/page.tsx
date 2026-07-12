@@ -81,15 +81,10 @@ export default async function AuditLogPage({ searchParams }: AuditLogPageProps) 
       }
 
       const prisma = getPrisma();
-      // Tenant isolation for the audit log: a user belongs to exactly one org,
-      // so scope rows to those whose actor is a member of the current org.
-      // ponytail: no organizationId column on AuditLog — actor membership is the
-      // tenant key, so none of the ~35 audit-write sites need touching.
-      const orgScope = {
-        changedBy: {
-          is: { memberships: { some: { organizationId: currentUser.organizationId } } },
-        },
-      };
+      // Audit rows carry their tenant explicitly. Never infer tenant ownership
+      // from the actor: platform jobs and portal views can have no actor, while
+      // a user may have historical memberships in more than one organization.
+      const orgScope = { organizationId: currentUser.organizationId };
       const where = andWhere(buildAuditWhere(filters), orgScope);
       const [logs, total, users] = await Promise.all([
         prisma.auditLog.findMany({

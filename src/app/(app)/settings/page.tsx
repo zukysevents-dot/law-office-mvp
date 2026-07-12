@@ -292,8 +292,8 @@ export default async function SettingsPage() {
           <div className="grid gap-4 lg:grid-cols-[1fr_24rem]">
             <Section title="Uživatelé">
               {result.data.users.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <table>
+                <div className="table-scroll">
+                  <table className="w-max min-w-full table-auto">
                     <thead>
                       <tr>
                         <th>Jméno</th>

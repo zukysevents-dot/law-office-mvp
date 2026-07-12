@@ -24,6 +24,7 @@ import { assertUserInOrg } from "@/lib/org-users";
 import { hashPassword, verifyPassword } from "@/lib/password";
 import { assertCanManageUsers } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { setUserSessionCookie } from "@/lib/session-cookie";
 
 const MIN_PASSWORD_LENGTH = 8;
 
@@ -78,6 +79,9 @@ export async function createUser(formData: FormData) {
           role,
           microsoftId: optionalString(formData, "microsoftId"),
           passwordHash,
+          // Accounts provisioned by an authenticated firm administrator are a
+          // trusted flow; public self-registration verifies by e-mail instead.
+          emailVerifiedAt: new Date(),
           active: checkboxValue(formData, "active"),
         },
       });
@@ -97,6 +101,7 @@ export async function createUser(formData: FormData) {
 
   await prisma.auditLog.create({
     data: {
+      organizationId: currentUser.organizationId,
       entityType: "User",
       entityId: created.id,
       action: "CREATE",
@@ -132,11 +137,15 @@ export async function setUserPassword(formData: FormData) {
 
   await prisma.user.update({
     where: { id: userId },
-    data: { passwordHash: await hashPassword(password) },
+    data: {
+      passwordHash: await hashPassword(password),
+      sessionVersion: { increment: 1 },
+    },
   });
 
   await prisma.auditLog.create({
     data: {
+      organizationId: currentUser.organizationId,
       entityType: "User",
       entityId: userId,
       action: "PASSWORD_RESET",
@@ -161,19 +170,27 @@ export async function changeOwnPassword(formData: FormData) {
     throw new Error("Stávající heslo není správné.");
   }
 
-  await prisma.user.update({
+  const updated = await prisma.user.update({
     where: { id: currentUser.id },
-    data: { passwordHash: await hashPassword(next) },
+    data: {
+      passwordHash: await hashPassword(next),
+      sessionVersion: { increment: 1 },
+    },
   });
 
   await prisma.auditLog.create({
     data: {
+      organizationId: currentUser.organizationId,
       entityType: "User",
       entityId: currentUser.id,
       action: "PASSWORD_CHANGE",
       changedById: currentUser.id,
     },
   });
+
+  // All other browsers retain the previous version and are rejected by the
+  // auth DAL. Keep this browser signed in with a freshly versioned cookie.
+  await setUserSessionCookie(updated.id, updated.sessionVersion);
 
   redirect("/settings");
 }
@@ -238,6 +255,7 @@ export async function updateUserHoursPlan(formData: FormData) {
 
   await prisma.auditLog.create({
     data: {
+      organizationId: currentUser.organizationId,
       entityType: "UserHoursPlan",
       entityId: plan.id,
       action: "UPDATE",
@@ -311,6 +329,7 @@ export async function setUserCapabilities(formData: FormData) {
 
   await prisma.auditLog.create({
     data: {
+      organizationId: currentUser.organizationId,
       entityType: "UserCapabilityGrant",
       entityId: userId,
       action: "UPDATE",
@@ -367,6 +386,7 @@ export async function updateNotificationPreference(formData: FormData) {
 
   await prisma.auditLog.create({
     data: {
+      organizationId: currentUser.organizationId,
       entityType: "NotificationPreference",
       entityId: preference.id,
       action: "UPDATE",

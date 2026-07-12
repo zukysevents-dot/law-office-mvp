@@ -262,8 +262,8 @@ export default async function TaskDetailPage({ params }: TaskDetailProps) {
           ) : null}
           <Section title="Historie změn statusu">
             {task.statusHistory.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table>
+              <div className="table-scroll">
+                <table className="w-max min-w-full table-auto">
                   <thead>
                     <tr>
                       <th>Datum</th>

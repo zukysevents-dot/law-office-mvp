@@ -27,6 +27,7 @@ export default async function PortalCasePage({
   }
 
   await writeAuditLog({
+    organizationId: client.organizationId,
     entityType: "Case",
     entityId: legalCase.id,
     action: "PORTAL_VIEW_CASE",
@@ -35,7 +36,7 @@ export default async function PortalCasePage({
   });
 
   return (
-    <main className="mx-auto min-h-screen max-w-3xl px-4 py-8">
+    <main id="portal-main-content" tabIndex={-1} className="mx-auto min-h-screen max-w-3xl px-4 py-8">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-xl font-semibold text-stone-900">{legalCase.name}</h1>
         <ButtonLink href="/portal" variant="secondary">

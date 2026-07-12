@@ -39,6 +39,7 @@ import {
   canManageDeadlines,
   canManageDocuments,
   canManagePortal,
+  canManageReferences,
   canViewAllLegalData,
   canEditRecord,
   caseVisibilityWhere,
@@ -239,6 +240,7 @@ async function loadCase(id: string) {
     assigneeCandidates: candidateRows.map((row) => row.user),
     canArchive: canViewAllLegalData(currentUser),
     canEdit: legalCase ? canEditRecord(currentUser, "Case", legalCase) : false,
+    canManageReferences: canManageReferences(currentUser),
     deadlinesEnabled,
     deadlines,
     hearings,
@@ -260,6 +262,7 @@ const emptyCaseDetail: CaseDetailData = {
   assigneeCandidates: [],
   canArchive: false,
   canEdit: false,
+  canManageReferences: false,
   deadlinesEnabled: false,
   deadlines: [],
   hearings: [],
@@ -293,6 +296,7 @@ export default async function CaseDetailPage({
     assigneeCandidates,
     canArchive,
     canEdit,
+    canManageReferences,
     deadlinesEnabled,
     deadlines,
     hearings,
@@ -409,8 +413,8 @@ export default async function CaseDetailPage({
           />
           <Section title="Role subjektů">
             {legalCase.subjectRelations.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table>
+              <div className="table-scroll">
+                <table className="w-max min-w-full table-auto">
                   <thead>
                     <tr>
                       <th>Subjekt</th>
@@ -486,8 +490,8 @@ export default async function CaseDetailPage({
           ) : null}
           <Section title="Reference případu">
             {legalCase.references.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table>
+              <div className="table-scroll">
+                <table className="w-max min-w-full table-auto">
                   <thead>
                     <tr>
                       <th>Název</th>
@@ -523,7 +527,7 @@ export default async function CaseDetailPage({
               <EmptyState>Případ zatím nemá reference.</EmptyState>
             )}
           </Section>
-          {canEdit ? (
+          {canManageReferences ? (
             <Section title="Přidat referenci k případu">
               <ReferenceForm
                 returnTo={`/cases/${legalCase.id}`}
@@ -535,8 +539,8 @@ export default async function CaseDetailPage({
           ) : null}
           <Section title="Úkoly případu">
             {legalCase.tasks.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table>
+              <div className="table-scroll">
+                <table className="w-max min-w-full table-auto">
                   <thead>
                     <tr>
                       <th>Úkol</th>
@@ -605,7 +609,7 @@ export default async function CaseDetailPage({
                   Sdílet spis
                 </Button>
               </form>
-              <p className="mt-2 text-xs text-stone-400">
+              <p className="mt-2 text-xs text-stone-600">
                 Klient uvidí jen stav a spisovou značku, ne interní poznámky.
               </p>
             </Section>

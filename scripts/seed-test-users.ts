@@ -52,6 +52,7 @@ async function main() {
         active: true,
         isPlatformAdmin: false,
         passwordHash,
+        emailVerifiedAt: new Date(),
       },
       create: {
         email,
@@ -60,6 +61,7 @@ async function main() {
         active: true,
         isPlatformAdmin: false,
         passwordHash,
+        emailVerifiedAt: new Date(),
       },
     });
 

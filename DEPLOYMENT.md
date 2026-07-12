@@ -81,7 +81,7 @@ Spusť je vědomě, lokálně se nastaveným prod `DIRECT_URL`, nebo jako CI kro
 npm run db:deploy        # = prisma migrate deploy
 ```
 
-Aplikuje všech 15 migrací z `prisma/migrations/` na prázdnou Supabase DB. Idempotentní —
+Aplikuje všechny verzované migrace z `prisma/migrations/` na Supabase DB. Idempotentní —
 už aplikované migrace přeskočí.
 
 ## 6. Seed dat — jen pro development/demo
@@ -116,12 +116,21 @@ teprve pak vytvoř privátní bucket + policies.
    vygeneruje Prisma klient.
 3. **Settings → Environment Variables**: vlož proměnné z bodu 3 (Production,
    případně i Preview se *samostatným* dev Supabase projektem).
-4. **Deploy.**
-5. Po prvním (nebo migrující) deployi spusť migrace dle bodu 5
-   (`npm run db:deploy` proti prod `DIRECT_URL`).
-6. (Volitelné) Notifikace: nastav Vercel Cron na `POST
+4. Před publikováním nové verze spusť migrace dle bodu 5
+   (`npm run db:deploy` proti prod `DIRECT_URL`). Migrace jsou aditivní, takže
+   stávající verze během tohoto kroku dál běží. Nový build nepublikuj dřív,
+   jinak může číst sloupce nebo tabulky, které v DB ještě neexistují.
+5. **Deploy.** U Git integrace merge do `main` proveď až po úspěšné migraci.
+6. Po deployi ověř `/login`, přihlášení, základní DB operaci a runtime logy.
+7. (Volitelné) Notifikace: nastav Vercel Cron na `POST
    /api/internal/notifications/run` s hlavičkou `Authorization: Bearer
    $NOTIFICATION_RUN_SECRET`.
+
+Veřejná produkční registrace vyžaduje ověření e-mailu. Proto musí být kromě
+`SESSION_SECRET` a `APP_BASE_URL` nastaveno také
+`EMAIL_NOTIFICATIONS_ENABLED=true`, `SMTP_HOST`, `SMTP_FROM`, port/secure a podle
+SMTP relay i `SMTP_USER`/`SMTP_PASSWORD`. Bez funkčního SMTP se z bezpečnostních
+důvodů účet nevytvoří.
 
 ## 10. Doporučení pro produkci
 

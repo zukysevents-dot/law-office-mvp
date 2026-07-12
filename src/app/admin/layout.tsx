@@ -7,7 +7,7 @@ import { getAuthUser } from "@/lib/auth";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "Správa platformy — syndikat.legal",
+  title: "Správa platformy",
 };
 
 // Platform/developer super-admin shell. Lives OUTSIDE the (app) group because
@@ -24,6 +24,12 @@ export default async function AdminLayout({
 
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-background text-foreground">
+      <a
+        href="#admin-main-content"
+        className="fixed left-4 top-3 z-50 -translate-y-20 rounded-md bg-white px-4 py-2 text-sm font-semibold text-[#072924] shadow-lg transition focus:translate-y-0"
+      >
+        Přeskočit na obsah
+      </a>
       <header className="flex items-center justify-between gap-3 border-b border-[#0b3b33] bg-[#072924] px-4 py-3 sm:px-6">
         <Link href="/admin" className="flex items-center gap-2 text-white">
           <span className="text-sm font-semibold tracking-wide">
@@ -37,14 +43,14 @@ export default async function AdminLayout({
           <form action={logoutAction}>
             <button
               type="submit"
-              className="text-sm font-medium text-[#d8eee0] transition hover:text-white"
+              className="inline-flex min-h-10 items-center rounded-md px-3 text-sm font-medium text-[#d8eee0] transition hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
             >
               Odhlásit se
             </button>
           </form>
         </div>
       </header>
-      <main className="mx-auto flex w-full max-w-6xl min-w-0 flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
+      <main id="admin-main-content" tabIndex={-1} className="mx-auto flex w-full max-w-6xl min-w-0 flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
         {children}
       </main>
     </div>

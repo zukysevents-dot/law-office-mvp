@@ -109,3 +109,25 @@ export function enumValue<T extends Record<string, string>>(
   const values = Object.values(source);
   return values.includes(value) ? (value as T[keyof T]) : fallback;
 }
+
+// Normalize a client-provided post-action redirect to a same-origin path. URL()
+// also catches slash-confusion values such as `/\\evil.example`, which browsers
+// can interpret as a cross-origin URL even though they start with one slash.
+export function safeInternalRedirectPath(
+  value: unknown,
+  fallback: string,
+): string {
+  if (typeof value !== "string" || !value.startsWith("/")) {
+    return fallback;
+  }
+
+  const base = "https://law-office.invalid";
+  try {
+    const target = new URL(value, base);
+    return target.origin === base
+      ? `${target.pathname}${target.search}${target.hash}`
+      : fallback;
+  } catch {
+    return fallback;
+  }
+}

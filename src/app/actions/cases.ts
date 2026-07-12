@@ -14,6 +14,7 @@ import {
   optionalString,
   requiredString,
 } from "@/lib/form";
+import { assertUserInOrg } from "@/lib/org-users";
 import {
   andWhere,
   assertCanEditRecord,
@@ -39,6 +40,8 @@ export async function createCase(formData: FormData) {
   const currentUser = await getCurrentUser();
   const status = enumValue(CaseStatus, formData.get("status"), CaseStatus.ACTIVE);
   const projectId = requiredString(formData, "projectId");
+  const responsibleUserId = optionalString(formData, "responsibleUserId");
+  await assertUserInOrg(responsibleUserId, currentUser.organizationId);
 
   const legalCase = await prisma.$transaction(async (tx) => {
     // Scope by visibility so a case can't be grafted onto a project the user
@@ -57,7 +60,7 @@ export async function createCase(formData: FormData) {
           projectId,
           name: requiredString(formData, "name"),
           fileNumber: optionalString(formData, "fileNumber"),
-          responsibleUserId: optionalString(formData, "responsibleUserId"),
+          responsibleUserId,
           status,
           hourlyRate: optionalNumber(formData, "hourlyRate"),
           sharepointUrl: optionalString(formData, "sharepointUrl"),
@@ -84,6 +87,7 @@ export async function createCase(formData: FormData) {
         entityId: created.id,
         action: "CREATE",
         changedById: currentUser.id,
+        organizationId: currentUser.organizationId,
         newValue: {
           name: created.name,
           projectId: created.projectId,
@@ -106,12 +110,14 @@ export async function updateCase(formData: FormData) {
   const status = enumValue(CaseStatus, formData.get("status"), CaseStatus.ACTIVE);
 
   const projectId = requiredString(formData, "projectId");
+  const responsibleUserId = optionalString(formData, "responsibleUserId");
 
   const oldCase = await prisma.case.findUniqueOrThrow({
     where: { id: caseId },
     include: { assignees: { select: { userId: true } } },
   });
   assertCanEditRecord(currentUser, "Case", oldCase);
+  await assertUserInOrg(responsibleUserId, currentUser.organizationId);
 
   // Re-filing the case must respect visibility — can't move it onto a project
   // the user can't see (IDOR guard, mirrors createCase).
@@ -130,7 +136,7 @@ export async function updateCase(formData: FormData) {
         projectId,
         name: requiredString(formData, "name"),
         fileNumber: optionalString(formData, "fileNumber"),
-        responsibleUserId: optionalString(formData, "responsibleUserId"),
+        responsibleUserId,
         status,
         hourlyRate: optionalNumber(formData, "hourlyRate"),
         sharepointUrl: optionalString(formData, "sharepointUrl"),
@@ -145,6 +151,7 @@ export async function updateCase(formData: FormData) {
       entityId: legalCase.id,
       action: "UPDATE",
       changedById: currentUser.id,
+      organizationId: currentUser.organizationId,
       oldValue: auditJson(oldCase),
       newValue: auditJson(legalCase),
     },

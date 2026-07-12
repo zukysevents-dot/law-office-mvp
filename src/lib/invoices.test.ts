@@ -4,12 +4,79 @@ import { test } from "node:test";
 import { InvoiceStatus, VatMode } from "@/generated/prisma/enums";
 
 import {
+  areLockedWorkLogsInvoiceable,
   formatInvoiceNumber,
   isDraft,
   isPastDue,
   resolvePaidStatus,
   vatModeForProfile,
 } from "./invoices";
+
+const ORG = "org-a";
+const invoiceableWorkLog = (id: string) => ({
+  id,
+  organizationId: ORG,
+  archivedAt: null,
+  billingStatus: "BILLABLE" as const,
+  approvalStatus: "APPROVED" as const,
+  invoicedAt: null,
+});
+
+test("areLockedWorkLogsInvoiceable: accepts the exact locked invoiceable set", () => {
+  assert.equal(
+    areLockedWorkLogsInvoiceable(
+      [invoiceableWorkLog("wl-1"), invoiceableWorkLog("wl-2")],
+      ["wl-1", "wl-2"],
+      ORG,
+    ),
+    true,
+  );
+});
+
+test("areLockedWorkLogsInvoiceable: rejects changed state after acquiring locks", () => {
+  const base = invoiceableWorkLog("wl-1");
+  assert.equal(
+    areLockedWorkLogsInvoiceable(
+      [{ ...base, approvalStatus: "REJECTED" }],
+      [base.id],
+      ORG,
+    ),
+    false,
+  );
+  assert.equal(
+    areLockedWorkLogsInvoiceable(
+      [{ ...base, invoicedAt: new Date() }],
+      [base.id],
+      ORG,
+    ),
+    false,
+  );
+  assert.equal(
+    areLockedWorkLogsInvoiceable(
+      [{ ...base, archivedAt: new Date() }],
+      [base.id],
+      ORG,
+    ),
+    false,
+  );
+});
+
+test("areLockedWorkLogsInvoiceable: rejects missing, duplicate and cross-org rows", () => {
+  const row = invoiceableWorkLog("wl-1");
+  assert.equal(areLockedWorkLogsInvoiceable([], [row.id], ORG), false);
+  assert.equal(
+    areLockedWorkLogsInvoiceable([row], [row.id, row.id], ORG),
+    false,
+  );
+  assert.equal(
+    areLockedWorkLogsInvoiceable(
+      [{ ...row, organizationId: "org-b" }],
+      [row.id],
+      ORG,
+    ),
+    false,
+  );
+});
 
 // --- formatInvoiceNumber -----------------------------------------------------
 

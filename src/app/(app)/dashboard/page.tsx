@@ -205,8 +205,8 @@ const fallbackData: DashboardData = {
 
 const sizeClasses: Record<DashboardWidgetSize, string> = {
   SMALL: "lg:col-span-4",
-  MEDIUM: "lg:col-span-6",
-  LARGE: "lg:col-span-8",
+  MEDIUM: "lg:col-span-12 2xl:col-span-6",
+  LARGE: "lg:col-span-12 2xl:col-span-8",
   FULL: "lg:col-span-12",
 };
 
@@ -223,7 +223,7 @@ function tableHeaders(type: DashboardWidgetType, columns: string[]) {
   );
 
   return columns.map((column) => (
-    <th key={column} className="break-words" data-column={column}>
+    <th key={column} className="whitespace-nowrap" data-column={column}>
       {labels[column] ?? column}
     </th>
   ));
@@ -239,8 +239,8 @@ function DashboardTable({
   children: React.ReactNode;
 }) {
   return (
-    <div className="max-w-full overflow-x-hidden">
-      <table className="table-fixed">
+    <div className="table-scroll">
+      <table className="w-max min-w-full table-auto">
         <thead>
           <tr>{tableHeaders(type, columns)}</tr>
         </thead>
@@ -252,8 +252,12 @@ function DashboardTable({
 
 function cellClass(column: string) {
   return cn(
-    "break-words align-top",
-    ["description", "title", "name"].includes(column) ? "min-w-0" : "",
+    "align-top",
+    ["description", "title", "name", "subject", "project", "case"].includes(
+      column,
+    )
+      ? "min-w-40 max-w-80 whitespace-normal"
+      : "whitespace-nowrap",
   );
 }
 
@@ -702,8 +706,8 @@ function renderWidget(widget: DashboardWidgetView, data: DashboardData) {
       return (
         <Section title={widget.title}>
           {data.recentChecks.length > 0 ? (
-            <div className="max-w-full overflow-x-hidden">
-              <table className="table-fixed">
+            <div className="table-scroll">
+              <table className="w-max min-w-full table-auto">
                 <thead>
                   <tr>
                     <th>Dotaz</th>
@@ -1083,7 +1087,7 @@ export default async function DashboardPage() {
         error={result.error}
       />
       {result.data.widgets.length > 0 ? (
-        <div className="grid min-w-0 grid-cols-1 gap-4 overflow-x-hidden lg:grid-cols-12">
+        <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-12">
           {result.data.widgets.map((widget) => (
             <div
               key={widget.id}

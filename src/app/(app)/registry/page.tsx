@@ -100,11 +100,11 @@ export default async function RegistryPage() {
                     {event.subject.name}
                   </Link>
                   {event.subject.ico ? (
-                    <span className="text-xs text-stone-400">
+                    <span className="text-xs text-stone-600">
                       IČO {event.subject.ico}
                     </span>
                   ) : null}
-                  <span className="text-xs text-stone-400">
+                  <span className="text-xs text-stone-600">
                     {formatDateTime(event.detectedAt)}
                   </span>
                 </div>

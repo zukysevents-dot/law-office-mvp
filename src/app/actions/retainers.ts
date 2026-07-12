@@ -81,6 +81,7 @@ export async function createRetainer(formData: FormData) {
 
   await prisma.auditLog.create({
     data: {
+      organizationId: currentUser.organizationId,
       entityType: "RetainerAgreement",
       entityId: created.id,
       action: "CREATE",
@@ -113,6 +114,7 @@ export async function archiveRetainer(formData: FormData) {
   });
   await prisma.auditLog.create({
     data: {
+      organizationId: currentUser.organizationId,
       entityType: "RetainerAgreement",
       entityId: retainer.id,
       action: "ARCHIVE",
@@ -354,6 +356,7 @@ export async function generateRetainerInvoice(formData: FormData) {
 
     await tx.auditLog.create({
       data: {
+        organizationId: currentUser.organizationId,
         entityType: "Invoice",
         entityId: created.id,
         action: "CREATE",

@@ -31,6 +31,7 @@ import {
 import { safeQuery } from "@/lib/db-safe";
 import {
   andWhere,
+  canManageReferences,
   canViewAllLegalData,
   canEditRecord,
   caseVisibilityWhere,
@@ -152,6 +153,7 @@ async function loadProject(id: string) {
     users: users.map((row) => row.user),
     canArchive: canViewAllLegalData(currentUser),
     canEdit: project ? canEditRecord(currentUser, "Project", project) : false,
+    canManageReferences: canManageReferences(currentUser),
   };
 }
 
@@ -163,6 +165,7 @@ const emptyProjectDetail: ProjectDetailData = {
   users: [],
   canArchive: false,
   canEdit: false,
+  canManageReferences: false,
 };
 
 export default async function ProjectDetailPage({
@@ -180,7 +183,14 @@ export default async function ProjectDetailPage({
     notFound();
   }
 
-  const { project, subjects, users, canArchive, canEdit } = result.data;
+  const {
+    project,
+    subjects,
+    users,
+    canArchive,
+    canEdit,
+    canManageReferences,
+  } = result.data;
 
   return (
     <>
@@ -281,8 +291,8 @@ export default async function ProjectDetailPage({
           />
           <Section title="Subjektové vazby projektu">
             {project.subjectRelations.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table>
+              <div className="table-scroll">
+                <table className="w-max min-w-full table-auto">
                   <thead>
                     <tr>
                       <th>Subjekt</th>
@@ -367,8 +377,8 @@ export default async function ProjectDetailPage({
           ) : null}
           <Section title="Reference projektu">
             {project.references.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table>
+              <div className="table-scroll">
+                <table className="w-max min-w-full table-auto">
                   <thead>
                     <tr>
                       <th>Název</th>
@@ -404,7 +414,7 @@ export default async function ProjectDetailPage({
               <EmptyState>Projekt zatím nemá reference.</EmptyState>
             )}
           </Section>
-          {canEdit ? (
+          {canManageReferences ? (
             <Section title="Přidat referenci k projektu">
               <ReferenceForm
                 returnTo={`/projects/${project.id}`}
@@ -415,8 +425,8 @@ export default async function ProjectDetailPage({
           ) : null}
           <Section title="Případy">
             {project.cases.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table>
+              <div className="table-scroll">
+                <table className="w-max min-w-full table-auto">
                   <thead>
                     <tr>
                       <th>Název</th>
@@ -448,8 +458,8 @@ export default async function ProjectDetailPage({
           </Section>
           <Section title="Poslední úkoly">
             {project.tasks.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table>
+              <div className="table-scroll">
+                <table className="w-max min-w-full table-auto">
                   <thead>
                     <tr>
                       <th>Úkol</th>
@@ -483,8 +493,8 @@ export default async function ProjectDetailPage({
           </Section>
           <Section title="Poslední výkazy práce">
             {project.workLogs.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table>
+              <div className="table-scroll">
+                <table className="w-max min-w-full table-auto">
                   <thead>
                     <tr>
                       <th>Datum</th>

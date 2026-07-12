@@ -100,6 +100,7 @@ export async function recordPayment(formData: FormData) {
 
     await tx.auditLog.create({
       data: {
+        organizationId: currentUser.organizationId,
         entityType: "Invoice",
         entityId: invoice.id,
         action: "PAYMENT",

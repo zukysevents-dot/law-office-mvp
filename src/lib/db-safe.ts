@@ -14,12 +14,33 @@ export async function safeQuery<T>(
       databaseReady: true,
     };
   } catch (error) {
+    if (!isRecoverableDatabaseError(error)) {
+      throw error;
+    }
+
     return {
       data: fallback,
       databaseReady: false,
       error: toDatabaseMessage(error),
     };
   }
+}
+
+function isRecoverableDatabaseError(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  const code =
+    typeof error === "object" && error !== null && "code" in error
+      ? String((error as { code?: unknown }).code ?? "")
+      : "";
+
+  return (
+    code.startsWith("P1") ||
+    message.includes("Can't reach database server") ||
+    message.includes("Environment variable not found") ||
+    message.includes("DATABASE_URL is not configured") ||
+    message.includes("does not exist in the current database") ||
+    message.includes("Invalid `prisma.")
+  );
 }
 
 function toDatabaseMessage(error: unknown) {
@@ -41,5 +62,5 @@ function toDatabaseMessage(error: unknown) {
     return "Databázové schéma není připravené nebo migrace ještě neběžela.";
   }
 
-  return message.split("\n")[0]?.slice(0, 220) ?? "Database query failed.";
+  return "Databáze momentálně není připravená.";
 }

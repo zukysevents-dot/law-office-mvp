@@ -88,6 +88,7 @@ export async function GET(request: Request) {
   }));
 
   await writeAuditLog({
+    organizationId,
     entityType: "HrPayrollExport",
     entityId: organizationId,
     action: "EXPORT_PAYROLL",

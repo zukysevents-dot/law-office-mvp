@@ -1,6 +1,6 @@
 "use client";
 
-import { GripVertical } from "lucide-react";
+import { ChevronDown, ChevronUp, GripVertical } from "lucide-react";
 import { useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 
@@ -49,6 +49,7 @@ export function DashboardLayoutEditor({
   const [widgets, setWidgets] = useState<EditorWidget[]>(initialWidgets);
   const dragIndex = useRef<number | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
+  const [moveAnnouncement, setMoveAnnouncement] = useState("");
 
   function handleDrop(targetIndex: number) {
     const from = dragIndex.current;
@@ -65,6 +66,17 @@ export function DashboardLayoutEditor({
       current.map((widget) =>
         widget.id === id ? { ...widget, ...change } : widget,
       ),
+    );
+  }
+
+  function moveWidget(from: number, to: number) {
+    if (to < 0 || to >= widgets.length || from === to) {
+      return;
+    }
+    const movedWidget = widgets[from];
+    setWidgets((current) => reorder(current, from, to));
+    setMoveAnnouncement(
+      `${movedWidget.title || movedWidget.typeLabel}: nová pozice ${to + 1} z ${widgets.length}.`,
     );
   }
 
@@ -102,8 +114,11 @@ export function DashboardLayoutEditor({
     <form action={saveDashboardLayout} className="grid min-w-0 gap-4">
       <input type="hidden" name="payload" value={payload} />
       <p className="text-sm text-[#5f756e]">
-        Pořadí změníte přetažením widgetu za úchyt. Změny se uloží najednou
-        tlačítkem níže.
+        Pořadí změníte přetažením widgetu nebo tlačítky nahoru a dolů. Změny se
+        uloží najednou tlačítkem níže.
+      </p>
+      <p className="sr-only" aria-live="polite" aria-atomic="true">
+        {moveAnnouncement}
       </p>
 
       {widgets.map((widget, index) => (
@@ -139,6 +154,28 @@ export function DashboardLayoutEditor({
             >
               <GripVertical className="h-5 w-5" />
             </span>
+            <div className="flex shrink-0 flex-col gap-1">
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-9 w-9 px-0"
+                onClick={() => moveWidget(index, index - 1)}
+                disabled={index === 0}
+                aria-label={`Posunout ${widget.title || widget.typeLabel} nahoru`}
+              >
+                <ChevronUp className="h-4 w-4" aria-hidden="true" />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-9 w-9 px-0"
+                onClick={() => moveWidget(index, index + 1)}
+                disabled={index === widgets.length - 1}
+                aria-label={`Posunout ${widget.title || widget.typeLabel} dolů`}
+              >
+                <ChevronDown className="h-4 w-4" aria-hidden="true" />
+              </Button>
+            </div>
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="truncate text-sm font-semibold text-[#072924]">

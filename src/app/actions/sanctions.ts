@@ -94,6 +94,7 @@ export async function runSanctionsScreening(formData: FormData) {
 
     await tx.auditLog.create({
       data: {
+        organizationId: currentUser.organizationId,
         entityType: "Subject",
         entityId: subjectId,
         action: "AML_SCREEN",
@@ -183,6 +184,7 @@ export async function decideSanctionsMatch(formData: FormData) {
 
     await tx.auditLog.create({
       data: {
+        organizationId: currentUser.organizationId,
         entityType: "Subject",
         entityId: match.screening.subjectId,
         action: "AML_SCREEN_DECIDE",

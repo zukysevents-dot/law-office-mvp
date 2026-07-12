@@ -12,7 +12,7 @@ import { getPrisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "Připojení ke kanceláři — syndikat.legal",
+  title: "Připojení ke kanceláři",
 };
 
 const errorMessages: Record<string, string> = {
@@ -72,7 +72,7 @@ export default async function JoinOrganizationPage({
         </p>
 
         {message ? (
-          <p className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+          <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-800">
             {message}
           </p>
         ) : null}
@@ -98,7 +98,7 @@ export default async function JoinOrganizationPage({
         <form action={logoutAction} className="mt-6 text-center">
           <button
             type="submit"
-            className="text-sm text-stone-500 underline-offset-2 hover:underline"
+            className="inline-flex min-h-10 items-center rounded-md px-3 text-sm text-stone-600 underline-offset-2 hover:bg-stone-100 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#072924]"
           >
             Odhlásit se
           </button>

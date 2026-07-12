@@ -72,7 +72,7 @@ export default async function DocumentTemplatesPage() {
                   </Badge>
                   {template.name}
                   {!template.active ? (
-                    <span className="text-xs text-stone-400">(neaktivní)</span>
+                    <span className="text-xs text-stone-600">(neaktivní)</span>
                   ) : null}
                 </summary>
                 {data.canManage ? (

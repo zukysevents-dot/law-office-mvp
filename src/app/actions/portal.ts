@@ -94,6 +94,7 @@ export async function ensurePortalAccess(formData: FormData) {
 
     await tx.auditLog.create({
       data: {
+        organizationId: currentUser.organizationId,
         entityType: "PortalAccess",
         entityId: access.id,
         action: "PORTAL_ACCESS_GRANT",
@@ -128,6 +129,7 @@ export async function revokePortalAccess(formData: FormData) {
     });
     await tx.auditLog.create({
       data: {
+        organizationId: currentUser.organizationId,
         entityType: "PortalAccess",
         entityId: portalAccessId,
         action: "PORTAL_ACCESS_REVOKE",
@@ -174,6 +176,7 @@ export async function shareDocument(formData: FormData) {
     });
     await tx.auditLog.create({
       data: {
+        organizationId: currentUser.organizationId,
         entityType: "PortalShare",
         entityId: documentId,
         action: "PORTAL_SHARE_DOCUMENT",
@@ -221,6 +224,7 @@ export async function shareCase(formData: FormData) {
     });
     await tx.auditLog.create({
       data: {
+        organizationId: currentUser.organizationId,
         entityType: "PortalShare",
         entityId: caseId,
         action: "PORTAL_SHARE_CASE",
@@ -260,6 +264,7 @@ export async function revokeShare(formData: FormData) {
     });
     await tx.auditLog.create({
       data: {
+        organizationId: currentUser.organizationId,
         entityType: "PortalShare",
         entityId: shareId,
         action: "PORTAL_REVOKE_SHARE",

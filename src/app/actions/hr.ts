@@ -17,6 +17,7 @@ import {
   checkboxValue,
   enumValue,
   optionalDate,
+  optionalDateTime,
   optionalNumber,
   optionalString,
   requiredDate,
@@ -160,6 +161,7 @@ export async function createEmployee(formData: FormData) {
       entityId: employee.id,
       action: "CREATE",
       changedById: currentUser.id,
+      organizationId: currentUser.organizationId,
       newValue: auditJson({ firstName, lastName, employmentType }),
     },
   });
@@ -224,6 +226,7 @@ export async function updateEmployee(formData: FormData) {
         entityId: employeeId,
         action: "UPDATE",
         changedById: currentUser.id,
+        organizationId: currentUser.organizationId,
         newValue: auditJson({ firstName, lastName, employmentType }),
       },
     });
@@ -258,6 +261,7 @@ export async function archiveEmployee(formData: FormData) {
         entityId: employeeId,
         action: archive ? "ARCHIVE" : "RESTORE",
         changedById: currentUser.id,
+        organizationId: currentUser.organizationId,
       },
     });
   });
@@ -305,6 +309,7 @@ export async function setLeaveBalance(formData: FormData) {
         entityId: employeeId,
         action: "SET_BALANCE",
         changedById: currentUser.id,
+        organizationId: currentUser.organizationId,
         newValue: auditJson({ year, entitlementHours, carryoverHours }),
       },
     });
@@ -332,8 +337,8 @@ export async function recordAttendance(formData: FormData) {
 
   const workDate = requiredDate(formData, "workDate");
   const breakHours = optionalNumber(formData, "breakHours") ?? 0;
-  const checkIn = optionalDate(formData, "checkIn");
-  const checkOut = optionalDate(formData, "checkOut");
+  const checkIn = optionalDateTime(formData, "checkIn");
+  const checkOut = optionalDateTime(formData, "checkOut");
   let workedHours = optionalNumber(formData, "workedHours") ?? 0;
   if (checkIn && checkOut) {
     workedHours = computeWorkedHours(checkIn, checkOut, breakHours);
@@ -366,6 +371,7 @@ export async function recordAttendance(formData: FormData) {
         entityId: employeeId,
         action: "RECORD_ATTENDANCE",
         changedById: currentUser.id,
+        organizationId: currentUser.organizationId,
         newValue: auditJson({ workDate: workDate.toISOString(), workedHours }),
       },
     });
@@ -449,6 +455,7 @@ export async function punchAttendance(formData: FormData) {
           entityId: employee.id,
           action: direction === "in" ? "PUNCH_IN" : "PUNCH_OUT",
           changedById: currentUser.id,
+          organizationId: currentUser.organizationId,
           newValue: auditJson({ workDate: workDate.toISOString() }),
         },
       });
@@ -537,6 +544,7 @@ export async function importAttendance(formData: FormData) {
         entityId: importBatchId,
         action: "IMPORT_ATTENDANCE",
         changedById: currentUser.id,
+        organizationId: currentUser.organizationId,
         newValue: auditJson({ imported, skipped }),
       },
     });
@@ -626,6 +634,7 @@ export async function requestAbsence(formData: FormData) {
       entityId: created.id,
       action: "REQUEST_ABSENCE",
       changedById: currentUser.id,
+      organizationId: currentUser.organizationId,
       newValue: auditJson({ type, requestedHours, leaveYear }),
     },
   });
@@ -732,6 +741,7 @@ export async function approveAbsence(formData: FormData) {
         entityId: requestId,
         action: "APPROVE_ABSENCE",
         changedById: currentUser.id,
+        organizationId: currentUser.organizationId,
       },
     });
   });
@@ -779,6 +789,7 @@ export async function rejectAbsence(formData: FormData) {
         entityId: requestId,
         action: "REJECT_ABSENCE",
         changedById: currentUser.id,
+        organizationId: currentUser.organizationId,
       },
     });
   });
@@ -879,6 +890,7 @@ export async function cancelAbsence(formData: FormData) {
         entityId: requestId,
         action: "CANCEL_ABSENCE",
         changedById: currentUser.id,
+        organizationId: currentUser.organizationId,
       },
     });
   });

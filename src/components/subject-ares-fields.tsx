@@ -178,6 +178,7 @@ export function SubjectAresFields({
         </div>
         {notice ? (
           <p
+            role={notice.tone === "error" ? "alert" : "status"}
             className={`flex items-start gap-2 rounded-md border px-3 py-2 text-sm ${noticeStyles[notice.tone]}`}
           >
             {notice.tone === "ok" ? (

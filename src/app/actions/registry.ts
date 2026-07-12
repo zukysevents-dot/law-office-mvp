@@ -29,6 +29,7 @@ export async function setSubjectRegistryWatch(formData: FormData) {
     });
     await prisma.auditLog.create({
       data: {
+        organizationId: currentUser.organizationId,
         entityType: "Subject",
         entityId: subjectId,
         action: "REGISTRY_WATCH",
@@ -81,6 +82,7 @@ export async function acknowledgeRegistryChange(formData: FormData) {
     });
     await prisma.auditLog.create({
       data: {
+        organizationId: currentUser.organizationId,
         entityType: "Subject",
         entityId: event.subjectId,
         action: "REGISTRY_ACK",

@@ -29,6 +29,7 @@ export default async function PortalDocumentPage({
   }
 
   await writeAuditLog({
+    organizationId: client.organizationId,
     entityType: "Document",
     entityId: document.id,
     action: "PORTAL_VIEW_DOCUMENT",
@@ -37,7 +38,7 @@ export default async function PortalDocumentPage({
   });
 
   return (
-    <main className="mx-auto min-h-screen max-w-3xl px-4 py-8">
+    <main id="portal-main-content" tabIndex={-1} className="mx-auto min-h-screen max-w-3xl px-4 py-8">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-xl font-semibold text-stone-900">{document.name}</h1>
         <ButtonLink href="/portal" variant="secondary">
@@ -72,7 +73,7 @@ export default async function PortalDocumentPage({
         ) : null}
       </dl>
 
-      <p className="mt-4 text-xs text-stone-400">
+      <p className="mt-4 text-xs text-stone-600">
         Pro získání souboru kontaktujte prosím svou advokátní kancelář.
       </p>
       <p className="mt-6 text-sm">

@@ -295,7 +295,7 @@ export default async function DocumentDetailPage({
                   Sdílet dokument
                 </Button>
               </form>
-              <p className="mt-2 text-xs text-stone-400">
+              <p className="mt-2 text-xs text-stone-600">
                 Klient uvidí jen metadata dokumentu (název, typ, verze), ne odkaz
                 do SharePointu.
               </p>

@@ -91,8 +91,8 @@ export default async function MyTasksPage() {
       />
       <Section title="Moje aktivní úkoly">
         {result.data.tasks.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table>
+          <div className="table-scroll">
+            <table className="w-max min-w-full table-auto">
               <thead>
                 <tr>
                   <th>Název</th>

@@ -10,6 +10,7 @@ import { markInvoiceSent, sendReminder } from "@/app/actions/reminders";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
 import { InvoiceEmailForm } from "@/components/invoice-email-form";
 import { PageHeader } from "@/components/page-header";
+import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import { Section } from "@/components/section";
 import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
@@ -255,9 +256,9 @@ export default async function InvoiceDetailPage({
               </form>
               <form action={deleteDraftInvoice} className="mt-4">
                 <input type="hidden" name="invoiceId" value={invoice.id} />
-                <Button type="submit" variant="danger">
+                <ConfirmSubmitButton message="Opravdu chcete tuto rozpracovanou fakturu trvale smazat?">
                   Smazat rozpracovanou fakturu
-                </Button>
+                </ConfirmSubmitButton>
               </form>
             </Section>
           ) : null}
@@ -433,9 +434,9 @@ export default async function InvoiceDetailPage({
                   <TextArea name="cancelReason" />
                 </Field>
                 <div>
-                  <Button type="submit" variant="danger">
+                  <ConfirmSubmitButton message="Opravdu chcete tuto vystavenou fakturu stornovat? Tuto akci nelze vzít zpět.">
                     Stornovat fakturu
-                  </Button>
+                  </ConfirmSubmitButton>
                 </div>
               </form>
               </Section>

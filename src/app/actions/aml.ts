@@ -108,6 +108,7 @@ export async function recordIdentification(formData: FormData) {
 
     await tx.auditLog.create({
       data: {
+        organizationId: currentUser.organizationId,
         entityType: "Subject",
         entityId: subjectId,
         action: "AML_IDENTIFY",
@@ -162,6 +163,7 @@ export async function updateIdentificationScan(formData: FormData) {
 
   await prisma.auditLog.create({
     data: {
+      organizationId: currentUser.organizationId,
       entityType: "Subject",
       entityId: existing.subjectId,
       action: "AML_SCAN_UPDATE",
@@ -254,6 +256,7 @@ export async function assessRisk(formData: FormData) {
 
     await tx.auditLog.create({
       data: {
+        organizationId: currentUser.organizationId,
         entityType: "Subject",
         entityId: subjectId,
         action: "AML_ASSESS",

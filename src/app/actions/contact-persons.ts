@@ -68,6 +68,7 @@ export async function createContactPerson(formData: FormData) {
   });
 
   await writeAuditLog({
+    organizationId: currentUser.organizationId,
     entityType: "ContactPerson",
     entityId: contact.id,
     action: "CREATE",
@@ -100,6 +101,7 @@ export async function removeContactPerson(formData: FormData) {
   });
 
   await writeAuditLog({
+    organizationId: currentUser.organizationId,
     entityType: "ContactPerson",
     entityId: id,
     action: "ARCHIVE",

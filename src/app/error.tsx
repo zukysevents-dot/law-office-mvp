@@ -13,7 +13,7 @@ export default function Error({ reset }: { error: Error; reset: () => void }) {
       <button
         type="button"
         onClick={reset}
-        className="rounded-md bg-[#072924] px-4 py-2 text-sm font-medium text-white"
+        className="inline-flex min-h-10 items-center rounded-md bg-[#072924] px-4 py-2 text-sm font-medium text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#072924]"
       >
         Zkusit znovu
       </button>

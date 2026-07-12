@@ -32,6 +32,7 @@ export async function createBillingIssuer(formData: FormData) {
   });
 
   await writeAuditLog({
+    organizationId: currentUser.organizationId,
     entityType: "BillingIssuer",
     entityId: issuer.id,
     action: "CREATE",
@@ -59,6 +60,7 @@ export async function archiveBillingIssuer(formData: FormData) {
   });
 
   await writeAuditLog({
+    organizationId: currentUser.organizationId,
     entityType: "BillingIssuer",
     entityId: issuer.id,
     action: "ARCHIVE",

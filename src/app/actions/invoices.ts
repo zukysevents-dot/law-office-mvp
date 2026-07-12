@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { Prisma } from "@/generated/prisma/client";
 import { InvoiceStatus, ModuleKey, VatMode } from "@/generated/prisma/enums";
 import { auditJson } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
@@ -20,6 +21,7 @@ import {
   isWithinResendDedupeWindow,
 } from "@/lib/invoice-email";
 import {
+  areLockedWorkLogsInvoiceable,
   DEFAULT_VAT_RATE,
   formatInvoiceNumber,
   vatModeForProfile,
@@ -182,6 +184,7 @@ export async function createInvoiceFromWorkLogs(formData: FormData) {
         entityId: created.id,
         action: "CREATE",
         changedById: currentUser.id,
+        organizationId: currentUser.organizationId,
         newValue: auditJson({
           subjectId,
           status: created.status,
@@ -302,24 +305,40 @@ export async function issueInvoice(formData: FormData) {
       data: { lastNumber: nextNumber },
     });
 
-    // Anti double-invoice: every source work-log must still be invoiceable in
-    // this org (not invoiced, archived, or moved out of billable/approved since
-    // the draft was created). Count-mismatch → abort the whole issue.
+    // Lock source work-logs in a deterministic order BEFORE checking their
+    // current state. This serializes invoice issuance with billing decisions;
+    // without the locks, a concurrent rejection could commit after our count
+    // query but before updateMany and still be marked invoiced.
     const workLogIds = invoice.lines
-      .map((l) => l.workLogId)
-      .filter((id): id is string => !!id);
+      .map((line) => line.workLogId)
+      .filter((id): id is string => Boolean(id))
+      .sort();
     if (workLogIds.length > 0) {
-      const stillValid = await tx.workLog.count({
+      await tx.$queryRaw`SELECT id FROM "workLogs" WHERE id IN (${Prisma.join(
+        workLogIds,
+      )}) AND "organizationId" = ${organizationId} ORDER BY id FOR UPDATE`;
+
+      const lockedWorkLogs = await tx.workLog.findMany({
         where: {
           id: { in: workLogIds },
           organizationId,
-          archivedAt: null,
-          billingStatus: "BILLABLE",
-          approvalStatus: "APPROVED",
-          invoicedAt: null,
+        },
+        select: {
+          id: true,
+          organizationId: true,
+          archivedAt: true,
+          billingStatus: true,
+          approvalStatus: true,
+          invoicedAt: true,
         },
       });
-      if (stillValid !== workLogIds.length) {
+      if (
+        !areLockedWorkLogsInvoiceable(
+          lockedWorkLogs,
+          workLogIds,
+          organizationId,
+        )
+      ) {
         throw new Error(
           "Některý z výkazů už nelze fakturovat (byl mezitím zafakturován, archivován nebo změněn). Vytvořte fakturu znovu.",
         );
@@ -417,6 +436,7 @@ export async function issueInvoice(formData: FormData) {
         entityId: invoice.id,
         action: "ISSUE",
         changedById: currentUser.id,
+        organizationId: currentUser.organizationId,
         oldValue: auditJson({ status: invoice.status }),
         newValue: auditJson({
           status: updated.status,
@@ -496,6 +516,7 @@ export async function cancelInvoice(formData: FormData) {
         entityId: invoice.id,
         action: "CANCEL",
         changedById: currentUser.id,
+        organizationId: currentUser.organizationId,
         oldValue: auditJson({ status: invoice.status }),
         newValue: auditJson({ status: updated.status, reason }),
       },
@@ -655,6 +676,7 @@ export async function emailInvoice(formData: FormData) {
         entityId: invoice.id,
         action: "EMAIL_FAILED",
         changedById: currentUser.id,
+        organizationId: currentUser.organizationId,
         newValue: auditJson({
           recipient,
           reason: (error instanceof Error ? error.message : String(error)).slice(
@@ -683,6 +705,7 @@ export async function emailInvoice(formData: FormData) {
         entityId: invoice.id,
         action: "EMAIL_SENT",
         changedById: currentUser.id,
+        organizationId: currentUser.organizationId,
         newValue: auditJson({
           recipient,
           override: recipientOverridden,
@@ -734,6 +757,7 @@ export async function deleteDraftInvoice(formData: FormData) {
         entityId: invoiceId,
         action: "DELETE",
         changedById: currentUser.id,
+        organizationId: currentUser.organizationId,
         oldValue: auditJson({ status: invoice.status, number: invoice.number }),
       },
     });

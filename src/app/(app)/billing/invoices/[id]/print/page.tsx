@@ -224,7 +224,7 @@ export default async function InvoicePrintPage({
               Dodavatel není plátcem DPH.
             </p>
           ) : null}
-          <p className="mt-2 text-xs text-stone-400">
+          <p className="mt-2 text-xs text-stone-600">
             Režim DPH: {vatModeLabels[data.invoice.vatMode]}
           </p>
         </article>

@@ -85,6 +85,7 @@ export async function addProjectAssignee(formData: FormData) {
   }
 
   await writeAuditLog({
+    organizationId: currentUser.organizationId,
     entityType: "ProjectAssignee",
     entityId: assignee.id,
     action: "CREATE",
@@ -122,6 +123,7 @@ export async function removeProjectAssignee(formData: FormData) {
   await prisma.projectAssignee.delete({ where: { id } });
 
   await writeAuditLog({
+    organizationId: currentUser.organizationId,
     entityType: "ProjectAssignee",
     entityId: id,
     action: "DELETE",

@@ -101,6 +101,7 @@ export async function saveDataBoxAccount(formData: FormData) {
 
     await tx.auditLog.create({
       data: {
+        organizationId: currentUser.organizationId,
         entityType: "DataBoxAccount",
         entityId: saved.id,
         action: previous ? "UPDATE" : "CREATE",
@@ -178,6 +179,7 @@ export async function addManualMessage(formData: FormData) {
 
       await tx.auditLog.create({
         data: {
+          organizationId: currentUser.organizationId,
           entityType: "DataMessage",
           entityId: created.id,
           action: "CREATE",
@@ -251,6 +253,7 @@ export async function assignToCase(formData: FormData) {
 
     await tx.auditLog.create({
       data: {
+        organizationId: currentUser.organizationId,
         entityType: "DataMessage",
         entityId: message.id,
         action: "ASSIGN",
@@ -306,6 +309,7 @@ export async function downloadAttachment(formData: FormData) {
 
   await prisma.auditLog.create({
     data: {
+      organizationId: currentUser.organizationId,
       entityType: "DataBoxAttachment",
       entityId: attachment.id,
       action: "DOWNLOAD",

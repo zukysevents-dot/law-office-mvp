@@ -23,7 +23,7 @@ export default async function PortalDashboardPage() {
   ]);
 
   return (
-    <main className="mx-auto min-h-screen max-w-3xl px-4 py-8">
+    <main id="portal-main-content" tabIndex={-1} className="mx-auto min-h-screen max-w-3xl px-4 py-8">
       <header className="mb-8 flex items-center justify-between border-b border-stone-200 pb-4">
         <div>
           <h1 className="text-xl font-semibold text-stone-900">

@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { Prisma } from "@/generated/prisma/client";
+
 import {
   computeTimesheetTotals,
   parseBoolean,
@@ -78,10 +80,13 @@ test("computeTimesheetTotals: null hodnoty se počítají jako 0", () => {
   assert.equal(totals.totalAmountCzk, 1000);
 });
 
-test("computeTimesheetTotals: string/Decimal-like vstup (toString) projde", () => {
+test("computeTimesheetTotals: string/Prisma Decimal vstup projde", () => {
   const totals = computeTimesheetTotals([
     { hours: "0.25", amountCzk: "500" },
-    { hours: { toString: () => "0.75" }, amountCzk: { toString: () => "1500" } },
+    {
+      hours: new Prisma.Decimal("0.75"),
+      amountCzk: new Prisma.Decimal("1500"),
+    },
   ]);
   assert.equal(totals.totalHours, 1);
   assert.equal(totals.totalAmountCzk, 2000);

@@ -32,6 +32,7 @@ import {
 import type { TableViewState } from "@/lib/table-view-preferences";
 import {
   andWhere,
+  canManageReferences,
   canViewAllLegalData,
   caseVisibilityWhere,
   projectVisibilityWhere,
@@ -75,6 +76,7 @@ type ReferencesData = {
   subjects: Array<{ id: string; name: string; ico: string | null }>;
   tableView: TableViewState;
   canArchive: boolean;
+  canManage: boolean;
 };
 
 function numberParam(value: string | undefined) {
@@ -118,6 +120,7 @@ export default async function ReferencesPage({ searchParams }: ReferencesProps) 
       subjects: [],
       tableView: getDefaultTableView("references"),
       canArchive: false,
+      canManage: false,
     },
     async () => {
       const prisma = getPrisma();
@@ -212,6 +215,7 @@ export default async function ReferencesPage({ searchParams }: ReferencesProps) 
         subjects,
         tableView,
         canArchive: canViewAllLegalData(currentUser),
+        canManage: canManageReferences(currentUser),
       };
     },
   );
@@ -244,10 +248,12 @@ export default async function ReferencesPage({ searchParams }: ReferencesProps) 
             <ButtonLink href={csvHref} variant="secondary">
               Export CSV
             </ButtonLink>
-            <ButtonLink href="#new-reference">
-              <Plus className="h-4 w-4" aria-hidden="true" />
-              Nová reference
-            </ButtonLink>
+            {result.data.canManage ? (
+              <ButtonLink href="#new-reference">
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                Nová reference
+              </ButtonLink>
+            ) : null}
           </>
         }
       />
@@ -260,7 +266,7 @@ export default async function ReferencesPage({ searchParams }: ReferencesProps) 
           <Field label="Vyhledávání">
             <div className="relative">
               <Search
-                className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-stone-400"
+                className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-stone-600"
                 aria-hidden="true"
               />
               <TextInput
@@ -411,7 +417,7 @@ export default async function ReferencesPage({ searchParams }: ReferencesProps) 
                       ) : null}
                       <td>
                         <div className="flex flex-wrap gap-2">
-                          {result.data.canArchive ? (
+                          {result.data.canManage ? (
                             <ButtonLink
                               href={`/references/${reference.id}/edit`}
                               variant="ghost"
@@ -444,14 +450,16 @@ export default async function ReferencesPage({ searchParams }: ReferencesProps) 
           <EmptyState>Žádné reference neodpovídají filtrům.</EmptyState>
         )}
       </Section>
-      <Section title="Nová reference" id="new-reference" className="scroll-mt-6">
-        <ReferenceForm
-          returnTo="/references"
-          projects={result.data.projects}
-          cases={result.data.cases}
-          subjects={result.data.subjects}
-        />
-      </Section>
+      {result.data.canManage ? (
+        <Section title="Nová reference" id="new-reference" className="scroll-mt-6">
+          <ReferenceForm
+            returnTo="/references"
+            projects={result.data.projects}
+            cases={result.data.cases}
+            subjects={result.data.subjects}
+          />
+        </Section>
+      ) : null}
     </>
   );
 }

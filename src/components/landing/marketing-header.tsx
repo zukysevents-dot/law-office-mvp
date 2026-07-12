@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Menu, X } from "lucide-react";
 
@@ -18,6 +18,7 @@ const navLinks = [
 export function MarketingHeader() {
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     function onScroll() {
@@ -30,7 +31,10 @@ export function MarketingHeader() {
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") setOpen(false);
+      if (event.key === "Escape") {
+        setOpen(false);
+        menuButtonRef.current?.focus();
+      }
     }
     if (open) {
       document.addEventListener("keydown", onKey);
@@ -106,6 +110,7 @@ export function MarketingHeader() {
         </div>
 
         <button
+          ref={menuButtonRef}
           type="button"
           onClick={() => setOpen((value) => !value)}
           aria-expanded={open}
@@ -128,12 +133,15 @@ export function MarketingHeader() {
 
       <div
         id="mobile-menu"
+        aria-hidden={!open}
         className={cn(
-          "overflow-hidden border-t transition-[max-height] duration-300 ease-out lg:hidden",
+          "overflow-hidden border-t transition-[max-height] duration-300 ease-out motion-reduce:transition-none lg:hidden",
           darkTone
             ? "border-white/10 bg-[var(--iv-deep)]"
             : "border-[var(--iv-line)] bg-[var(--iv-bg)]",
-          open ? "max-h-80" : "max-h-0 border-t-0",
+          open
+            ? "visible max-h-80"
+            : "invisible max-h-0 border-t-0 pointer-events-none",
         )}
       >
         <nav

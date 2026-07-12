@@ -147,6 +147,7 @@ export async function provisionSharepointFolder(formData: FormData) {
     }
 
     await writeAuditLog({
+      organizationId: currentUser.organizationId,
       entityType,
       entityId: id,
       action: "SHAREPOINT_FOLDER",

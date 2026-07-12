@@ -246,7 +246,7 @@ export default async function BillingPage({ searchParams }: BillingProps) {
       <Section title="Souhrny">
         <div className="grid gap-3 text-sm md:grid-cols-3">
           <div className="rounded-lg border border-black/10 p-3">
-            <p className="text-xs uppercase tracking-wide text-black/50">
+            <p className="text-xs uppercase tracking-wide text-black/60">
               Hodiny celkem
             </p>
             <p className="text-lg font-semibold">
@@ -254,7 +254,7 @@ export default async function BillingPage({ searchParams }: BillingProps) {
             </p>
           </div>
           <div className="rounded-lg border border-black/10 p-3">
-            <p className="text-xs uppercase tracking-wide text-black/50">
+            <p className="text-xs uppercase tracking-wide text-black/60">
               Částka celkem
             </p>
             <p className="text-lg font-semibold">
@@ -262,7 +262,7 @@ export default async function BillingPage({ searchParams }: BillingProps) {
             </p>
           </div>
           <div className="rounded-lg border border-black/10 p-3">
-            <p className="text-xs uppercase tracking-wide text-black/50">
+            <p className="text-xs uppercase tracking-wide text-black/60">
               Počet položek
             </p>
             <p className="text-lg font-semibold">{result.data.totals.count}</p>

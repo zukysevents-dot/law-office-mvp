@@ -53,6 +53,7 @@ export async function GET(
   }
 
   await writeAuditLog({
+    organizationId: currentUser.organizationId,
     entityType: "Invoice",
     entityId: invoice.id,
     action: "EXPORT_POHODA",

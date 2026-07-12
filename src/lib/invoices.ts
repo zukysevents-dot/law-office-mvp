@@ -1,5 +1,10 @@
 import type { Prisma } from "@/generated/prisma/client";
-import { InvoiceStatus, VatMode } from "@/generated/prisma/enums";
+import {
+  ApprovalStatus,
+  BillingStatus,
+  InvoiceStatus,
+  VatMode,
+} from "@/generated/prisma/enums";
 
 // CZ standard VAT rate used for auto-generated invoice lines.
 export const DEFAULT_VAT_RATE = 21;
@@ -77,6 +82,39 @@ export function resolvePaidStatus(
   paidCzk: number,
 ): InvoiceStatus {
   return paidCzk >= totalCzk ? InvoiceStatus.PAID : InvoiceStatus.PARTIALLY_PAID;
+}
+
+type InvoiceableWorkLogState = {
+  id: string;
+  organizationId: string;
+  archivedAt: Date | null;
+  billingStatus: BillingStatus;
+  approvalStatus: ApprovalStatus;
+  invoicedAt: Date | null;
+};
+
+// Validate rows only AFTER the caller has acquired row locks. Besides checking
+// the business state, the exact id-set comparison catches missing/cross-tenant
+// rows and duplicate/corrupt invoice-line references without issuing partially.
+export function areLockedWorkLogsInvoiceable(
+  rows: InvoiceableWorkLogState[],
+  expectedIds: string[],
+  organizationId: string,
+): boolean {
+  const expected = new Set(expectedIds);
+  if (expected.size !== expectedIds.length || rows.length !== expected.size) {
+    return false;
+  }
+
+  return rows.every(
+    (row) =>
+      expected.has(row.id) &&
+      row.organizationId === organizationId &&
+      row.archivedAt === null &&
+      row.billingStatus === BillingStatus.BILLABLE &&
+      row.approvalStatus === ApprovalStatus.APPROVED &&
+      row.invoicedAt === null,
+  );
 }
 
 // Statuses that can still go overdue (an unpaid receivable). PAID and CANCELLED

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -162,6 +162,70 @@ export function AppSidebar({
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const mobileNavRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const nav = mobileNavRef.current;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const focusableSelector =
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    const focusFirstItem = window.requestAnimationFrame(() => {
+      nav?.querySelector<HTMLElement>(focusableSelector)?.focus();
+    });
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setOpen(false);
+        menuButtonRef.current?.focus();
+        return;
+      }
+
+      if (event.key !== "Tab" || !nav) {
+        return;
+      }
+
+      const focusableItems = Array.from(
+        nav.querySelectorAll<HTMLElement>(focusableSelector),
+      );
+      if (focusableItems.length === 0) {
+        event.preventDefault();
+        return;
+      }
+
+      const firstItem = focusableItems[0];
+      const lastItem = focusableItems[focusableItems.length - 1];
+      if (event.shiftKey && document.activeElement === firstItem) {
+        event.preventDefault();
+        lastItem.focus();
+      } else if (!event.shiftKey && document.activeElement === lastItem) {
+        event.preventDefault();
+        firstItem.focus();
+      }
+    }
+
+    function onResize() {
+      if (window.innerWidth >= 1024) {
+        setOpen(false);
+      }
+    }
+
+    document.addEventListener("keydown", onKeyDown);
+    window.addEventListener("resize", onResize, { passive: true });
+    return () => {
+      window.cancelAnimationFrame(focusFirstItem);
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [open]);
   // Two independent gates:
   // - showAuditLog === canViewAllLegalData (ADMIN/PARTNER); same gate covers the
   //   org-management link, so adminOnly items hide for everyone else.
@@ -194,7 +258,7 @@ export function AppSidebar({
         <button
           type="submit"
           title="Odhlásit se"
-          className="flex h-11 w-full min-w-0 items-center gap-3 rounded-md px-3 text-sm font-medium text-[#d8eee0] transition hover:bg-[#B9DCC6]/15 hover:text-white lg:h-10 lg:w-11 lg:justify-center lg:px-0 xl:w-auto xl:justify-start xl:px-3"
+          className="flex h-11 w-full min-w-0 items-center gap-3 rounded-md px-3 text-sm font-medium text-[#d8eee0] transition hover:bg-[#B9DCC6]/15 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#B9DCC6] lg:h-10 lg:w-11 lg:justify-center lg:px-0 xl:w-auto xl:justify-start xl:px-3"
         >
           <LogOut className="h-5 w-5 shrink-0 lg:h-4 lg:w-4" aria-hidden="true" />
           <span className="min-w-0 truncate lg:sr-only xl:not-sr-only">
@@ -214,9 +278,10 @@ export function AppSidebar({
         key={item.href}
         href={item.href}
         title={item.label}
+        aria-current={active ? "page" : undefined}
         onClick={() => setOpen(false)}
         className={cn(
-          "flex h-11 max-w-full min-w-0 items-center gap-3 rounded-md px-3 text-sm font-medium transition lg:h-10 lg:w-11 lg:justify-center lg:px-0 xl:w-auto xl:justify-start xl:px-3",
+          "flex h-11 max-w-full min-w-0 items-center gap-3 rounded-md px-3 text-sm font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#B9DCC6] lg:h-10 lg:w-11 lg:justify-center lg:px-0 xl:w-auto xl:justify-start xl:px-3",
           active
             ? "bg-[#B9DCC6] text-[#072924]"
             : "text-[#d8eee0] hover:bg-[#B9DCC6]/15 hover:text-white",
@@ -267,12 +332,13 @@ export function AppSidebar({
           />
         </Link>
         <button
+          ref={menuButtonRef}
           type="button"
           onClick={() => setOpen((value) => !value)}
           aria-expanded={open}
           aria-controls="mobile-nav"
           aria-label={open ? "Zavřít menu" : "Otevřít menu"}
-          className="inline-flex h-11 w-11 items-center justify-center rounded-md text-[#d8eee0] transition hover:bg-[#B9DCC6]/15 hover:text-white"
+          className="inline-flex h-11 w-11 items-center justify-center rounded-md text-[#d8eee0] transition hover:bg-[#B9DCC6]/15 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#B9DCC6]"
         >
           {open ? (
             <X className="h-6 w-6" aria-hidden="true" />
@@ -286,7 +352,9 @@ export function AppSidebar({
       {/* Mobile drawer — full-height panel below the bar, only when open. */}
       {open ? (
         <nav
+          ref={mobileNavRef}
           id="mobile-nav"
+          aria-label="Hlavní navigace"
           className="fixed inset-x-0 top-16 bottom-0 z-40 flex flex-col gap-1 overflow-y-auto border-t border-white/10 bg-[#072924] p-3 lg:hidden"
         >
           {navContent}
@@ -320,7 +388,10 @@ export function AppSidebar({
             />
           </Link>
         </div>
-        <nav className="flex min-w-0 flex-1 flex-col flex-nowrap items-center gap-2 overflow-x-hidden overflow-y-auto p-3 xl:items-stretch">
+        <nav
+          aria-label="Hlavní navigace"
+          className="flex min-w-0 flex-1 flex-col flex-nowrap items-center gap-2 overflow-x-hidden overflow-y-auto p-3 xl:items-stretch"
+        >
           {navContent}
           {accountFooter}
         </nav>

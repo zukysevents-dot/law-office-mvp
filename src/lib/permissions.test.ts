@@ -5,6 +5,8 @@ import { Capability, UserRole } from "@/generated/prisma/enums";
 
 import {
   andWhere,
+  assertCanManageReferences,
+  assertCanManageSubjects,
   assertCanManageAml,
   assertCanManageDeadlines,
   assertCanManageInvoices,
@@ -20,6 +22,8 @@ import {
   canManageDocuments,
   canManageHr,
   canManagePortal,
+  canManageReferences,
+  canManageSubjects,
   canViewAllLegalData,
   canViewRecord,
   caseVisibilityWhere,
@@ -33,6 +37,8 @@ import {
   hrEmployeeVisibilityWhere,
   invoiceVisibilityWhere,
   projectVisibilityWhere,
+  referenceVisibilityWhere,
+  subjectVisibilityWhere,
   taskVisibilityWhere,
   workLogVisibilityWhere,
 } from "./permissions";
@@ -57,6 +63,78 @@ test("canViewAllLegalData: ADMIN and PARTNER true, others false", () => {
   assert.equal(canViewAllLegalData(trainee), false);
   assert.equal(canViewAllLegalData(intern), false);
   assert.equal(canViewAllLegalData(null), false);
+});
+
+// --- Subject/Reference management: office-wide records, leadership only ---
+test("Subject/Reference management: ADMIN/PARTNER with an org may manage", () => {
+  for (const user of [admin, partner]) {
+    assert.equal(canManageSubjects(user), true);
+    assert.equal(canManageReferences(user), true);
+    assert.doesNotThrow(() => assertCanManageSubjects(user));
+    assert.doesNotThrow(() => assertCanManageReferences(user));
+  }
+});
+
+test("Subject/Reference management: LAWYER and junior roles are read-only", () => {
+  for (const user of [lawyer, trainee, intern]) {
+    assert.equal(canManageSubjects(user), false);
+    assert.equal(canManageReferences(user), false);
+    assert.throws(() => assertCanManageSubjects(user), {
+      message: "Nemáte oprávnění spravovat subjekty.",
+    });
+    assert.throws(() => assertCanManageReferences(user), {
+      message: "Nemáte oprávnění spravovat reference.",
+    });
+  }
+});
+
+test("Subject/Reference management: missing org or user fails closed", () => {
+  const orglessAdmin = { id: "u-orgless", role: UserRole.ADMIN };
+  for (const user of [orglessAdmin, null, undefined]) {
+    assert.equal(canManageSubjects(user), false);
+    assert.equal(canManageReferences(user), false);
+  }
+});
+
+test("Subject/Reference policy: create eligibility always implies same-org edit", () => {
+  for (const user of [admin, partner, lawyer, trainee, intern]) {
+    const record = { organizationId: org };
+    assert.equal(
+      canEditRecord(user, "Subject", record),
+      canManageSubjects(user),
+    );
+    assert.equal(
+      canEditRecord(user, "Reference", record),
+      canManageReferences(user),
+    );
+  }
+});
+
+test("Subject/Reference edit: crafted foreign-org id never expands access", () => {
+  const foreignRecord = { organizationId: "org-2" };
+  assert.equal(canEditRecord(admin, "Subject", foreignRecord), false);
+  assert.equal(canEditRecord(partner, "Reference", foreignRecord), false);
+  assert.equal(canEditRecord(lawyer, "Subject", { organizationId: org }), false);
+  assert.equal(canEditRecord(lawyer, "Reference", { organizationId: org }), false);
+});
+
+test("Subject/Reference visibility remains broader than management for LAWYER", () => {
+  assert.deepEqual(referenceVisibilityWhere(admin), { organizationId: org });
+  assert.deepEqual(subjectVisibilityWhere(admin), { organizationId: org });
+
+  const referenceWhere = referenceVisibilityWhere(lawyer) as {
+    AND?: Array<{ organizationId?: string; OR?: unknown[] }>;
+  };
+  assert.deepEqual(referenceWhere.AND?.[0], { organizationId: org });
+  assert.equal(referenceWhere.AND?.[1]?.OR?.length, 10);
+
+  const subjectWhere = subjectVisibilityWhere(lawyer) as {
+    AND?: Array<{ organizationId?: string; OR?: unknown[] }>;
+  };
+  assert.deepEqual(subjectWhere.AND?.[0], { organizationId: org });
+  assert.equal(subjectWhere.AND?.[1]?.OR?.length, 5);
+  assert.equal(canManageReferences(lawyer), false);
+  assert.equal(canManageSubjects(lawyer), false);
 });
 
 // --- canManageAml / assertCanManageAml: AML/KYC restricted to ADMIN/PARTNER ---

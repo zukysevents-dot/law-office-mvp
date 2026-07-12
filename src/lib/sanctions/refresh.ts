@@ -3,6 +3,7 @@
 // On a source outage it returns an error WITHOUT touching the existing copy.
 
 import { writeAuditLog } from "@/lib/audit";
+import { OrganizationStatus } from "@/generated/prisma/enums";
 import { getPrisma } from "@/lib/prisma";
 import { SANCTIONS_SOURCE } from "@/lib/sanctions/config";
 import { fetchEuSanctionsList } from "@/lib/sanctions/source-eu";
@@ -55,12 +56,24 @@ export async function refreshSanctionsList(): Promise<SanctionsRefreshResult> {
     where: { source: SANCTIONS_SOURCE, sourceEntityId: { notIn: seenIds } },
   });
 
-  await writeAuditLog({
-    entityType: "SanctionsList",
-    entityId: SANCTIONS_SOURCE,
-    action: "SANCTIONS_LIST_REFRESH",
-    newValue: { total: fetched.entries.length, removed: removed.count },
+  // The sanctions mirror is global, but the audit log is tenant-scoped. Record
+  // the refresh once for every active organization so no tenant has to read a
+  // global/null-tenant audit row.
+  const organizations = await prisma.organization.findMany({
+    where: { status: OrganizationStatus.ACTIVE },
+    select: { id: true },
   });
+  await Promise.all(
+    organizations.map((organization) =>
+      writeAuditLog({
+        organizationId: organization.id,
+        entityType: "SanctionsList",
+        entityId: SANCTIONS_SOURCE,
+        action: "SANCTIONS_LIST_REFRESH",
+        newValue: { total: fetched.entries.length, removed: removed.count },
+      }),
+    ),
+  );
 
   return { status: "ok", total: fetched.entries.length, removed: removed.count };
 }

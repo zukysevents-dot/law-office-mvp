@@ -99,6 +99,7 @@ export async function requestPortalLink(formData: FormData) {
               portalLinkUrl(token),
             );
             await writeAuditLog({
+              organizationId: access.organizationId,
               entityType: "PortalAccess",
               entityId: access.id,
               action: "PORTAL_LINK_REQUESTED",

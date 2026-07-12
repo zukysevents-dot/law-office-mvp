@@ -109,6 +109,7 @@ export async function verifySubjectFromAres(formData: FormData) {
   });
 
   await writeAuditLog({
+    organizationId: currentUser.organizationId,
     entityType: "Subject",
     entityId: id,
     action: "ARES_VERIFY",

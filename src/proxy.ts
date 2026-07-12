@@ -18,7 +18,11 @@ export async function proxy(request: NextRequest) {
 
   const url = request.nextUrl.clone();
   url.pathname = "/login";
-  url.search = `?from=${encodeURIComponent(request.nextUrl.pathname)}`;
+  url.search = "";
+  url.searchParams.set(
+    "from",
+    `${request.nextUrl.pathname}${request.nextUrl.search}`,
+  );
   return NextResponse.redirect(url);
 }
 
@@ -27,14 +31,20 @@ export const config = {
     "/dashboard/:path*",
     "/subjects/:path*",
     "/conflict-check/:path*",
+    "/registry/:path*",
+    "/aml/:path*",
     "/projects/:path*",
     "/cases/:path*",
     "/tasks/:path*",
     "/work-logs/:path*",
+    "/data-boxes/:path*",
+    "/deadlines/:path*",
     "/billing/:path*",
     "/reports/:path*",
     "/references/:path*",
     "/calendar/:path*",
+    "/documents/:path*",
+    "/hr/:path*",
     "/audit-log/:path*",
     "/settings/:path*",
     "/join-organization/:path*",

@@ -104,6 +104,7 @@ export async function GET(request: NextRequest) {
     // Record the export before delivering data; an audit-write failure aborts
     // the export (graceful 503) so firm data is never exported unlogged.
     await writeAuditLog({
+      organizationId: currentUser.organizationId,
       entityType: "Task",
       entityId: "export",
       action: "EXPORT",

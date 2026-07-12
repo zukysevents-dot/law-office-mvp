@@ -142,6 +142,7 @@ export async function createDeadline(formData: FormData) {
 
     await tx.auditLog.create({
       data: {
+        organizationId: currentUser.organizationId,
         entityType: "Deadline",
         entityId: created.id,
         action: "CREATE",
@@ -211,6 +212,7 @@ export async function updateDeadline(formData: FormData) {
 
     await tx.auditLog.create({
       data: {
+        organizationId: currentUser.organizationId,
         entityType: "Deadline",
         entityId: deadlineId,
         action: "UPDATE",
@@ -262,6 +264,7 @@ export async function completeDeadline(formData: FormData) {
 
     await tx.auditLog.create({
       data: {
+        organizationId: currentUser.organizationId,
         entityType: "Deadline",
         entityId: deadlineId,
         action: "COMPLETE",
@@ -302,6 +305,7 @@ export async function cancelDeadline(formData: FormData) {
 
     await tx.auditLog.create({
       data: {
+        organizationId: currentUser.organizationId,
         entityType: "Deadline",
         entityId: deadlineId,
         action: "CANCEL",
@@ -353,6 +357,7 @@ export async function createCourtHearing(formData: FormData) {
 
     await tx.auditLog.create({
       data: {
+        organizationId: currentUser.organizationId,
         entityType: "CourtHearing",
         entityId: created.id,
         action: "CREATE",
@@ -407,6 +412,7 @@ export async function updateCourtHearing(formData: FormData) {
 
     await tx.auditLog.create({
       data: {
+        organizationId: currentUser.organizationId,
         entityType: "CourtHearing",
         entityId: hearingId,
         action: "UPDATE",
@@ -455,6 +461,7 @@ export async function cancelCourtHearing(formData: FormData) {
 
     await tx.auditLog.create({
       data: {
+        organizationId: currentUser.organizationId,
         entityType: "CourtHearing",
         entityId: hearingId,
         action: "CANCEL",
@@ -536,6 +543,7 @@ export async function createDeadlineFromDataMessage(formData: FormData) {
 
     await tx.auditLog.create({
       data: {
+        organizationId: currentUser.organizationId,
         entityType: "Deadline",
         entityId: created.id,
         action: "CREATE_FROM_DS",
