@@ -35,7 +35,7 @@ export async function reserveRegistrationAttempt(
       ipAddress,
       identifierHash,
     )) {
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`;
     }
 
     return (

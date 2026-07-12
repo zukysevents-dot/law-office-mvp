@@ -7,6 +7,7 @@ import {
   OrganizationMemberStatus,
   OrganizationStatus,
 } from "@/generated/prisma/enums";
+import { hasAuthHardeningSchema } from "@/lib/auth-hardening-schema";
 import { getPrisma } from "@/lib/prisma";
 import { SESSION_COOKIE, verifySessionPayload } from "@/lib/session";
 
@@ -20,14 +21,51 @@ export const getAuthUser = cache(async function getAuthUser() {
   const session = await verifySessionPayload(token);
 
   if (session) {
-    const user = await getPrisma().user.findFirst({
-      where: {
-        id: session.userId,
-        active: true,
-        emailVerifiedAt: { not: null },
-        sessionVersion: session.sessionVersion,
-      },
-    });
+    const prisma = getPrisma();
+    const authHardeningSchema = await hasAuthHardeningSchema();
+    const legacyUserSelect = {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      microsoftId: true,
+      passwordHash: true,
+      active: true,
+      isPlatformAdmin: true,
+      createdAt: true,
+      updatedAt: true,
+    } as const;
+
+    const user = authHardeningSchema
+      ? await prisma.user.findFirst({
+          where: {
+            id: session.userId,
+            active: true,
+            emailVerifiedAt: { not: null },
+            sessionVersion: session.sessionVersion,
+          },
+          select: {
+            ...legacyUserSelect,
+            emailVerifiedAt: true,
+            sessionVersion: true,
+          },
+        })
+      : session.sessionVersion === 0
+        ? await prisma.user
+            .findFirst({
+              where: { id: session.userId, active: true },
+              select: legacyUserSelect,
+            })
+            .then((legacyUser) =>
+              legacyUser
+                ? {
+                    ...legacyUser,
+                    emailVerifiedAt: legacyUser.createdAt,
+                    sessionVersion: 0,
+                  }
+                : null,
+            )
+        : null;
     if (user) {
       return user;
     }

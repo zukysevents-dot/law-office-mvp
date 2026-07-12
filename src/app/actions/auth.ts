@@ -21,6 +21,7 @@ import {
   hashLoginIdentifier,
   reserveLoginAttempt,
 } from "@/lib/login-rate-limit";
+import { hasAuthHardeningSchema } from "@/lib/auth-hardening-schema";
 import { hashPassword, verifyPassword } from "@/lib/password";
 import { getRequestIp } from "@/lib/portal/portal-rate-limit";
 import { getPrisma } from "@/lib/prisma";
@@ -40,23 +41,41 @@ export async function loginAction(formData: FormData) {
   const ipAddress = await getRequestIp();
 
   const prisma = getPrisma();
+  const authHardeningSchema = await hasAuthHardeningSchema();
   // DB-backed limiter works across serverless instances. If its ledger is
   // temporarily unavailable we fail open here; the actual credential lookup
   // still fails closed and an outage cannot lock out every legitimate user.
   let withinRateLimit = true;
-  try {
-    withinRateLimit = (
-      await reserveLoginAttempt(ipAddress, identifierHash)
-    ).allowed;
-  } catch (error) {
-    console.error("staff login rate-limit check failed", error);
+  if (authHardeningSchema) {
+    try {
+      withinRateLimit = (
+        await reserveLoginAttempt(ipAddress, identifierHash)
+      ).allowed;
+    } catch (error) {
+      console.error("staff login rate-limit check failed", error);
+    }
   }
 
-  const user = withinRateLimit
-    ? await prisma.user.findFirst({
+  const user = await (async () => {
+    if (!withinRateLimit) return null;
+
+    if (authHardeningSchema) {
+      const found = await prisma.user.findFirst({
         where: { email, active: true, emailVerifiedAt: { not: null } },
-      })
-    : null;
+        select: { id: true, passwordHash: true, sessionVersion: true },
+      });
+      return found;
+    }
+
+    // Compatibility path for a database awaiting the additive hardening
+    // migration. Do not select newer columns: Prisma selects every scalar by
+    // default, which would make the credential form itself crash.
+    const found = await prisma.user.findFirst({
+      where: { email, active: true },
+      select: { id: true, passwordHash: true },
+    });
+    return found ? { ...found, sessionVersion: 0 } : null;
+  })();
   // Spusť scrypt i pro neexistující e-mail (konstantní čas, bug #13) — jinak
   // rychlá odpověď prozradí, že účet neexistuje.
   const ok = await verifyPassword(password, user?.passwordHash ?? null);
@@ -68,10 +87,12 @@ export async function loginAction(formData: FormData) {
 
   // A correct password clears failures tied to this account. It cannot clear
   // failures for other addresses sharing the same IP/NAT bucket.
-  try {
-    await clearAccountLoginFailures(identifierHash);
-  } catch (error) {
-    console.error("staff login failures could not be cleared", error);
+  if (authHardeningSchema) {
+    try {
+      await clearAccountLoginFailures(identifierHash);
+    } catch (error) {
+      console.error("staff login failures could not be cleared", error);
+    }
   }
 
   await setUserSessionCookie(user.id, user.sessionVersion);

@@ -107,7 +107,10 @@ export async function reserveLoginAttempt(
       ipAddress,
       identifierHash,
     )) {
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`;
+      // pg_advisory_xact_lock returns PostgreSQL's `void` type. Prisma cannot
+      // deserialize that value through $queryRaw, while $executeRaw correctly
+      // treats this as a command whose result is irrelevant.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`;
     }
 
     return decideAndRecordThrottleAttempt(
