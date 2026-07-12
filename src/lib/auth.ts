@@ -8,7 +8,7 @@ import {
   OrganizationStatus,
 } from "@/generated/prisma/enums";
 import { getPrisma } from "@/lib/prisma";
-import { SESSION_COOKIE, verifySession } from "@/lib/session";
+import { SESSION_COOKIE, verifySessionPayload } from "@/lib/session";
 
 // Resolves the signed-in account from the session cookie, WITHOUT requiring an
 // organization membership. Used by routes that exist before a user has joined a
@@ -17,11 +17,16 @@ import { SESSION_COOKIE, verifySession } from "@/lib/session";
 // per request even though many helpers call it.
 export const getAuthUser = cache(async function getAuthUser() {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
-  const userId = await verifySession(token);
+  const session = await verifySessionPayload(token);
 
-  if (userId) {
+  if (session) {
     const user = await getPrisma().user.findFirst({
-      where: { id: userId, active: true },
+      where: {
+        id: session.userId,
+        active: true,
+        emailVerifiedAt: { not: null },
+        sessionVersion: session.sessionVersion,
+      },
     });
     if (user) {
       return user;

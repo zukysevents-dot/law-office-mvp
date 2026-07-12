@@ -19,7 +19,7 @@ export default async function PortalLoginPage({
   const hasError = params.error === "1";
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#072924] px-4 py-12">
+    <main id="portal-main-content" tabIndex={-1} className="flex min-h-screen items-center justify-center bg-[#072924] px-4 py-12">
       <div className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-2xl">
         <h1 className="text-center text-xl font-semibold text-stone-900">
           Klientský portál
@@ -36,7 +36,7 @@ export default async function PortalLoginPage({
         ) : null}
 
         {hasError ? (
-          <p className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+          <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-800">
             Odkaz je neplatný nebo vypršel. Vyžádejte si prosím nový.
           </p>
         ) : null}
@@ -57,7 +57,7 @@ export default async function PortalLoginPage({
         </form>
 
         {!org ? (
-          <p className="mt-4 text-center text-xs text-stone-400">
+          <p className="mt-4 text-center text-xs text-stone-600">
             Použijte prosím odkaz na portál od vaší advokátní kanceláře.
           </p>
         ) : null}

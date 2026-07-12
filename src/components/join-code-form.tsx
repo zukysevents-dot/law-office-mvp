@@ -20,7 +20,7 @@ export function JoinCodeForm({ organizationId }: { organizationId: string }) {
   return (
     <div className="grid gap-4">
       {state.ok && state.code ? (
-        <div className="rounded-md border border-[#B9DCC6] bg-[#B9DCC6]/25 p-4">
+        <div role="status" className="rounded-md border border-[#B9DCC6] bg-[#B9DCC6]/25 p-4">
           <p className="text-sm font-semibold text-[#072924]">
             Kód „{state.label}“ byl vytvořen
           </p>
@@ -34,7 +34,7 @@ export function JoinCodeForm({ organizationId }: { organizationId: string }) {
       ) : null}
 
       {state.error ? (
-        <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-800">
           {state.error}
         </p>
       ) : null}

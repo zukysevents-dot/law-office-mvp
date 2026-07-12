@@ -339,7 +339,7 @@ export default async function ClientTimesheetPage({ searchParams }: Props) {
               </tfoot>
             </table>
 
-            <p className="mt-6 text-xs text-stone-400">
+            <p className="mt-6 text-xs text-stone-600">
               {scope === "billable"
                 ? "Výkaz obsahuje pouze fakturovatelnou práci."
                 : "Výkaz obsahuje veškerou evidovanou práci."}

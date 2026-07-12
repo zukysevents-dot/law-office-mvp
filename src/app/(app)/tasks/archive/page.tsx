@@ -125,8 +125,8 @@ export default async function TaskArchivePage() {
                     Historie stavů
                   </h3>
                   {task.statusHistory.length > 0 ? (
-                    <div className="mt-2 overflow-x-auto">
-                      <table>
+                    <div className="mt-2 table-scroll">
+                      <table className="w-max min-w-full table-auto">
                         <thead>
                           <tr>
                             <th>Datum</th>

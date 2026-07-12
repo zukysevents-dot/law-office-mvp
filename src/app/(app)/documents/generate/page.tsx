@@ -147,7 +147,7 @@ export default async function GenerateDocumentPage({
               defaultValue={data.generated}
               className="font-mono text-xs"
             />
-            <p className="mt-2 text-xs text-stone-400">
+            <p className="mt-2 text-xs text-stone-600">
               Text zkopírujte do dokumentu, uložte do SharePointu a níže
               zaevidujte odkaz. Systém negeneruje binární soubor.
             </p>

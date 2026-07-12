@@ -20,7 +20,7 @@ async function main() {
   const token = await signSession("user_123");
   assert.equal(await verifySession(token), "user_123");
   assert.equal(await verifySession(token + "x"), null, "tampered signature");
-  assert.equal(await verifySession("a.b.c"), null, "garbage token");
+  assert.equal(await verifySession("a.b.c.d"), null, "garbage token");
   assert.equal(await verifySession(undefined), null, "missing token");
   assert.equal(await verifySession(await signSession("u", -10)), null, "expired");
 

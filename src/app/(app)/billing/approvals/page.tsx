@@ -188,7 +188,7 @@ export default async function BillingApprovalsPage() {
                     </div>
                   </form>
                 ) : (
-                  <p className="text-sm text-black/50">
+                  <p className="text-sm text-black/60">
                     Nemáte oprávnění schvalovat položky.
                   </p>
                 )}

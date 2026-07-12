@@ -27,6 +27,7 @@ export async function setArchived<T extends { id: string; organizationId: string
 
   await getPrisma().auditLog.create({
     data: {
+      organizationId: currentUser.organizationId,
       entityType,
       entityId: updated.id,
       action: archived ? "ARCHIVE" : "RESTORE",

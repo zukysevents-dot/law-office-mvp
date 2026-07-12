@@ -2,6 +2,9 @@
   "name": "law-office-mvp",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "postinstall": "prisma generate",
     "predev": "prisma generate",
@@ -10,6 +13,7 @@
     "build": "next build",
     "start": "next start -H 127.0.0.1 -p 3001",
     "lint": "eslint",
+    "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test \"src/**/*.test.ts\"",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
@@ -32,7 +36,7 @@
     "exceljs": "^4.4.0",
     "lucide-react": "^1.17.0",
     "next": "16.2.9",
-    "nodemailer": "^9.0.0",
+    "nodemailer": "^9.0.3",
     "pg": "^8.21.0",
     "prisma": "^7.8.0",
     "react": "19.2.4",
@@ -50,5 +54,10 @@
     "tailwindcss": "^4",
     "tsx": "^4.22.4",
     "typescript": "^5"
+  },
+  "overrides": {
+    "next": {
+      "postcss": "8.5.15"
+    }
   }
 }

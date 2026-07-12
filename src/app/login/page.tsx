@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "Přihlášení — syndikat.legal",
+  title: "Přihlášení",
 };
 
 export default async function LoginPage({
@@ -16,7 +16,7 @@ export default async function LoginPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
-  const hasError = params.error === "1";
+  const error = typeof params.error === "string" ? params.error : undefined;
   const from = typeof params.from === "string" ? params.from : "/dashboard";
 
   return (
@@ -39,9 +39,11 @@ export default async function LoginPage({
           Interní systém advokátní kanceláře
         </p>
 
-        {hasError ? (
-          <p className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
-            Nesprávný e-mail nebo heslo.
+        {error ? (
+          <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-800">
+            {error === "rate"
+              ? "Příliš mnoho neúspěšných pokusů. Zkuste to prosím za 15 minut."
+              : "Nesprávný e-mail nebo heslo."}
           </p>
         ) : null}
 

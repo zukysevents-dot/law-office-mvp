@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import nextDynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import type {
@@ -23,10 +23,15 @@ const FullCalendar = nextDynamic(() => import("@fullcalendar/react"), {
   ssr: false,
   loading: () => (
     <div
-      className="animate-pulse rounded-lg border border-[#d4e2dc] bg-[#eef5f1]"
-      style={{ height: 760 }}
-      aria-hidden="true"
-    />
+      role="status"
+      className="flex min-h-[28rem] items-center justify-center rounded-lg border border-[#d4e2dc] bg-[#eef5f1] text-sm font-medium text-[#5f756e] sm:min-h-[40rem]"
+    >
+      <span
+        className="mr-3 h-5 w-5 animate-spin rounded-full border-2 border-[#B9DCC6] border-t-[#072924] motion-reduce:animate-none"
+        aria-hidden="true"
+      />
+      Načítání kalendáře…
+    </div>
   ),
 });
 
@@ -61,6 +66,7 @@ function toEventInput(event: SerializedCalendarEvent): EventInput {
 
 export function CalendarView() {
   const router = useRouter();
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const loadEvents = useCallback(
     (
@@ -68,9 +74,15 @@ export function CalendarView() {
       success: (events: EventInput[]) => void,
       failure: (error: Error) => void,
     ) => {
+      setLoadError(null);
       fetchCalendarEvents(info.startStr, info.endStr)
         .then((events) => success(events.map(toEventInput)))
-        .catch(failure);
+        .catch((error: unknown) => {
+          setLoadError(
+            "Události kalendáře se nepodařilo načíst. Zkuste načtení zopakovat.",
+          );
+          failure(error instanceof Error ? error : new Error("Calendar load failed"));
+        });
     },
     [],
   );
@@ -102,6 +114,22 @@ export function CalendarView() {
         </span>
       </div>
 
+      {loadError ? (
+        <div
+          role="alert"
+          className="flex flex-col gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <span>{loadError}</span>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="inline-flex h-10 shrink-0 items-center justify-center rounded-md border border-red-300 bg-white px-4 font-medium text-red-900 transition hover:bg-red-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-900"
+          >
+            Načíst znovu
+          </button>
+        </div>
+      ) : null}
+
       <div className="calendar-shell min-w-0">
         <FullCalendar
           plugins={[dayGridPlugin, timeGridPlugin, listPlugin]}
@@ -109,7 +137,7 @@ export function CalendarView() {
           locale={csLocale}
           timeZone="UTC"
           firstDay={1}
-          height={760}
+          height="auto"
           headerToolbar={{
             left: "prev,next today",
             center: "title",

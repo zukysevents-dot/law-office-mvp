@@ -1,6 +1,8 @@
 // Stateless signed-cookie sessions. Web Crypto only, so the same code runs in
-// edge middleware and in Node server actions/components. No Session table, no
-// JWT/next-auth dependency — payload is `${userId}.${exp}` plus an HMAC tag.
+// edge proxy and in Node server actions/components. No Session table or auth
+// dependency. New tokens carry `${userId}.${sessionVersion}.${exp}` plus an
+// HMAC tag. The version is compared with User.sessionVersion in the auth DAL,
+// which makes a password reset revoke all previously issued tokens.
 
 const ALG = { name: "HMAC", hash: "SHA-256" } as const;
 
@@ -54,28 +56,48 @@ function fromBase64Url(value: string): BufferSource {
 export async function signSession(
   userId: string,
   ttlSeconds = SESSION_MAX_AGE,
+  sessionVersion = 0,
 ): Promise<string> {
   const exp = Math.floor(Date.now() / 1000) + ttlSeconds;
-  const payload = `${userId}.${exp}`;
+  const payload = `${userId}.${sessionVersion}.${exp}`;
   const sig = await crypto.subtle.sign(ALG, await key(), bytes(payload));
   return `${payload}.${toBase64Url(sig)}`;
 }
 
-export async function verifySession(
+export type SessionPayload = {
+  userId: string;
+  sessionVersion: number;
+};
+
+export async function verifySessionPayload(
   token: string | undefined | null,
-): Promise<string | null> {
+): Promise<SessionPayload | null> {
   if (!token) return null;
   const parts = token.split(".");
-  if (parts.length !== 3) return null;
-  const [userId, expString, sig] = parts;
+
+  // Accept the historical userId.exp.sig shape as version 0 so deployment does
+  // not force-log-out every existing user. Any password change increments the
+  // DB version and invalidates both historical and new version-0 tokens.
+  const isLegacy = parts.length === 3;
+  if (!isLegacy && parts.length !== 4) return null;
+
+  const [userId, versionOrExp, expOrSig, maybeSig] = parts;
+  const sessionVersion = isLegacy ? 0 : Number(versionOrExp);
+  const expString = isLegacy ? versionOrExp : expOrSig;
+  const sig = isLegacy ? expOrSig : maybeSig;
   if (!userId || !expString || !sig) return null;
+  if (!Number.isSafeInteger(sessionVersion) || sessionVersion < 0) return null;
+
+  const signedPayload = isLegacy
+    ? `${userId}.${expString}`
+    : `${userId}.${sessionVersion}.${expString}`;
 
   try {
     const valid = await crypto.subtle.verify(
       ALG,
       await key(),
       fromBase64Url(sig),
-      bytes(`${userId}.${expString}`),
+      bytes(signedPayload),
     );
     if (!valid) return null;
   } catch {
@@ -86,5 +108,11 @@ export async function verifySession(
   const exp = Number(expString);
   if (!Number.isFinite(exp) || exp * 1000 < Date.now()) return null;
 
-  return userId;
+  return { userId, sessionVersion };
+}
+
+export async function verifySession(
+  token: string | undefined | null,
+): Promise<string | null> {
+  return (await verifySessionPayload(token))?.userId ?? null;
 }

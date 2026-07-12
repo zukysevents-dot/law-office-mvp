@@ -205,7 +205,7 @@ export default async function DataMessageDetailPage({
                         </Button>
                       </form>
                     ) : (
-                      <span className="text-xs text-stone-400">bez souboru</span>
+                      <span className="text-xs text-stone-600">bez souboru</span>
                     )}
                   </li>
                 ))}
@@ -301,7 +301,7 @@ export default async function DataMessageDetailPage({
                   spisu.
                 </p>
               )}
-              <p className="mt-2 text-xs text-stone-400">
+              <p className="mt-2 text-xs text-stone-600">
                 Termín lhůty systém nepočítá automaticky — zadává a potvrzuje
                 advokát. Lhůta zůstane dohledatelná k této datové zprávě.
               </p>

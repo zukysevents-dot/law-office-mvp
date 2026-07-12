@@ -89,6 +89,7 @@ export async function GET(request: Request) {
 
       await tx.auditLog.create({
         data: {
+          organizationId: row.organizationId,
           entityType: "PortalAccess",
           entityId: row.portalAccessId,
           action: "PORTAL_LOGIN",

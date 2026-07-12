@@ -545,8 +545,8 @@ export default async function SubjectDetailPage({
           </Section>
           <Section title="Historické vazby subjektu">
             {subject.relations.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table>
+              <div className="table-scroll">
+                <table className="w-max min-w-full table-auto">
                   <thead>
                     <tr>
                       <th>Role</th>
@@ -599,8 +599,8 @@ export default async function SubjectDetailPage({
           </Section>
           <Section title="Conflict check historie">
             {subject.conflictChecks.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table>
+              <div className="table-scroll">
+                <table className="w-max min-w-full table-auto">
                   <thead>
                     <tr>
                       <th>Dotaz</th>
@@ -650,8 +650,8 @@ export default async function SubjectDetailPage({
 
 function ProjectList({ projects }: { projects: SubjectProject[] }) {
   return (
-    <div className="overflow-x-auto">
-      <table>
+    <div className="table-scroll">
+      <table className="w-max min-w-full table-auto">
         <thead>
           <tr>
             <th>Název</th>

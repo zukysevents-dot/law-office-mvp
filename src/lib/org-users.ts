@@ -51,6 +51,7 @@ export async function assertUserInOrg(
           userId,
           organizationId,
           status: OrganizationMemberStatus.ACTIVE,
+          user: { is: { active: true } },
         },
         select: { id: true },
       })

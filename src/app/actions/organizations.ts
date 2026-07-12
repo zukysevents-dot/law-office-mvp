@@ -163,6 +163,7 @@ export async function joinOrganization(formData: FormData) {
 
       await tx.auditLog.create({
         data: {
+          organizationId: org.id,
           entityType: "OrganizationMember",
           entityId: org.id,
           action: "JOIN",
@@ -218,6 +219,7 @@ export async function createJoinCode(
 
   await prisma.auditLog.create({
     data: {
+      organizationId,
       entityType: "OrganizationJoinCode",
       entityId: organizationId,
       action: "CREATE",
@@ -252,6 +254,7 @@ export async function revokeJoinCode(formData: FormData) {
 
   await prisma.auditLog.create({
     data: {
+      organizationId,
       entityType: "OrganizationJoinCode",
       entityId: organizationId,
       action: "REVOKE",
@@ -292,6 +295,7 @@ export async function changeMemberRole(formData: FormData) {
     prisma.user.update({ where: { id: member.userId }, data: { role } }),
     prisma.auditLog.create({
       data: {
+        organizationId,
         entityType: "OrganizationMember",
         entityId: organizationId,
         action: "ROLE_CHANGE",
@@ -333,6 +337,7 @@ export async function deactivateMember(formData: FormData) {
 
   await prisma.auditLog.create({
     data: {
+      organizationId,
       entityType: "OrganizationMember",
       entityId: organizationId,
       action: "DEACTIVATE",
@@ -382,6 +387,7 @@ export async function createOrganization(formData: FormData) {
 
   await prisma.auditLog.create({
     data: {
+      organizationId: created.id,
       entityType: "Organization",
       entityId: created.id,
       action: "CREATE",
@@ -423,6 +429,7 @@ export async function updateOrganization(formData: FormData) {
 
   await prisma.auditLog.create({
     data: {
+      organizationId,
       entityType: "Organization",
       entityId: organizationId,
       action: "UPDATE",
@@ -533,6 +540,7 @@ export async function setOrganizationModule(formData: FormData) {
 
     await tx.auditLog.create({
       data: {
+        organizationId,
         entityType: "OrganizationModule",
         entityId: organizationId,
         action: "MODULE_CHANGE",

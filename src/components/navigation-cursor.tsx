@@ -46,12 +46,20 @@ export function NavigationCursor() {
       const anchor = (event.target as HTMLElement | null)?.closest<HTMLAnchorElement>(
         "a[href]",
       );
-      if (!anchor || anchor.target === "_blank") {
+      if (!anchor || anchor.target === "_blank" || anchor.hasAttribute("download")) {
         return;
       }
       const href = anchor.getAttribute("href") ?? "";
       // Internal navigation to a different location only (skip #anchors, external).
       if (!href.startsWith("/") || href.startsWith("/#")) {
+        return;
+      }
+      const targetUrl = new URL(anchor.href, window.location.href);
+      const currentUrl = new URL(window.location.href);
+      if (
+        targetUrl.pathname === currentUrl.pathname &&
+        targetUrl.search === currentUrl.search
+      ) {
         return;
       }
       moveTo(event.clientX, event.clientY);
@@ -66,6 +74,15 @@ export function NavigationCursor() {
     return () => document.removeEventListener("click", onClick, true);
   }, []);
 
+  useEffect(
+    () => () => {
+      if (timeoutRef.current) {
+        window.clearTimeout(timeoutRef.current);
+      }
+    },
+    [],
+  );
+
   // New route committed → hide. Adjust state during render (the sanctioned
   // "reset on changed input" pattern) instead of an effect. The safety timeout
   // still covers same-page navigations that don't change the key.
@@ -76,17 +93,11 @@ export function NavigationCursor() {
     setActive(false);
   }
 
-  // Hide the OS cursor while loading so the spinner truly replaces it.
-  useEffect(() => {
-    document.body.classList.toggle("nav-loading", active);
-    return () => document.body.classList.remove("nav-loading");
-  }, [active]);
-
   return (
     <div
       ref={elementRef}
       aria-hidden="true"
-      className={`pointer-events-none fixed left-0 top-0 z-[9999] transition-opacity duration-150 ${
+      className={`pointer-events-none fixed left-0 top-0 z-[9999] transition-opacity duration-150 motion-reduce:transition-none ${
         active ? "opacity-100" : "opacity-0"
       }`}
       style={{ willChange: "transform" }}
@@ -96,7 +107,7 @@ export function NavigationCursor() {
         <div className="absolute inset-0 rounded-full border border-[#072924]/20" />
         {/* obíhající pixel */}
         <div
-          className="absolute inset-0 animate-spin"
+          className="absolute inset-0 animate-spin motion-reduce:animate-none"
           style={{ animationDuration: "0.9s" }}
         >
           <span className="absolute left-1/2 top-0 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-[#072924] shadow" />

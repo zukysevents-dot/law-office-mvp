@@ -29,6 +29,7 @@ function preference(
     deadlineOverdueEmail: true,
     courtHearingSoonEmail: true,
     deadlineWatchDaysBefore: 3,
+    registryChangeEmail: true,
     ...overrides,
   };
 }

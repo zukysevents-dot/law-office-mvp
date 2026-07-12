@@ -175,6 +175,30 @@ export function canViewAllLegalData(user: PermissionInput) {
   return isAdmin(user) || isPartner(user);
 }
 
+// Subject registry and references are office-wide records in the MVP: they can
+// become visible to multiple matters and contain commercial/risk data. Keep
+// their create/edit policy aligned and limited to office leadership. This also
+// guarantees that anyone allowed to create one can subsequently edit it.
+export function canManageSubjects(user: PermissionInput) {
+  return Boolean(orgIdOf(user)) && canViewAllLegalData(user);
+}
+
+export function assertCanManageSubjects(user: PermissionInput) {
+  if (!canManageSubjects(user)) {
+    throw new Error("Nemáte oprávnění spravovat subjekty.");
+  }
+}
+
+export function canManageReferences(user: PermissionInput) {
+  return Boolean(orgIdOf(user)) && canViewAllLegalData(user);
+}
+
+export function assertCanManageReferences(user: PermissionInput) {
+  if (!canManageReferences(user)) {
+    throw new Error("Nemáte oprávnění spravovat reference.");
+  }
+}
+
 // Hourly rates / billed amounts are partner-level information. Default: only
 // ADMIN/PARTNER see the rate column. Admin can additionally grant VIEW_RATES to
 // a specific user (revize ř.35/62) — granted users then see rates everywhere
@@ -992,6 +1016,14 @@ export function canEditRecord(
   // ADMIN/PARTNER (who otherwise see everything in their own org).
   if (orgMismatch(user, record)) {
     return false;
+  }
+
+  if (type === "Subject") {
+    return canManageSubjects(user);
+  }
+
+  if (type === "Reference") {
+    return canManageReferences(user);
   }
 
   if (canViewAllLegalData(user)) {

@@ -73,9 +73,9 @@ function KpiCard({
 }) {
   return (
     <div className="rounded-lg border border-black/10 p-3">
-      <p className="text-xs uppercase tracking-wide text-black/50">{label}</p>
+      <p className="text-xs uppercase tracking-wide text-black/60">{label}</p>
       <p className="text-lg font-semibold">{value}</p>
-      {hint ? <p className="mt-1 text-xs text-black/50">{hint}</p> : null}
+      {hint ? <p className="mt-1 text-xs text-black/60">{hint}</p> : null}
     </div>
   );
 }

@@ -20,14 +20,11 @@ import {
   requiredString,
 } from "@/lib/form";
 import {
-  andWhere,
   assertCanEditRecord,
   canSetBillableStatus,
   canViewRates,
-  caseVisibilityWhere,
-  projectVisibilityWhere,
-  taskVisibilityWhere,
 } from "@/lib/permissions";
+import { resolveVisibleMatterSelection } from "@/lib/matter-integrity.server";
 import { getPrisma } from "@/lib/prisma";
 
 // Internal (non-billable) hours carry an internal category instead of a legal
@@ -74,10 +71,6 @@ function resolveHourlyRate({ caseRate, projectRate, subjectRate }: RateInput) {
 export async function createWorkLog(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  const subjectId = optionalString(formData, "subjectId");
-  const projectId = optionalString(formData, "projectId");
-  const caseId = optionalString(formData, "caseId");
-  const taskId = optionalString(formData, "taskId");
   const hours = requiredNumber(formData, "hours");
   // Guard against negative/zero or absurd hour counts (a crafted POST could
   // otherwise yield a negative amountCzk). Upper bound 24 = one day's work.
@@ -90,51 +83,20 @@ export async function createWorkLog(formData: FormData) {
     ? optionalNumber(formData, "hourlyRate")
     : null;
 
-  // Case/project/task lookups are scoped by visibility — a user can't log work
-  // against a matter they can't see. subjectId is the shared registry.
-  const [legalCase, project, subject, task] = await Promise.all([
-    caseId
-      ? prisma.case.findFirst({
-          where: andWhere({ id: caseId }, caseVisibilityWhere(currentUser)),
-          select: { hourlyRate: true },
-        })
-      : null,
-    projectId
-      ? prisma.project.findFirst({
-          where: andWhere({ id: projectId }, projectVisibilityWhere(currentUser)),
-          select: { hourlyRate: true },
-        })
-      : null,
-    subjectId
-      ? prisma.subject.findUnique({
-          where: { id: subjectId },
-          select: { hourlyRate: true },
-        })
-      : null,
-    taskId
-      ? prisma.task.findFirst({
-          where: andWhere({ id: taskId }, taskVisibilityWhere(currentUser)),
-          select: { id: true },
-        })
-      : null,
-  ]);
-
-  if (caseId && !legalCase) {
-    throw new Error("Případ nenalezen nebo k němu nemáte oprávnění.");
-  }
-  if (projectId && !project) {
-    throw new Error("Projekt nenalezen nebo k němu nemáte oprávnění.");
-  }
-  if (taskId && !task) {
-    throw new Error("Úkol nenalezen nebo k němu nemáte oprávnění.");
-  }
+  const matter = await resolveVisibleMatterSelection(prisma, currentUser, {
+    subjectId: optionalString(formData, "subjectId"),
+    projectId: optionalString(formData, "projectId"),
+    caseId: optionalString(formData, "caseId"),
+    taskId: optionalString(formData, "taskId"),
+  });
+  const { subjectId, projectId, caseId, taskId } = matter;
 
   const derivedHourlyRate =
     manualHourlyRate ??
     resolveHourlyRate({
-      caseRate: legalCase?.hourlyRate,
-      projectRate: project?.hourlyRate,
-      subjectRate: subject?.hourlyRate,
+      caseRate: matter.caseHourlyRate,
+      projectRate: matter.projectHourlyRate,
+      subjectRate: matter.subjectHourlyRate,
     });
   const hourlyRate = derivedHourlyRate > 0 ? derivedHourlyRate : null;
   const amountCzk = hourlyRate ? hours * hourlyRate : null;
@@ -176,6 +138,7 @@ export async function createWorkLog(formData: FormData) {
       entityId: workLog.id,
       action: "CREATE",
       changedById: currentUser.id,
+      organizationId: currentUser.organizationId,
       newValue: {
         subjectId: workLog.subjectId,
         projectId: workLog.projectId,
@@ -216,11 +179,6 @@ export async function updateWorkLog(formData: FormData) {
     throw new Error("Počet hodin musí být větší než 0 a nejvýše 24.");
   }
   const manualAmount = optionalNumber(formData, "amountCzk");
-  const subjectId = optionalString(formData, "subjectId");
-  const projectId = optionalString(formData, "projectId");
-  const caseId = optionalString(formData, "caseId");
-  const taskId = optionalString(formData, "taskId");
-
   const oldWorkLog = await prisma.workLog.findUniqueOrThrow({
     where: { id: workLogId },
   });
@@ -234,37 +192,13 @@ export async function updateWorkLog(formData: FormData) {
     );
   }
 
-  // Re-assigning the matter must respect visibility — a user can't move a work
-  // log onto a case/project/task they can't see (IDOR guard, mirrors create).
-  const [legalCase, project, task] = await Promise.all([
-    caseId
-      ? prisma.case.findFirst({
-          where: andWhere({ id: caseId }, caseVisibilityWhere(currentUser)),
-          select: { id: true },
-        })
-      : null,
-    projectId
-      ? prisma.project.findFirst({
-          where: andWhere({ id: projectId }, projectVisibilityWhere(currentUser)),
-          select: { id: true },
-        })
-      : null,
-    taskId
-      ? prisma.task.findFirst({
-          where: andWhere({ id: taskId }, taskVisibilityWhere(currentUser)),
-          select: { id: true },
-        })
-      : null,
-  ]);
-  if (caseId && !legalCase) {
-    throw new Error("Případ nenalezen nebo k němu nemáte oprávnění.");
-  }
-  if (projectId && !project) {
-    throw new Error("Projekt nenalezen nebo k němu nemáte oprávnění.");
-  }
-  if (taskId && !task) {
-    throw new Error("Úkol nenalezen nebo k němu nemáte oprávnění.");
-  }
+  const matter = await resolveVisibleMatterSelection(prisma, currentUser, {
+    subjectId: optionalString(formData, "subjectId"),
+    projectId: optionalString(formData, "projectId"),
+    caseId: optionalString(formData, "caseId"),
+    taskId: optionalString(formData, "taskId"),
+  });
+  const { subjectId, projectId, caseId, taskId } = matter;
 
   // Non rate-viewers cannot change the rate — keep the stored value.
   const hourlyRate = canViewRates(currentUser)
@@ -335,6 +269,7 @@ export async function updateWorkLog(formData: FormData) {
       entityId: workLog.id,
       action: "UPDATE",
       changedById: currentUser.id,
+      organizationId: currentUser.organizationId,
       oldValue: auditJson(oldWorkLog),
       newValue: auditJson(workLog),
     },

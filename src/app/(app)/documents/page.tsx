@@ -73,7 +73,7 @@ function DocLeaf({ document }: { document: DocNode }) {
       <Badge tone={documentKindTone(document.kind as DocumentKind)}>
         {kindLabel(document.kind)}
       </Badge>
-      <span className="text-xs text-stone-400">v{document.version}</span>
+      <span className="text-xs text-stone-600">v{document.version}</span>
     </li>
   );
 }
@@ -300,7 +300,7 @@ export default async function DocumentsPage({
                   <summary className="flex cursor-pointer items-center gap-2 font-medium text-[#072924]">
                     <FolderTree className="h-4 w-4" aria-hidden="true" />
                     {project.name}
-                    <span className="text-xs font-normal text-stone-400">
+                    <span className="text-xs font-normal text-stone-600">
                       {project.docCount} dok.
                     </span>
                   </summary>
@@ -310,7 +310,7 @@ export default async function DocumentsPage({
                         <details key={legalCase.id} className="py-1">
                           <summary className="flex cursor-pointer items-center gap-2 text-sm text-stone-800">
                             <FolderOpen
-                              className="h-4 w-4 text-stone-400"
+                              className="h-4 w-4 text-stone-600"
                               aria-hidden="true"
                             />
                             <Link
@@ -319,7 +319,7 @@ export default async function DocumentsPage({
                             >
                               {legalCase.name}
                             </Link>
-                            <span className="text-xs text-stone-400">
+                            <span className="text-xs text-stone-600">
                               {legalCase.documents.length} dok.
                             </span>
                           </summary>
@@ -330,14 +330,14 @@ export default async function DocumentsPage({
                               ))}
                             </ul>
                           ) : (
-                            <p className="mt-1 pl-6 text-xs text-stone-400">
+                            <p className="mt-1 pl-6 text-xs text-stone-600">
                               Žádné dokumenty.
                             </p>
                           )}
                         </details>
                       ))
                     ) : (
-                      <p className="text-xs text-stone-400">Žádné případy.</p>
+                      <p className="text-xs text-stone-600">Žádné případy.</p>
                     )}
                   </div>
                 </details>
@@ -358,7 +358,7 @@ export default async function DocumentsPage({
                           >
                             {subject.name}
                           </Link>
-                          <span className="text-xs text-stone-400">
+                          <span className="text-xs text-stone-600">
                             {subject.documents.length} dok.
                           </span>
                         </summary>
@@ -377,7 +377,7 @@ export default async function DocumentsPage({
                 <details className="rounded-lg border border-[#d4e2dc] bg-white px-4 py-3">
                   <summary className="cursor-pointer font-medium text-[#072924]">
                     Nezařazené dokumenty
-                    <span className="ml-2 text-xs font-normal text-stone-400">
+                    <span className="ml-2 text-xs font-normal text-stone-600">
                       {tree.unfiled.length} dok.
                     </span>
                   </summary>

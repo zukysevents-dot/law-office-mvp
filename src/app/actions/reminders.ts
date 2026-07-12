@@ -60,6 +60,7 @@ export async function sendReminder(formData: FormData) {
 
     await tx.auditLog.create({
       data: {
+        organizationId: currentUser.organizationId,
         entityType: "Invoice",
         entityId: invoice.id,
         action: "REMINDER",
@@ -98,6 +99,7 @@ export async function markInvoiceSent(formData: FormData) {
     });
     await tx.auditLog.create({
       data: {
+        organizationId: currentUser.organizationId,
         entityType: "Invoice",
         entityId: invoice.id,
         action: "MARK_SENT",

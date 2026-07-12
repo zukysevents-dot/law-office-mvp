@@ -13,6 +13,7 @@ import {
   optionalString,
   requiredString,
 } from "@/lib/form";
+import { assertUserInOrg } from "@/lib/org-users";
 import {
   andWhere,
   assertCanEditRecord,
@@ -29,6 +30,8 @@ export async function createProject(formData: FormData) {
     ProjectStatus.ACTIVE,
   );
   const mainSubjectId = requiredString(formData, "mainSubjectId");
+  const responsibleUserId = optionalString(formData, "responsibleUserId");
+  await assertUserInOrg(responsibleUserId, currentUser.organizationId);
 
   const project = await prisma.$transaction(async (tx) => {
     // The main subject must be one the user can see — otherwise a crafted POST
@@ -46,7 +49,7 @@ export async function createProject(formData: FormData) {
         organizationId: currentUser.organizationId,
         name: requiredString(formData, "name"),
         mainSubjectId,
-        responsibleUserId: optionalString(formData, "responsibleUserId"),
+        responsibleUserId,
         status,
         hourlyRate: optionalNumber(formData, "hourlyRate"),
         sharepointUrl: optionalString(formData, "sharepointUrl"),
@@ -71,6 +74,7 @@ export async function createProject(formData: FormData) {
         entityId: created.id,
         action: "CREATE",
         changedById: currentUser.id,
+        organizationId: currentUser.organizationId,
         newValue: {
           name: created.name,
           mainSubjectId: created.mainSubjectId,
@@ -97,12 +101,14 @@ export async function updateProject(formData: FormData) {
   );
 
   const mainSubjectId = requiredString(formData, "mainSubjectId");
+  const responsibleUserId = optionalString(formData, "responsibleUserId");
 
   const oldProject = await prisma.project.findUniqueOrThrow({
     where: { id: projectId },
     include: { assignees: { select: { userId: true } } },
   });
   assertCanEditRecord(currentUser, "Project", oldProject);
+  await assertUserInOrg(responsibleUserId, currentUser.organizationId);
 
   // Re-pointing the main subject must respect visibility — can't attach a
   // subject the user can't see (IDOR guard, mirrors createProject).
@@ -119,7 +125,7 @@ export async function updateProject(formData: FormData) {
     data: {
       name: requiredString(formData, "name"),
       mainSubjectId,
-      responsibleUserId: optionalString(formData, "responsibleUserId"),
+      responsibleUserId,
       status,
       hourlyRate: optionalNumber(formData, "hourlyRate"),
       sharepointUrl: optionalString(formData, "sharepointUrl"),
@@ -133,6 +139,7 @@ export async function updateProject(formData: FormData) {
       entityId: project.id,
       action: "UPDATE",
       changedById: currentUser.id,
+      organizationId: currentUser.organizationId,
       oldValue: auditJson(oldProject),
       newValue: auditJson(project),
     },

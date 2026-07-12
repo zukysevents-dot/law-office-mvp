@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { optionalDateTime, requiredDateTime } from "./form";
+import {
+  optionalDateTime,
+  requiredDateTime,
+  safeInternalRedirectPath,
+} from "./form";
 
 // Helper: build a FormData fixture carrying a single field.
 // The form helpers always read via `formData.get(key)`, so a one-field
@@ -101,4 +105,36 @@ test("requiredDateTime: unparseable value ('abc') → throws", () => {
     () => requiredDateTime(fd("at", "abc"), "at"),
     /Missing required datetime: at/,
   );
+});
+
+// --- safeInternalRedirectPath ----------------------------------------------
+
+test("safeInternalRedirectPath: preserves a same-origin path, query and hash", () => {
+  assert.equal(
+    safeInternalRedirectPath("/cases/abc?tab=tasks#new", "/references"),
+    "/cases/abc?tab=tasks#new",
+  );
+});
+
+test("safeInternalRedirectPath: rejects absolute and protocol-relative URLs", () => {
+  assert.equal(
+    safeInternalRedirectPath("https://evil.example/phish", "/references"),
+    "/references",
+  );
+  assert.equal(
+    safeInternalRedirectPath("//evil.example/phish", "/references"),
+    "/references",
+  );
+});
+
+test("safeInternalRedirectPath: rejects backslash origin confusion", () => {
+  assert.equal(
+    safeInternalRedirectPath("/\\evil.example/phish", "/references"),
+    "/references",
+  );
+});
+
+test("safeInternalRedirectPath: falls back for absent or non-string values", () => {
+  assert.equal(safeInternalRedirectPath(null, "/references"), "/references");
+  assert.equal(safeInternalRedirectPath(42, "/references"), "/references");
 });

@@ -198,6 +198,7 @@ async function main() {
       role: UserRole.ADMIN,
       active: true,
       passwordHash: demoPasswordHash,
+      emailVerifiedAt: new Date(),
     },
     create: {
       name: "Admin Demo",
@@ -205,6 +206,7 @@ async function main() {
       role: UserRole.ADMIN,
       active: true,
       passwordHash: demoPasswordHash,
+      emailVerifiedAt: new Date(),
     },
   });
 
@@ -215,6 +217,7 @@ async function main() {
       role: UserRole.PARTNER,
       active: true,
       passwordHash: demoPasswordHash,
+      emailVerifiedAt: new Date(),
     },
     create: {
       name: "Partner Demo",
@@ -222,6 +225,7 @@ async function main() {
       role: UserRole.PARTNER,
       active: true,
       passwordHash: demoPasswordHash,
+      emailVerifiedAt: new Date(),
     },
   });
 
@@ -232,6 +236,7 @@ async function main() {
       role: UserRole.LAWYER,
       active: true,
       passwordHash: demoPasswordHash,
+      emailVerifiedAt: new Date(),
     },
     create: {
       name: "Advokát Demo",
@@ -239,6 +244,7 @@ async function main() {
       role: UserRole.LAWYER,
       active: true,
       passwordHash: demoPasswordHash,
+      emailVerifiedAt: new Date(),
     },
   });
 
@@ -249,6 +255,7 @@ async function main() {
       role: UserRole.TRAINEE,
       active: true,
       passwordHash: demoPasswordHash,
+      emailVerifiedAt: new Date(),
     },
     create: {
       name: "Koncipient Demo",
@@ -256,6 +263,7 @@ async function main() {
       role: UserRole.TRAINEE,
       active: true,
       passwordHash: demoPasswordHash,
+      emailVerifiedAt: new Date(),
     },
   });
 
@@ -266,6 +274,7 @@ async function main() {
       role: UserRole.INTERN,
       active: true,
       passwordHash: demoPasswordHash,
+      emailVerifiedAt: new Date(),
     },
     create: {
       name: "Praktikant Demo",
@@ -273,6 +282,7 @@ async function main() {
       role: UserRole.INTERN,
       active: true,
       passwordHash: demoPasswordHash,
+      emailVerifiedAt: new Date(),
     },
   });
 
@@ -301,6 +311,7 @@ async function main() {
       isPlatformAdmin: true,
       active: true,
       passwordHash: demoPasswordHash,
+      emailVerifiedAt: new Date(),
     },
     create: {
       name: "Developer Admin",
@@ -309,6 +320,7 @@ async function main() {
       isPlatformAdmin: true,
       active: true,
       passwordHash: demoPasswordHash,
+      emailVerifiedAt: new Date(),
     },
   });
 

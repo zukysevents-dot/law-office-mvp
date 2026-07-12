@@ -40,7 +40,7 @@ export default async function HrExportsPage() {
             </Field>
             <Button type="submit">Stáhnout CSV</Button>
           </form>
-          <p className="mt-3 text-xs text-stone-400">
+          <p className="mt-3 text-xs text-stone-600">
             CSV obsahuje za každého zaměstnance součet odpracovaných hodin,
             dovolené, nemoci a ostatních schválených absencí. Nativní formát pro
             Pamicu je plánované rozšíření.

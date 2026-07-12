@@ -88,9 +88,7 @@ export async function GET(request: NextRequest) {
     const prisma = getPrisma();
     rows = await prisma.auditLog.findMany({
       where: andWhere(buildAuditWhere(filters), {
-        changedBy: {
-          is: { memberships: { some: { organizationId: currentUser.organizationId } } },
-        },
+        organizationId: currentUser.organizationId,
       }),
       orderBy: { createdAt: "desc" },
       take: 10000,

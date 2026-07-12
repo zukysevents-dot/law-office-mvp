@@ -125,7 +125,7 @@ export default async function HrAbsencesPage() {
               <Button type="submit">Podat žádost</Button>
             </div>
           </form>
-          <p className="mt-2 text-xs text-stone-400">
+          <p className="mt-2 text-xs text-stone-600">
             Hodiny dovolené se počítají z pracovních dnů a fondu zaměstnance; saldo
             se odečte až po schválení.
           </p>

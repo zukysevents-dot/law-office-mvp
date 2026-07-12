@@ -129,6 +129,7 @@ async function checkOneSubject(subject: WatchedSubject): Promise<CheckOutcome> {
     });
     await tx.auditLog.create({
       data: {
+        organizationId: subject.organizationId,
         entityType: "Subject",
         entityId: subject.id,
         action: "REGISTRY_CHANGE",

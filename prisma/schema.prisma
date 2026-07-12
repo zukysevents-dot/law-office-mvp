@@ -69,8 +69,8 @@ enum TaskDeadlineType {
 // computes legal due dates; the lawyer enters/confirms `dueDate`.
 enum DeadlineType {
   PROCEDURAL // procesní (soudní/správní lhůta)
-  COURT      // soudní (lhůta navázaná na jednání)
-  INTERNAL   // interní kancelářská kontrolní lhůta
+  COURT // soudní (lhůta navázaná na jednání)
+  INTERNAL // interní kancelářská kontrolní lhůta
 }
 
 enum DeadlineStatus {
@@ -82,17 +82,17 @@ enum DeadlineStatus {
 // Dokumenty (F5 / DOCUMENTS). Malá uzavřená taxonomie pro filtrování a mapování
 // na šablony. Dokument nemá životní cyklus jako lhůta — archivace přes archivedAt.
 enum DocumentKind {
-  CONTRACT          // smlouva
-  SUBMISSION        // podání (soud/úřad)
+  CONTRACT // smlouva
+  SUBMISSION // podání (soud/úřad)
   POWER_OF_ATTORNEY // plná moc
-  LETTER            // dopis/výzva
-  INTERNAL_NOTE     // interní
+  LETTER // dopis/výzva
+  INTERNAL_NOTE // interní
   OTHER
 }
 
 // Klientský portál (F6 / CLIENT_PORTAL).
 enum PortalAccessStatus {
-  ACTIVE  // přístup platný, lze žádat o magic-link
+  ACTIVE // přístup platný, lze žádat o magic-link
   REVOKED // ručně zrušený — žádné nové linky, existující session neplatné
 }
 
@@ -334,122 +334,176 @@ enum AmlRiskLevel {
 }
 
 model User {
-  id              String   @id @default(cuid())
+  id              String    @id @default(cuid())
   name            String
-  email           String   @unique
-  role            UserRole @default(LAWYER)
-  microsoftId     String?  @unique
+  email           String    @unique
+  role            UserRole  @default(LAWYER)
+  microsoftId     String?   @unique
   passwordHash    String?
-  active          Boolean  @default(true)
+  // Public self-registration is completed only after control of the e-mail
+  // address is proven. Trusted admin/seed-created accounts set this directly.
+  emailVerifiedAt DateTime?
+  // Embedded in signed sessions. Incrementing it revokes every token issued
+  // before a password reset/change without a stateful Session table.
+  sessionVersion  Int       @default(0)
+  active          Boolean   @default(true)
   // Platform/developer super-admin over all organizations (the /admin panel).
   // Orthogonal to the org-level role; such accounts have no org membership.
-  isPlatformAdmin Boolean  @default(false)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  isPlatformAdmin Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  createdSubjectRelations SubjectRelation[]   @relation("SubjectRelationCreatedBy")
-  checkedConflictChecks   ConflictCheck[]     @relation("ConflictCheckCheckedBy")
-  createdContactPersons   ContactPerson[]     @relation("ContactPersonCreatedBy")
-  responsibleProjects     Project[]           @relation("ProjectResponsibleUser")
-  responsibleCases        Case[]              @relation("CaseResponsibleUser")
-  projectAssignees        ProjectAssignee[]   @relation("ProjectAssigneeUser")
-  caseAssignees           CaseAssignee[]      @relation("CaseAssigneeUser")
-  assignedProjectAssignees ProjectAssignee[]  @relation("ProjectAssigneeAssignedBy")
-  assignedCaseAssignees   CaseAssignee[]      @relation("CaseAssigneeAssignedBy")
-  createdTasks            Task[]              @relation("TaskCreatedBy")
-  assignedTasks           Task[]              @relation("TaskAssignedTo")
-  responsibleTasks        Task[]              @relation("TaskResponsibleUser")
-  changedTaskStatuses     TaskStatusHistory[] @relation("TaskStatusChangedBy")
-  taskComments            TaskComment[]       @relation("TaskCommentAuthor")
-  workLogs                WorkLog[]
-  auditLogs               AuditLog[]          @relation("AuditLogChangedBy")
-  dashboardWidgets        DashboardWidget[]
-  tableViewPreferences    TableViewPreference[]
-  notificationPreference  NotificationPreference?
-  hoursPlan               UserHoursPlan?
-  capabilityGrants        UserCapabilityGrant[] @relation("UserCapabilityGrantUser")
-  grantedCapabilities     UserCapabilityGrant[] @relation("UserCapabilityGrantGrantedBy")
-  notifications           Notification[]      @relation("NotificationRecipient")
-  memberships             OrganizationMember[]
-  createdInvoices         Invoice[]           @relation("InvoiceCreatedBy")
-  issuedInvoices          Invoice[]           @relation("InvoiceIssuedBy")
-  recordedPayments        Payment[]           @relation("PaymentRecordedBy")
-  sentReminders           Reminder[]          @relation("ReminderSentBy")
-  configuredDataBoxAccounts DataBoxAccount[]  @relation("DataBoxAccountCreatedBy")
-  createdDataMessages     DataMessage[]       @relation("DataMessageCreatedBy")
-  createdAmlIdentifications AmlIdentification[] @relation("AmlIdentificationCreatedBy")
-  createdAmlAssessments   AmlAssessment[]     @relation("AmlAssessmentCreatedBy")
-  reviewedAmlAssessments  AmlAssessment[]     @relation("AmlAssessmentReviewedBy")
-  responsibleDeadlines     Deadline[]         @relation("DeadlineResponsibleUser")
-  createdDeadlines         Deadline[]         @relation("DeadlineCreatedBy")
-  responsibleCourtHearings CourtHearing[]     @relation("CourtHearingResponsibleUser")
-  createdCourtHearings     CourtHearing[]     @relation("CourtHearingCreatedBy")
-  createdDocuments         Document[]         @relation("DocumentCreatedBy")
-  uploadedDocumentVersions DocumentVersion[]  @relation("DocumentVersionUploadedBy")
-  createdDocumentTemplates DocumentTemplate[] @relation("DocumentTemplateCreatedBy")
-  createdPortalAccesses    PortalAccess[]     @relation("PortalAccessCreatedBy")
-  sharedPortalShares       PortalShare[]      @relation("PortalShareSharedBy")
-  acknowledgedRegistryChanges RegistryChangeEvent[] @relation("RegistryChangeAcknowledgedBy")
-  hrEmployee               HrEmployee?        @relation("HrEmployeeUser")
-  createdHrEmployees       HrEmployee[]       @relation("HrEmployeeCreatedBy")
-  requestedHrAbsences      HrAbsenceRequest[] @relation("HrAbsenceRequestedBy")
-  decidedHrAbsences        HrAbsenceRequest[] @relation("HrAbsenceDecidedBy")
-  runSanctionsScreenings   SanctionsScreening[] @relation("SanctionsScreeningRunBy")
-  reviewedSanctionsScreenings SanctionsScreening[] @relation("SanctionsScreeningReviewedBy")
-  decidedSanctionsMatches  SanctionsScreeningMatch[] @relation("SanctionsMatchDecidedBy")
+  createdSubjectRelations     SubjectRelation[]         @relation("SubjectRelationCreatedBy")
+  checkedConflictChecks       ConflictCheck[]           @relation("ConflictCheckCheckedBy")
+  createdContactPersons       ContactPerson[]           @relation("ContactPersonCreatedBy")
+  responsibleProjects         Project[]                 @relation("ProjectResponsibleUser")
+  responsibleCases            Case[]                    @relation("CaseResponsibleUser")
+  projectAssignees            ProjectAssignee[]         @relation("ProjectAssigneeUser")
+  caseAssignees               CaseAssignee[]            @relation("CaseAssigneeUser")
+  assignedProjectAssignees    ProjectAssignee[]         @relation("ProjectAssigneeAssignedBy")
+  assignedCaseAssignees       CaseAssignee[]            @relation("CaseAssigneeAssignedBy")
+  createdTasks                Task[]                    @relation("TaskCreatedBy")
+  assignedTasks               Task[]                    @relation("TaskAssignedTo")
+  responsibleTasks            Task[]                    @relation("TaskResponsibleUser")
+  changedTaskStatuses         TaskStatusHistory[]       @relation("TaskStatusChangedBy")
+  taskComments                TaskComment[]             @relation("TaskCommentAuthor")
+  workLogs                    WorkLog[]
+  auditLogs                   AuditLog[]                @relation("AuditLogChangedBy")
+  dashboardWidgets            DashboardWidget[]
+  tableViewPreferences        TableViewPreference[]
+  notificationPreference      NotificationPreference?
+  hoursPlan                   UserHoursPlan?
+  capabilityGrants            UserCapabilityGrant[]     @relation("UserCapabilityGrantUser")
+  grantedCapabilities         UserCapabilityGrant[]     @relation("UserCapabilityGrantGrantedBy")
+  notifications               Notification[]            @relation("NotificationRecipient")
+  memberships                 OrganizationMember[]
+  createdInvoices             Invoice[]                 @relation("InvoiceCreatedBy")
+  issuedInvoices              Invoice[]                 @relation("InvoiceIssuedBy")
+  recordedPayments            Payment[]                 @relation("PaymentRecordedBy")
+  sentReminders               Reminder[]                @relation("ReminderSentBy")
+  configuredDataBoxAccounts   DataBoxAccount[]          @relation("DataBoxAccountCreatedBy")
+  createdDataMessages         DataMessage[]             @relation("DataMessageCreatedBy")
+  createdAmlIdentifications   AmlIdentification[]       @relation("AmlIdentificationCreatedBy")
+  createdAmlAssessments       AmlAssessment[]           @relation("AmlAssessmentCreatedBy")
+  reviewedAmlAssessments      AmlAssessment[]           @relation("AmlAssessmentReviewedBy")
+  responsibleDeadlines        Deadline[]                @relation("DeadlineResponsibleUser")
+  createdDeadlines            Deadline[]                @relation("DeadlineCreatedBy")
+  responsibleCourtHearings    CourtHearing[]            @relation("CourtHearingResponsibleUser")
+  createdCourtHearings        CourtHearing[]            @relation("CourtHearingCreatedBy")
+  createdDocuments            Document[]                @relation("DocumentCreatedBy")
+  uploadedDocumentVersions    DocumentVersion[]         @relation("DocumentVersionUploadedBy")
+  createdDocumentTemplates    DocumentTemplate[]        @relation("DocumentTemplateCreatedBy")
+  createdPortalAccesses       PortalAccess[]            @relation("PortalAccessCreatedBy")
+  sharedPortalShares          PortalShare[]             @relation("PortalShareSharedBy")
+  acknowledgedRegistryChanges RegistryChangeEvent[]     @relation("RegistryChangeAcknowledgedBy")
+  hrEmployee                  HrEmployee?               @relation("HrEmployeeUser")
+  createdHrEmployees          HrEmployee[]              @relation("HrEmployeeCreatedBy")
+  requestedHrAbsences         HrAbsenceRequest[]        @relation("HrAbsenceRequestedBy")
+  decidedHrAbsences           HrAbsenceRequest[]        @relation("HrAbsenceDecidedBy")
+  runSanctionsScreenings      SanctionsScreening[]      @relation("SanctionsScreeningRunBy")
+  reviewedSanctionsScreenings SanctionsScreening[]      @relation("SanctionsScreeningReviewedBy")
+  decidedSanctionsMatches     SanctionsScreeningMatch[] @relation("SanctionsMatchDecidedBy")
 
   @@map("users")
 }
 
+// Pending public registration. Keeping it separate from User means an attacker
+// cannot reserve/squat somebody else's e-mail address before proving control of
+// the mailbox. Only a scrypt hash (never the submitted plaintext password) is
+// retained. Verification consumes all pending rows for the address.
+model EmailVerificationToken {
+  id           String   @id @default(cuid())
+  tokenHash    String   @unique
+  email        String
+  name         String
+  passwordHash String
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  @@index([email, createdAt])
+  @@index([expiresAt])
+  @@map("emailVerificationTokens")
+}
+
+// Failed staff-login ledger. Rows are recorded only for failed/blocked
+// attempts, uniformly for existing and non-existing accounts. Both the client
+// IP and a one-way normalized e-mail identifier are limited.
+model LoginAttempt {
+  id             String   @id @default(cuid())
+  ipAddress      String
+  identifierHash String
+  createdAt      DateTime @default(now())
+
+  @@index([ipAddress, createdAt])
+  @@index([identifierHash, createdAt])
+  @@index([createdAt])
+  @@map("loginAttempts")
+}
+
+// Pre-registration throttle ledger. Separate from pending verification tokens:
+// it also limits already-registered and arbitrary addresses, so one origin
+// cannot use the generic registration response as an unlimited mail endpoint.
+model RegistrationAttempt {
+  id             String   @id @default(cuid())
+  ipAddress      String
+  identifierHash String
+  createdAt      DateTime @default(now())
+
+  @@index([ipAddress, createdAt])
+  @@index([identifierHash, createdAt])
+  @@index([createdAt])
+  @@map("registrationAttempts")
+}
+
 model Subject {
-  id               String      @id @default(cuid())
-  organizationId   String
-  type             SubjectType @default(COMPANY)
-  name             String
-  ico              String?
-  dic              String?
-  email            String?
-  address          String?
-  legalForm        String?
-  statutoryBody    String?
-  status           String      @default("ACTIVE")
-  insolvencyStatus String?
-  riskFlag         Boolean     @default(false)
-  internalNote     String?
+  id                       String      @id @default(cuid())
+  organizationId           String
+  type                     SubjectType @default(COMPANY)
+  name                     String
+  ico                      String?
+  dic                      String?
+  email                    String?
+  address                  String?
+  legalForm                String?
+  statutoryBody            String?
+  status                   String      @default("ACTIVE")
+  insolvencyStatus         String?
+  riskFlag                 Boolean     @default(false)
+  internalNote             String?
   legalServicesContractUrl String?
-  sharepointUrl    String?
-  feeType          FeeType?
-  hourlyRate       Decimal?    @db.Decimal(12, 2)
-  flatFee          Decimal?    @db.Decimal(12, 2)
-  feeNote          String?
+  sharepointUrl            String?
+  feeType                  FeeType?
+  hourlyRate               Decimal?    @db.Decimal(12, 2)
+  flatFee                  Decimal?    @db.Decimal(12, 2)
+  feeNote                  String?
   // Informative: is this customer a VAT payer? Shown on invoices (their DIČ),
   // does NOT drive our VAT calc — that follows the issuer (billing profile).
-  vatPayer         Boolean     @default(false)
-  aresVerifiedAt   DateTime?
+  vatPayer                 Boolean     @default(false)
+  aresVerifiedAt           DateTime?
   // Hlídání rejstříků (ISIR/OR přes ARES). watchEnabled se řídí přítomností IČO;
   // registryCheckedAt = poslední kontrola (nastavuje se i při chybě, ať runner
   // nehamruje jeden subjekt dokola).
-  registryWatchEnabled Boolean @default(true)
-  registryCheckedAt DateTime?
-  createdAt        DateTime    @default(now())
-  updatedAt        DateTime    @updatedAt
-  archivedAt       DateTime?
+  registryWatchEnabled     Boolean     @default(true)
+  registryCheckedAt        DateTime?
+  createdAt                DateTime    @default(now())
+  updatedAt                DateTime    @updatedAt
+  archivedAt               DateTime?
 
-  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  relations      SubjectRelation[]
-  conflictChecks ConflictCheck[]
-  mainProjects   Project[]           @relation("ProjectMainSubject")
-  references     Reference[]
-  workLogs       WorkLog[]
-  invoices       Invoice[]
-  retainerAgreements RetainerAgreement[]
-  dataMessages   DataMessage[]
-  amlIdentifications AmlIdentification[]
-  amlAssessment  AmlAssessment?
-  documents      Document[]
-  portalAccess   PortalAccess?
-  sanctionsScreenings SanctionsScreening[]
-  contactPersons ContactPerson[]
+  organization         Organization          @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  relations            SubjectRelation[]
+  conflictChecks       ConflictCheck[]
+  mainProjects         Project[]             @relation("ProjectMainSubject")
+  references           Reference[]
+  workLogs             WorkLog[]
+  invoices             Invoice[]
+  retainerAgreements   RetainerAgreement[]
+  dataMessages         DataMessage[]
+  amlIdentifications   AmlIdentification[]
+  amlAssessment        AmlAssessment?
+  documents            Document[]
+  portalAccess         PortalAccess?
+  sanctionsScreenings  SanctionsScreening[]
+  contactPersons       ContactPerson[]
   registryChangeEvents RegistryChangeEvent[]
 
   // IČO is unique PER organization, not globally — the same company can be a
@@ -467,9 +521,9 @@ model Subject {
 
 // Hlídání rejstříků: typ zjištěné změny v registru (ISIR/OR přes ARES).
 enum RegistryChangeType {
-  INSOLVENCY   // aktivní záznam v insolvenčním rejstříku
-  DISSOLVED    // subjekt zanikl (datum zániku)
-  LIQUIDATION  // v likvidaci
+  INSOLVENCY // aktivní záznam v insolvenčním rejstříku
+  DISSOLVED // subjekt zanikl (datum zániku)
+  LIQUIDATION // v likvidaci
   RISK_CLEARED // rizikový signál pominul (subjekt už není v riziku)
   OTHER
 }
@@ -481,7 +535,7 @@ model RegistryChangeEvent {
   organizationId   String
   subjectId        String
   changeType       RegistryChangeType
-  summary          String             // česky, human-readable
+  summary          String // česky, human-readable
   oldValue         String?
   newValue         String?
   detectedAt       DateTime           @default(now())
@@ -525,7 +579,7 @@ model SubjectRelation {
 // Kontaktní osoby subjektu (klienta). Více osob na subjekt; volitelně lze osobu
 // navázat na konkrétní projekt nebo případ.
 model ContactPerson {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   organizationId String
   subjectId      String
   firstName      String
@@ -537,8 +591,8 @@ model ContactPerson {
   caseId         String?
   note           String?
   createdById    String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
   archivedAt     DateTime?
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
@@ -589,18 +643,18 @@ model Project {
   updatedAt         DateTime      @updatedAt
   archivedAt        DateTime?
 
-  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  mainSubject      Subject           @relation("ProjectMainSubject", fields: [mainSubjectId], references: [id], onDelete: Restrict)
-  responsibleUser  User?             @relation("ProjectResponsibleUser", fields: [responsibleUserId], references: [id], onDelete: SetNull)
-  cases            Case[]
-  tasks            Task[]
-  subjectRelations SubjectRelation[]
-  references       Reference[]
-  workLogs         WorkLog[]
-  invoices         Invoice[]
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  mainSubject        Subject             @relation("ProjectMainSubject", fields: [mainSubjectId], references: [id], onDelete: Restrict)
+  responsibleUser    User?               @relation("ProjectResponsibleUser", fields: [responsibleUserId], references: [id], onDelete: SetNull)
+  cases              Case[]
+  tasks              Task[]
+  subjectRelations   SubjectRelation[]
+  references         Reference[]
+  workLogs           WorkLog[]
+  invoices           Invoice[]
   retainerAgreements RetainerAgreement[]
-  contactPersons ContactPerson[]
-  assignees      ProjectAssignee[]
+  contactPersons     ContactPerson[]
+  assignees          ProjectAssignee[]
 
   @@index([organizationId])
   @@index([mainSubjectId])
@@ -651,7 +705,7 @@ model Case {
 }
 
 model Task {
-  id                  String       @id @default(cuid())
+  id                  String           @id @default(cuid())
   organizationId      String
   title               String
   projectId           String?
@@ -659,8 +713,8 @@ model Task {
   createdById         String?
   assignedToId        String?
   responsibleUserId   String?
-  status              TaskStatus   @default(CREATED)
-  priority            TaskPriority @default(STANDARD)
+  status              TaskStatus       @default(CREATED)
+  priority            TaskPriority     @default(STANDARD)
   deadlineType        TaskDeadlineType @default(INTERNAL)
   shortDescription    String?
   detailedDescription String?
@@ -669,18 +723,18 @@ model Task {
   deadline            DateTime?
   completedAt         DateTime?
   archivedAt          DateTime?
-  createdAt           DateTime     @default(now())
-  updatedAt           DateTime     @updatedAt
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
 
-  organization  Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  project       Project?            @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  case          Case?               @relation(fields: [caseId], references: [id], onDelete: SetNull)
-  createdBy     User?               @relation("TaskCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  assignedTo    User?               @relation("TaskAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
-  responsibleUser User?              @relation("TaskResponsibleUser", fields: [responsibleUserId], references: [id], onDelete: SetNull)
-  statusHistory TaskStatusHistory[]
-  comments      TaskComment[]
-  workLogs      WorkLog[]
+  organization    Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  project         Project?            @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  case            Case?               @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  createdBy       User?               @relation("TaskCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  assignedTo      User?               @relation("TaskAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+  responsibleUser User?               @relation("TaskResponsibleUser", fields: [responsibleUserId], references: [id], onDelete: SetNull)
+  statusHistory   TaskStatusHistory[]
+  comments        TaskComment[]
+  workLogs        WorkLog[]
 
   @@index([organizationId])
   @@index([projectId])
@@ -728,39 +782,39 @@ model TaskComment {
 }
 
 model WorkLog {
-  id             String         @id @default(cuid())
-  organizationId String
-  subjectId      String?
-  projectId      String?
-  caseId         String?
-  taskId         String?
-  userId         String?
-  workDate       DateTime
-  hours          Decimal        @db.Decimal(8, 2)
-  hourlyRate     Decimal?       @db.Decimal(12, 2)
-  amountCzk      Decimal?       @db.Decimal(12, 2)
-  description    String?
-  billingStatus  BillingStatus  @default(BILLABLE)
-  approvalStatus ApprovalStatus @default(DRAFT)
-  legalArea      String?
+  id                String                @id @default(cuid())
+  organizationId    String
+  subjectId         String?
+  projectId         String?
+  caseId            String?
+  taskId            String?
+  userId            String?
+  workDate          DateTime
+  hours             Decimal               @db.Decimal(8, 2)
+  hourlyRate        Decimal?              @db.Decimal(12, 2)
+  amountCzk         Decimal?              @db.Decimal(12, 2)
+  description       String?
+  billingStatus     BillingStatus         @default(BILLABLE)
+  approvalStatus    ApprovalStatus        @default(DRAFT)
+  legalArea         String?
   // Vyplněno místo legalArea u interních (nefakturovatelných) hodin.
-  internalCategory InternalTaskCategory?
+  internalCategory  InternalTaskCategory?
   // Set inside the issueInvoice transaction so a work-log can't be invoiced
   // twice; cleared again when that invoice is cancelled. Orthogonal to
   // approvalStatus/billingStatus (a separate dimension). invoicedInvoiceId is
   // informative (no FK) — its lifecycle is managed by the invoice actions.
-  invoicedAt     DateTime?
+  invoicedAt        DateTime?
   invoicedInvoiceId String?
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
-  archivedAt     DateTime?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  archivedAt        DateTime?
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  subject Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
-  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  case    Case?    @relation(fields: [caseId], references: [id], onDelete: SetNull)
-  task    Task?    @relation(fields: [taskId], references: [id], onDelete: SetNull)
-  user    User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  subject      Subject?      @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  project      Project?      @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  case         Case?         @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  task         Task?         @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
   invoiceLines InvoiceLine[]
 
   @@index([organizationId])
@@ -777,25 +831,25 @@ model WorkLog {
 }
 
 model Reference {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   organizationId String
   title          String
   projectId      String?
-  caseId      String?
-  subjectId   String?
-  legalArea   String?
-  valueCzk    Decimal? @db.Decimal(14, 2)
-  startDate   DateTime?
-  endDate     DateTime?
-  description String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  archivedAt  DateTime?
+  caseId         String?
+  subjectId      String?
+  legalArea      String?
+  valueCzk       Decimal?  @db.Decimal(14, 2)
+  startDate      DateTime?
+  endDate        DateTime?
+  description    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  archivedAt     DateTime?
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  case    Case?    @relation(fields: [caseId], references: [id], onDelete: SetNull)
-  subject Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  project      Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  case         Case?        @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  subject      Subject?     @relation(fields: [subjectId], references: [id], onDelete: SetNull)
 
   @@index([organizationId])
   @@index([projectId])
@@ -810,17 +864,22 @@ model Reference {
 }
 
 model AuditLog {
-  id          String   @id @default(cuid())
-  entityType  String
-  entityId    String
-  action      String
-  oldValue    Json?
-  newValue    Json?
-  changedById String?
-  createdAt   DateTime @default(now())
+  id             String   @id @default(cuid())
+  // Nullable only for historical rows whose tenant cannot be reconstructed
+  // reliably. Every application write supplies this value.
+  organizationId String?
+  entityType     String
+  entityId       String
+  action         String
+  oldValue       Json?
+  newValue       Json?
+  changedById    String?
+  createdAt      DateTime @default(now())
 
-  changedBy User? @relation("AuditLogChangedBy", fields: [changedById], references: [id], onDelete: SetNull)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  changedBy    User?         @relation("AuditLogChangedBy", fields: [changedById], references: [id], onDelete: SetNull)
 
+  @@index([organizationId, createdAt])
   @@index([entityType, entityId])
   @@index([changedById])
   @@index([createdAt])
@@ -828,23 +887,23 @@ model AuditLog {
 }
 
 model DashboardWidget {
-  id        String              @id @default(cuid())
+  id             String              @id @default(cuid())
   // Nullable: these are per-user UI prefs, already isolated by userId (a user
   // belongs to one org). ponytail: column present for spec/future multi-org, not
   // required for any query — no create-site churn.
   organizationId String?
-  userId    String
-  type      DashboardWidgetType
-  title     String
-  position  Int
-  size      DashboardWidgetSize @default(MEDIUM)
-  visible   Boolean             @default(true)
-  config    Json?
-  createdAt DateTime            @default(now())
-  updatedAt DateTime            @updatedAt
+  userId         String
+  type           DashboardWidgetType
+  title          String
+  position       Int
+  size           DashboardWidgetSize @default(MEDIUM)
+  visible        Boolean             @default(true)
+  config         Json?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
 
   organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([organizationId])
   @@index([userId, position])
@@ -864,7 +923,7 @@ model TableViewPreference {
   updatedAt      DateTime @updatedAt
 
   organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, tableKey])
   @@index([organizationId])
@@ -874,26 +933,26 @@ model TableViewPreference {
 }
 
 model NotificationPreference {
-  id                     String   @id @default(cuid())
-  userId                 String   @unique
-  emailEnabled           Boolean  @default(true)
-  taskCreatedEmail       Boolean  @default(true)
-  taskStatusChangedEmail Boolean  @default(true)
-  taskForReviewEmail     Boolean  @default(true)
-  taskDeadlineSoonEmail  Boolean  @default(true)
-  taskFiledFollowupEmail Boolean  @default(true)
-  deadlineReminderDays   Int      @default(1)
-  filedFollowupDays      Int      @default(5)
+  id                      String   @id @default(cuid())
+  userId                  String   @unique
+  emailEnabled            Boolean  @default(true)
+  taskCreatedEmail        Boolean  @default(true)
+  taskStatusChangedEmail  Boolean  @default(true)
+  taskForReviewEmail      Boolean  @default(true)
+  taskDeadlineSoonEmail   Boolean  @default(true)
+  taskFiledFollowupEmail  Boolean  @default(true)
+  deadlineReminderDays    Int      @default(1)
+  filedFollowupDays       Int      @default(5)
   // Lhůtník (F4 / L-5). Procedural deadlines carry liability, so they default ON
   // and warn earlier (3 days) than task deadlines (1).
-  deadlineSoonEmail      Boolean  @default(true)
-  deadlineOverdueEmail   Boolean  @default(true)
-  courtHearingSoonEmail  Boolean  @default(true)
-  deadlineWatchDaysBefore Int     @default(3)
+  deadlineSoonEmail       Boolean  @default(true)
+  deadlineOverdueEmail    Boolean  @default(true)
+  courtHearingSoonEmail   Boolean  @default(true)
+  deadlineWatchDaysBefore Int      @default(3)
   // Hlídání rejstříků: e-mail při zjištěné změně v ISIR/OR.
-  registryChangeEmail    Boolean  @default(true)
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  registryChangeEmail     Boolean  @default(true)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -925,7 +984,7 @@ model UserHoursPlan {
 // (role-default fallback). MVP: 2 hodnoty.
 enum Capability {
   MANAGE_INVOICES // přístup k fakturaci nad rámec ADMIN/PARTNER (revize ř.77)
-  VIEW_RATES      // zobrazení hodinových sazeb a částek (revize ř.35/62)
+  VIEW_RATES // zobrazení hodinových sazeb a částek (revize ř.35/62)
 }
 
 // Per-user × capability grant. Přítomnost řádku = grant udělen. Role dává
@@ -1034,54 +1093,55 @@ model Organization {
   updatedAt           DateTime           @updatedAt
   archivedAt          DateTime?
 
-  members              OrganizationMember[]
-  joinCodes            OrganizationJoinCode[]
-  subjects             Subject[]
-  projects             Project[]
-  cases                Case[]
-  tasks                Task[]
-  workLogs             WorkLog[]
-  references           Reference[]
-  conflictChecks       ConflictCheck[]
-  dashboardWidgets     DashboardWidget[]
-  tableViewPreferences TableViewPreference[]
-  modules              OrganizationModule[]
-  subscription         Subscription?
-  billingProfile       OrganizationBillingProfile?
-  invoiceSequences     InvoiceNumberSequence[]
-  billingIssuers       BillingIssuer[]
-  invoices             Invoice[]
-  payments             Payment[]
-  reminders            Reminder[]
-  retainerAgreements   RetainerAgreement[]
-  dataBoxAccounts      DataBoxAccount[]
-  dataMessages         DataMessage[]
-  dataBoxAttachments   DataBoxAttachment[]
-  amlIdentifications   AmlIdentification[]
-  amlAssessments       AmlAssessment[]
-  deadlines            Deadline[]
-  courtHearings        CourtHearing[]
-  documents            Document[]
-  documentVersions     DocumentVersion[]
-  documentTemplates    DocumentTemplate[]
-  portalAccesses       PortalAccess[]
-  portalLoginTokens    PortalLoginToken[]
-  registryChangeEvents RegistryChangeEvent[]
-  portalSessions       PortalSession[]
-  portalShares         PortalShare[]
-  hrEmployees          HrEmployee[]
-  hrWorkSchedules      HrWorkSchedule[]
-  hrAttendanceRecords  HrAttendanceRecord[]
-  hrAbsenceRequests    HrAbsenceRequest[]
-  hrLeaveBalances      HrLeaveBalance[]
-  sanctionsScreenings  SanctionsScreening[]
+  members                   OrganizationMember[]
+  joinCodes                 OrganizationJoinCode[]
+  subjects                  Subject[]
+  projects                  Project[]
+  cases                     Case[]
+  tasks                     Task[]
+  workLogs                  WorkLog[]
+  references                Reference[]
+  auditLogs                 AuditLog[]
+  conflictChecks            ConflictCheck[]
+  dashboardWidgets          DashboardWidget[]
+  tableViewPreferences      TableViewPreference[]
+  modules                   OrganizationModule[]
+  subscription              Subscription?
+  billingProfile            OrganizationBillingProfile?
+  invoiceSequences          InvoiceNumberSequence[]
+  billingIssuers            BillingIssuer[]
+  invoices                  Invoice[]
+  payments                  Payment[]
+  reminders                 Reminder[]
+  retainerAgreements        RetainerAgreement[]
+  dataBoxAccounts           DataBoxAccount[]
+  dataMessages              DataMessage[]
+  dataBoxAttachments        DataBoxAttachment[]
+  amlIdentifications        AmlIdentification[]
+  amlAssessments            AmlAssessment[]
+  deadlines                 Deadline[]
+  courtHearings             CourtHearing[]
+  documents                 Document[]
+  documentVersions          DocumentVersion[]
+  documentTemplates         DocumentTemplate[]
+  portalAccesses            PortalAccess[]
+  portalLoginTokens         PortalLoginToken[]
+  registryChangeEvents      RegistryChangeEvent[]
+  portalSessions            PortalSession[]
+  portalShares              PortalShare[]
+  hrEmployees               HrEmployee[]
+  hrWorkSchedules           HrWorkSchedule[]
+  hrAttendanceRecords       HrAttendanceRecord[]
+  hrAbsenceRequests         HrAbsenceRequest[]
+  hrLeaveBalances           HrLeaveBalance[]
+  sanctionsScreenings       SanctionsScreening[]
   sanctionsScreeningMatches SanctionsScreeningMatch[]
-  contactPersons       ContactPerson[]
-  userHoursPlans       UserHoursPlan[]
-  projectAssignees     ProjectAssignee[]
-  caseAssignees        CaseAssignee[]
-  capabilityGrants     UserCapabilityGrant[]
-  retainerInvoicePeriods RetainerInvoicePeriod[]
+  contactPersons            ContactPerson[]
+  userHoursPlans            UserHoursPlan[]
+  projectAssignees          ProjectAssignee[]
+  caseAssignees             CaseAssignee[]
+  capabilityGrants          UserCapabilityGrant[]
+  retainerInvoicePeriods    RetainerInvoicePeriod[]
 
   @@index([status])
   @@map("organizations")
@@ -1233,7 +1293,7 @@ model OrganizationBillingProfile {
 // advokáti, poradenská společnost apod. Pro konkrétní fakturu se vybere, kdo ji
 // vystavuje; jeho údaje + DPH režim se při vystavení zamrazí do faktury.
 model BillingIssuer {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   organizationId String
   legalName      String
   ico            String?
@@ -1241,10 +1301,10 @@ model BillingIssuer {
   address        String?
   bankAccount    String?
   iban           String?
-  vatPayer       Boolean  @default(false)
+  vatPayer       Boolean   @default(false)
   note           String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
   archivedAt     DateTime?
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -1273,7 +1333,7 @@ model InvoiceNumberSequence {
 }
 
 model Invoice {
-  id             String        @id @default(cuid())
+  id             String  @id @default(cuid())
   organizationId String
   subjectId      String
   projectId      String?
@@ -1288,42 +1348,42 @@ model Invoice {
   numberYear     Int?
   variableSymbol String?
 
-  status         InvoiceStatus @default(DRAFT)
-  vatMode        VatMode       @default(PAYER)
-  currency       String        @default("CZK")
+  status   InvoiceStatus @default(DRAFT)
+  vatMode  VatMode       @default(PAYER)
+  currency String        @default("CZK")
 
-  issueDate      DateTime?
-  dueDate        DateTime?
-  taxDate        DateTime?
+  issueDate DateTime?
+  dueDate   DateTime?
+  taxDate   DateTime?
 
-  subtotalCzk    Decimal       @default(0) @db.Decimal(12, 2)
-  vatCzk         Decimal       @default(0) @db.Decimal(12, 2)
-  totalCzk       Decimal       @default(0) @db.Decimal(12, 2)
+  subtotalCzk Decimal @default(0) @db.Decimal(12, 2)
+  vatCzk      Decimal @default(0) @db.Decimal(12, 2)
+  totalCzk    Decimal @default(0) @db.Decimal(12, 2)
 
-  note           String?
-  pdfUrl         String?
+  note   String?
+  pdfUrl String?
 
   // Frozen copies of issuer/customer details at ISSUE time (document immutability).
   supplierSnapshot Json?
   customerSnapshot Json?
 
-  createdById    String?
-  issuedById     String?
-  cancelledAt    DateTime?
-  cancelReason   String?
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  createdById  String?
+  issuedById   String?
+  cancelledAt  DateTime?
+  cancelReason String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  subject      Subject      @relation(fields: [subjectId], references: [id], onDelete: Restrict)
-  project      Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  case         Case?        @relation(fields: [caseId], references: [id], onDelete: SetNull)
-  issuer       BillingIssuer? @relation(fields: [issuerId], references: [id], onDelete: SetNull)
-  createdBy    User?        @relation("InvoiceCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  issuedBy     User?        @relation("InvoiceIssuedBy", fields: [issuedById], references: [id], onDelete: SetNull)
-  lines        InvoiceLine[]
-  payments     Payment[]
-  reminders    Reminder[]
+  organization   Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  subject        Subject                @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  project        Project?               @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  case           Case?                  @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  issuer         BillingIssuer?         @relation(fields: [issuerId], references: [id], onDelete: SetNull)
+  createdBy      User?                  @relation("InvoiceCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  issuedBy       User?                  @relation("InvoiceIssuedBy", fields: [issuedById], references: [id], onDelete: SetNull)
+  lines          InvoiceLine[]
+  payments       Payment[]
+  reminders      Reminder[]
   retainerPeriod RetainerInvoicePeriod?
 
   // Number unique per org; NULL drafts don't collide (Postgres NULLs distinct).
@@ -1406,24 +1466,24 @@ model Reminder {
 // Retainer: recurring monthly fee for a subject. Generates an Invoice (manual
 // trigger in MVP).
 model RetainerAgreement {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   organizationId String
   subjectId      String
   projectId      String?
-  monthlyFeeCzk  Decimal  @db.Decimal(12, 2)
-  includedHours  Decimal? @db.Decimal(8, 2)
-  vatRate        Decimal  @default(21) @db.Decimal(5, 2)
+  monthlyFeeCzk  Decimal   @db.Decimal(12, 2)
+  includedHours  Decimal?  @db.Decimal(8, 2)
+  vatRate        Decimal   @default(21) @db.Decimal(5, 2)
   startDate      DateTime
   endDate        DateTime?
-  active         Boolean  @default(true)
+  active         Boolean   @default(true)
   note           String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
   archivedAt     DateTime?
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  subject      Subject      @relation(fields: [subjectId], references: [id], onDelete: Restrict)
-  project      Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  organization   Organization            @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  subject        Subject                 @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  project        Project?                @relation(fields: [projectId], references: [id], onDelete: SetNull)
   invoicePeriods RetainerInvoicePeriod[]
 
   @@index([organizationId])
@@ -1553,7 +1613,7 @@ model DataBoxAttachment {
 // (AES-256-GCM); a short masked hint is kept for display so we never decrypt to
 // render a list. A subject can have several (e.g. person + statutory body).
 model AmlIdentification {
-  id                      String   @id @default(cuid())
+  id                      String    @id @default(cuid())
   organizationId          String
   subjectId               String
   documentType            String
@@ -1573,8 +1633,8 @@ model AmlIdentification {
   scanUploadedAt          DateTime?
   scanNote                String?
   createdById             String?
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   subject      Subject      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
@@ -1621,18 +1681,18 @@ model AmlAssessment {
 // org-scoped), so the periodic refresh runs once instead of N× per organization.
 // Screenings/matches that reference it stay org-scoped via their subject.
 model SanctionsListEntry {
-  id                String   @id @default(cuid())
-  source            String   @default("EU_CONSOLIDATED")
+  id                String    @id @default(cuid())
+  source            String    @default("EU_CONSOLIDATED")
   sourceEntityId    String // stable id from the source — drives idempotent upsert
-  entityType        String   @default("PERSON") // PERSON | ENTITY
+  entityType        String    @default("PERSON") // PERSON | ENTITY
   primaryName       String
   normalizedName    String // normalizeName() output — indexed for the pre-filter
   aliasesNormalized String[]
   countries         String[]
   programs          String[]
   listPublishedAt   DateTime?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   matches SanctionsScreeningMatch[]
 
@@ -1646,20 +1706,20 @@ model SanctionsListEntry {
 // against which list version). Never auto-sets AmlAssessment.hasSanctions —
 // confirming a match only prompts the lawyer to set it via assessRisk.
 model SanctionsScreening {
-  id              String   @id @default(cuid())
+  id              String    @id @default(cuid())
   organizationId  String
   subjectId       String
   queryName       String // snapshot of the subject name at screening time
   queryNormalized String
-  source          String   @default("EU_CONSOLIDATED")
+  source          String    @default("EU_CONSOLIDATED")
   listVersionAt   DateTime?
-  candidateCount  Int      @default(0)
-  status          String   @default("PENDING_REVIEW") // PENDING_REVIEW | REVIEWED
+  candidateCount  Int       @default(0)
+  status          String    @default("PENDING_REVIEW") // PENDING_REVIEW | REVIEWED
   reviewOutcome   String? // NO_MATCH_CONFIRMED | MATCH_CONFIRMED
   reviewedById    String?
   reviewedAt      DateTime?
   runById         String?
-  createdAt       DateTime @default(now())
+  createdAt       DateTime  @default(now())
 
   organization Organization              @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   subject      Subject                   @relation(fields: [subjectId], references: [id], onDelete: Cascade)
@@ -1677,17 +1737,17 @@ model SanctionsScreening {
 // matchedName/score are snapshots so the decision stays reproducible even if the
 // list later changes.
 model SanctionsScreeningMatch {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   organizationId String
   screeningId    String
   listEntryId    String?
   matchedName    String
   score          Float
-  decision       String   @default("PENDING") // PENDING | CONFIRMED | DISMISSED
+  decision       String    @default("PENDING") // PENDING | CONFIRMED | DISMISSED
   decisionNote   String?
   decidedById    String?
   decidedAt      DateTime?
-  createdAt      DateTime @default(now())
+  createdAt      DateTime  @default(now())
 
   organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   screening    SanctionsScreening  @relation(fields: [screeningId], references: [id], onDelete: Cascade)
@@ -2008,13 +2068,13 @@ model HrEmployee {
   updatedAt      DateTime         @updatedAt
   archivedAt     DateTime?
 
-  organization     Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  user             User?                @relation("HrEmployeeUser", fields: [userId], references: [id], onDelete: SetNull)
-  createdBy        User?                @relation("HrEmployeeCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  workSchedules    HrWorkSchedule[]
+  organization      Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user              User?                @relation("HrEmployeeUser", fields: [userId], references: [id], onDelete: SetNull)
+  createdBy         User?                @relation("HrEmployeeCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  workSchedules     HrWorkSchedule[]
   attendanceRecords HrAttendanceRecord[]
-  absenceRequests  HrAbsenceRequest[]
-  leaveBalances    HrLeaveBalance[]
+  absenceRequests   HrAbsenceRequest[]
+  leaveBalances     HrLeaveBalance[]
 
   @@unique([organizationId, personalNumber])
   @@index([organizationId])

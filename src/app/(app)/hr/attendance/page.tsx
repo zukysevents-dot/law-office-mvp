@@ -174,7 +174,7 @@ export default async function HrAttendancePage() {
                 <TextInput name="breakHours" type="number" defaultValue="0" />
               </Field>
             </div>
-            <p className="text-xs text-stone-400">
+            <p className="text-xs text-stone-600">
               Když vyplníte příchod i odchod, odpracované hodiny se dopočítají
               automaticky (minus přestávka).
             </p>
@@ -205,7 +205,7 @@ export default async function HrAttendancePage() {
               </Button>
             </div>
           </form>
-          <p className="mt-2 text-xs text-stone-400">
+          <p className="mt-2 text-xs text-stone-600">
             Středníkem oddělené řádky; zaměstnanci se párují podle osobního čísla.
             Chybný řádek import zruší celý (nic se neuloží).
           </p>

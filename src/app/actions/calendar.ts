@@ -1,6 +1,8 @@
 "use server";
 
+import { ModuleKey } from "@/generated/prisma/enums";
 import { getCurrentUser } from "@/lib/auth";
+import { assertModuleEnabled } from "@/lib/entitlements";
 import {
   getCalendarEvents,
   serializeCalendarEvent,
@@ -27,8 +29,10 @@ export async function fetchCalendarEvents(
     return [];
   }
 
+  const currentUser = await getCurrentUser();
+  await assertModuleEnabled(currentUser, ModuleKey.DEADLINES);
+
   try {
-    const currentUser = await getCurrentUser();
     const events = await getCalendarEvents(currentUser, { start, end });
     return events.map(serializeCalendarEvent);
   } catch {

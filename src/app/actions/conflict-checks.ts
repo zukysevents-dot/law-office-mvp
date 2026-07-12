@@ -72,6 +72,7 @@ export async function saveConflictCheck(
 
   await prisma.auditLog.create({
     data: {
+      organizationId: currentUser.organizationId,
       entityType: "ConflictCheck",
       entityId: subject?.id ?? searchedQuery,
       action: "CREATE",

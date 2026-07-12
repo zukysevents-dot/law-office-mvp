@@ -21,13 +21,9 @@ import {
   queueTaskCreatedNotifications,
   queueTaskStatusNotifications,
 } from "@/lib/notifications/notification-service";
+import { resolveVisibleMatterSelection } from "@/lib/matter-integrity.server";
 import { assertUserInOrg } from "@/lib/org-users";
-import {
-  andWhere,
-  assertCanEditRecord,
-  caseVisibilityWhere,
-  projectVisibilityWhere,
-} from "@/lib/permissions";
+import { assertCanEditRecord } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 export async function createTask(formData: FormData) {
@@ -35,28 +31,10 @@ export async function createTask(formData: FormData) {
   const currentUser = await getCurrentUser();
   const assignedToId = optionalString(formData, "assignedToId");
   const responsibleUserId = optionalString(formData, "responsibleUserId");
-  const projectId = optionalString(formData, "projectId");
-  const caseId = optionalString(formData, "caseId");
-
-  // A task can't be filed under a project/case the user can't see.
-  if (projectId) {
-    const project = await prisma.project.findFirst({
-      where: andWhere({ id: projectId }, projectVisibilityWhere(currentUser)),
-      select: { id: true },
-    });
-    if (!project) {
-      throw new Error("Projekt nenalezen nebo k němu nemáte oprávnění.");
-    }
-  }
-  if (caseId) {
-    const legalCase = await prisma.case.findFirst({
-      where: andWhere({ id: caseId }, caseVisibilityWhere(currentUser)),
-      select: { id: true },
-    });
-    if (!legalCase) {
-      throw new Error("Případ nenalezen nebo k němu nemáte oprávnění.");
-    }
-  }
+  const matter = await resolveVisibleMatterSelection(prisma, currentUser, {
+    projectId: optionalString(formData, "projectId"),
+    caseId: optionalString(formData, "caseId"),
+  });
 
   // Assignee / responsible must belong to the caller's org (no-op when empty).
   await assertUserInOrg(assignedToId, currentUser.organizationId);
@@ -66,8 +44,8 @@ export async function createTask(formData: FormData) {
     data: {
       organizationId: currentUser.organizationId,
       title: requiredString(formData, "title"),
-      projectId,
-      caseId,
+      projectId: matter.projectId,
+      caseId: matter.caseId,
       createdById: currentUser.id,
       assignedToId,
       responsibleUserId,
@@ -92,6 +70,7 @@ export async function createTask(formData: FormData) {
 
   await prisma.auditLog.create({
     data: {
+      organizationId: currentUser.organizationId,
       entityType: "Task",
       entityId: task.id,
       action: "CREATE",
@@ -131,28 +110,12 @@ export async function updateTask(formData: FormData) {
 
   // Re-filing the task must respect visibility — can't move it onto a
   // project/case the user can't see (IDOR guard, mirrors createTask).
-  const projectId = optionalString(formData, "projectId");
-  const caseId = optionalString(formData, "caseId");
   const assignedToId = optionalString(formData, "assignedToId");
   const responsibleUserId = optionalString(formData, "responsibleUserId");
-  if (projectId) {
-    const project = await prisma.project.findFirst({
-      where: andWhere({ id: projectId }, projectVisibilityWhere(currentUser)),
-      select: { id: true },
-    });
-    if (!project) {
-      throw new Error("Projekt nenalezen nebo k němu nemáte oprávnění.");
-    }
-  }
-  if (caseId) {
-    const legalCase = await prisma.case.findFirst({
-      where: andWhere({ id: caseId }, caseVisibilityWhere(currentUser)),
-      select: { id: true },
-    });
-    if (!legalCase) {
-      throw new Error("Případ nenalezen nebo k němu nemáte oprávnění.");
-    }
-  }
+  const matter = await resolveVisibleMatterSelection(prisma, currentUser, {
+    projectId: optionalString(formData, "projectId"),
+    caseId: optionalString(formData, "caseId"),
+  });
 
   // Assignee / responsible must belong to the caller's org (no-op when empty).
   await assertUserInOrg(assignedToId, currentUser.organizationId);
@@ -171,8 +134,8 @@ export async function updateTask(formData: FormData) {
       where: { id: taskId },
       data: {
         title: requiredString(formData, "title"),
-        projectId,
-        caseId,
+        projectId: matter.projectId,
+        caseId: matter.caseId,
         assignedToId,
         responsibleUserId,
         status: newStatus,
@@ -213,6 +176,7 @@ export async function updateTask(formData: FormData) {
 
     await tx.auditLog.create({
       data: {
+        organizationId: currentUser.organizationId,
         entityType: "Task",
         entityId: taskId,
         action: "UPDATE",
@@ -313,6 +277,7 @@ export async function updateTaskStatus(formData: FormData) {
 
     await tx.auditLog.create({
       data: {
+        organizationId: currentUser.organizationId,
         entityType: "Task",
         entityId: task.id,
         action: "STATUS_CHANGE",
@@ -383,6 +348,7 @@ export async function addTaskComment(formData: FormData) {
 
   await prisma.auditLog.create({
     data: {
+      organizationId: currentUser.organizationId,
       entityType: "TaskComment",
       entityId: taskId,
       action: "CREATE",

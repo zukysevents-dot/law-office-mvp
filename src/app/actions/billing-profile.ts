@@ -52,6 +52,7 @@ export async function saveBillingProfile(formData: FormData) {
 
   await prisma.auditLog.create({
     data: {
+      organizationId,
       entityType: "OrganizationBillingProfile",
       entityId: saved.id,
       action: previous ? "UPDATE" : "CREATE",

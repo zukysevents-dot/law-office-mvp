@@ -188,6 +188,7 @@ export async function createDocument(formData: FormData) {
 
     await tx.auditLog.create({
       data: {
+        organizationId: currentUser.organizationId,
         entityType: "Document",
         entityId: document.id,
         action: "CREATE",
@@ -261,6 +262,7 @@ export async function addDocumentVersion(formData: FormData) {
 
     await tx.auditLog.create({
       data: {
+        organizationId: currentUser.organizationId,
         entityType: "Document",
         entityId: documentId,
         action: "ADD_VERSION",
@@ -314,6 +316,7 @@ export async function updateDocument(formData: FormData) {
 
     await tx.auditLog.create({
       data: {
+        organizationId: currentUser.organizationId,
         entityType: "Document",
         entityId: documentId,
         action: "UPDATE",
@@ -353,6 +356,7 @@ async function setDocumentArchived(formData: FormData, archived: boolean) {
 
     await tx.auditLog.create({
       data: {
+        organizationId: currentUser.organizationId,
         entityType: "Document",
         entityId: documentId,
         action: archived ? "ARCHIVE" : "RESTORE",
@@ -401,6 +405,7 @@ export async function createDocumentTemplate(formData: FormData) {
 
   await prisma.auditLog.create({
     data: {
+      organizationId: currentUser.organizationId,
       entityType: "DocumentTemplate",
       entityId: template.id,
       action: "CREATE",
@@ -443,6 +448,7 @@ export async function updateDocumentTemplate(formData: FormData) {
 
     await tx.auditLog.create({
       data: {
+        organizationId: currentUser.organizationId,
         entityType: "DocumentTemplate",
         entityId: templateId,
         action: "UPDATE",
@@ -486,6 +492,7 @@ export async function archiveDocumentTemplate(formData: FormData) {
 
     await tx.auditLog.create({
       data: {
+        organizationId: currentUser.organizationId,
         entityType: "DocumentTemplate",
         entityId: templateId,
         action: "ARCHIVE",

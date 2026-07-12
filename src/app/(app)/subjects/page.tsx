@@ -22,6 +22,7 @@ import { formatDate, formatMoney } from "@/lib/format";
 import { feeTypeLabels, options, subjectTypeLabels } from "@/lib/labels";
 import {
   andWhere,
+  canManageSubjects,
   canViewRates,
   subjectVisibilityWhere,
 } from "@/lib/permissions";
@@ -61,6 +62,7 @@ type SubjectRow = {
 type SubjectsPageData = {
   subjects: SubjectRow[];
   tableView: TableViewState;
+  canManage: boolean;
   canViewRates: boolean;
 };
 
@@ -73,6 +75,7 @@ export default async function SubjectsPage({ searchParams }: SubjectsPageProps) 
     {
       subjects: [],
       tableView: getDefaultTableView("subjects"),
+      canManage: false,
       canViewRates: false,
     },
     async () => {
@@ -97,7 +100,12 @@ export default async function SubjectsPage({ searchParams }: SubjectsPageProps) 
         orderBy: { name: "asc" },
       });
 
-      return { subjects, tableView, canViewRates: canViewRates(currentUser) };
+      return {
+        subjects,
+        tableView,
+        canManage: canManageSubjects(currentUser),
+        canViewRates: canViewRates(currentUser),
+      };
     },
   );
   const tableView = result.data.canViewRates
@@ -110,12 +118,12 @@ export default async function SubjectsPage({ searchParams }: SubjectsPageProps) 
       <PageHeader
         title="Subjekty"
         description="Jednotná evidence osob a organizací bez duplicitní klientské tabulky."
-        action={
+        action={result.data.canManage ? (
           <ButtonLink href="#new-subject">
             <Plus className="h-4 w-4" aria-hidden="true" />
             Nový subjekt
           </ButtonLink>
-        }
+        ) : null}
       />
       <DatabaseNotice
         databaseReady={result.databaseReady}
@@ -125,7 +133,7 @@ export default async function SubjectsPage({ searchParams }: SubjectsPageProps) 
         <form className="grid gap-3 md:grid-cols-[1fr_220px_auto]">
           <div className="relative flex-1 md:self-end">
             <Search
-              className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-stone-400"
+              className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-stone-600"
               aria-hidden="true"
             />
             <TextInput
@@ -249,50 +257,52 @@ export default async function SubjectsPage({ searchParams }: SubjectsPageProps) 
           <EmptyState>Žádné subjekty neodpovídají zadání.</EmptyState>
         )}
       </Section>
-      <Section title="Nový subjekt" className="scroll-mt-6" id="new-subject">
-        <form action={createSubject} className="grid gap-4">
-          <SubjectAresFields />
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field label="E-mail">
-              <TextInput name="email" type="email" />
+      {result.data.canManage ? (
+        <Section title="Nový subjekt" className="scroll-mt-6" id="new-subject">
+          <form action={createSubject} className="grid gap-4">
+            <SubjectAresFields />
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label="E-mail">
+                <TextInput name="email" type="email" />
+              </Field>
+              <Field label="SharePoint URL">
+                <TextInput name="sharepointUrl" type="url" />
+              </Field>
+            </div>
+            <Field label="Interní poznámka">
+              <TextArea name="internalNote" />
             </Field>
-            <Field label="SharePoint URL">
-              <TextInput name="sharepointUrl" type="url" />
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label="URL smlouvy o poskytování právních služeb">
+                <TextInput name="legalServicesContractUrl" type="url" />
+              </Field>
+              <Field label="Typ odměny">
+                <SelectInput name="feeType" defaultValue="HOURLY">
+                  {options.feeTypes.map((feeType) => (
+                    <option key={feeType} value={feeType}>
+                      {feeTypeLabels[feeType]}
+                    </option>
+                  ))}
+                </SelectInput>
+              </Field>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label="Hodinová sazba">
+                <TextInput name="hourlyRate" type="number" min="0" step="0.01" />
+              </Field>
+              <Field label="Paušální odměna">
+                <TextInput name="flatFee" type="number" min="0" step="0.01" />
+              </Field>
+            </div>
+            <Field label="Poznámka k odměně">
+              <TextArea name="feeNote" />
             </Field>
-          </div>
-          <Field label="Interní poznámka">
-            <TextArea name="internalNote" />
-          </Field>
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field label="URL smlouvy o poskytování právních služeb">
-              <TextInput name="legalServicesContractUrl" type="url" />
-            </Field>
-            <Field label="Typ odměny">
-              <SelectInput name="feeType" defaultValue="HOURLY">
-                {options.feeTypes.map((feeType) => (
-                  <option key={feeType} value={feeType}>
-                    {feeTypeLabels[feeType]}
-                  </option>
-                ))}
-              </SelectInput>
-            </Field>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Hodinová sazba">
-              <TextInput name="hourlyRate" type="number" min="0" step="0.01" />
-            </Field>
-            <Field label="Paušální odměna">
-              <TextInput name="flatFee" type="number" min="0" step="0.01" />
-            </Field>
-          </div>
-          <Field label="Poznámka k odměně">
-            <TextArea name="feeNote" />
-          </Field>
-          <div>
-            <Button type="submit">Vytvořit subjekt</Button>
-          </div>
-        </form>
-      </Section>
+            <div>
+              <Button type="submit">Vytvořit subjekt</Button>
+            </div>
+          </form>
+        </Section>
+      ) : null}
     </>
   );
 }

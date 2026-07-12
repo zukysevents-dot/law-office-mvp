@@ -82,6 +82,7 @@ export async function addCaseAssignee(formData: FormData) {
   }
 
   await writeAuditLog({
+    organizationId: currentUser.organizationId,
     entityType: "CaseAssignee",
     entityId: assignee.id,
     action: "CREATE",
@@ -121,6 +122,7 @@ export async function removeCaseAssignee(formData: FormData) {
   await prisma.caseAssignee.delete({ where: { id } });
 
   await writeAuditLog({
+    organizationId: currentUser.organizationId,
     entityType: "CaseAssignee",
     entityId: id,
     action: "DELETE",

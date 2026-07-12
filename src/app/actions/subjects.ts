@@ -15,7 +15,10 @@ import {
   optionalString,
   requiredString,
 } from "@/lib/form";
-import { assertCanEditRecord } from "@/lib/permissions";
+import {
+  assertCanEditRecord,
+  assertCanManageSubjects,
+} from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { isSafeHttpUrl } from "@/lib/utils";
 
@@ -44,6 +47,7 @@ function rethrowDuplicateIco(error: unknown): never {
 export async function createSubject(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
+  assertCanManageSubjects(currentUser);
   const type = enumValue(SubjectType, formData.get("type"), SubjectType.COMPANY);
 
   // Defense-in-depth: never persist a non-http(s) URL (e.g. javascript:/data:)
@@ -79,6 +83,7 @@ export async function createSubject(formData: FormData) {
 
   await prisma.auditLog.create({
     data: {
+      organizationId: currentUser.organizationId,
       entityType: "Subject",
       entityId: subject.id,
       action: "CREATE",
@@ -140,6 +145,7 @@ export async function updateSubject(formData: FormData) {
 
   await prisma.auditLog.create({
     data: {
+      organizationId: currentUser.organizationId,
       entityType: "Subject",
       entityId: subject.id,
       action: "UPDATE",
