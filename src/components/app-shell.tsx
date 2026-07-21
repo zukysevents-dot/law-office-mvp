@@ -1,6 +1,8 @@
 import { Suspense } from "react";
 
 import { AppSidebar } from "@/components/app-sidebar";
+import { CommandPalette } from "@/components/command-palette";
+import { FloatingTimer } from "@/components/floating-timer";
 import { NavigationCursor } from "@/components/navigation-cursor";
 import { getCurrentUser } from "@/lib/auth";
 import { getEnabledModules } from "@/lib/entitlements";
@@ -43,6 +45,8 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
           {children}
         </div>
       </main>
+      <FloatingTimer />
+      <CommandPalette />
     </div>
   );
 }

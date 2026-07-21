@@ -147,6 +147,9 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
   const dateTo = firstParam(params, "dateTo");
   const minAmount = numberParam(firstParam(params, "minAmount"));
   const maxAmount = numberParam(firstParam(params, "maxAmount"));
+  // The floating timer stops into this form with ?hours=<elapsed> so the most
+  // repeated daily action needs zero manual time math.
+  const hoursPrefill = firstParam(params, "hours");
 
   const result = await safeQuery<WorkLogsPageData>(
     {
@@ -725,7 +728,14 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
               <TextInput name="workDate" type="date" required />
             </Field>
             <Field label="Hodiny">
-              <TextInput name="hours" type="number" min="0" step="0.25" required />
+              <TextInput
+                name="hours"
+                type="number"
+                min="0"
+                step="0.25"
+                required
+                defaultValue={hoursPrefill}
+              />
             </Field>
             {/* Rate is hidden during reporting for non-partners — it is derived
                 from the case/project and they shouldn't see (or set) pricing. */}

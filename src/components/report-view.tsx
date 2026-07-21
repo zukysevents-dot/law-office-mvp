@@ -1,3 +1,5 @@
+import type { Prisma } from "@/generated/prisma/client";
+
 import { ReportFilterForm } from "@/components/report-filter-form";
 import { ReportSummaryTable } from "@/components/report-summary-table";
 import { PageHeader } from "@/components/page-header";
@@ -57,6 +59,7 @@ export async function ReportView({
   searchParams,
   canView,
   deniedMessage,
+  extraWhere,
 }: {
   title: string;
   description: string;
@@ -67,6 +70,9 @@ export async function ReportView({
   // the "Přístup odepřen" notice. Visibility scoping is applied regardless.
   canView?: (user: GateUser) => boolean;
   deniedMessage?: string;
+  // Optional extra where-fragment composed on top of filters + visibility, e.g.
+  // WIP restricting to billable, approved, not-yet-invoiced logs.
+  extraWhere?: Prisma.WorkLogWhereInput;
 }) {
   const params = await searchParams;
   const filters: ReportFilters = readReportFilters((key) =>
@@ -88,6 +94,7 @@ export async function ReportView({
           where: andWhere(
             workLogReportWhere(filters),
             workLogVisibilityWhere(currentUser),
+            extraWhere ?? {},
           ),
           orderBy: [{ workDate: "desc" }, { createdAt: "desc" }],
           include: reportWorkLogInclude,
