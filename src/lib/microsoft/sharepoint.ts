@@ -33,6 +33,21 @@ export function sanitizeSegment(value: string): string {
     .trim();
 }
 
+/**
+ * Give every uploaded binary a unique suffix. Graph's simple PUT upload
+ * replaces an existing file with the same name; this keeps LawOffice versions
+ * independently addressable even when SharePoint versioning is disabled.
+ */
+export function uniqueSharepointFilename(name: string, token: string): string {
+  const safeName = sanitizeSegment(name) || "Dokument";
+  const safeToken = sanitizeSegment(token) || "verze";
+  const dot = safeName.lastIndexOf(".");
+  if (dot <= 0 || dot === safeName.length - 1) {
+    return `${safeName} (${safeToken})`;
+  }
+  return `${safeName.slice(0, dot)} (${safeToken})${safeName.slice(dot)}`;
+}
+
 function labeled(name: string, suffix: string | null): string {
   const cleanName = sanitizeSegment(name) || "Bez názvu";
   const cleanSuffix = suffix ? sanitizeSegment(suffix) : "";

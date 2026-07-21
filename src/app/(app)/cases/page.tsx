@@ -2,9 +2,11 @@ import Link from "next/link";
 import { Plus } from "lucide-react";
 
 import { createCase } from "@/app/actions/cases";
+import { CascadingMatterSelect } from "@/components/cascading-matter-select";
 import { ColumnVisibilityPanel } from "@/components/column-visibility-panel";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
+import { RowClickNav } from "@/components/row-click-nav";
 import { Section } from "@/components/section";
 import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
@@ -60,7 +62,7 @@ type CasesPageData = {
     };
     responsibleUser: { name: string } | null;
   }>;
-  projects: Array<{ id: string; name: string }>;
+  projects: Array<{ id: string; name: string; mainSubjectId: string }>;
   subjects: Array<{ id: string; name: string }>;
   users: Array<{ id: string; name: string }>;
   tableView: TableViewState;
@@ -113,7 +115,7 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
             projectVisibilityWhere(currentUser),
           ),
           orderBy: { name: "asc" },
-          select: { id: true, name: true },
+          select: { id: true, name: true, mainSubjectId: true },
         }),
         prisma.subject.findMany({
           where: andWhere(
@@ -149,26 +151,15 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
       />
       <Section>
         <form className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <Field label="Klient">
-            <SelectInput name="subjectId" defaultValue={subjectId}>
-              <option value="">Všichni klienti</option>
-              {result.data.subjects.map((subject) => (
-                <option key={subject.id} value={subject.id}>
-                  {subject.name}
-                </option>
-              ))}
-            </SelectInput>
-          </Field>
-          <Field label="Projekt">
-            <SelectInput name="projectId" defaultValue={projectId}>
-              <option value="">Všechny projekty</option>
-              {result.data.projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </SelectInput>
-          </Field>
+          <CascadingMatterSelect
+            subjects={result.data.subjects}
+            projects={result.data.projects}
+            cases={[]}
+            defaultSubjectId={subjectId}
+            defaultProjectId={projectId}
+            includeCase={false}
+            filterMode
+          />
           <Field label="Archiv">
             <SelectInput name="archive" defaultValue={archive}>
               {Object.entries(archiveFilterLabels).map(([value, label]) => (
@@ -181,6 +172,11 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
           <Button type="submit" variant="secondary" className="self-end">
             Filtrovat
           </Button>
+          {subjectId || projectId || archive !== "active" ? (
+            <ButtonLink href="/cases" variant="ghost" className="self-end">
+              Zrušit filtry
+            </ButtonLink>
+          ) : null}
         </form>
       </Section>
       <Section title="Seznam případů">
@@ -190,6 +186,7 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
           visibleColumns={result.data.tableView.visibleColumns}
         />
         {result.data.cases.length > 0 ? (
+          <RowClickNav>
           <div className="table-scroll">
             <table className="w-max min-w-full">
               <thead>
@@ -204,7 +201,13 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
               </thead>
               <tbody>
                 {result.data.cases.map((legalCase) => (
-                  <tr key={legalCase.id}>
+                  <tr
+                    key={legalCase.id}
+                    data-href={`/cases/${legalCase.id}`}
+                    tabIndex={0}
+                    aria-label={`Otevřít případ ${legalCase.name}`}
+                    className="cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-emerald-900"
+                  >
                     {visibleColumnSet.has("mainSubject") ? (
                       <td>
                         {legalCase.project.mainSubject ? (
@@ -280,6 +283,7 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
               </tbody>
             </table>
           </div>
+          </RowClickNav>
         ) : (
           <EmptyState>Zatím nejsou založené žádné případy.</EmptyState>
         )}

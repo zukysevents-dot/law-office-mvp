@@ -24,12 +24,21 @@ import {
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { isSafeHttpUrl } from "@/lib/utils";
+import {
+  isSharepointUploadConfigured,
+  uploadSharepointFile,
+} from "@/lib/microsoft/graph-drive";
+import {
+  sharepointFolderSegments,
+  uniqueSharepointFilename,
+} from "@/lib/microsoft/sharepoint";
 
 type CurrentUser = Awaited<ReturnType<typeof getCurrentUser>>;
 
 const MAX_NAME = 300;
 const MAX_TEXT = 4000;
 const MAX_BODY = 50000;
+const MAX_SHAREPOINT_FILE_BYTES = 4 * 1024 * 1024;
 
 // Module gate + resolve org. Role gate is applied per-action (documents vs
 // templates differ), so this only does the entitlement check + org resolution.
@@ -49,14 +58,19 @@ async function authorize(): Promise<{
 async function loadVisibleCase(currentUser: CurrentUser, caseId: string) {
   return getPrisma().case.findFirst({
     where: andWhere({ id: caseId }, caseVisibilityWhere(currentUser)),
-    select: { id: true },
+    select: {
+      id: true,
+      name: true,
+      fileNumber: true,
+      project: { select: { id: true, name: true } },
+    },
   });
 }
 
 async function loadVisibleSubject(currentUser: CurrentUser, subjectId: string) {
   return getPrisma().subject.findFirst({
     where: andWhere({ id: subjectId }, subjectVisibilityWhere(currentUser)),
-    select: { id: true },
+    select: { id: true, name: true, ico: true },
   });
 }
 
@@ -69,12 +83,54 @@ function clampText(value: string | null, max: number): string | null {
 
 // storageUrl is a link into the firm's SharePoint — only http(s) is allowed so a
 // javascript:/data: URL can never be stored and later rendered as a link.
-function requiredSafeUrl(formData: FormData, key: string): string {
-  const value = requiredString(formData, key);
+function safeStorageUrl(value: string): string {
   if (!isSafeHttpUrl(value)) {
     throw new Error("Odkaz musí být platná http(s) adresa.");
   }
   return value;
+}
+
+async function resolveStorage(
+  formData: FormData,
+  folderSegments: string[],
+): Promise<{ storageUrl: string; mimeType: string | null }> {
+  const url = optionalString(formData, "storageUrl");
+  const candidate = formData.get("file");
+  const file = candidate instanceof File && candidate.size > 0 ? candidate : null;
+
+  if (file && url) {
+    throw new Error("Vyberte buď soubor k nahrání, nebo existující odkaz, ne obojí.");
+  }
+  if (!file) {
+    if (!url) {
+      throw new Error("Nahrajte soubor nebo vložte odkaz do SharePointu.");
+    }
+    return { storageUrl: safeStorageUrl(url), mimeType: null };
+  }
+  if (!isSharepointUploadConfigured()) {
+    throw new Error(
+      "Přímý upload vyžaduje konfiguraci SharePointu a Microsoft Graph.",
+    );
+  }
+  if (file.size > MAX_SHAREPOINT_FILE_BYTES) {
+    throw new Error("Soubor je větší než povolené 4 MB.");
+  }
+
+  const filename = uniqueSharepointFilename(
+    file.name,
+    crypto.randomUUID().slice(0, 8),
+  );
+  const mimeType = file.type || "application/octet-stream";
+  const uploadedUrl = await uploadSharepointFile(
+    [...folderSegments, "Dokumenty"],
+    filename,
+    await file.arrayBuffer(),
+    mimeType,
+  );
+  if (!uploadedUrl) {
+    throw new Error("Soubor se nepodařilo nahrát do SharePointu.");
+  }
+  return { storageUrl: safeStorageUrl(uploadedUrl), mimeType };
 }
 
 // Exactly one of caseId/subjectId must be set (mirrors the DB CHECK). Both are
@@ -83,7 +139,11 @@ function requiredSafeUrl(formData: FormData, key: string): string {
 async function resolveAnchor(
   currentUser: CurrentUser,
   formData: FormData,
-): Promise<{ caseId: string | null; subjectId: string | null }> {
+): Promise<{
+  caseId: string | null;
+  subjectId: string | null;
+  folderSegments: string[];
+}> {
   const caseId = optionalString(formData, "caseId");
   const subjectId = optionalString(formData, "subjectId");
 
@@ -96,14 +156,28 @@ async function resolveAnchor(
     if (!legalCase) {
       throw new Error("Případ nenalezen.");
     }
-    return { caseId, subjectId: null };
+    return {
+      caseId,
+      subjectId: null,
+      folderSegments: sharepointFolderSegments({
+        type: "Case",
+        record: legalCase,
+      }),
+    };
   }
 
   const subject = await loadVisibleSubject(currentUser, subjectId!);
   if (!subject) {
     throw new Error("Subjekt nenalezen.");
   }
-  return { caseId: null, subjectId };
+  return {
+    caseId: null,
+    subjectId,
+    folderSegments: sharepointFolderSegments({
+      type: "Subject",
+      record: subject,
+    }),
+  };
 }
 
 function revalidateDocument(anchor: {
@@ -132,12 +206,13 @@ export async function createDocument(formData: FormData) {
   const { currentUser, organizationId } = await authorize();
   assertCanManageDocuments(currentUser);
 
-  const { caseId, subjectId } = await resolveAnchor(currentUser, formData);
+  const { caseId, subjectId, folderSegments } = await resolveAnchor(
+    currentUser,
+    formData,
+  );
   const name = clampText(requiredString(formData, "name"), MAX_NAME)!;
   const kind = enumValue(DocumentKind, formData.get("kind"), DocumentKind.OTHER);
   const description = clampText(optionalString(formData, "description"), MAX_TEXT);
-  const mimeType = clampText(optionalString(formData, "mimeType"), MAX_NAME);
-  const storageUrl = requiredSafeUrl(formData, "storageUrl");
   const note = clampText(optionalString(formData, "note"), MAX_TEXT);
   const sourceTemplateId = optionalString(formData, "sourceTemplateId");
 
@@ -154,6 +229,11 @@ export async function createDocument(formData: FormData) {
       throw new Error("Šablona nenalezena.");
     }
   }
+
+  const storage = await resolveStorage(formData, folderSegments);
+  const mimeType =
+    storage.mimeType ?? clampText(optionalString(formData, "mimeType"), MAX_NAME);
+  const storageUrl = storage.storageUrl;
 
   const documentId = await prisma.$transaction(async (tx) => {
     const document = await tx.document.create({
@@ -219,7 +299,21 @@ export async function addDocumentVersion(formData: FormData) {
   const documentId = requiredString(formData, "documentId");
   const existing = await prisma.document.findFirst({
     where: andWhere({ id: documentId }, documentVisibilityWhere(currentUser)),
-    select: { id: true, caseId: true, subjectId: true, archivedAt: true },
+    select: {
+      id: true,
+      caseId: true,
+      subjectId: true,
+      archivedAt: true,
+      case: {
+        select: {
+          id: true,
+          name: true,
+          fileNumber: true,
+          project: { select: { id: true, name: true } },
+        },
+      },
+      subject: { select: { id: true, name: true, ico: true } },
+    },
   });
   if (!existing) {
     throw new Error("Dokument nenalezen.");
@@ -228,7 +322,16 @@ export async function addDocumentVersion(formData: FormData) {
     throw new Error("Dokument je archivovaný.");
   }
 
-  const storageUrl = requiredSafeUrl(formData, "storageUrl");
+  const folderSegments = existing.case
+    ? sharepointFolderSegments({ type: "Case", record: existing.case })
+    : existing.subject
+      ? sharepointFolderSegments({ type: "Subject", record: existing.subject })
+      : null;
+  if (!folderSegments) {
+    throw new Error("Dokument nemá platnou vazbu na spis nebo subjekt.");
+  }
+  const storage = await resolveStorage(formData, folderSegments);
+  const storageUrl = storage.storageUrl;
   const note = clampText(optionalString(formData, "note"), MAX_TEXT);
 
   await prisma.$transaction(async (tx) => {
@@ -257,7 +360,11 @@ export async function addDocumentVersion(formData: FormData) {
 
     await tx.document.update({
       where: { id: documentId },
-      data: { currentVersionId: version.id, storageUrl },
+      data: {
+        currentVersionId: version.id,
+        storageUrl,
+        ...(storage.mimeType ? { mimeType: storage.mimeType } : {}),
+      },
     });
 
     await tx.auditLog.create({

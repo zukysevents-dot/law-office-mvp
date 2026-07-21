@@ -225,6 +225,11 @@ export default async function BillingPage({ searchParams }: BillingProps) {
             <Button type="submit" variant="secondary">
               Filtrovat
             </Button>
+            {query ? (
+              <ButtonLink href="/billing" variant="ghost">
+                Zrušit filtry
+              </ButtonLink>
+            ) : null}
             <ButtonLink
               href={`/billing/export?format=xlsx${exportSuffix}`}
               variant="primary"

@@ -88,7 +88,7 @@ export default async function DocumentsPage({
   const kindFilter =
     kind && kind in DocumentKind ? (kind as DocumentKind) : undefined;
   // A search / kind filter switches to a flat result list; the default view is
-  // the matter tree ("Spisy").
+  // the matter tree ("Spisovna").
   const isFiltered = Boolean(search || kindFilter);
 
   const result = await safeQuery<Data>(emptyData, async () => {
@@ -186,8 +186,8 @@ export default async function DocumentsPage({
   return (
     <>
       <PageHeader
-        title="Spisy"
-        description="Spisy a dokumenty (odkazy do SharePointu) uspořádané podle projektů a případů."
+        title="Spisovna"
+        description="Dokumenty a spisy (odkazy do SharePointu) uspořádané podle projektů a případů."
       />
       <DatabaseNotice databaseReady={result.databaseReady} error={result.error} />
 
@@ -291,11 +291,11 @@ export default async function DocumentsPage({
           tree.unfiled.length === 0 ? (
             <EmptyState>Zatím nejsou založené žádné projekty ani dokumenty.</EmptyState>
           ) : (
-            <div className="space-y-2">
+            <div className="divide-y divide-[#d4e2dc] border border-[#d4e2dc]">
               {tree.projects.map((project) => (
                 <details
                   key={project.id}
-                  className="rounded-lg border border-[#d4e2dc] bg-white px-4 py-3"
+                  className="bg-white px-4 py-3"
                 >
                   <summary className="flex cursor-pointer items-center gap-2 font-medium text-[#072924]">
                     <FolderTree className="h-4 w-4" aria-hidden="true" />
@@ -344,7 +344,7 @@ export default async function DocumentsPage({
               ))}
 
               {tree.subjects.length > 0 ? (
-                <details className="rounded-lg border border-[#d4e2dc] bg-white px-4 py-3">
+                <details className="bg-white px-4 py-3">
                   <summary className="cursor-pointer font-medium text-[#072924]">
                     Dokumenty u subjektů (bez případu)
                   </summary>
@@ -374,7 +374,7 @@ export default async function DocumentsPage({
               ) : null}
 
               {tree.unfiled.length > 0 ? (
-                <details className="rounded-lg border border-[#d4e2dc] bg-white px-4 py-3">
+                <details className="bg-white px-4 py-3">
                   <summary className="cursor-pointer font-medium text-[#072924]">
                     Nezařazené dokumenty
                     <span className="ml-2 text-xs font-normal text-stone-600">

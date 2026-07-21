@@ -443,6 +443,39 @@ export async function updateOrganization(formData: FormData) {
   revalidatePath(`/admin/organizations/${organizationId}`);
 }
 
+export async function updateBillingTimeIncrement(formData: FormData) {
+  const organizationId = requiredString(formData, "organizationId");
+  const actor = await authorizeOrgAction(organizationId);
+  const requested = optionalNumber(formData, "billingTimeIncrementMinutes");
+  const billingTimeIncrementMinutes = requested === 6 ? 6 : 15;
+  const prisma = getPrisma();
+  const old = await prisma.organization.findUniqueOrThrow({
+    where: { id: organizationId },
+    select: { billingTimeIncrementMinutes: true },
+  });
+
+  await prisma.organization.update({
+    where: { id: organizationId },
+    data: { billingTimeIncrementMinutes },
+  });
+  await prisma.auditLog.create({
+    data: {
+      organizationId,
+      entityType: "Organization",
+      entityId: organizationId,
+      action: "UPDATE",
+      changedById: actor.id,
+      oldValue: {
+        billingTimeIncrementMinutes: old.billingTimeIncrementMinutes,
+      },
+      newValue: { billingTimeIncrementMinutes },
+    },
+  });
+
+  revalidatePath("/settings/organization");
+  revalidatePath("/work-logs");
+}
+
 // --- Module entitlements (platform admin only) -------------------------------
 // Enables/disables/trials one module for an org. Enforces the requiresKeys
 // dependency graph so entitlements never become inconsistent (e.g. portal

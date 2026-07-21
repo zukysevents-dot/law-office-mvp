@@ -16,6 +16,7 @@ import { Section } from "@/components/section";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
+import type { DashboardWidgetType } from "@/generated/prisma/enums";
 import {
   dashboardTableColumns,
   dashboardWidgetSizeLabels,
@@ -35,6 +36,7 @@ export const dynamic = "force-dynamic";
 type DashboardSettingsData = {
   userName: string;
   widgets: EditorWidget[];
+  availableTypes: DashboardWidgetType[];
 };
 
 const sizeOptions = dashboardWidgetSizes.map((size) => ({
@@ -47,6 +49,7 @@ export default async function DashboardSettingsPage() {
     {
       userName: "",
       widgets: [],
+      availableTypes: [...dashboardWidgetTypes],
     },
     async () => {
       const currentUser = await getCurrentUser();
@@ -69,6 +72,9 @@ export default async function DashboardSettingsPage() {
 
       return {
         userName: currentUser.name,
+        availableTypes: dashboardWidgetTypes.filter(
+          (type) => !widgets.some((widget) => widget.type === type),
+        ),
         widgets: widgets.map((widget) => {
           const selected = getVisibleDashboardColumns(widget.type, widget.config);
           return {
@@ -117,16 +123,22 @@ export default async function DashboardSettingsPage() {
         >
           <Field label="Typ widgetu">
             <SelectInput name="type" data-testid="dashboard-widget-type">
-              {dashboardWidgetTypes.map((type) => (
+              {result.data.availableTypes.map((type) => (
                 <option key={type} value={type}>
                   {dashboardWidgetTypeLabels[type]}
                 </option>
               ))}
             </SelectInput>
           </Field>
-          <Button type="submit" className="self-end">
+          <Button
+            type="submit"
+            className="self-end"
+            disabled={result.data.availableTypes.length === 0}
+          >
             <Plus className="h-4 w-4" aria-hidden="true" />
-            Přidat widget
+            {result.data.availableTypes.length > 0
+              ? "Přidat widget"
+              : "Všechny widgety přidány"}
           </Button>
         </form>
       </Section>

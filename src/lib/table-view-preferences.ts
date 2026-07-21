@@ -62,9 +62,9 @@ export const tableViewConfigs = {
     path: "/subjects",
     columns: [
       { id: "name", label: "Název", defaultVisible: true },
-      { id: "type", label: "Typ", defaultVisible: true },
+      { id: "type", label: "Typ", defaultVisible: false },
       { id: "ico", label: "IČO", defaultVisible: true },
-      { id: "dic", label: "DIČ", defaultVisible: true },
+      { id: "dic", label: "DIČ", defaultVisible: false },
       { id: "address", label: "Adresa", defaultVisible: false },
       { id: "legalForm", label: "Právní forma", defaultVisible: false },
       { id: "statutoryBody", label: "Statutární orgán", defaultVisible: false },

@@ -8,6 +8,7 @@ import {
   tableViewConfigs,
 } from "@/lib/table-view-preferences";
 import { upsertTableViewPreference } from "@/lib/table-view-preference-service";
+import { getPrisma } from "@/lib/prisma";
 
 export async function updateTableViewPreference(formData: FormData) {
   const tableKeyValue = formData.get("tableKey");
@@ -23,4 +24,21 @@ export async function updateTableViewPreference(formData: FormData) {
   await upsertTableViewPreference(currentUser.id, tableKey, selectedColumns);
 
   revalidatePath(tableViewConfigs[tableKey].path);
+}
+
+export async function resetTableViewPreference(formData: FormData) {
+  const tableKeyValue = formData.get("tableKey");
+
+  if (!isTableKey(tableKeyValue)) {
+    return;
+  }
+
+  const currentUser = await getCurrentUser();
+  const prisma = getPrisma();
+
+  await prisma.tableViewPreference.deleteMany({
+    where: { userId: currentUser.id, tableKey: tableKeyValue },
+  });
+
+  revalidatePath(tableViewConfigs[tableKeyValue].path);
 }

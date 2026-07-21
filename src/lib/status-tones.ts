@@ -86,6 +86,18 @@ export function taskStatusRowClass(status: TaskStatus): string {
   return classes[status] ?? "";
 }
 
+export function isTaskOverdue(
+  deadline: Date | string | null | undefined,
+  status: TaskStatus,
+  now = new Date(),
+): boolean {
+  if (!deadline || status === "COMPLETED") {
+    return false;
+  }
+
+  return new Date(deadline).getTime() < now.getTime();
+}
+
 export function billingStatusTone(status: BillingStatus): BadgeTone {
   const tones: Record<BillingStatus, BadgeTone> = {
     BILLABLE: "dark",

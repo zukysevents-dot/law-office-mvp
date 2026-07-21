@@ -30,7 +30,11 @@ function formatElapsed(ms: number) {
 // reload re-reads it). Stopping rounds elapsed time to the nearest quarter hour
 // and opens the work-log form pre-filled via ?hours — the single most repeated
 // daily action, with zero manual time math.
-export function FloatingTimer() {
+export function FloatingTimer({
+  incrementMinutes = 15,
+}: {
+  incrementMinutes?: number;
+}) {
   // ready guards against a hydration mismatch: localStorage is client-only, so
   // both the server and the first client render show nothing.
   const [state, setState] = useState<{ ready: boolean; startedAt: number | null }>({
@@ -78,9 +82,13 @@ export function FloatingTimer() {
   function stopAndLog() {
     if (state.startedAt === null) return;
     const elapsedH = (Date.now() - state.startedAt) / 3_600_000;
-    const hours = Math.max(0.25, Math.round(elapsedH / 0.25) * 0.25);
+    const incrementHours = incrementMinutes === 6 ? 0.1 : 0.25;
+    const hours = Math.max(
+      incrementHours,
+      Math.round(elapsedH / incrementHours) * incrementHours,
+    );
     clear();
-    window.location.href = `/work-logs?hours=${hours}#new-work-log`;
+    window.location.href = `/work-logs?new=1&hours=${hours}`;
   }
 
   if (state.startedAt === null) {

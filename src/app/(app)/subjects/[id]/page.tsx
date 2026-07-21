@@ -15,6 +15,8 @@ import { SharepointFolderField } from "@/components/sharepoint-folder-field";
 import { SharepointNotice } from "@/components/sharepoint-notice";
 import { SubjectAmlSection } from "@/components/subject-aml-section";
 import { SubjectContactPersons } from "@/components/subject-contact-persons";
+import { SubjectDocumentsSection } from "@/components/subject-documents-section";
+import { SubjectBillingApprovers } from "@/components/subject-billing-approvers";
 import type { ScreeningWithMatches } from "@/components/sanctions-screening-panel";
 import { SubjectPortalSection } from "@/components/subject-portal-section";
 import { SubjectRegistrySection } from "@/components/subject-registry-section";
@@ -36,13 +38,17 @@ import { safeQuery } from "@/lib/db-safe";
 import {
   andWhere,
   canEditRecord,
+  canManageDocuments,
   canManagePortal,
   canViewAllLegalData,
   caseVisibilityWhere,
+  documentTemplateVisibilityWhere,
+  documentVisibilityWhere,
   projectVisibilityWhere,
   subjectVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { getOrgUserOptions } from "@/lib/org-users";
 import { subjectRoleTone } from "@/lib/status-tones";
 import { isSafeHttpUrl } from "@/lib/utils";
 
@@ -220,6 +226,52 @@ async function loadSubject(id: string) {
     portal = { access, shares };
   }
 
+  const documentsEnabled =
+    subject != null &&
+    (await isModuleEnabled(currentUser.organizationId, ModuleKey.DOCUMENTS));
+  const [documents, documentTemplates] = documentsEnabled
+    ? await Promise.all([
+        prisma.document.findMany({
+          where: andWhere(
+            { subjectId: id, archivedAt: null },
+            documentVisibilityWhere(currentUser),
+          ),
+          orderBy: { createdAt: "desc" },
+          select: {
+            id: true,
+            kind: true,
+            name: true,
+            storageUrl: true,
+            currentVersion: { select: { version: true } },
+          },
+          take: 200,
+        }),
+        prisma.documentTemplate.findMany({
+          where: andWhere(
+            { archivedAt: null, active: true },
+            documentTemplateVisibilityWhere(currentUser),
+          ),
+          orderBy: { name: "asc" },
+          select: { id: true, name: true },
+          take: 200,
+        }),
+      ])
+    : [[], []];
+
+  const [billingApprovers, billingApproverMembers] = canAml && subject
+    ? await Promise.all([
+        prisma.subjectBillingApprover.findMany({
+          where: { subjectId: subject.id },
+          orderBy: { user: { name: "asc" } },
+          select: {
+            id: true,
+            user: { select: { id: true, name: true } },
+          },
+        }),
+        getOrgUserOptions(currentUser),
+      ])
+    : [[], []];
+
   return {
     subject,
     canArchive: canViewAllLegalData(currentUser),
@@ -229,6 +281,12 @@ async function loadSubject(id: string) {
     portalEnabled,
     portal,
     contactMatters,
+    documentsEnabled,
+    documents,
+    documentTemplates,
+    canManageDocuments: canManageDocuments(currentUser),
+    billingApprovers,
+    billingApproverMembers,
   };
 }
 
@@ -260,9 +318,8 @@ function projectGroups(subject: NonNullable<SubjectDetailData["subject"]>) {
 function icoLinks(ico: string) {
   return {
     ares: `https://ares.gov.cz/ekonomicke-subjekty?ico=${encodeURIComponent(ico)}`,
-    obchodniRejstrik: `https://or.justice.cz/ias/ui/rejstrik-$firma?ico=${encodeURIComponent(ico)}`,
-    // ISIR has no stable IČO querystring; link to the official insolvency search.
-    isir: "https://isir.justice.cz/isir/common/index.do",
+    obchodniRejstrik: `https://or.justice.cz/ias/ui/rejstrik-$firma?ico=${encodeURIComponent(ico)}&jenPlatne=PLATNE`,
+    isir: `https://isir.justice.cz/isir/ueu/vysledek_lustrace.do?ic=${encodeURIComponent(ico)}&aktualnost=AKTUALNI_I_UKONCENA&rowsAtOnce=50`,
   };
 }
 
@@ -282,6 +339,12 @@ export default async function SubjectDetailPage({
       portalEnabled: false,
       portal: null,
       contactMatters: { projects: [], cases: [] },
+      documentsEnabled: false,
+      documents: [],
+      documentTemplates: [],
+      canManageDocuments: false,
+      billingApprovers: [],
+      billingApproverMembers: [],
     },
     () => loadSubject(id),
   );
@@ -299,6 +362,12 @@ export default async function SubjectDetailPage({
     portalEnabled,
     portal,
     contactMatters,
+    documentsEnabled,
+    documents,
+    documentTemplates,
+    canManageDocuments: canManageDocumentsFlag,
+    billingApprovers,
+    billingApproverMembers,
   } = result.data;
   const projects = subject ? projectGroups(subject) : { active: [], inactive: [] };
   const links = subject?.ico ? icoLinks(subject.ico) : null;
@@ -529,6 +598,21 @@ export default async function SubjectDetailPage({
               </div>
             </div>
           </Section>
+          {canAml ? (
+            <SubjectBillingApprovers
+              subjectId={subject.id}
+              members={billingApproverMembers}
+              approvers={billingApprovers}
+            />
+          ) : null}
+          {documentsEnabled ? (
+            <SubjectDocumentsSection
+              subjectId={subject.id}
+              documents={documents}
+              templates={documentTemplates}
+              canManage={canManageDocumentsFlag}
+            />
+          ) : null}
           <Section title="Aktivní projekty">
             {projects.active.length > 0 ? (
               <ProjectList projects={projects.active} />

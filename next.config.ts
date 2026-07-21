@@ -25,6 +25,9 @@ const nextConfig: NextConfig = {
     root: __dirname,
   },
   experimental: {
+    // Microsoft Graph simple upload is capped at 4 MiB in our integration. The
+    // small overhead allowance keeps multipart Server Action requests accepted.
+    serverActions: { bodySizeLimit: "5mb" },
     // Rewrite barrel imports to direct deep imports so a single icon / calendar
     // plugin doesn't drag the whole package into the client bundle.
     optimizePackageImports: [

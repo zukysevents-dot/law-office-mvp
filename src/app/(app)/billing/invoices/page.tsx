@@ -1,10 +1,11 @@
+import { Field, SelectInput, TextInput } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
 import { Badge } from "@/components/ui/badge";
-import { ButtonLink } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
-import { ModuleKey } from "@/generated/prisma/enums";
+import { InvoiceStatus, ModuleKey } from "@/generated/prisma/enums";
 import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import { assertModuleEnabled } from "@/lib/entitlements";
@@ -22,12 +23,25 @@ import {
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { invoiceStatusTone } from "@/lib/status-tones";
+import { firstParam, parseDateBoundary } from "@/lib/search-params";
 
 export const dynamic = "force-dynamic";
 
 const INVOICE_ROW_LIMIT = 500;
 
-export default async function InvoicesPage() {
+type InvoicesPageProps = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
+
+export default async function InvoicesPage({ searchParams }: InvoicesPageProps) {
+  const params = await searchParams;
+  const q = firstParam(params, "q");
+  const status = firstParam(params, "status");
+  const dateFrom = firstParam(params, "dateFrom");
+  const dateTo = firstParam(params, "dateTo");
+  const dateFromBoundary = parseDateBoundary(dateFrom, false);
+  const dateToBoundary = parseDateBoundary(dateTo, true);
+  const hasFilters = Boolean(q || status || dateFrom || dateTo);
   const result = await safeQuery<{ rows: InvoiceListRow[] }>(
     { rows: [] },
     async () => {
@@ -35,7 +49,27 @@ export default async function InvoicesPage() {
       await assertModuleEnabled(currentUser, ModuleKey.BILLING);
       assertCanManageInvoices(currentUser);
       const rows = await getPrisma().invoice.findMany({
-        where: andWhere(invoiceVisibilityWhere(currentUser)),
+        where: andWhere(invoiceVisibilityWhere(currentUser), {
+          ...(q
+            ? {
+                OR: [
+                  { number: { contains: q, mode: "insensitive" } },
+                  { subject: { is: { name: { contains: q, mode: "insensitive" } } } },
+                ],
+              }
+            : {}),
+          ...(Object.values(InvoiceStatus).includes(status as InvoiceStatus)
+            ? { status: status as InvoiceStatus }
+            : {}),
+          ...(dateFromBoundary || dateToBoundary
+            ? {
+                issueDate: {
+                  ...(dateFromBoundary ? { gte: dateFromBoundary } : {}),
+                  ...(dateToBoundary ? { lte: dateToBoundary } : {}),
+                },
+              }
+            : {}),
+        }),
         orderBy: [{ createdAt: "desc" }],
         include: invoiceListInclude,
         take: INVOICE_ROW_LIMIT,
@@ -50,17 +84,56 @@ export default async function InvoicesPage() {
     <>
       <PageHeader
         title="Faktury"
-        description="Vystavené a rozpracované faktury klientům."
+        description="Vyhledávatelný archiv vystavených a rozpracovaných faktur klientům."
         action={
           <div className="flex gap-2">
             <ButtonLink href="/billing" variant="secondary">
               Podklady k fakturaci
+            </ButtonLink>
+            <ButtonLink href="/work-logs?archive=all" variant="secondary">
+              Výkazy práce
             </ButtonLink>
             <ButtonLink href="/billing/invoices/new">Nová faktura</ButtonLink>
           </div>
         }
       />
       <DatabaseNotice databaseReady={result.databaseReady} error={result.error} />
+
+      <Section title="Vyhledávání a filtry">
+        <form className="grid gap-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <Field label="Číslo nebo klient">
+              <TextInput name="q" defaultValue={q} placeholder="Hledat…" />
+            </Field>
+            <Field label="Stav">
+              <SelectInput name="status" defaultValue={status}>
+                <option value="">Všechny stavy</option>
+                {Object.values(InvoiceStatus).map((value) => (
+                  <option key={value} value={value}>
+                    {invoiceStatusLabels[value]}
+                  </option>
+                ))}
+              </SelectInput>
+            </Field>
+            <Field label="Vystaveno od">
+              <TextInput name="dateFrom" type="date" defaultValue={dateFrom} />
+            </Field>
+            <Field label="Vystaveno do">
+              <TextInput name="dateTo" type="date" defaultValue={dateTo} />
+            </Field>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button type="submit" variant="secondary">
+              Filtrovat
+            </Button>
+            {hasFilters ? (
+              <ButtonLink href="/billing/invoices" variant="ghost">
+                Zrušit filtry
+              </ButtonLink>
+            ) : null}
+          </div>
+        </form>
+      </Section>
 
       <Section title="Přehled faktur">
         {rows.length > 0 ? (

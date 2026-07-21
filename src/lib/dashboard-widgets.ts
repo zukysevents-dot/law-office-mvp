@@ -11,7 +11,6 @@ export const dashboardWidgetTypes = [
   DashboardWidgetType.WAITING_FOR_CLIENT_TASKS,
   DashboardWidgetType.WAITING_FOR_COUNTERPARTY_TASKS,
   DashboardWidgetType.MY_TASKS_TABLE,
-  DashboardWidgetType.WORK_LOGS_SUMMARY,
   DashboardWidgetType.WORK_LOGS_TABLE,
   DashboardWidgetType.SUBJECTS_TABLE,
   DashboardWidgetType.PROJECTS_TABLE,
@@ -20,6 +19,7 @@ export const dashboardWidgetTypes = [
   DashboardWidgetType.RECENT_CONFLICT_CHECKS,
   DashboardWidgetType.CALENDAR_PREVIEW,
   DashboardWidgetType.WEEKLY_HOURS_CHART,
+  DashboardWidgetType.DEADLINES_PREVIEW,
 ] as const;
 
 export const dashboardWidgetSizes = [
@@ -44,7 +44,8 @@ export const dashboardWidgetTypeLabels: Record<DashboardWidgetType, string> = {
   [DashboardWidgetType.REFERENCES_TABLE]: "Reference",
   [DashboardWidgetType.RECENT_CONFLICT_CHECKS]: "Poslední conflict checky",
   [DashboardWidgetType.CALENDAR_PREVIEW]: "Kalendář",
-  [DashboardWidgetType.WEEKLY_HOURS_CHART]: "Můj týden v hodinách",
+  [DashboardWidgetType.WEEKLY_HOURS_CHART]: "Přehled hodin",
+  [DashboardWidgetType.DEADLINES_PREVIEW]: "Blížící se lhůty",
 };
 
 export const dashboardWidgetSizeLabels: Record<DashboardWidgetSize, string> = {
@@ -178,6 +179,8 @@ export function dashboardWidgetHref(
       return "/tasks?status=WAITING_FOR_COUNTERPARTY";
     case DashboardWidgetType.WORK_LOGS_SUMMARY:
       return "/work-logs";
+    case DashboardWidgetType.DEADLINES_PREVIEW:
+      return "/deadlines";
     default:
       return undefined;
   }
@@ -311,13 +314,13 @@ export const defaultDashboardWidgets = [
     size: DashboardWidgetSize.MEDIUM,
   },
   {
-    type: DashboardWidgetType.WORK_LOGS_SUMMARY,
-    title: "Hodiny tento měsíc",
-    size: DashboardWidgetSize.SMALL,
+    type: DashboardWidgetType.WEEKLY_HOURS_CHART,
+    title: "Přehled hodin",
+    size: DashboardWidgetSize.FULL,
   },
   {
-    type: DashboardWidgetType.WEEKLY_HOURS_CHART,
-    title: "Můj týden v hodinách",
+    type: DashboardWidgetType.DEADLINES_PREVIEW,
+    title: "Blížící se lhůty",
     size: DashboardWidgetSize.MEDIUM,
   },
   {

@@ -50,6 +50,28 @@ export async function getOrganizationAdminData(organizationId: string) {
   return { organization, members, joinCodes, activeMembers };
 }
 
+export async function getLegalTeamAdminData(organizationId: string) {
+  const prisma = getPrisma();
+  const [teams, members] = await Promise.all([
+    prisma.legalTeam.findMany({
+      where: { organizationId, archivedAt: null },
+      orderBy: { name: "asc" },
+      include: {
+        members: {
+          orderBy: { user: { name: "asc" } },
+          include: { user: { select: { id: true, name: true, email: true } } },
+        },
+      },
+    }),
+    prisma.organizationMember.findMany({
+      where: { organizationId, status: OrganizationMemberStatus.ACTIVE },
+      orderBy: { user: { name: "asc" } },
+      select: { user: { select: { id: true, name: true, email: true } } },
+    }),
+  ]);
+  return { teams, users: members.map((member) => member.user) };
+}
+
 export type OrganizationModuleView = {
   key: ModuleKey;
   name: string;

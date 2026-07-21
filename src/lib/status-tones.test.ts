@@ -1,9 +1,17 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { DeadlineStatus, DeadlineType } from "@/generated/prisma/enums";
+import {
+  DeadlineStatus,
+  DeadlineType,
+  TaskStatus,
+} from "@/generated/prisma/enums";
 
-import { deadlineStatusTone, deadlineTypeTone } from "./status-tones";
+import {
+  deadlineStatusTone,
+  deadlineTypeTone,
+  isTaskOverdue,
+} from "./status-tones";
 
 // --- deadlineTypeTone: F4 deadline category → badge colour ------------------
 // PROCEDURAL deadlines (lhůty procesní) are the highest-liability kind, hence
@@ -37,4 +45,22 @@ test("deadlineStatusTone: every DeadlineStatus value maps to a tone (exhaustive)
       `missing tone for ${status}`,
     );
   }
+});
+
+test("isTaskOverdue: only unfinished tasks before now are overdue", () => {
+  const now = new Date("2026-07-21T12:00:00.000Z");
+
+  assert.equal(
+    isTaskOverdue("2026-07-20T00:00:00.000Z", TaskStatus.IN_PROGRESS, now),
+    true,
+  );
+  assert.equal(
+    isTaskOverdue("2026-07-20T00:00:00.000Z", TaskStatus.COMPLETED, now),
+    false,
+  );
+  assert.equal(
+    isTaskOverdue("2026-07-22T00:00:00.000Z", TaskStatus.CREATED, now),
+    false,
+  );
+  assert.equal(isTaskOverdue(null, TaskStatus.CREATED, now), false);
 });

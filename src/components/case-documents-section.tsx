@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { createDocument } from "@/app/actions/documents";
+import { DocumentStorageFields } from "@/components/document-storage-fields";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
 import { Section } from "@/components/section";
 import { Badge } from "@/components/ui/badge";
@@ -123,9 +124,7 @@ export function CaseDocumentsSection({
                   ))}
                 </SelectInput>
               </Field>
-              <Field label="Odkaz do SharePointu (http/https)">
-                <TextInput name="storageUrl" type="url" required />
-              </Field>
+              <DocumentStorageFields />
               <Field label="Poznámka k verzi (volitelné)">
                 <TextInput name="note" />
               </Field>
@@ -140,8 +139,8 @@ export function CaseDocumentsSection({
         </>
       ) : null}
       <p className="mt-2 text-xs text-stone-400">
-        Soubory zůstávají v SharePointu kanceláře; zde evidujeme jen odkaz a
-        metadata. Verzování probíhá přidáním nového odkazu na detailu dokumentu.
+        Soubory zůstávají v SharePointu kanceláře; aplikace eviduje jejich odkazy
+        a metadata. Novou verzi přidáte na detailu dokumentu.
       </p>
     </Section>
   );

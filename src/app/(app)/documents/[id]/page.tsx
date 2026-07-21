@@ -12,6 +12,7 @@ import { ArchiveActionForm } from "@/components/archive-action-form";
 import { ArchiveNotice } from "@/components/archive-notice";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
+import { DocumentStorageFields } from "@/components/document-storage-fields";
 import { Section } from "@/components/section";
 import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
@@ -235,9 +236,7 @@ export default async function DocumentDetailPage({
                   className="grid gap-4 sm:max-w-2xl"
                 >
                   <input type="hidden" name="documentId" value={document.id} />
-                  <Field label="Odkaz do SharePointu (http/https)">
-                    <TextInput name="storageUrl" type="url" required />
-                  </Field>
+                  <DocumentStorageFields />
                   <Field label="Poznámka k verzi (volitelné)">
                     <TextInput name="note" />
                   </Field>

@@ -1,0 +1,5 @@
+ALTER TYPE "DashboardWidgetType" ADD VALUE IF NOT EXISTS 'DEADLINES_PREVIEW';
+
+UPDATE "dashboardWidgets"
+SET "size" = 'LARGE'
+WHERE "type" = 'WEEKLY_HOURS_CHART';

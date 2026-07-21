@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createDocument } from "@/app/actions/documents";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
+import { DocumentStorageFields } from "@/components/document-storage-fields";
 import { Section } from "@/components/section";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
@@ -148,8 +149,9 @@ export default async function GenerateDocumentPage({
               className="font-mono text-xs"
             />
             <p className="mt-2 text-xs text-stone-600">
-              Text zkopírujte do dokumentu, uložte do SharePointu a níže
-              zaevidujte odkaz. Systém negeneruje binární soubor.
+              Text zkopírujte do dokumentu a níže soubor nahrajte do SharePointu
+              nebo zaevidujte existující odkaz. Systém zatím negeneruje binární
+              soubor automaticky.
             </p>
           </Section>
 
@@ -175,9 +177,7 @@ export default async function GenerateDocumentPage({
                   </SelectInput>
                 </Field>
               </div>
-              <Field label="Odkaz do SharePointu (http/https)">
-                <TextInput name="storageUrl" type="url" required />
-              </Field>
+              <DocumentStorageFields />
               <Field label="Poznámka k verzi (volitelné)">
                 <TextInput name="note" />
               </Field>

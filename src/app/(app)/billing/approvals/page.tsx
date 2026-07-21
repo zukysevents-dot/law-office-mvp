@@ -23,8 +23,8 @@ import { approvalStatusLabels, billingStatusLabels } from "@/lib/labels";
 import { getPrisma } from "@/lib/prisma";
 import {
   andWhere,
+  billingApproverWorkLogWhere,
   canViewAllLegalData,
-  workLogVisibilityWhere,
 } from "@/lib/permissions";
 import { approvalStatusTone, billingStatusTone } from "@/lib/status-tones";
 
@@ -44,11 +44,24 @@ export default async function BillingApprovalsPage() {
       const prisma = getPrisma();
       const currentUser = await getCurrentUser();
       await assertModuleEnabled(currentUser, ModuleKey.BILLING);
+      const canApproveAll = canViewAllLegalData(currentUser);
+      const approvalAssignmentCount = canApproveAll
+        ? 0
+        : await prisma.subjectBillingApprover.count({
+            where: {
+              organizationId: currentUser.organizationId,
+              userId: currentUser.id,
+            },
+          });
+      const canApprove = canApproveAll || approvalAssignmentCount > 0;
       const [rows, users] = await Promise.all([
         prisma.workLog.findMany({
           where: andWhere(
             pendingApprovalWorkLogWhere,
-            workLogVisibilityWhere(currentUser),
+            { organizationId: currentUser.organizationId },
+            canApproveAll
+              ? undefined
+              : billingApproverWorkLogWhere(currentUser.id),
           ),
           orderBy: [{ workDate: "desc" }, { createdAt: "desc" }],
           include: billingWorkLogInclude,
@@ -61,7 +74,7 @@ export default async function BillingApprovalsPage() {
         rows,
         users,
         capped: rows.length >= BILLING_ROW_LIMIT,
-        canApprove: canViewAllLegalData(currentUser),
+        canApprove,
       };
     },
   );

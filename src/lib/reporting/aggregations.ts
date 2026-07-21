@@ -1,5 +1,5 @@
 import type { Prisma } from "@/generated/prisma/client";
-import { BillingStatus } from "@/generated/prisma/enums";
+import { ApprovalStatus, BillingStatus } from "@/generated/prisma/enums";
 
 // Upper bound on rows loaded into a single report page so memory and DOM size
 // stay bounded. When a query hits this cap, surface a notice (billing
@@ -124,10 +124,9 @@ export type BillabilityKpi = {
 };
 
 // Billability KPI / utilization = billable hours ÷ total logged hours.
-//   - "Billable"     = billingStatus === BILLABLE (regardless of approval).
-//   - "Non-billable" = billingStatus === INTERNAL_NON_BILLABLE.
-//   - "Needs approval" = billingStatus === NEEDS_APPROVAL — pending, so it is
-//     NOT counted as billable for the ratio (it stays in the total).
+//   - "Billable" = BILLABLE + APPROVED.
+//   - "Needs approval" = BILLABLE whose approval is still open.
+//   - "Non-billable" = internal, rejected, or written-off work.
 export function billabilityKpi(rows: ReportWorkLog[]): BillabilityKpi {
   const kpi: BillabilityKpi = {
     billableHours: 0,
@@ -147,16 +146,22 @@ export function billabilityKpi(rows: ReportWorkLog[]): BillabilityKpi {
     kpi.totalHours += hours;
     kpi.totalCount += 1;
 
-    if (row.billingStatus === BillingStatus.BILLABLE) {
+    if (
+      row.billingStatus === BillingStatus.BILLABLE &&
+      row.approvalStatus === ApprovalStatus.APPROVED
+    ) {
       kpi.billableHours += hours;
       kpi.billableAmount += amountOf(row);
       kpi.billableCount += 1;
-    } else if (row.billingStatus === BillingStatus.INTERNAL_NON_BILLABLE) {
-      kpi.nonBillableHours += hours;
-      kpi.nonBillableCount += 1;
-    } else {
+    } else if (
+      row.billingStatus === BillingStatus.BILLABLE &&
+      row.approvalStatus !== ApprovalStatus.REJECTED
+    ) {
       kpi.needsApprovalHours += hours;
       kpi.needsApprovalCount += 1;
+    } else {
+      kpi.nonBillableHours += hours;
+      kpi.nonBillableCount += 1;
     }
   }
 

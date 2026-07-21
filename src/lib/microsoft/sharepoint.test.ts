@@ -5,12 +5,24 @@ import {
   buildSharepointFolderUrl,
   sanitizeSegment,
   sharepointFolderSegments,
+  uniqueSharepointFilename,
 } from "./sharepoint";
 
 test("sanitizeSegment: strips illegal chars, collapses whitespace, trims", () => {
   assert.equal(sanitizeSegment("a/b:c*d"), "a b c d");
   assert.equal(sanitizeSegment("  hello   world  "), "hello world");
   assert.equal(sanitizeSegment(""), "");
+});
+
+test("uniqueSharepointFilename: preserves extension and prevents overwrite", () => {
+  assert.equal(
+    uniqueSharepointFilename("Smlouva.docx", "a1b2c3d4"),
+    "Smlouva (a1b2c3d4).docx",
+  );
+  assert.equal(
+    uniqueSharepointFilename("Plná moc", "v2"),
+    "Plná moc (v2)",
+  );
 });
 
 test("sharepointFolderSegments: Subject uses IČO when present", () => {

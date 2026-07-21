@@ -456,6 +456,25 @@ export function workLogVisibilityWhere(
   return denyWhere<Prisma.WorkLogWhereInput>();
 }
 
+// Work logs whose client explicitly assigned this user as a billing approver.
+// A log may carry the client directly or inherit it from its project/case.
+export function billingApproverWorkLogWhere(
+  userId: string,
+): Prisma.WorkLogWhereInput {
+  const assignment = { billingApprovers: { some: { userId } } };
+  return {
+    OR: [
+      { subject: { is: assignment } },
+      { project: { is: { mainSubject: { is: assignment } } } },
+      {
+        case: {
+          is: { project: { is: { mainSubject: { is: assignment } } } },
+        },
+      },
+    ],
+  };
+}
+
 export function invoiceVisibilityWhere(
   user: PermissionInput,
 ): Prisma.InvoiceWhereInput {

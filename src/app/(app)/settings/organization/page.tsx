@@ -2,12 +2,15 @@ import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
 import { OrganizationAdminPanel } from "@/components/organization-admin";
 import { OrganizationModulesOverview } from "@/components/organization-modules-overview";
+import { LegalTeamAdmin } from "@/components/legal-team-admin";
 import { DatabaseNotice } from "@/components/ui/database-notice";
+import { Button } from "@/components/ui/button";
 import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import {
   getOrganizationAdminData,
   getOrganizationEntitlements,
+  getLegalTeamAdminData,
 } from "@/lib/organization";
 import { canViewAllLegalData } from "@/lib/permissions";
 
@@ -17,6 +20,7 @@ type OrgSettingsData = Awaited<ReturnType<typeof getOrganizationAdminData>> & {
   allowed: boolean;
   currentUserId: string;
   entitlements: Awaited<ReturnType<typeof getOrganizationEntitlements>> | null;
+  legalTeams: Awaited<ReturnType<typeof getLegalTeamAdminData>> | null;
 };
 
 export default async function OrganizationSettingsPage() {
@@ -31,18 +35,21 @@ export default async function OrganizationSettingsPage() {
         joinCodes: [],
         activeMembers: 0,
         entitlements: null,
+        legalTeams: null,
       };
     }
 
-    const [adminData, entitlements] = await Promise.all([
+    const [adminData, entitlements, legalTeams] = await Promise.all([
       getOrganizationAdminData(currentUser.organizationId),
       getOrganizationEntitlements(currentUser.organizationId),
+      getLegalTeamAdminData(currentUser.organizationId),
     ]);
     return {
       ...adminData,
       allowed: true,
       currentUserId: currentUser.id,
       entitlements,
+      legalTeams,
     };
   });
 
@@ -74,6 +81,30 @@ export default async function OrganizationSettingsPage() {
               Limit účtů spravuje správce platformy. Pro navýšení počtu míst
               kontaktujte podporu.
             </p>
+            <form
+              action={updateBillingTimeIncrement}
+              className="mt-4 flex flex-wrap items-end gap-3"
+            >
+              <input
+                type="hidden"
+                name="organizationId"
+                value={data.organization.id}
+              />
+              <Field label="Zaokrouhlení vykázaného času">
+                <SelectInput
+                  name="billingTimeIncrementMinutes"
+                  defaultValue={String(
+                    data.organization.billingTimeIncrementMinutes,
+                  )}
+                >
+                  <option value="6">0,1 hodiny (6 minut)</option>
+                  <option value="15">0,25 hodiny (15 minut)</option>
+                </SelectInput>
+              </Field>
+              <Button type="submit" variant="secondary">
+                Uložit zaokrouhlení
+              </Button>
+            </form>
           </Section>
           <OrganizationAdminPanel
             organizationId={data.organization.id}
@@ -83,6 +114,13 @@ export default async function OrganizationSettingsPage() {
             joinCodes={data.joinCodes}
             currentUserId={data.currentUserId}
           />
+          {data.legalTeams ? (
+            <LegalTeamAdmin
+              organizationId={data.organization.id}
+              teams={data.legalTeams.teams}
+              users={data.legalTeams.users}
+            />
+          ) : null}
           {data.entitlements ? (
             <OrganizationModulesOverview
               modules={data.entitlements.modules}
@@ -94,3 +132,5 @@ export default async function OrganizationSettingsPage() {
     </>
   );
 }
+import { updateBillingTimeIncrement } from "@/app/actions/organizations";
+import { Field, SelectInput } from "@/components/form-field";
