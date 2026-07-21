@@ -4,6 +4,7 @@ import Link from "next/link";
 import { registerAction } from "@/app/actions/auth";
 import { Field, TextInput } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
+import { redirectIfAuthenticated } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,7 @@ export default async function RegisterPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await redirectIfAuthenticated();
   const params = await searchParams;
   const error = typeof params.error === "string" ? params.error : undefined;
   const message = error ? errorMessages[error] : undefined;

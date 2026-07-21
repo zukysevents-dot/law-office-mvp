@@ -59,6 +59,13 @@ const reportViews: ReportEntry[] = [
     icon: Gauge,
     gated: true,
   },
+  {
+    href: "/reports/wip",
+    title: "Rozpracovanost (WIP)",
+    description: "Fakturovatelná práce, která ještě není na faktuře.",
+    icon: Gauge,
+    gated: true,
+  },
 ];
 
 const exports: ReportEntry[] = [

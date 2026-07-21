@@ -19,6 +19,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import { formatDate, formatMoney } from "@/lib/format";
 import { options, projectStatusLabels } from "@/lib/labels";
+import { SearchableSelect } from "@/components/searchable-select";
 import {
   andWhere,
   projectVisibilityWhere,
@@ -34,7 +35,7 @@ import type { TableViewState } from "@/lib/table-view-preferences";
 export const dynamic = "force-dynamic";
 
 type ProjectsPageProps = {
-  searchParams: Promise<{ archive?: string }>;
+  searchParams: Promise<{ archive?: string; subjectId?: string }>;
 };
 
 type ProjectPageData = {
@@ -47,7 +48,7 @@ type ProjectPageData = {
     note: string | null;
     createdAt: Date;
     updatedAt: Date;
-    mainSubject: { name: string };
+    mainSubject: { id: string; name: string };
     responsibleUser: { name: string } | null;
   }>;
   subjects: Array<{ id: string; name: string; ico: string | null }>;
@@ -58,6 +59,7 @@ type ProjectPageData = {
 export default async function ProjectsPage({ searchParams }: ProjectsPageProps) {
   const params = await searchParams;
   const archive = archiveFilterValue(params.archive);
+  const subjectId = params.subjectId?.trim() || "";
   const result = await safeQuery<ProjectPageData>(
     {
       projects: [],
@@ -74,10 +76,12 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
           where: andWhere(
             archivedWhere(archive),
             projectVisibilityWhere(currentUser),
+            subjectId ? { mainSubjectId: subjectId } : {},
           ),
           orderBy: { createdAt: "desc" },
+          take: 100, // ponytail: safety cap like work-logs; add real paging when a list overflows
           include: {
-            mainSubject: { select: { name: true } },
+            mainSubject: { select: { id: true, name: true } },
             responsibleUser: { select: { name: true } },
           },
         }),
@@ -100,6 +104,10 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
     },
   );
   const visibleColumnSet = new Set(result.data.tableView.visibleColumns);
+  const subjectOptions = result.data.subjects.map((s) => ({
+    id: s.id,
+    label: s.ico ? `${s.name}, IČO ${s.ico}` : s.name,
+  }));
 
   return (
     <>
@@ -118,7 +126,15 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
         error={result.error}
       />
       <Section>
-        <form className="grid gap-3 md:grid-cols-[220px_auto]">
+        <form className="grid gap-3 md:grid-cols-2">
+          <Field label="Klient">
+            <SearchableSelect
+              name="subjectId"
+              options={subjectOptions}
+              defaultValue={subjectId}
+              emptyLabel="Všichni klienti"
+            />
+          </Field>
           <Field label="Archiv">
             <SelectInput name="archive" defaultValue={archive}>
               {Object.entries(archiveFilterLabels).map(([value, label]) => (
@@ -128,9 +144,11 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
               ))}
             </SelectInput>
           </Field>
-          <Button type="submit" variant="secondary" className="self-end">
-            Filtrovat
-          </Button>
+          <div className="md:col-span-2">
+            <Button type="submit" variant="secondary">
+              Filtrovat
+            </Button>
+          </div>
         </form>
       </Section>
       <Section title="Seznam projektů">
@@ -155,6 +173,17 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
               <tbody>
                 {result.data.projects.map((project) => (
                   <tr key={project.id}>
+                    {/* Cell order must match the column config order (Klient first). */}
+                    {visibleColumnSet.has("mainSubject") ? (
+                      <td>
+                        <Link
+                          href={`/subjects/${project.mainSubject.id}`}
+                          className="font-medium text-emerald-950 hover:underline"
+                        >
+                          {project.mainSubject.name}
+                        </Link>
+                      </td>
+                    ) : null}
                     {visibleColumnSet.has("name") ? (
                       <td className="max-w-xs">
                         <Link
@@ -164,9 +193,6 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
                           {project.name}
                         </Link>
                       </td>
-                    ) : null}
-                    {visibleColumnSet.has("mainSubject") ? (
-                      <td>{project.mainSubject.name}</td>
                     ) : null}
                     {visibleColumnSet.has("responsibleUser") ? (
                       <td>{project.responsibleUser?.name ?? "—"}</td>
@@ -208,7 +234,16 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
             </table>
           </div>
         ) : (
-          <EmptyState>Zatím nejsou založené žádné projekty.</EmptyState>
+          <EmptyState
+            action={
+              <ButtonLink href="#new-project">
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                Nový projekt
+              </ButtonLink>
+            }
+          >
+            Zatím nejsou založené žádné projekty.
+          </EmptyState>
         )}
       </Section>
       <Section title="Nový projekt" id="new-project" className="scroll-mt-6">
@@ -228,16 +263,13 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
             </Field>
           </div>
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Hlavní subjekt">
-              <SelectInput name="mainSubjectId" required>
-                <option value="">Vyberte subjekt</option>
-                {result.data.subjects.map((subject) => (
-                  <option key={subject.id} value={subject.id}>
-                    {subject.name}
-                    {subject.ico ? `, IČO ${subject.ico}` : ""}
-                  </option>
-                ))}
-              </SelectInput>
+            <Field label="Klient">
+              <SearchableSelect
+                name="mainSubjectId"
+                options={subjectOptions}
+                required
+                emptyLabel="Vyhledat klienta"
+              />
             </Field>
             <Field label="Odpovědný uživatel">
               <SelectInput name="responsibleUserId">

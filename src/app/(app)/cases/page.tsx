@@ -19,7 +19,13 @@ import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import { formatDate } from "@/lib/format";
 import { caseStatusLabels, options } from "@/lib/labels";
-import { andWhere, caseVisibilityWhere, projectVisibilityWhere } from "@/lib/permissions";
+import { SearchableSelect } from "@/components/searchable-select";
+import {
+  andWhere,
+  caseVisibilityWhere,
+  projectVisibilityWhere,
+  subjectVisibilityWhere,
+} from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import {
   getCurrentTableView,
@@ -30,7 +36,7 @@ import type { TableViewState } from "@/lib/table-view-preferences";
 export const dynamic = "force-dynamic";
 
 type CasesPageProps = {
-  searchParams: Promise<{ archive?: string }>;
+  searchParams: Promise<{ archive?: string; subjectId?: string; projectId?: string }>;
 };
 
 type CasesPageData = {
@@ -43,10 +49,15 @@ type CasesPageData = {
     note: string | null;
     createdAt: Date;
     updatedAt: Date;
-    project: { id: string; name: string };
+    project: {
+      id: string;
+      name: string;
+      mainSubject: { id: string; name: string } | null;
+    };
     responsibleUser: { name: string } | null;
   }>;
   projects: Array<{ id: string; name: string }>;
+  subjects: Array<{ id: string; name: string; ico: string | null }>;
   users: Array<{ id: string; name: string }>;
   tableView: TableViewState;
 };
@@ -54,10 +65,13 @@ type CasesPageData = {
 export default async function CasesPage({ searchParams }: CasesPageProps) {
   const params = await searchParams;
   const archive = archiveFilterValue(params.archive);
+  const subjectId = params.subjectId?.trim() || "";
+  const projectId = params.projectId?.trim() || "";
   const result = await safeQuery<CasesPageData>(
     {
       cases: [],
       projects: [],
+      subjects: [],
       users: [],
       tableView: getDefaultTableView("cases"),
     },
@@ -65,15 +79,25 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
       const prisma = getPrisma();
       const currentUser = await getCurrentUser();
       const tableView = await getCurrentTableView("cases");
-      const [cases, projects, users] = await Promise.all([
+      const [cases, projects, subjects, users] = await Promise.all([
         prisma.case.findMany({
           where: andWhere(
             archivedWhere(archive),
             caseVisibilityWhere(currentUser),
+            projectId ? { projectId } : {},
+            // Client = the parent project's main subject.
+            subjectId ? { project: { is: { mainSubjectId: subjectId } } } : {},
           ),
           orderBy: { createdAt: "desc" },
+          take: 100, // ponytail: safety cap like work-logs; add real paging when a list overflows
           include: {
-            project: { select: { id: true, name: true } },
+            project: {
+              select: {
+                id: true,
+                name: true,
+                mainSubject: { select: { id: true, name: true } },
+              },
+            },
             responsibleUser: { select: { name: true } },
           },
         }),
@@ -85,6 +109,11 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
           orderBy: { name: "asc" },
           select: { id: true, name: true },
         }),
+        prisma.subject.findMany({
+          where: andWhere({ archivedAt: null }, subjectVisibilityWhere(currentUser)),
+          orderBy: { name: "asc" },
+          select: { id: true, name: true, ico: true },
+        }),
         prisma.user.findMany({
           where: { active: true },
           orderBy: { name: "asc" },
@@ -92,10 +121,14 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
         }),
       ]);
 
-      return { cases, projects, users, tableView };
+      return { cases, projects, subjects, users, tableView };
     },
   );
   const visibleColumnSet = new Set(result.data.tableView.visibleColumns);
+  const subjectOptions = result.data.subjects.map((s) => ({
+    id: s.id,
+    label: s.ico ? `${s.name}, IČO ${s.ico}` : s.name,
+  }));
 
   return (
     <>
@@ -114,7 +147,25 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
         error={result.error}
       />
       <Section>
-        <form className="grid gap-3 md:grid-cols-[220px_auto]">
+        <form className="grid gap-3 md:grid-cols-3">
+          <Field label="Klient">
+            <SearchableSelect
+              name="subjectId"
+              options={subjectOptions}
+              defaultValue={subjectId}
+              emptyLabel="Všichni klienti"
+            />
+          </Field>
+          <Field label="Projekt">
+            <SelectInput name="projectId" defaultValue={projectId}>
+              <option value="">Všechny projekty</option>
+              {result.data.projects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
+            </SelectInput>
+          </Field>
           <Field label="Archiv">
             <SelectInput name="archive" defaultValue={archive}>
               {Object.entries(archiveFilterLabels).map(([value, label]) => (
@@ -124,9 +175,11 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
               ))}
             </SelectInput>
           </Field>
-          <Button type="submit" variant="secondary" className="self-end">
-            Filtrovat
-          </Button>
+          <div className="md:col-span-3">
+            <Button type="submit" variant="secondary">
+              Filtrovat
+            </Button>
+          </div>
         </form>
       </Section>
       <Section title="Seznam případů">
@@ -151,6 +204,20 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
               <tbody>
                 {result.data.cases.map((legalCase) => (
                   <tr key={legalCase.id}>
+                    {visibleColumnSet.has("client") ? (
+                      <td>
+                        {legalCase.project.mainSubject ? (
+                          <Link
+                            href={`/subjects/${legalCase.project.mainSubject.id}`}
+                            className="font-medium text-emerald-950 hover:underline"
+                          >
+                            {legalCase.project.mainSubject.name}
+                          </Link>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                    ) : null}
                     {visibleColumnSet.has("name") ? (
                       <td className="max-w-xs">
                         <Link
@@ -213,7 +280,16 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
             </table>
           </div>
         ) : (
-          <EmptyState>Zatím nejsou založené žádné případy.</EmptyState>
+          <EmptyState
+            action={
+              <ButtonLink href="#new-case">
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                Nový případ
+              </ButtonLink>
+            }
+          >
+            Zatím nejsou založené žádné případy.
+          </EmptyState>
         )}
       </Section>
       <Section title="Nový případ" id="new-case" className="scroll-mt-6">

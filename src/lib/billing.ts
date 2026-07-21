@@ -11,12 +11,13 @@ export type BillingFilters = {
   dateTo: string;
 };
 
-// A work log is part of the billing basis ("k fakturaci") when it is
-// billable and has been approved. See Fáze 2H plan.
+// A work log is part of the billing basis ("k fakturaci") when it is billable,
+// approved, and not yet placed on an invoice. See Fáze 2H plan.
 export const invoiceableWorkLogWhere: Prisma.WorkLogWhereInput = {
   archivedAt: null,
   billingStatus: BillingStatus.BILLABLE,
   approvalStatus: ApprovalStatus.APPROVED,
+  invoiceId: null,
 };
 
 // Work logs that still await an approval decision ("ke schválení").
@@ -50,16 +51,32 @@ export type BillingWorkLog = Prisma.WorkLogGetPayload<{
 // silently truncating.
 export const BILLING_ROW_LIMIT = 2000;
 
+// First/last day of the current month as YYYY-MM-DD.
+export function currentMonthRange() {
+  const now = new Date();
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  return {
+    dateFrom: fmt(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))),
+    dateTo: fmt(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0))),
+  };
+}
+
 export function readBillingFilters(
   get: (key: string) => string,
 ): BillingFilters {
+  let dateFrom = get("dateFrom");
+  let dateTo = get("dateTo");
+  // Default the period to the whole current month; the user can widen/change it.
+  if (!dateFrom && !dateTo) {
+    ({ dateFrom, dateTo } = currentMonthRange());
+  }
   return {
     subjectId: get("subjectId"),
     projectId: get("projectId"),
     caseId: get("caseId"),
     userId: get("userId"),
-    dateFrom: get("dateFrom"),
-    dateTo: get("dateTo"),
+    dateFrom,
+    dateTo,
   };
 }
 

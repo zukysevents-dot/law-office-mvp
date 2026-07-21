@@ -3,6 +3,7 @@ import Image from "next/image";
 import { loginAction } from "@/app/actions/auth";
 import { Field, TextInput } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
+import { redirectIfAuthenticated } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,7 @@ export default async function LoginPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await redirectIfAuthenticated();
   const params = await searchParams;
   const hasError = params.error === "1";
   const from = typeof params.from === "string" ? params.from : "/dashboard";

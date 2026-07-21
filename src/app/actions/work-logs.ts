@@ -19,11 +19,27 @@ import {
   assertCanArchiveRecords,
   assertCanEditRecord,
   assertSameOrg,
+  canSeeRates,
+  canSetBillable,
   caseVisibilityWhere,
   projectVisibilityWhere,
   taskVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+
+// Non-partner/advokát roles may never mark work directly "Fakturovatelné" —
+// clamp such a submission back to "Ke schválení". Enforced server-side so it
+// holds even if the form is bypassed.
+function resolveBillingStatus(
+  user: Parameters<typeof canSetBillable>[0],
+  raw: FormDataEntryValue | null,
+) {
+  const submitted = enumValue(BillingStatus, raw, BillingStatus.NEEDS_APPROVAL);
+  if (submitted === BillingStatus.BILLABLE && !canSetBillable(user)) {
+    return BillingStatus.NEEDS_APPROVAL;
+  }
+  return submitted;
+}
 
 type RateInput = {
   caseRate?: number | string | { toString(): string } | null;
@@ -44,7 +60,11 @@ export async function createWorkLog(formData: FormData) {
   const caseId = optionalString(formData, "caseId");
   const taskId = optionalString(formData, "taskId");
   const hours = requiredNumber(formData, "hours");
-  const manualHourlyRate = optionalNumber(formData, "hourlyRate");
+  // Rate is derived from the matter (case > project > subject); only ADMIN/PARTNER
+  // may override it. Juniors never submit or see a rate.
+  const manualHourlyRate = canSeeRates(currentUser)
+    ? optionalNumber(formData, "hourlyRate")
+    : null;
 
   // Case/project/task lookups are scoped by visibility — a user can't log work
   // against a matter they can't see. subjectId is the shared registry.
@@ -108,10 +128,9 @@ export async function createWorkLog(formData: FormData) {
       hourlyRate,
       amountCzk,
       description: optionalString(formData, "description"),
-      billingStatus: enumValue(
-        BillingStatus,
+      billingStatus: resolveBillingStatus(
+        currentUser,
         formData.get("billingStatus"),
-        BillingStatus.BILLABLE,
       ),
       approvalStatus: enumValue(
         ApprovalStatus,
@@ -142,42 +161,36 @@ export async function createWorkLog(formData: FormData) {
   revalidatePath("/work-logs");
 }
 
-function sameNumber(
-  left: number | null,
-  right: number | string | { toString(): string } | null,
-) {
-  if (left === null && right === null) {
-    return true;
-  }
-
-  if (left === null || right === null) {
-    return false;
-  }
-
-  return Number(left) === Number(right);
-}
-
 export async function updateWorkLog(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
   const workLogId = requiredString(formData, "id");
   const hours = requiredNumber(formData, "hours");
-  const hourlyRate = optionalNumber(formData, "hourlyRate");
-  const manualAmount = optionalNumber(formData, "amountCzk");
 
   const oldWorkLog = await prisma.workLog.findUniqueOrThrow({
     where: { id: workLogId },
   });
   assertCanEditRecord(currentUser, "WorkLog", oldWorkLog);
 
-  const hoursChanged = !sameNumber(hours, oldWorkLog.hours);
-  const rateChanged = !sameNumber(hourlyRate, oldWorkLog.hourlyRate);
-  const amountCzk =
-    hoursChanged || rateChanged
-      ? hourlyRate !== null
-        ? hours * hourlyRate
-        : null
-      : manualAmount;
+  // Only ADMIN/PARTNER may see or change the rate; for everyone else keep the
+  // stored rate untouched.
+  const hourlyRate = canSeeRates(currentUser)
+    ? optionalNumber(formData, "hourlyRate")
+    : oldWorkLog.hourlyRate === null
+      ? null
+      : Number(oldWorkLog.hourlyRate);
+
+  // Amount is always derived from hours × rate — never taken from the form.
+  // (A hidden/absent amount field must not wipe the stored amount, and a junior
+  // must not be able to inject an arbitrary billing amount.)
+  const amountCzk = hourlyRate !== null ? hours * hourlyRate : null;
+
+  // Only roles allowed to mark work billable may change the billing status;
+  // for everyone else keep the stored status (so a junior editing a partner's
+  // BILLABLE log can't silently downgrade it to "Ke schválení").
+  const billingStatus = canSetBillable(currentUser)
+    ? resolveBillingStatus(currentUser, formData.get("billingStatus"))
+    : oldWorkLog.billingStatus;
 
   const workLog = await prisma.workLog.update({
     where: { id: workLogId },
@@ -191,11 +204,7 @@ export async function updateWorkLog(formData: FormData) {
       hourlyRate,
       amountCzk,
       description: optionalString(formData, "description"),
-      billingStatus: enumValue(
-        BillingStatus,
-        formData.get("billingStatus"),
-        BillingStatus.BILLABLE,
-      ),
+      billingStatus,
       approvalStatus: enumValue(
         ApprovalStatus,
         formData.get("approvalStatus"),

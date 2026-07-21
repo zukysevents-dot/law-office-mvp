@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
 
 export function StatCard({
@@ -5,11 +6,15 @@ export function StatCard({
   value,
   icon: Icon,
   tone = "mint",
+  href,
 }: {
   label: string;
   value: string | number;
   icon: LucideIcon;
   tone?: "mint" | "danger";
+  // When set, the whole card becomes a link (e.g. a dashboard KPI that opens
+  // the matching filtered list).
+  href?: string;
 }) {
   const iconTone =
     tone === "danger"
@@ -17,8 +22,8 @@ export function StatCard({
       : "bg-[#B9DCC6] text-[#072924]";
   const valueTone = tone === "danger" ? "text-red-900" : "text-[#072924]";
 
-  return (
-    <div className="rounded-lg border border-[#d4e2dc] bg-white p-5 shadow-sm shadow-[#072924]/5">
+  const inner = (
+    <>
       <div className="flex items-center justify-between gap-4">
         <p className="text-sm font-semibold text-[#072924]">{label}</p>
         <span
@@ -28,6 +33,22 @@ export function StatCard({
         </span>
       </div>
       <p className={`mt-4 text-3xl font-semibold ${valueTone}`}>{value}</p>
-    </div>
+    </>
   );
+
+  const cardClass =
+    "block rounded-lg border border-[#d4e2dc] bg-white p-5 shadow-sm shadow-[#072924]/5";
+
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className={`${cardClass} transition hover:border-[#B9DCC6] hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#B9DCC6]`}
+      >
+        {inner}
+      </Link>
+    );
+  }
+
+  return <div className={cardClass}>{inner}</div>;
 }

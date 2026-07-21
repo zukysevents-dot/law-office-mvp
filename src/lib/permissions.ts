@@ -137,6 +137,19 @@ export function canViewAllLegalData(user: PermissionInput) {
   return isAdmin(user) || isPartner(user);
 }
 
+// Hourly rates and money amounts are confidential — juniors (koncipient/asistent)
+// must not see them. Only ADMIN/PARTNER may see rates on work logs, tasks, etc.
+export function canSeeRates(user: PermissionInput) {
+  return canViewAllLegalData(user);
+}
+
+// Who may mark work as directly billable ("Fakturovatelné"). Everyone else
+// (TRAINEE/INTERN) is limited to "Ke schválení" / "Interní" — see
+// restrictedBillingStatuses in labels.ts.
+export function canSetBillable(user: PermissionInput) {
+  return canViewAllLegalData(user) || roleOf(user) === UserRole.LAWYER;
+}
+
 export function assertCanArchiveRecords(user: PermissionInput) {
   if (!canViewAllLegalData(user)) {
     throw new Error("Nemáte oprávnění archivovat ani obnovovat záznamy.");

@@ -116,6 +116,7 @@ export const organizationMemberStatusLabels: Record<
 
 export const legalAreaOptions = [
   "Civilní právo",
+  "Rodinné právo",
   "Obchodní právo",
   "Pracovní právo",
   "Správní právo",
@@ -124,7 +125,20 @@ export const legalAreaOptions = [
   "Veřejné zakázky",
   "Soudní spor",
   "Compliance",
+  "Ztráta času cestováním",
+  "Jednání s klientem",
   "Jiné",
+];
+
+// Shown instead of legal areas when a work log is INTERNAL (non-billable): the
+// activity is internal firm work, not legal work on a matter.
+export const internalActivityOptions = [
+  "Administrativa",
+  "Vzdělávání",
+  "Pochůzka",
+  "Akviziční činnost",
+  "Vykazování",
+  "Správa kanceláře",
 ];
 
 // Roles assignable to org members (ADMIN is reserved/global, not assigned here).
@@ -145,6 +159,11 @@ export const options = {
   taskDeadlineTypes: Object.values(TaskDeadlineType),
   taskPriorities: Object.values(TaskPriority),
   billingStatuses: Object.values(BillingStatus),
+  // Non-partner/advokát roles may only submit for approval or log internal work.
+  restrictedBillingStatuses: [
+    BillingStatus.NEEDS_APPROVAL,
+    BillingStatus.INTERNAL_NON_BILLABLE,
+  ],
   approvalStatuses: Object.values(ApprovalStatus),
   projectStatuses: Object.values(ProjectStatus),
   caseStatuses: Object.values(CaseStatus),

@@ -31,7 +31,7 @@ import type { TableViewState } from "@/lib/table-view-preferences";
 export const dynamic = "force-dynamic";
 
 type SubjectsPageProps = {
-  searchParams: Promise<{ q?: string; archive?: string }>;
+  searchParams: Promise<{ q?: string; archive?: string; error?: string }>;
 };
 
 type SubjectRow = {
@@ -62,6 +62,7 @@ export default async function SubjectsPage({ searchParams }: SubjectsPageProps) 
   const params = await searchParams;
   const query = params.q?.trim() ?? "";
   const archive = archiveFilterValue(params.archive);
+  const duplicateIcoError = params.error === "duplicate-ico";
 
   const result = await safeQuery<SubjectsPageData>(
     { subjects: [], tableView: getDefaultTableView("subjects") },
@@ -85,6 +86,7 @@ export default async function SubjectsPage({ searchParams }: SubjectsPageProps) 
           },
         ),
         orderBy: { name: "asc" },
+        take: 100, // ponytail: safety cap like work-logs; add real paging when a list overflows
       });
 
       return { subjects, tableView };
@@ -233,10 +235,24 @@ export default async function SubjectsPage({ searchParams }: SubjectsPageProps) 
             </table>
           </div>
         ) : (
-          <EmptyState>Žádné subjekty neodpovídají zadání.</EmptyState>
+          <EmptyState
+            action={
+              <ButtonLink href="#new-subject">
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                Nový subjekt
+              </ButtonLink>
+            }
+          >
+            Žádné subjekty neodpovídají zadání.
+          </EmptyState>
         )}
       </Section>
       <Section title="Nový subjekt" className="scroll-mt-6" id="new-subject">
+        {duplicateIcoError ? (
+          <p className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+            Subjekt s tímto IČO už ve vaší kanceláři existuje.
+          </p>
+        ) : null}
         <form action={createSubject} className="grid gap-4">
           <SubjectAresFields />
           <div className="grid gap-4 md:grid-cols-2">

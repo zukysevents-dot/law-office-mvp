@@ -194,7 +194,7 @@ export default async function CaseDetailPage({
               </div>
               <div>
                 <p className="text-xs font-semibold uppercase text-stone-500">
-                  Hlavní subjekt projektu
+                  Klient
                 </p>
                 <Link
                   href={`/subjects/${legalCase.project.mainSubject.id}`}

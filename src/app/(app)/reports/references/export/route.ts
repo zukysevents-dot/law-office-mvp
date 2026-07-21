@@ -1,10 +1,15 @@
 import type { NextRequest } from "next/server";
 
+import { archiveFilterValue, archivedWhere } from "@/lib/archive-filter";
 import { getCurrentUser } from "@/lib/auth";
 import { buildCsvBody, csvNumber, csvResponse } from "@/lib/export/csv";
 import { buildXlsx, xlsxResponse, type XlsxColumn } from "@/lib/export/xlsx";
 import { formatCaseLabel, formatDateUtc } from "@/lib/format";
 import { andWhere, referenceVisibilityWhere } from "@/lib/permissions";
+import {
+  readReferenceFilters,
+  referenceFilterWhere,
+} from "@/lib/reference-filters";
 import { getPrisma } from "@/lib/prisma";
 import { writeAuditLog } from "@/lib/audit";
 
@@ -61,13 +66,19 @@ export async function GET(request: NextRequest) {
     ? "csv"
     : "xlsx";
 
+  // Same filters as the references list, so "filter, then export" matches.
+  const sp = request.nextUrl.searchParams;
+  const filters = readReferenceFilters((key) => sp.get(key) ?? undefined);
+  const archive = archiveFilterValue(sp.get("archive") ?? undefined);
+
   let rows;
   try {
     const prisma = getPrisma();
     rows = await prisma.reference.findMany({
       where: andWhere(
-        { archivedAt: null },
+        archivedWhere(archive),
         referenceVisibilityWhere(currentUser),
+        referenceFilterWhere(filters),
       ),
       orderBy: [{ endDate: "asc" }, { startDate: "desc" }],
       include: exportInclude,

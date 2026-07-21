@@ -121,7 +121,14 @@ enum NotificationType {
   TASK_STATUS_CHANGED
   TASK_FOR_REVIEW
   TASK_DEADLINE_SOON
+  TASK_DEADLINE_ESCALATED
   TASK_FILED_FOLLOWUP
+  INVOICE_OVERDUE
+}
+
+enum DeadlineCalendar {
+  CALENDAR_DAYS
+  BUSINESS_DAYS
 }
 
 enum NotificationStatus {
@@ -143,6 +150,13 @@ enum OrganizationMemberStatus {
   SUSPENDED
 }
 
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PAID
+  CANCELLED
+}
+
 model User {
   id              String   @id @default(cuid())
   name            String
@@ -154,6 +168,10 @@ model User {
   // Platform/developer super-admin over all organizations (the /admin panel).
   // Orthogonal to the org-level role; such accounts have no org membership.
   isPlatformAdmin Boolean  @default(false)
+  // Deadline notifications also copy this user's stand-in during their absence.
+  substituteUserId String?
+  substituteFrom   DateTime?
+  substituteUntil  DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -173,7 +191,12 @@ model User {
   notificationPreference  NotificationPreference?
   notifications           Notification[]      @relation("NotificationRecipient")
   memberships             OrganizationMember[]
+  createdInvoices         Invoice[]           @relation("InvoiceCreatedBy")
+  ackedTaskDeadlines      Task[]              @relation("TaskDeadlineAck")
+  substitute              User?               @relation("UserSubstitute", fields: [substituteUserId], references: [id], onDelete: SetNull)
+  substituteFor           User[]              @relation("UserSubstitute")
 
+  @@index([substituteUserId])
   @@map("users")
 }
 
@@ -209,6 +232,7 @@ model Subject {
   mainProjects   Project[]         @relation("ProjectMainSubject")
   references     Reference[]
   workLogs       WorkLog[]
+  invoices       Invoice[]
 
   // IČO is unique PER organization, not globally — the same company can be a
   // subject of more than one law office (multi-tenant). NULL ico is allowed
@@ -343,6 +367,13 @@ model Task {
   sharepointUrl       String?
   startDate           DateTime?
   deadline            DateTime?
+  // Explicit hand-over acknowledgement of a procedural deadline (F1).
+  deadlineAckedAt     DateTime?
+  deadlineAckedById   String?
+  // Provenance for an auto-computed procedural deadline (F2). Soft reference —
+  // the deadline is already materialized above; the rule id is audit trail only.
+  deadlineRuleId      String?
+  triggerDate         DateTime?
   completedAt         DateTime?
   archivedAt          DateTime?
   createdAt           DateTime     @default(now())
@@ -354,6 +385,7 @@ model Task {
   createdBy     User?               @relation("TaskCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   assignedTo    User?               @relation("TaskAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
   responsibleUser User?              @relation("TaskResponsibleUser", fields: [responsibleUserId], references: [id], onDelete: SetNull)
+  deadlineAckedBy User?              @relation("TaskDeadlineAck", fields: [deadlineAckedById], references: [id], onDelete: SetNull)
   statusHistory TaskStatusHistory[]
   comments      TaskComment[]
   workLogs      WorkLog[]
@@ -418,6 +450,9 @@ model WorkLog {
   billingStatus  BillingStatus  @default(BILLABLE)
   approvalStatus ApprovalStatus @default(DRAFT)
   legalArea      String?
+  // Set once this log has been placed on an invoice — guards against double
+  // billing and is cleared (SetNull) if that invoice is deleted.
+  invoiceId      String?
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   archivedAt     DateTime?
@@ -428,6 +463,8 @@ model WorkLog {
   case    Case?    @relation(fields: [caseId], references: [id], onDelete: SetNull)
   task    Task?    @relation(fields: [taskId], references: [id], onDelete: SetNull)
   user    User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  invoice Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  invoiceLines InvoiceLineItem[]
 
   @@index([organizationId])
   @@index([subjectId])
@@ -437,6 +474,7 @@ model WorkLog {
   @@index([userId])
   @@index([workDate])
   @@index([archivedAt])
+  @@index([invoiceId])
   @@map("workLogs")
 }
 
@@ -591,6 +629,16 @@ model Organization {
   status              OrganizationStatus @default(ACTIVE)
   // Optional, unused this phase — email domain is NOT a join restriction.
   allowedEmailDomains Json?
+  // Supplier ("dodavatel") details printed on invoices this office issues.
+  ico                 String?
+  dic                 String?
+  address             String?
+  email               String?
+  phone               String?
+  bankAccount         String?
+  vatPayer            Boolean            @default(false)
+  vatRate             Int                @default(21)
+  invoiceDueDays      Int                @default(14)
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
   archivedAt          DateTime?
@@ -606,6 +654,8 @@ model Organization {
   conflictChecks       ConflictCheck[]
   dashboardWidgets     DashboardWidget[]
   tableViewPreferences TableViewPreference[]
+  invoices             Invoice[]
+  deadlineRules        DeadlineRule[]
 
   @@index([status])
   @@map("organizations")
@@ -652,4 +702,78 @@ model OrganizationMember {
   @@index([organizationId])
   @@index([userId])
   @@map("organizationMembers")
+}
+
+model Invoice {
+  id              String        @id @default(cuid())
+  organizationId  String
+  // Human-readable number, unique per org (e.g. "2026-0001"). year+seq are kept
+  // separately so the next number is a simple max(seq) per org and year.
+  invoiceNumber   String
+  year            Int
+  seq             Int
+  subjectId       String
+  issuedAt        DateTime      @default(now())
+  taxableSupplyAt DateTime      @default(now())
+  dueAt           DateTime
+  subtotalCzk     Decimal       @db.Decimal(14, 2)
+  vatCzk          Decimal       @db.Decimal(14, 2)
+  totalCzk        Decimal       @db.Decimal(14, 2)
+  vatRate         Int           @default(0)
+  status          InvoiceStatus @default(ISSUED)
+  paidAt          DateTime?
+  lastReminderAt  DateTime?
+  note            String?
+  createdById     String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  subject      Subject           @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  createdBy    User?             @relation("InvoiceCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  lineItems    InvoiceLineItem[]
+  workLogs     WorkLog[]
+
+  @@unique([organizationId, invoiceNumber])
+  @@index([organizationId])
+  @@index([subjectId])
+  @@index([status])
+  @@map("invoices")
+}
+
+// Editable per-org template for computing procedural deadlines (F2). The engine
+// (src/lib/deadlines.ts) is authoritative; which offset/calendar a procedure
+// uses is a LEGAL choice the office configures and an advokát must confirm.
+model DeadlineRule {
+  id             String           @id @default(cuid())
+  organizationId String
+  name           String
+  offsetDays     Int
+  calendar       DeadlineCalendar @default(CALENDAR_DAYS)
+  rollForward    Boolean          @default(true)
+  active         Boolean          @default(true)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId])
+  @@map("deadlineRules")
+}
+
+model InvoiceLineItem {
+  id          String  @id @default(cuid())
+  invoiceId   String
+  // Snapshot of the source work log; kept even if the log is later deleted.
+  workLogId   String?
+  description String
+  quantity    Decimal @db.Decimal(8, 2)
+  unitPrice   Decimal @db.Decimal(12, 2)
+  amountCzk   Decimal @db.Decimal(14, 2)
+
+  invoice Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  workLog WorkLog? @relation(fields: [workLogId], references: [id], onDelete: SetNull)
+
+  @@index([invoiceId])
+  @@map("invoiceLineItems")
 }

@@ -23,6 +23,24 @@ export function taskStatusTone(status: TaskStatus): BadgeTone {
   return tones[status];
 }
 
+// Subtle full-row tint by task status (zadáno=oranžová, řeší se=žlutá,
+// ke kontrole=modrá, …) so a task list is scannable at a glance.
+export function taskStatusRowClass(status: TaskStatus): string {
+  const classes: Record<TaskStatus, string> = {
+    CREATED: "bg-orange-50",
+    ACCEPTED: "bg-teal-50",
+    IN_PROGRESS: "bg-yellow-50",
+    FOR_REVIEW: "bg-blue-50",
+    WAITING_FOR_CLIENT: "bg-sky-50",
+    WAITING_FOR_COUNTERPARTY: "bg-purple-50",
+    POSTPONED: "bg-stone-100",
+    FILED: "bg-emerald-50",
+    COMPLETED: "bg-green-50",
+  };
+
+  return classes[status];
+}
+
 export function billingStatusTone(status: BillingStatus): BadgeTone {
   const tones: Record<BillingStatus, BadgeTone> = {
     BILLABLE: "dark",

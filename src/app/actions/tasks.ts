@@ -398,3 +398,45 @@ export async function addTaskComment(formData: FormData) {
 
   revalidatePath(`/tasks/${taskId}`);
 }
+
+// F1: explicit hand-over acknowledgement of a procedural deadline. Records who
+// took responsibility, which stops the escalation to the responsible lawyer.
+export async function acknowledgeTaskDeadline(formData: FormData) {
+  const prisma = getPrisma();
+  const currentUser = await getCurrentUser();
+  const taskId = requiredString(formData, "taskId");
+  const task = await prisma.task.findUniqueOrThrow({
+    where: { id: taskId },
+    select: {
+      id: true,
+      organizationId: true,
+      createdById: true,
+      assignedToId: true,
+      responsibleUserId: true,
+      deadlineAckedAt: true,
+    },
+  });
+  assertCanEditRecord(currentUser, "Task", task);
+
+  if (task.deadlineAckedAt) {
+    return; // already acknowledged — idempotent, no double audit entry
+  }
+
+  await prisma.task.update({
+    where: { id: taskId },
+    data: { deadlineAckedAt: new Date(), deadlineAckedById: currentUser.id },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      entityType: "Task",
+      entityId: taskId,
+      action: "ACK_DEADLINE",
+      changedById: currentUser.id,
+      newValue: { deadlineAckedById: currentUser.id },
+    },
+  });
+
+  revalidatePath(`/tasks/${taskId}`);
+  revalidatePath("/tasks");
+}

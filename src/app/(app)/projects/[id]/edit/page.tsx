@@ -107,7 +107,7 @@ export default async function ProjectEditPage({ params }: ProjectEditProps) {
               </Field>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Hlavní subjekt">
+              <Field label="Klient">
                 <SelectInput
                   name="mainSubjectId"
                   defaultValue={project.mainSubjectId}

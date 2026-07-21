@@ -98,12 +98,20 @@ function preferenceAllows(
     return current.taskForReviewEmail;
   }
 
-  if (type === NotificationType.TASK_DEADLINE_SOON) {
+  if (
+    type === NotificationType.TASK_DEADLINE_SOON ||
+    type === NotificationType.TASK_DEADLINE_ESCALATED
+  ) {
     return current.taskDeadlineSoonEmail;
   }
 
   if (type === NotificationType.TASK_FILED_FOLLOWUP) {
     return current.taskFiledFollowupEmail;
+  }
+
+  // Invoice reminders are operational, not per-task; only the master switch gates them.
+  if (type === NotificationType.INVOICE_OVERDUE) {
+    return current.emailEnabled;
   }
 
   return false;
@@ -531,6 +539,44 @@ async function preferenceForUser(
   return preference;
 }
 
+// Days-before-deadline stages for the escalating reminder ladder (F1). Procedural
+// deadlines get all stages; internal deadlines keep the single legacy reminder.
+const PROCEDURAL_DEADLINE_STAGES = [7, 3, 1] as const;
+// Below this many days-to-deadline, an unacknowledged procedural deadline
+// escalates to the responsible lawyer.
+const DEADLINE_ESCALATION_DAYS = 3;
+
+// For each recipient, also notify their active stand-in (F1 zastupitelnost).
+async function expandWithSubstitutes(
+  ids: string[],
+  now: Date,
+  cache: Map<string, string | null>,
+): Promise<string[]> {
+  const prisma = getPrisma();
+  const out = new Set(ids);
+  for (const id of ids) {
+    let sub = cache.get(id);
+    if (sub === undefined) {
+      const user = await prisma.user.findUnique({
+        where: { id },
+        select: {
+          substituteUserId: true,
+          substituteFrom: true,
+          substituteUntil: true,
+        },
+      });
+      const active =
+        user?.substituteUserId &&
+        (!user.substituteFrom || user.substituteFrom <= now) &&
+        (!user.substituteUntil || user.substituteUntil >= now);
+      sub = active ? user!.substituteUserId : null;
+      cache.set(id, sub);
+    }
+    if (sub) out.add(sub);
+  }
+  return [...out];
+}
+
 async function createScheduledDeadlineNotifications(now: Date) {
   const prisma = getPrisma();
   const maxWindow = new Date(now);
@@ -546,22 +592,65 @@ async function createScheduledDeadlineNotifications(now: Date) {
       id: true,
       title: true,
       deadline: true,
+      deadlineType: true,
+      deadlineAckedAt: true,
       assignedToId: true,
       responsibleUserId: true,
     },
   });
   const preferenceCache = new Map<string, NotificationPreferenceShape>();
+  const substituteCache = new Map<string, string | null>();
   let created = 0;
 
+  const daysUntil = (deadline: Date) =>
+    Math.floor((deadline.getTime() - now.getTime()) / 86_400_000);
+
   for (const task of tasks) {
-    const recipientIds = uniqueRecipients([
+    if (!task.deadline) continue;
+    const remaining = daysUntil(task.deadline);
+    const baseRecipients = uniqueRecipients([
       task.assignedToId,
       task.responsibleUserId,
     ]);
+    const recipientIds = await expandWithSubstitutes(
+      baseRecipients,
+      now,
+      substituteCache,
+    );
+
+    // Which reminder stages fire: procedural → escalating ladder, internal →
+    // the single per-user reminder from their preference (legacy behaviour).
+    const stages =
+      task.deadlineType === "PROCEDURAL"
+        ? PROCEDURAL_DEADLINE_STAGES.filter((s) => remaining <= s)
+        : [];
 
     for (const recipientId of recipientIds) {
       const preference = await preferenceForUser(recipientId, preferenceCache);
-      const reminderAt = new Date(task.deadline ?? now);
+
+      if (task.deadlineType === "PROCEDURAL") {
+        // Fire the latest (smallest days-before) stage that has been reached.
+        const stage = stages[stages.length - 1];
+        if (stage === undefined) continue;
+        const result = await queueInternalNotification({
+          toUserId: recipientId,
+          type: NotificationType.TASK_DEADLINE_SOON,
+          subject: `Blíží se procesní lhůta (T-${stage}): ${task.title}`,
+          body: formatTaskNotificationBody({
+            title: task.title,
+            message: `Procesní lhůta ${task.deadline.toLocaleDateString("cs-CZ")} — zbývá ${remaining} dní. Potvrďte převzetí lhůty v úkolu.`,
+            taskId: task.id,
+          }),
+          entityType: "Task",
+          entityId: task.id,
+          dedupeKey: `task:${task.id}:deadline:${stage}`,
+        });
+        created += result.queued + result.skipped;
+        continue;
+      }
+
+      // Internal deadline — single reminder honouring the user's lead time.
+      const reminderAt = new Date(task.deadline);
       reminderAt.setDate(
         reminderAt.getDate() -
           normalizeDays(
@@ -569,18 +658,14 @@ async function createScheduledDeadlineNotifications(now: Date) {
             DEFAULT_DEADLINE_REMINDER_DAYS,
           ),
       );
-
-      if (now < reminderAt) {
-        continue;
-      }
-
+      if (now < reminderAt) continue;
       const result = await queueInternalNotification({
         toUserId: recipientId,
         type: NotificationType.TASK_DEADLINE_SOON,
         subject: `Blíží se deadline: ${task.title}`,
         body: formatTaskNotificationBody({
           title: task.title,
-          message: `Blíží se deadline úkolu: ${task.deadline?.toLocaleDateString("cs-CZ") ?? "bez data"}.`,
+          message: `Blíží se deadline úkolu: ${task.deadline.toLocaleDateString("cs-CZ")}.`,
           taskId: task.id,
         }),
         entityType: "Task",
@@ -589,6 +674,69 @@ async function createScheduledDeadlineNotifications(now: Date) {
       });
       created += result.queued + result.skipped;
     }
+
+    // Escalation: a procedural deadline close and NOT acknowledged → alert the
+    // responsible lawyer explicitly (once), so nobody assumes someone else has it.
+    if (
+      task.deadlineType === "PROCEDURAL" &&
+      !task.deadlineAckedAt &&
+      remaining <= DEADLINE_ESCALATION_DAYS &&
+      task.responsibleUserId
+    ) {
+      const result = await queueInternalNotification({
+        toUserId: task.responsibleUserId,
+        type: NotificationType.TASK_DEADLINE_ESCALATED,
+        subject: `Nepotvrzená procesní lhůta: ${task.title}`,
+        body: formatTaskNotificationBody({
+          title: task.title,
+          message: `Procesní lhůta ${task.deadline.toLocaleDateString("cs-CZ")} (zbývá ${remaining} dní) nebyla nikým převzata. Zkontrolujte prosím zajištění úkonu.`,
+          taskId: task.id,
+        }),
+        entityType: "Task",
+        entityId: task.id,
+        dedupeKey: `task:${task.id}:escalated`,
+      });
+      created += result.queued + result.skipped;
+    }
+  }
+
+  return created;
+}
+
+async function createScheduledInvoiceOverdueNotifications(now: Date) {
+  const prisma = getPrisma();
+  const invoices = await prisma.invoice.findMany({
+    where: {
+      status: "ISSUED",
+      dueAt: { lt: now },
+    },
+    select: {
+      id: true,
+      invoiceNumber: true,
+      dueAt: true,
+      totalCzk: true,
+      createdById: true,
+    },
+  });
+  // One reminder per invoice per day, deduped so a daily cron doesn't spam.
+  const day = now.toISOString().slice(0, 10);
+  let created = 0;
+
+  for (const invoice of invoices) {
+    if (!invoice.createdById) continue;
+    const overdueDays = Math.floor(
+      (now.getTime() - invoice.dueAt.getTime()) / 86_400_000,
+    );
+    const result = await queueInternalNotification({
+      toUserId: invoice.createdById,
+      type: NotificationType.INVOICE_OVERDUE,
+      subject: `Faktura po splatnosti: ${invoice.invoiceNumber}`,
+      body: `Faktura ${invoice.invoiceNumber} (${invoice.totalCzk} Kč) je ${overdueDays} dní po splatnosti (${invoice.dueAt.toLocaleDateString("cs-CZ")}).\n\n${appUrl(`/invoices/${invoice.id}`)}`,
+      entityType: "Invoice",
+      entityId: invoice.id,
+      dedupeKey: `invoice:${invoice.id}:overdue:${day}`,
+    });
+    created += result.queued + result.skipped;
   }
 
   return created;
@@ -668,14 +816,15 @@ async function createScheduledFiledFollowupNotifications(now: Date) {
 
 export async function runScheduledNotifications(limit = DEFAULT_SEND_LIMIT) {
   const now = new Date();
-  const [deadlineCreated, filedCreated] = await Promise.all([
+  const [deadlineCreated, filedCreated, invoiceCreated] = await Promise.all([
     createScheduledDeadlineNotifications(now),
     createScheduledFiledFollowupNotifications(now),
+    createScheduledInvoiceOverdueNotifications(now),
   ]);
   const sendResult = await sendPendingNotifications(limit);
 
   return {
-    created: deadlineCreated + filedCreated,
+    created: deadlineCreated + filedCreated + invoiceCreated,
     ...sendResult,
   } satisfies NotificationRunResult;
 }

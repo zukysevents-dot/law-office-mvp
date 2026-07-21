@@ -86,8 +86,8 @@ export const tableViewConfigs = {
     label: "Projekty",
     path: "/projects",
     columns: [
+      { id: "mainSubject", label: "Klient", defaultVisible: true },
       { id: "name", label: "Název", defaultVisible: true },
-      { id: "mainSubject", label: "Hlavní subjekt", defaultVisible: true },
       {
         id: "responsibleUser",
         label: "Odpovědný uživatel",
@@ -105,6 +105,7 @@ export const tableViewConfigs = {
     label: "Případy",
     path: "/cases",
     columns: [
+      { id: "client", label: "Klient", defaultVisible: true },
       { id: "name", label: "Název", defaultVisible: true },
       { id: "project", label: "Projekt", defaultVisible: true },
       { id: "fileNumber", label: "Spisová značka", defaultVisible: true },

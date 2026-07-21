@@ -497,6 +497,7 @@ function renderWidget(widget: DashboardWidgetView, data: DashboardData) {
           label={widget.title}
           value={data.counts.activeTasks}
           icon={ListTodo}
+          href="/tasks"
         />
       );
     case DashboardWidgetType.OVERDUE_TASKS:
@@ -506,6 +507,7 @@ function renderWidget(widget: DashboardWidgetView, data: DashboardData) {
           value={data.counts.overdueTasks}
           icon={Clock3}
           tone="danger"
+          href="/tasks?overdue=1"
         />
       );
     case DashboardWidgetType.FOR_REVIEW_TASKS:
@@ -514,6 +516,7 @@ function renderWidget(widget: DashboardWidgetView, data: DashboardData) {
           label={widget.title}
           value={data.counts.reviewTasks}
           icon={ListChecks}
+          href="/tasks?status=FOR_REVIEW"
         />
       );
     case DashboardWidgetType.WAITING_FOR_CLIENT_TASKS:
@@ -522,6 +525,7 @@ function renderWidget(widget: DashboardWidgetView, data: DashboardData) {
           label={widget.title}
           value={data.counts.waitingForClientTasks}
           icon={UserRound}
+          href="/tasks?status=WAITING_FOR_CLIENT"
         />
       );
     case DashboardWidgetType.WAITING_FOR_COUNTERPARTY_TASKS:
@@ -530,6 +534,7 @@ function renderWidget(widget: DashboardWidgetView, data: DashboardData) {
           label={widget.title}
           value={data.counts.waitingForCounterpartyTasks}
           icon={ShieldAlert}
+          href="/tasks?status=WAITING_FOR_COUNTERPARTY"
         />
       );
     case DashboardWidgetType.WORK_LOGS_SUMMARY:
@@ -538,6 +543,7 @@ function renderWidget(widget: DashboardWidgetView, data: DashboardData) {
           label={widget.title}
           value={`${data.monthHours} h`}
           icon={CheckCircle2}
+          href="/work-logs"
         />
       );
     case DashboardWidgetType.MY_TASKS_TABLE:

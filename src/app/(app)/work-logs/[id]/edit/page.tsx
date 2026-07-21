@@ -17,21 +17,25 @@ import { getCurrentUser } from "@/lib/auth";
 import { dateInputValue, numberInputValue } from "@/lib/form-values";
 import {
   approvalStatusLabels,
-  billingStatusLabels,
+  internalActivityOptions,
   legalAreaOptions,
   options,
 } from "@/lib/labels";
+import { WorkLogClassification } from "@/components/work-log-classification";
 import { safeQuery } from "@/lib/db-safe";
 import {
   andWhere,
   canViewAllLegalData,
   canEditRecord,
+  canSeeRates,
+  canSetBillable,
   caseVisibilityWhere,
   projectVisibilityWhere,
   subjectVisibilityWhere,
   taskVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import type { BillingStatus } from "@/generated/prisma/enums";
 
 export const dynamic = "force-dynamic";
 
@@ -88,6 +92,8 @@ async function loadWorkLogEdit(id: string) {
     cases,
     tasks,
     canArchive: canViewAllLegalData(currentUser),
+    canSeeRates: canSeeRates(currentUser),
+    canSetBillable: canSetBillable(currentUser),
   };
 }
 
@@ -100,6 +106,8 @@ const emptyWorkLogEdit: WorkLogEditData = {
   cases: [],
   tasks: [],
   canArchive: false,
+  canSeeRates: false,
+  canSetBillable: false,
 };
 
 export default async function WorkLogEditPage({ params }: WorkLogEditProps) {
@@ -113,7 +121,16 @@ export default async function WorkLogEditPage({ params }: WorkLogEditProps) {
     notFound();
   }
 
-  const { workLog, subjects, projects, cases, tasks, canArchive } = result.data;
+  const {
+    workLog,
+    subjects,
+    projects,
+    cases,
+    tasks,
+    canArchive,
+    canSeeRates: showRates,
+    canSetBillable: fullBilling,
+  } = result.data;
 
   return (
     <>
@@ -210,38 +227,29 @@ export default async function WorkLogEditPage({ params }: WorkLogEditProps) {
                   required
                 />
               </Field>
-              <Field label="Sazba">
-                <TextInput
-                  name="hourlyRate"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  defaultValue={numberInputValue(workLog.hourlyRate)}
-                />
-              </Field>
+              {/* Rate and amount are confidential — only ADMIN/PARTNER see them. */}
+              {showRates ? (
+                <Field label="Sazba">
+                  <TextInput
+                    name="hourlyRate"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    defaultValue={numberInputValue(workLog.hourlyRate)}
+                  />
+                </Field>
+              ) : null}
             </div>
-            <div className="grid gap-4 md:grid-cols-3">
-              <Field label="Částka">
-                <TextInput
-                  name="amountCzk"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  defaultValue={numberInputValue(workLog.amountCzk)}
-                />
-              </Field>
-              <Field label="Billing status">
-                <SelectInput
-                  name="billingStatus"
-                  defaultValue={workLog.billingStatus}
-                >
-                  {options.billingStatuses.map((status) => (
-                    <option key={status} value={status}>
-                      {billingStatusLabels[status]}
-                    </option>
-                  ))}
-                </SelectInput>
-              </Field>
+            <div className="grid gap-4 md:grid-cols-2">
+              {showRates ? (
+                <Field label="Částka (počítá se automaticky)">
+                  <TextInput
+                    type="number"
+                    defaultValue={numberInputValue(workLog.amountCzk)}
+                    disabled
+                  />
+                </Field>
+              ) : null}
               <Field label="Approval status">
                 <SelectInput
                   name="approvalStatus"
@@ -255,16 +263,17 @@ export default async function WorkLogEditPage({ params }: WorkLogEditProps) {
                 </SelectInput>
               </Field>
             </div>
-            <Field label="Právní oblast">
-              <SelectInput name="legalArea" defaultValue={workLog.legalArea ?? ""}>
-                <option value="">Vyberte oblast</option>
-                {legalAreaOptions.map((area) => (
-                  <option key={area} value={area}>
-                    {area}
-                  </option>
-                ))}
-              </SelectInput>
-            </Field>
+            <WorkLogClassification
+              billingStatuses={
+                fullBilling
+                  ? options.billingStatuses
+                  : options.restrictedBillingStatuses
+              }
+              legalAreas={legalAreaOptions}
+              internalActivities={internalActivityOptions}
+              defaultBillingStatus={workLog.billingStatus as BillingStatus}
+              defaultArea={workLog.legalArea ?? undefined}
+            />
             <Field label="Popis">
               <TextArea name="description" defaultValue={workLog.description ?? ""} />
             </Field>

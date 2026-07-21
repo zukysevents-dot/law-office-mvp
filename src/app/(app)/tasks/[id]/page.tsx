@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { MessageSquare, Save } from "lucide-react";
 
 import {
+  acknowledgeTaskDeadline,
   addTaskComment,
   archiveTask,
   restoreTask,
@@ -75,6 +76,7 @@ async function loadTask(id: string) {
       createdBy: { select: { name: true } },
       assignedTo: { select: { name: true } },
       responsibleUser: { select: { name: true } },
+      deadlineAckedBy: { select: { name: true } },
       statusHistory: {
         orderBy: { createdAt: "desc" },
         include: { changedBy: { select: { name: true } } },
@@ -216,7 +218,31 @@ export default async function TaskDetailPage({ params }: TaskDetailProps) {
                   {taskDeadlineTypeLabels[task.deadlineType]}
                 </Badge>
               </div>
-              <Info label="Deadline" value={formatDate(task.deadline)} />
+              <div>
+                <p className="text-xs font-semibold uppercase text-stone-500">
+                  Deadline
+                </p>
+                <p>{formatDate(task.deadline)}</p>
+                {task.deadlineType === "PROCEDURAL" ? (
+                  task.deadlineAckedAt ? (
+                    <p className="mt-1 text-xs text-emerald-700">
+                      Lhůtu převzal: {task.deadlineAckedBy?.name ?? "—"} (
+                      {formatDate(task.deadlineAckedAt)})
+                    </p>
+                  ) : canEdit ? (
+                    <form action={acknowledgeTaskDeadline} className="mt-2">
+                      <input type="hidden" name="taskId" value={task.id} />
+                      <Button type="submit" variant="secondary" className="h-8 px-3">
+                        Převzal jsem lhůtu
+                      </Button>
+                    </form>
+                  ) : (
+                    <p className="mt-1 text-xs text-amber-700">
+                      Lhůta zatím nepřevzata
+                    </p>
+                  )
+                ) : null}
+              </div>
               <div className="md:col-span-2">
                 <p className="text-xs font-semibold uppercase text-stone-500">
                   SharePoint URL

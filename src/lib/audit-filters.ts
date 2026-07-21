@@ -15,6 +15,7 @@ export const AUDIT_ENTITY_TYPES = [
   "ConflictCheck",
   "NotificationPreference",
   "User",
+  "Invoice",
 ] as const;
 
 export const AUDIT_ACTIONS = [
@@ -30,6 +31,9 @@ export const AUDIT_ACTIONS = [
   "CREATE_PROJECT_RELATION",
   "CREATE_CASE_RELATION",
   "EXPORT",
+  "PAY",
+  "REMIND",
+  "ACK_DEADLINE",
   "PASSWORD_RESET",
   "PASSWORD_CHANGE",
 ] as const;
@@ -46,6 +50,7 @@ export const auditEntityTypeLabels: Record<string, string> = {
   ConflictCheck: "Kontrola konfliktu",
   NotificationPreference: "Nastavení notifikací",
   User: "Uživatel",
+  Invoice: "Faktura",
 };
 
 export const auditActionLabels: Record<string, string> = {
@@ -61,6 +66,9 @@ export const auditActionLabels: Record<string, string> = {
   CREATE_PROJECT_RELATION: "Vazba na projekt",
   CREATE_CASE_RELATION: "Vazba na případ",
   EXPORT: "Export",
+  PAY: "Úhrada",
+  REMIND: "Upomínka",
+  ACK_DEADLINE: "Převzetí lhůty",
   PASSWORD_RESET: "Reset hesla",
   PASSWORD_CHANGE: "Změna hesla",
 };

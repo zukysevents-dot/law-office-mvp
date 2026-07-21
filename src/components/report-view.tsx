@@ -57,6 +57,7 @@ export async function ReportView({
   searchParams,
   canView,
   deniedMessage,
+  extraWhere,
 }: {
   title: string;
   description: string;
@@ -67,6 +68,8 @@ export async function ReportView({
   // the "Přístup odepřen" notice. Visibility scoping is applied regardless.
   canView?: (user: GateUser) => boolean;
   deniedMessage?: string;
+  // Extra where fragment ANDed into the query (e.g. WIP = unbilled billable).
+  extraWhere?: import("@/generated/prisma/client").Prisma.WorkLogWhereInput;
 }) {
   const params = await searchParams;
   const filters: ReportFilters = readReportFilters((key) =>
@@ -88,6 +91,7 @@ export async function ReportView({
           where: andWhere(
             workLogReportWhere(filters),
             workLogVisibilityWhere(currentUser),
+            extraWhere,
           ),
           orderBy: [{ workDate: "desc" }, { createdAt: "desc" }],
           include: reportWorkLogInclude,

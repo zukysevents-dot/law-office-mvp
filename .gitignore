@@ -67,3 +67,10 @@ Thumbs.db
 *.swo
 *~
 *.pem
+
+# --- Local dev/QA scratch (not app code) -----------------------------------
+.codex/
+.playwright-mcp/
+# Loose QA screenshots dropped in the repo root (brand assets live in public/).
+/*.png
+tests/e2e/.output/

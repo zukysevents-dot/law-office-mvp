@@ -19,6 +19,7 @@ export const dynamic = "force-dynamic";
 
 type SubjectEditProps = {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ error?: string }>;
 };
 
 async function loadSubject(id: string) {
@@ -31,8 +32,12 @@ async function loadSubject(id: string) {
     : null;
 }
 
-export default async function SubjectEditPage({ params }: SubjectEditProps) {
+export default async function SubjectEditPage({
+  params,
+  searchParams,
+}: SubjectEditProps) {
   const { id } = await params;
+  const duplicateIcoError = (await searchParams).error === "duplicate-ico";
   const result = await safeQuery(null, () => loadSubject(id));
 
   if (result.databaseReady && !result.data) {
@@ -58,6 +63,11 @@ export default async function SubjectEditPage({ params }: SubjectEditProps) {
       />
       {subject ? (
         <Section>
+          {duplicateIcoError ? (
+            <p className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+              Subjekt s tímto IČO už ve vaší kanceláři existuje.
+            </p>
+          ) : null}
           <form action={updateSubject} className="grid gap-4">
             <input type="hidden" name="id" value={subject.id} />
             <SubjectAresFields

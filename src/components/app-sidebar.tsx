@@ -13,6 +13,7 @@ import {
   Clock3,
   Archive,
   FileText,
+  Files,
   LayoutDashboard,
   LibraryBig,
   ListChecks,
@@ -40,6 +41,7 @@ const navItems = [
   { href: "/tasks/archive", label: "Archiv úkolů", icon: Archive },
   { href: "/work-logs", label: "Výkazy práce", icon: Clock3 },
   { href: "/billing", label: "Fakturace", icon: Receipt },
+  { href: "/invoices", label: "Faktury", icon: Files, adminOnly: true },
   { href: "/reports", label: "Reporty", icon: BarChart3 },
   { href: "/references", label: "Reference", icon: LibraryBig },
   { href: "/calendar", label: "Kalendář", icon: CalendarDays },
@@ -127,7 +129,7 @@ export function AppSidebar({
   });
 
   return (
-    <aside className="w-full max-w-full shrink-0 overflow-x-hidden bg-[#072924] text-white lg:min-h-screen lg:w-20 lg:self-stretch lg:overflow-visible xl:w-72">
+    <aside className="no-print w-full max-w-full shrink-0 overflow-x-hidden bg-[#072924] text-white lg:min-h-screen lg:w-20 lg:self-stretch lg:overflow-visible xl:w-72">
       {/* Mobile top bar (fixed) — hidden from lg up where the rail takes over. */}
       <div className="fixed inset-x-0 top-0 z-40 flex h-16 items-center justify-between gap-3 bg-[#072924] px-4 lg:hidden">
         <Link

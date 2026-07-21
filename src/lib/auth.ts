@@ -8,6 +8,21 @@ import {
 import { getPrisma } from "@/lib/prisma";
 import { SESSION_COOKIE, verifySession } from "@/lib/session";
 
+// Inverse of getAuthUser for the public auth pages: if the visitor already has
+// a valid session, send them into the app instead of showing login/register
+// again. The (app) layout then routes them to dashboard / join-organization /
+// admin based on membership.
+export async function redirectIfAuthenticated(to = "/dashboard") {
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+  const userId = await verifySession(token);
+  if (!userId) return;
+
+  const user = await getPrisma()
+    .user.findFirst({ where: { id: userId, active: true }, select: { id: true } })
+    .catch(() => null); // DB down → fall through and render the form, not a 500
+  if (user) redirect(to);
+}
+
 // Resolves the signed-in account from the session cookie, WITHOUT requiring an
 // organization membership. Used by routes that exist before a user has joined a
 // firm (/register, /join-organization) and by the platform-admin panel.

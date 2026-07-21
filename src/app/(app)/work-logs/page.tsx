@@ -32,9 +32,12 @@ import { firstParam } from "@/lib/search-params";
 import {
   approvalStatusLabels,
   billingStatusLabels,
+  internalActivityOptions,
   legalAreaOptions,
   options,
 } from "@/lib/labels";
+import { WorkLogClassification } from "@/components/work-log-classification";
+import { ScopeSelect } from "@/components/scope-select";
 import { getPrisma } from "@/lib/prisma";
 import { billingStatusTone } from "@/lib/status-tones";
 import {
@@ -46,6 +49,8 @@ import {
   andWhere,
   canViewAllLegalData,
   canEditRecord,
+  canSeeRates,
+  canSetBillable,
   caseVisibilityWhere,
   projectVisibilityWhere,
   subjectVisibilityWhere,
@@ -81,13 +86,27 @@ type WorkLogsPageData = {
     user: { name: string } | null;
     canEdit: boolean;
   }>;
+  currentUserId: string;
+  lastLog: {
+    subjectId: string | null;
+    projectId: string | null;
+    caseId: string | null;
+    taskId: string | null;
+  } | null;
   subjects: Array<{ id: string; name: string; ico: string | null }>;
-  projects: Array<{ id: string; name: string }>;
-  cases: Array<{ id: string; name: string; project: { name: string } }>;
+  projects: Array<{ id: string; name: string; mainSubjectId: string | null }>;
+  cases: Array<{
+    id: string;
+    name: string;
+    projectId: string | null;
+    project: { name: string };
+  }>;
   tasks: Array<{ id: string; title: string }>;
   users: Array<{ id: string; name: string }>;
   tableView: TableViewState;
   canArchive: boolean;
+  canSeeRates: boolean;
+  canSetBillable: boolean;
 };
 
 function numberParam(value: string) {
@@ -114,10 +133,14 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
   const dateTo = firstParam(params, "dateTo");
   const minAmount = numberParam(firstParam(params, "minAmount"));
   const maxAmount = numberParam(firstParam(params, "maxAmount"));
+  const hoursPrefill = firstParam(params, "hours");
+  const invoicedFilter = firstParam(params, "invoiced");
 
   const result = await safeQuery<WorkLogsPageData>(
     {
       workLogs: [],
+      currentUserId: "",
+      lastLog: null,
       subjects: [],
       projects: [],
       cases: [],
@@ -125,12 +148,14 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
       users: [],
       tableView: getDefaultTableView("workLogs"),
       canArchive: false,
+      canSeeRates: false,
+      canSetBillable: false,
     },
     async () => {
       const prisma = getPrisma();
       const currentUser = await getCurrentUser();
       const tableView = await getCurrentTableView("workLogs");
-      const [workLogs, subjects, projects, cases, tasks, users] = await Promise.all([
+      const [workLogs, subjects, projects, cases, tasks, users, lastLog] = await Promise.all([
         prisma.workLog.findMany({
           where: andWhere(
             archivedWhere(archive),
@@ -144,6 +169,7 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
               ...(billingStatus ? { billingStatus: billingStatus as never } : {}),
               ...(approvalStatus ? { approvalStatus: approvalStatus as never } : {}),
               ...(legalArea ? { legalArea } : {}),
+              ...(invoicedFilter === "0" ? { invoiceId: null } : {}),
               ...(dateFrom || dateTo
                 ? {
                     workDate: {
@@ -186,7 +212,7 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
             projectVisibilityWhere(currentUser),
           ),
           orderBy: { name: "asc" },
-          select: { id: true, name: true },
+          select: { id: true, name: true, mainSubjectId: true },
         }),
         prisma.case.findMany({
           where: andWhere(
@@ -194,7 +220,12 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
             caseVisibilityWhere(currentUser),
           ),
           orderBy: { name: "asc" },
-          select: { id: true, name: true, project: { select: { name: true } } },
+          select: {
+            id: true,
+            name: true,
+            projectId: true,
+            project: { select: { name: true } },
+          },
         }),
         prisma.task.findMany({
           where: andWhere(
@@ -209,6 +240,18 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
           orderBy: { name: "asc" },
           select: { id: true, name: true },
         }),
+        // Most recent log by this user — used to pre-fill the "last matter" when
+        // arriving from the timer, so repeated logging needs no re-selection.
+        prisma.workLog.findFirst({
+          where: { userId: currentUser.id },
+          orderBy: { createdAt: "desc" },
+          select: {
+            subjectId: true,
+            projectId: true,
+            caseId: true,
+            taskId: true,
+          },
+        }),
       ]);
 
       return {
@@ -216,6 +259,8 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
           ...workLog,
           canEdit: canEditRecord(currentUser, "WorkLog", workLog),
         })),
+        currentUserId: currentUser.id,
+        lastLog,
         subjects,
         projects,
         cases,
@@ -223,10 +268,69 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
         users,
         tableView,
         canArchive: canViewAllLegalData(currentUser),
+        canSeeRates: canSeeRates(currentUser),
+        canSetBillable: canSetBillable(currentUser),
       };
     },
   );
   const visibleColumnSet = new Set(result.data.tableView.visibleColumns);
+  // Rates and money amounts are confidential — hide those columns entirely for
+  // roles that may not see rates (koncipient/asistent/…).
+  if (!result.data.canSeeRates) {
+    visibleColumnSet.delete("hourlyRate");
+    visibleColumnSet.delete("amount");
+  }
+  const visibleColumns = result.data.tableView.columns.filter(
+    (column) => visibleColumnSet.has(column.id),
+  );
+  const subjectOptions = result.data.subjects.map((s) => ({
+    id: s.id,
+    label: s.ico ? `${s.name}, IČO ${s.ico}` : s.name,
+  }));
+  const projectOptions = result.data.projects.map((p) => ({
+    id: p.id,
+    label: p.name,
+    subjectId: p.mainSubjectId,
+  }));
+  const caseOptions = result.data.cases.map((c) => ({
+    id: c.id,
+    label: `${c.name} / ${c.project.name}`,
+    projectId: c.projectId,
+  }));
+  const taskOptions = result.data.tasks.map((t) => ({
+    id: t.id,
+    label: t.title,
+  }));
+  // Arriving from the timer (?hours) pre-fills the matter from the last log so
+  // repeated logging is one field; a normal visit starts blank.
+  const scopeDefaults = hoursPrefill
+    ? {
+        subjectId: result.data.lastLog?.subjectId ?? undefined,
+        projectId: result.data.lastLog?.projectId ?? undefined,
+        caseId: result.data.lastLog?.caseId ?? undefined,
+        taskId: result.data.lastLog?.taskId ?? undefined,
+      }
+    : {};
+  const noQuickFilter =
+    !userId && approvalStatus !== "SUBMITTED" && invoicedFilter !== "0";
+  const quickFilters = [
+    { label: "Vše", href: "/work-logs", active: noQuickFilter },
+    {
+      label: "Moje výkazy",
+      href: `/work-logs?userId=${result.data.currentUserId}`,
+      active: Boolean(userId) && userId === result.data.currentUserId,
+    },
+    {
+      label: "Ke schválení",
+      href: "/work-logs?approvalStatus=SUBMITTED",
+      active: approvalStatus === "SUBMITTED",
+    },
+    {
+      label: "Nevyfakturované",
+      href: "/work-logs?invoiced=0",
+      active: invoicedFilter === "0",
+    },
+  ];
 
   return (
     <>
@@ -244,6 +348,18 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
         databaseReady={result.databaseReady}
         error={result.error}
       />
+      <div className="flex flex-wrap gap-2">
+        {quickFilters.map((chip) => (
+          <ButtonLink
+            key={chip.label}
+            href={chip.href}
+            variant={chip.active ? "secondary" : "ghost"}
+            className="h-9 px-3"
+          >
+            {chip.label}
+          </ButtonLink>
+        ))}
+      </div>
       <Section title="Filtry">
         <form className="grid gap-4">
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -368,11 +484,9 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
             <table className="w-max min-w-full">
               <thead>
                 <tr>
-                  {result.data.tableView.columns
-                    .filter((column) => visibleColumnSet.has(column.id))
-                    .map((column) => (
-                      <th key={column.id}>{column.label}</th>
-                    ))}
+                  {visibleColumns.map((column) => (
+                    <th key={column.id}>{column.label}</th>
+                  ))}
                   <th>Akce</th>
                 </tr>
               </thead>
@@ -459,74 +573,40 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
             </table>
           </div>
         ) : (
-          <EmptyState>Zatím nejsou založené žádné výkazy práce.</EmptyState>
+          <EmptyState
+            action={
+              <ButtonLink href="#new-work-log">
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                Nový výkaz
+              </ButtonLink>
+            }
+          >
+            Zatím nejsou založené žádné výkazy práce.
+          </EmptyState>
         )}
       </Section>
       <Section title="Nový výkaz práce" id="new-work-log" className="scroll-mt-6">
         <form action={createWorkLog} className="grid gap-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Subjekt">
-              <SelectInput name="subjectId">
-                <option value="">Bez subjektu</option>
-                {result.data.subjects.map((subject) => (
-                  <option key={subject.id} value={subject.id}>
-                    {subject.name}
-                    {subject.ico ? `, IČO ${subject.ico}` : ""}
-                  </option>
-                ))}
-              </SelectInput>
-            </Field>
-            <Field label="Projekt">
-              <SelectInput name="projectId">
-                <option value="">Bez projektu</option>
-                {result.data.projects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-              </SelectInput>
-            </Field>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Případ">
-              <SelectInput name="caseId">
-                <option value="">Bez případu</option>
-                {result.data.cases.map((legalCase) => (
-                  <option key={legalCase.id} value={legalCase.id}>
-                    {legalCase.name} / {legalCase.project.name}
-                  </option>
-                ))}
-              </SelectInput>
-            </Field>
-            <Field label="Úkol">
-              <SelectInput name="taskId">
-                <option value="">Bez úkolu</option>
-                {result.data.tasks.map((task) => (
-                  <option key={task.id} value={task.id}>
-                    {task.title}
-                  </option>
-                ))}
-              </SelectInput>
-            </Field>
-          </div>
-          <div className="grid gap-4 md:grid-cols-5">
+          <ScopeSelect
+            subjectOptions={subjectOptions}
+            projectOptions={projectOptions}
+            caseOptions={caseOptions}
+            taskOptions={taskOptions}
+            defaults={scopeDefaults}
+          />
+          <div className="grid gap-4 md:grid-cols-3">
             <Field label="Datum práce">
               <TextInput name="workDate" type="date" required />
             </Field>
             <Field label="Hodiny">
-              <TextInput name="hours" type="number" min="0" step="0.25" required />
-            </Field>
-            <Field label="Sazba">
-              <TextInput name="hourlyRate" type="number" min="0" step="0.01" />
-            </Field>
-            <Field label="Billing status">
-              <SelectInput name="billingStatus" defaultValue="BILLABLE">
-                {options.billingStatuses.map((status) => (
-                  <option key={status} value={status}>
-                    {billingStatusLabels[status]}
-                  </option>
-                ))}
-              </SelectInput>
+              <TextInput
+                name="hours"
+                type="number"
+                min="0"
+                step="0.25"
+                required
+                defaultValue={hoursPrefill}
+              />
             </Field>
             <Field label="Approval status">
               <SelectInput name="approvalStatus" defaultValue="DRAFT">
@@ -538,16 +618,17 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
               </SelectInput>
             </Field>
           </div>
-          <Field label="Právní oblast">
-            <SelectInput name="legalArea" defaultValue="">
-              <option value="">Vyberte oblast</option>
-              {legalAreaOptions.map((area) => (
-                <option key={area} value={area}>
-                  {area}
-                </option>
-              ))}
-            </SelectInput>
-          </Field>
+          {/* Rate is derived from the matter (case > project > subject) and is
+              not entered here; it is confidential to ADMIN/PARTNER. */}
+          <WorkLogClassification
+            billingStatuses={
+              result.data.canSetBillable
+                ? options.billingStatuses
+                : options.restrictedBillingStatuses
+            }
+            legalAreas={legalAreaOptions}
+            internalActivities={internalActivityOptions}
+          />
           <Field label="Popis práce">
             <TextArea name="description" />
           </Field>

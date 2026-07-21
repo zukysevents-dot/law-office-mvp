@@ -198,7 +198,7 @@ export default async function ProjectDetailPage({
               </div>
               <div>
                 <p className="text-xs font-semibold uppercase text-stone-500">
-                  Hlavní subjekt
+                  Klient
                 </p>
                 <Link
                   href={`/subjects/${project.mainSubject.id}`}

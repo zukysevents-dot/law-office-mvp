@@ -150,8 +150,9 @@ function icoLinks(ico: string) {
   return {
     ares: `https://ares.gov.cz/ekonomicke-subjekty?ico=${encodeURIComponent(ico)}`,
     obchodniRejstrik: `https://or.justice.cz/ias/ui/rejstrik-$firma?ico=${encodeURIComponent(ico)}`,
-    // ISIR has no stable IČO querystring; link to the official insolvency search.
-    isir: "https://isir.justice.cz/isir/common/index.do",
+    // ISIR debtor search (evidence úpadců) by IČO — opens results for this
+    // subject, not the generic ISIR homepage.
+    isir: `https://isir.justice.cz/isir/ueu/evidence_upadcu_list.do?ic=${encodeURIComponent(ico)}`,
   };
 }
 
@@ -220,8 +221,10 @@ export default async function SubjectDetailPage({
           <Section>
             <div className="grid gap-4 md:grid-cols-3">
               <div>
-                <p className="text-xs font-semibold uppercase text-stone-500">Typ</p>
-                <p>{subjectTypeLabels[subject.type]}</p>
+                <p className="text-xs font-semibold uppercase text-stone-500">
+                  Sídlo
+                </p>
+                <p>{subject.address ?? "—"}</p>
               </div>
               <div>
                 <p className="text-xs font-semibold uppercase text-stone-500">IČO</p>
@@ -279,6 +282,10 @@ export default async function SubjectDetailPage({
                 <p className="font-mono">{subject.dic ?? "—"}</p>
               </div>
               <div>
+                <p className="text-xs font-semibold uppercase text-stone-500">Typ</p>
+                <p>{subjectTypeLabels[subject.type]}</p>
+              </div>
+              <div>
                 <p className="text-xs font-semibold uppercase text-stone-500">
                   E-mail
                 </p>
@@ -310,12 +317,6 @@ export default async function SubjectDetailPage({
                 ) : (
                   <Badge tone="green">Bez příznaku</Badge>
                 )}
-              </div>
-              <div className="md:col-span-3">
-                <p className="text-xs font-semibold uppercase text-stone-500">
-                  Adresa
-                </p>
-                <p>{subject.address ?? "—"}</p>
               </div>
               <SharepointFolderField
                 entityType="Subject"

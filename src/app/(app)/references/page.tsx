@@ -24,6 +24,10 @@ import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import { formatDate, formatMoney } from "@/lib/format";
 import { legalAreaOptions } from "@/lib/labels";
+import {
+  referenceFilterQuery,
+  referenceFilterWhere,
+} from "@/lib/reference-filters";
 import { getPrisma } from "@/lib/prisma";
 import {
   getCurrentTableView,
@@ -109,6 +113,8 @@ export default async function ReferencesPage({ searchParams }: ReferencesProps) 
   const maxValue = numberParam(params.maxValue);
   const period = params.period ?? "";
   const archive = archiveFilterValue(params.archive);
+  const filters = { q: query, legalArea, minValue, maxValue, period };
+  const exportQuery = referenceFilterQuery(filters, archive);
 
   const result = await safeQuery<ReferencesData>(
     {
@@ -128,51 +134,10 @@ export default async function ReferencesPage({ searchParams }: ReferencesProps) 
           where: andWhere(
             archivedWhere(archive),
             referenceVisibilityWhere(currentUser),
-            {
-              ...(query
-                ? {
-                    OR: [
-                      { title: { contains: query, mode: "insensitive" } },
-                      { description: { contains: query, mode: "insensitive" } },
-                      { legalArea: { contains: query, mode: "insensitive" } },
-                      {
-                        project: {
-                          is: {
-                            name: { contains: query, mode: "insensitive" },
-                          },
-                        },
-                      },
-                      {
-                        case: {
-                          is: {
-                            name: { contains: query, mode: "insensitive" },
-                          },
-                        },
-                      },
-                      {
-                        subject: {
-                          is: {
-                            name: { contains: query, mode: "insensitive" },
-                          },
-                        },
-                      },
-                    ],
-                  }
-                : {}),
-              ...(legalArea ? { legalArea } : {}),
-              ...(minValue !== null || maxValue !== null
-                ? {
-                    valueCzk: {
-                      ...(minValue !== null ? { gte: minValue } : {}),
-                      ...(maxValue !== null ? { lte: maxValue } : {}),
-                    },
-                  }
-                : {}),
-              ...(period === "ongoing" ? { endDate: null } : {}),
-              ...(period === "finished" ? { endDate: { not: null } } : {}),
-            },
+            referenceFilterWhere(filters),
           ),
           orderBy: [{ endDate: "asc" }, { startDate: "desc" }],
+          take: 100, // ponytail: safety cap like work-logs; add real paging when a list overflows
           include: {
             project: { select: { id: true, name: true } },
             case: { select: { id: true, name: true, fileNumber: true } },
@@ -223,10 +188,24 @@ export default async function ReferencesPage({ searchParams }: ReferencesProps) 
         title="Reference"
         description="Vyhledávání referencí podle právního odvětví, hodnoty a období pro veřejné zakázky i obchodní nabídky."
         action={
-          <ButtonLink href="#new-reference">
-            <Plus className="h-4 w-4" aria-hidden="true" />
-            Nová reference
-          </ButtonLink>
+          <div className="flex flex-wrap gap-2">
+            <ButtonLink
+              href={`/reports/references/export?${exportQuery}${exportQuery ? "&" : ""}format=xlsx`}
+              variant="secondary"
+            >
+              Export XLSX
+            </ButtonLink>
+            <ButtonLink
+              href={`/reports/references/export?${exportQuery}${exportQuery ? "&" : ""}format=csv`}
+              variant="secondary"
+            >
+              Export CSV
+            </ButtonLink>
+            <ButtonLink href="#new-reference">
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              Nová reference
+            </ButtonLink>
+          </div>
         }
       />
       <DatabaseNotice
@@ -419,7 +398,16 @@ export default async function ReferencesPage({ searchParams }: ReferencesProps) 
             </table>
           </div>
         ) : (
-          <EmptyState>Žádné reference neodpovídají filtrům.</EmptyState>
+          <EmptyState
+            action={
+              <ButtonLink href="#new-reference">
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                Nová reference
+              </ButtonLink>
+            }
+          >
+            Žádné reference neodpovídají filtrům.
+          </EmptyState>
         )}
       </Section>
       <Section title="Nová reference" id="new-reference" className="scroll-mt-6">

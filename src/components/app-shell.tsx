@@ -1,4 +1,6 @@
 import { AppSidebar } from "@/components/app-sidebar";
+import { CommandPalette } from "@/components/command-palette";
+import { FloatingTimer } from "@/components/floating-timer";
 import { getCurrentUser } from "@/lib/auth";
 import { userRoleLabels } from "@/lib/labels";
 import { canViewAllLegalData } from "@/lib/permissions";
@@ -21,6 +23,8 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
           {children}
         </div>
       </main>
+      <FloatingTimer />
+      <CommandPalette />
     </div>
   );
 }

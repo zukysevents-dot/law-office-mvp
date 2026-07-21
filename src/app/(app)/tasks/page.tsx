@@ -42,11 +42,15 @@ import {
   canEditRecord,
   caseVisibilityWhere,
   projectVisibilityWhere,
+  subjectVisibilityWhere,
   taskVisibilityWhere,
 } from "@/lib/permissions";
+import { SearchableSelect } from "@/components/searchable-select";
+import { ScopeSelect } from "@/components/scope-select";
 import { getPrisma } from "@/lib/prisma";
 import {
   taskDeadlineTypeTone,
+  taskStatusRowClass,
   taskStatusTone,
 } from "@/lib/status-tones";
 import {
@@ -65,7 +69,9 @@ type TasksProps = {
     responsibleUserId?: string;
     projectId?: string;
     caseId?: string;
+    subjectId?: string;
     deadlineType?: string;
+    overdue?: string;
     sort?: string;
     archive?: string;
   }>;
@@ -100,9 +106,16 @@ type TaskRow = {
 
 type TasksPageData = {
   tasks: TaskRow[];
+  currentUserId: string;
   users: Array<{ id: string; name: string }>;
   projects: Array<{ id: string; name: string }>;
-  cases: Array<{ id: string; name: string; project: { name: string } }>;
+  cases: Array<{
+    id: string;
+    name: string;
+    projectId: string | null;
+    project: { name: string };
+  }>;
+  subjects: Array<{ id: string; name: string; ico: string | null }>;
   cards: {
     review: number;
     waitingClient: number;
@@ -176,6 +189,8 @@ export default async function TasksPage({ searchParams }: TasksProps) {
   const responsibleUserId = params.responsibleUserId ?? "";
   const projectId = params.projectId ?? "";
   const caseId = params.caseId ?? "";
+  const subjectId = params.subjectId?.trim() || "";
+  const overdueOnly = params.overdue === "1";
   const sort = params.sort ?? "deadline";
   const archive = archiveFilterValue(params.archive);
   const now = new Date();
@@ -183,9 +198,11 @@ export default async function TasksPage({ searchParams }: TasksProps) {
   const result = await safeQuery<TasksPageData>(
     {
       tasks: [],
+      currentUserId: "",
       users: [],
       projects: [],
       cases: [],
+      subjects: [],
       cards: { review: 0, waitingClient: 0, waitingCounterparty: 0, overdue: 0 },
       tableView: getDefaultTableView("tasks"),
     },
@@ -209,6 +226,23 @@ export default async function TasksPage({ searchParams }: TasksProps) {
           ...(responsibleUserId ? { responsibleUserId } : {}),
           ...(projectId ? { projectId } : {}),
           ...(caseId ? { caseId } : {}),
+          // Client = main subject of the task's project (directly or via its case).
+          ...(subjectId
+            ? {
+                OR: [
+                  { project: { is: { mainSubjectId: subjectId } } },
+                  {
+                    case: {
+                      is: { project: { is: { mainSubjectId: subjectId } } },
+                    },
+                  },
+                ],
+              }
+            : {}),
+          // Overdue = not completed and past its deadline (dashboard "po termínu").
+          ...(overdueOnly
+            ? { status: { not: TaskStatus.COMPLETED }, deadline: { lt: now } }
+            : {}),
         },
       );
 
@@ -217,6 +251,7 @@ export default async function TasksPage({ searchParams }: TasksProps) {
         users,
         projects,
         cases,
+        subjects,
         review,
         waitingClient,
         waitingCounterparty,
@@ -225,6 +260,7 @@ export default async function TasksPage({ searchParams }: TasksProps) {
         prisma.task.findMany({
           where,
           orderBy: taskOrderBy(sort),
+          take: 100, // ponytail: safety cap like work-logs; add real paging when a list overflows
           include: {
             project: {
               select: {
@@ -267,7 +303,17 @@ export default async function TasksPage({ searchParams }: TasksProps) {
             caseVisibilityWhere(currentUser),
           ),
           orderBy: { name: "asc" },
-          select: { id: true, name: true, project: { select: { name: true } } },
+          select: {
+            id: true,
+            name: true,
+            projectId: true,
+            project: { select: { name: true } },
+          },
+        }),
+        prisma.subject.findMany({
+          where: andWhere({ archivedAt: null }, subjectVisibilityWhere(currentUser)),
+          orderBy: { name: "asc" },
+          select: { id: true, name: true, ico: true },
         }),
         prisma.task.count({
           where: { ...activeWhere, status: TaskStatus.FOR_REVIEW },
@@ -292,15 +338,46 @@ export default async function TasksPage({ searchParams }: TasksProps) {
           ...task,
           canEdit: canEditRecord(currentUser, "Task", task),
         })),
+        currentUserId: currentUser.id,
         users,
         projects,
         cases,
+        subjects,
         cards: { review, waitingClient, waitingCounterparty, overdue },
         tableView,
       };
     },
   );
   const visibleColumnSet = new Set(result.data.tableView.visibleColumns);
+  const subjectOptions = result.data.subjects.map((s) => ({
+    id: s.id,
+    label: s.ico ? `${s.name}, IČO ${s.ico}` : s.name,
+  }));
+  const projectOptions = result.data.projects.map((p) => ({
+    id: p.id,
+    label: p.name,
+  }));
+  const caseOptions = result.data.cases.map((c) => ({
+    id: c.id,
+    label: `${c.name} / ${c.project.name}`,
+    projectId: c.projectId,
+  }));
+  const noQuickFilter =
+    !assignedToId && !overdueOnly && status !== TaskStatus.FOR_REVIEW;
+  const quickFilters = [
+    { label: "Vše", href: "/tasks", active: noQuickFilter },
+    {
+      label: "Moje úkoly",
+      href: `/tasks?assignedToId=${result.data.currentUserId}`,
+      active: Boolean(assignedToId) && assignedToId === result.data.currentUserId,
+    },
+    { label: "Po termínu", href: "/tasks?overdue=1", active: overdueOnly },
+    {
+      label: "Ke kontrole",
+      href: `/tasks?status=${TaskStatus.FOR_REVIEW}`,
+      active: status === TaskStatus.FOR_REVIEW,
+    },
+  ];
 
   return (
     <>
@@ -344,6 +421,18 @@ export default async function TasksPage({ searchParams }: TasksProps) {
           tone="danger"
         />
       </div>
+      <div className="flex flex-wrap gap-2">
+        {quickFilters.map((chip) => (
+          <ButtonLink
+            key={chip.label}
+            href={chip.href}
+            variant={chip.active ? "secondary" : "ghost"}
+            className="h-9 px-3"
+          >
+            {chip.label}
+          </ButtonLink>
+        ))}
+      </div>
       <Section>
         <form className="grid gap-3 lg:grid-cols-4 xl:grid-cols-5">
           <Field label="Status">
@@ -385,6 +474,14 @@ export default async function TasksPage({ searchParams }: TasksProps) {
                 </option>
               ))}
             </SelectInput>
+          </Field>
+          <Field label="Klient">
+            <SearchableSelect
+              name="subjectId"
+              options={subjectOptions}
+              defaultValue={subjectId}
+              emptyLabel="Všichni klienti"
+            />
           </Field>
           <Field label="Projekt">
             <SelectInput name="projectId" defaultValue={projectId}>
@@ -460,7 +557,7 @@ export default async function TasksPage({ searchParams }: TasksProps) {
               </thead>
               <tbody>
                 {result.data.tasks.map((task) => (
-                  <tr key={task.id}>
+                  <tr key={task.id} className={taskStatusRowClass(task.status)}>
                     {visibleColumnSet.has("title") ? (
                       <td className="max-w-xs">
                         <Link
@@ -580,7 +677,16 @@ export default async function TasksPage({ searchParams }: TasksProps) {
             </table>
           </div>
         ) : (
-          <EmptyState>Žádné úkoly neodpovídají filtrům.</EmptyState>
+          <EmptyState
+            action={
+              <ButtonLink href="#new-task">
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                Nový úkol
+              </ButtonLink>
+            }
+          >
+            Žádné úkoly neodpovídají filtrům.
+          </EmptyState>
         )}
       </Section>
       <Section title="Nový úkol" id="new-task" className="scroll-mt-6">
@@ -621,27 +727,13 @@ export default async function TasksPage({ searchParams }: TasksProps) {
               </SelectInput>
             </Field>
           </div>
+          <ScopeSelect
+            showSubject={false}
+            showTask={false}
+            projectOptions={projectOptions}
+            caseOptions={caseOptions}
+          />
           <div className="grid gap-4 md:grid-cols-3">
-            <Field label="Projekt">
-              <SelectInput name="projectId">
-                <option value="">Bez projektu</option>
-                {result.data.projects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-              </SelectInput>
-            </Field>
-            <Field label="Případ">
-              <SelectInput name="caseId">
-                <option value="">Bez případu</option>
-                {result.data.cases.map((legalCase) => (
-                  <option key={legalCase.id} value={legalCase.id}>
-                    {legalCase.name} / {legalCase.project.name}
-                  </option>
-                ))}
-              </SelectInput>
-            </Field>
             <Field label="Typ lhůty">
               <SelectInput name="deadlineType" defaultValue="INTERNAL">
                 {options.taskDeadlineTypes.map((type) => (
@@ -651,8 +743,6 @@ export default async function TasksPage({ searchParams }: TasksProps) {
                 ))}
               </SelectInput>
             </Field>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
             <Field label="Začátek">
               <TextInput name="startDate" type="date" />
             </Field>

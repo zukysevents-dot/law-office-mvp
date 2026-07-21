@@ -21,15 +21,20 @@ import {
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
-// Map the per-org unique IČO violation to a readable Czech message instead of a
-// raw Prisma stack trace. Anything else rethrows unchanged.
-function rethrowDuplicateIco(error: unknown): never {
-  if (
+// The per-org unique IČO violation. Callers redirect back to the form with
+// ?error=duplicate-ico (see rethrowUnlessDuplicateIco) so the user gets a
+// readable Czech message instead of a full-page 500 error boundary.
+function isDuplicateIcoError(error: unknown): boolean {
+  return (
     error instanceof Prisma.PrismaClientKnownRequestError &&
     error.code === "P2002"
-  ) {
-    throw new Error("Subjekt s tímto IČO už ve vaší kanceláři existuje.");
-  }
+  );
+}
+
+// Swallow the duplicate-IČO violation (caller handles it via a redirect),
+// rethrow anything else unchanged.
+function rethrowUnlessDuplicateIco(error: unknown): null {
+  if (isDuplicateIcoError(error)) return null;
   throw error;
 }
 
@@ -63,7 +68,11 @@ export async function createSubject(formData: FormData) {
       flatFee: optionalNumber(formData, "flatFee"),
       feeNote: optionalString(formData, "feeNote"),
     },
-  }).catch(rethrowDuplicateIco);
+  }).catch(rethrowUnlessDuplicateIco);
+
+  if (!subject) {
+    redirect("/subjects?error=duplicate-ico#new-subject");
+  }
 
   await prisma.auditLog.create({
     data: {
@@ -120,7 +129,11 @@ export async function updateSubject(formData: FormData) {
       flatFee: optionalNumber(formData, "flatFee"),
       feeNote: optionalString(formData, "feeNote"),
     },
-  }).catch(rethrowDuplicateIco);
+  }).catch(rethrowUnlessDuplicateIco);
+
+  if (!subject) {
+    redirect(`/subjects/${subjectId}/edit?error=duplicate-ico`);
+  }
 
   await prisma.auditLog.create({
     data: {

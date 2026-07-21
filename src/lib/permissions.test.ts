@@ -12,11 +12,14 @@ import {
   workLogVisibilityWhere,
 } from "./permissions";
 
-const admin = { id: "u-admin", role: UserRole.ADMIN };
-const partner = { id: "u-partner", role: UserRole.PARTNER };
-const lawyer = { id: "u-lawyer", role: UserRole.LAWYER };
-const trainee = { id: "u-trainee", role: UserRole.TRAINEE };
-const intern = { id: "u-intern", role: UserRole.INTERN };
+// Fixtures carry organizationId — the visibility helpers are org-aware and
+// fail closed without it (that path is covered by the "missing user" cases).
+const org = "org-1";
+const admin = { id: "u-admin", role: UserRole.ADMIN, organizationId: org };
+const partner = { id: "u-partner", role: UserRole.PARTNER, organizationId: org };
+const lawyer = { id: "u-lawyer", role: UserRole.LAWYER, organizationId: org };
+const trainee = { id: "u-trainee", role: UserRole.TRAINEE, organizationId: org };
+const intern = { id: "u-intern", role: UserRole.INTERN, organizationId: org };
 
 // --- canViewAllLegalData: only ADMIN/PARTNER see everything ---
 test("canViewAllLegalData: ADMIN and PARTNER true, others false", () => {
@@ -41,43 +44,59 @@ test("andWhere: single clause passes through, multiple AND-wrapped", () => {
 });
 
 // --- visibility where-builders: senior → unrestricted, no-id → deny, scoped → own ---
-test("taskVisibilityWhere: ADMIN/PARTNER unrestricted ({})", () => {
-  assert.deepEqual(taskVisibilityWhere(admin), {});
-  assert.deepEqual(taskVisibilityWhere(partner), {});
+test("taskVisibilityWhere: ADMIN/PARTNER scoped to their org only", () => {
+  assert.deepEqual(taskVisibilityWhere(admin), { organizationId: org });
+  assert.deepEqual(taskVisibilityWhere(partner), { organizationId: org });
 });
 
 test("taskVisibilityWhere: missing user → fail-closed deny clause", () => {
   assert.deepEqual(taskVisibilityWhere(null), { id: "__role_denied__" });
 });
 
-test("taskVisibilityWhere: TRAINEE/INTERN scoped to direct assignment only", () => {
-  const expected = {
-    OR: [
-      { createdById: "u-trainee" },
-      { assignedToId: "u-trainee" },
-      { responsibleUserId: "u-trainee" },
+test("taskVisibilityWhere: TRAINEE/INTERN scoped to org AND direct assignment", () => {
+  assert.deepEqual(taskVisibilityWhere(trainee), {
+    AND: [
+      { organizationId: org },
+      {
+        OR: [
+          { createdById: "u-trainee" },
+          { assignedToId: "u-trainee" },
+          { responsibleUserId: "u-trainee" },
+        ],
+      },
     ],
-  };
-  assert.deepEqual(taskVisibilityWhere(trainee), expected);
+  });
   assert.deepEqual(taskVisibilityWhere(intern), {
-    OR: [
-      { createdById: "u-intern" },
-      { assignedToId: "u-intern" },
-      { responsibleUserId: "u-intern" },
+    AND: [
+      { organizationId: org },
+      {
+        OR: [
+          { createdById: "u-intern" },
+          { assignedToId: "u-intern" },
+          { responsibleUserId: "u-intern" },
+        ],
+      },
     ],
   });
 });
 
-test("taskVisibilityWhere: LAWYER gets a broader OR (direct + responsibility)", () => {
-  const where = taskVisibilityWhere(lawyer) as { OR?: unknown[] };
-  assert.ok(Array.isArray(where.OR));
-  assert.equal(where.OR?.length, 4);
+test("taskVisibilityWhere: LAWYER gets org AND a broader OR (direct + responsibility)", () => {
+  const where = taskVisibilityWhere(lawyer) as {
+    AND?: Array<{ organizationId?: string; OR?: unknown[] }>;
+  };
+  assert.ok(Array.isArray(where.AND));
+  assert.deepEqual(where.AND?.[0], { organizationId: org });
+  assert.equal(where.AND?.[1]?.OR?.length, 4);
 });
 
-test("workLogVisibilityWhere: TRAINEE/INTERN see only their own logs", () => {
-  assert.deepEqual(workLogVisibilityWhere(trainee), { userId: "u-trainee" });
-  assert.deepEqual(workLogVisibilityWhere(intern), { userId: "u-intern" });
-  assert.deepEqual(workLogVisibilityWhere(admin), {});
+test("workLogVisibilityWhere: TRAINEE/INTERN see only their own logs (org-scoped)", () => {
+  assert.deepEqual(workLogVisibilityWhere(trainee), {
+    AND: [{ organizationId: org }, { userId: "u-trainee" }],
+  });
+  assert.deepEqual(workLogVisibilityWhere(intern), {
+    AND: [{ organizationId: org }, { userId: "u-intern" }],
+  });
+  assert.deepEqual(workLogVisibilityWhere(admin), { organizationId: org });
   assert.deepEqual(workLogVisibilityWhere(null), { id: "__role_denied__" });
 });
 

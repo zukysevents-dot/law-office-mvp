@@ -10,6 +10,7 @@ import {
 } from "@/generated/prisma/enums";
 import { getAuthUser } from "@/lib/auth";
 import {
+  checkboxValue,
   enumValue,
   optionalDate,
   optionalNumber,
@@ -423,4 +424,59 @@ export async function updateOrganization(formData: FormData) {
 
   revalidatePath("/admin");
   revalidatePath(`/admin/organizations/${organizationId}`);
+}
+
+// Supplier ("dodavatel") details printed on invoices. Editable by the office's
+// own ADMIN/PARTNER (or a platform admin) via /settings/organization.
+export async function updateOrganizationBilling(formData: FormData) {
+  const organizationId = requiredString(formData, "organizationId");
+  const actor = await authorizeOrgAction(organizationId);
+  const prisma = getPrisma();
+
+  const old = await prisma.organization.findUniqueOrThrow({
+    where: { id: organizationId },
+  });
+
+  const vatRate = optionalNumber(formData, "vatRate");
+  const invoiceDueDays = optionalNumber(formData, "invoiceDueDays");
+
+  const updated = await prisma.organization.update({
+    where: { id: organizationId },
+    data: {
+      ico: optionalString(formData, "ico"),
+      dic: optionalString(formData, "dic"),
+      address: optionalString(formData, "address"),
+      email: optionalString(formData, "email"),
+      phone: optionalString(formData, "phone"),
+      bankAccount: optionalString(formData, "bankAccount"),
+      vatPayer: checkboxValue(formData, "vatPayer"),
+      vatRate:
+        vatRate !== null && vatRate >= 0 ? Math.floor(vatRate) : old.vatRate,
+      invoiceDueDays:
+        invoiceDueDays !== null && invoiceDueDays > 0
+          ? Math.floor(invoiceDueDays)
+          : old.invoiceDueDays,
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      entityType: "Organization",
+      entityId: organizationId,
+      action: "UPDATE",
+      changedById: actor.id,
+      oldValue: {
+        ico: old.ico,
+        bankAccount: old.bankAccount,
+        vatPayer: old.vatPayer,
+      },
+      newValue: {
+        ico: updated.ico,
+        bankAccount: updated.bankAccount,
+        vatPayer: updated.vatPayer,
+      },
+    },
+  });
+
+  revalidatePath("/settings/organization");
 }

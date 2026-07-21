@@ -1,6 +1,9 @@
+import { updateOrganizationBilling } from "@/app/actions/organizations";
+import { Field, TextInput } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
 import { OrganizationAdminPanel } from "@/components/organization-admin";
+import { Button } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
@@ -60,6 +63,84 @@ export default async function OrganizationSettingsPage() {
               Limit účtů spravuje správce platformy. Pro navýšení počtu míst
               kontaktujte podporu.
             </p>
+          </Section>
+          <Section title="Fakturační údaje">
+            <p className="mb-4 text-sm text-stone-600">
+              Údaje dodavatele na fakturách, které kancelář vystavuje. Bez IČO a
+              bankovního účtu nelze fakturu vytvořit.
+            </p>
+            <form action={updateOrganizationBilling} className="grid gap-4">
+              <input
+                type="hidden"
+                name="organizationId"
+                value={data.organization.id}
+              />
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="IČO">
+                  <TextInput name="ico" defaultValue={data.organization.ico ?? ""} />
+                </Field>
+                <Field label="DIČ">
+                  <TextInput name="dic" defaultValue={data.organization.dic ?? ""} />
+                </Field>
+              </div>
+              <Field label="Adresa">
+                <TextInput
+                  name="address"
+                  defaultValue={data.organization.address ?? ""}
+                />
+              </Field>
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="E-mail">
+                  <TextInput
+                    name="email"
+                    type="email"
+                    defaultValue={data.organization.email ?? ""}
+                  />
+                </Field>
+                <Field label="Telefon">
+                  <TextInput
+                    name="phone"
+                    defaultValue={data.organization.phone ?? ""}
+                  />
+                </Field>
+              </div>
+              <Field label="Bankovní účet">
+                <TextInput
+                  name="bankAccount"
+                  defaultValue={data.organization.bankAccount ?? ""}
+                />
+              </Field>
+              <div className="grid gap-4 md:grid-cols-3">
+                <label className="flex items-center gap-2 text-sm font-medium text-[#072924]">
+                  <input
+                    type="checkbox"
+                    name="vatPayer"
+                    defaultChecked={data.organization.vatPayer}
+                    className="h-4 w-4"
+                  />
+                  Plátce DPH
+                </label>
+                <Field label="Sazba DPH (%)">
+                  <TextInput
+                    name="vatRate"
+                    type="number"
+                    min="0"
+                    defaultValue={String(data.organization.vatRate)}
+                  />
+                </Field>
+                <Field label="Splatnost (dní)">
+                  <TextInput
+                    name="invoiceDueDays"
+                    type="number"
+                    min="1"
+                    defaultValue={String(data.organization.invoiceDueDays)}
+                  />
+                </Field>
+              </div>
+              <div>
+                <Button type="submit">Uložit fakturační údaje</Button>
+              </div>
+            </form>
           </Section>
           <OrganizationAdminPanel
             organizationId={data.organization.id}

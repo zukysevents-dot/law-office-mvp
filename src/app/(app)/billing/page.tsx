@@ -1,5 +1,6 @@
-import { FileSpreadsheet, FileDown } from "lucide-react";
+import { FileSpreadsheet, FileDown, FileText } from "lucide-react";
 
+import { createInvoiceFromWorkLogs } from "@/app/actions/invoices";
 import { Field, SelectInput, TextInput } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
@@ -155,9 +156,25 @@ export default async function BillingPage({ searchParams }: BillingProps) {
         title="Fakturace"
         description="Fakturační podklady – schválené a fakturovatelné výkazy práce, souhrny a export."
         action={
-          <ButtonLink href="/billing/approvals" variant="secondary">
-            Ke schválení
-          </ButtonLink>
+          <>
+            {filters.subjectId && result.data.rows.length > 0 ? (
+              <form action={createInvoiceFromWorkLogs}>
+                <input type="hidden" name="subjectId" value={filters.subjectId} />
+                <input type="hidden" name="dateFrom" value={filters.dateFrom} />
+                <input type="hidden" name="dateTo" value={filters.dateTo} />
+                <Button type="submit">
+                  <FileText className="h-4 w-4" aria-hidden="true" />
+                  Vytvořit fakturu
+                </Button>
+              </form>
+            ) : null}
+            <ButtonLink href="/invoices" variant="secondary">
+              Faktury
+            </ButtonLink>
+            <ButtonLink href="/billing/approvals" variant="secondary">
+              Ke schválení
+            </ButtonLink>
+          </>
         }
       />
       <DatabaseNotice databaseReady={result.databaseReady} error={result.error} />
