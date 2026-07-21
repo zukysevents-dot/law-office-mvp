@@ -3,6 +3,7 @@ import {
   CalendarRange,
   FileDown,
   Gauge,
+  Hourglass,
   Layers,
   Lock,
   Users,
@@ -59,6 +60,13 @@ const reportViews: ReportEntry[] = [
     icon: Gauge,
     gated: true,
   },
+  {
+    href: "/reports/wip",
+    title: "Rozpracovanost (WIP)",
+    description: "Schválená fakturovatelná práce, která ještě není na faktuře.",
+    icon: Hourglass,
+    gated: true,
+  },
 ];
 
 const exports: ReportEntry[] = [
@@ -100,6 +108,9 @@ export default async function ReportsPage() {
     }
     if (entry.href.startsWith("/reports/billability")) {
       return result.data.canViewBillabilityKpi;
+    }
+    if (entry.href.startsWith("/reports/wip")) {
+      return result.data.canViewPersonReports;
     }
     return true;
   };
