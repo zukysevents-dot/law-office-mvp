@@ -24,6 +24,7 @@ import { assertUserInOrg } from "@/lib/org-users";
 import { hashPassword, verifyPassword } from "@/lib/password";
 import { assertCanManageUsers } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { normalizeCalendarView } from "@/lib/calendar-view";
 import { setUserSessionCookie } from "@/lib/session-cookie";
 
 const MIN_PASSWORD_LENGTH = 8;
@@ -397,4 +398,40 @@ export async function updateNotificationPreference(formData: FormData) {
   });
 
   revalidatePath("/settings");
+}
+
+export async function updateCalendarPreference(formData: FormData) {
+  const prisma = getPrisma();
+  const currentUser = await getCurrentUser();
+  const previous = await prisma.notificationPreference.findUnique({
+    where: { userId: currentUser.id },
+  });
+  const calendarDefaultView = normalizeCalendarView(
+    formData.get("calendarDefaultView"),
+  );
+
+  const preference = await prisma.notificationPreference.upsert({
+    where: { userId: currentUser.id },
+    update: { calendarDefaultView },
+    create: {
+      ...defaultNotificationPreferenceData(currentUser.id),
+      calendarDefaultView,
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      organizationId: currentUser.organizationId,
+      entityType: "NotificationPreference",
+      entityId: preference.id,
+      action: "UPDATE_CALENDAR_VIEW",
+      changedById: currentUser.id,
+      oldValue: previous ? auditJson(previous) : undefined,
+      newValue: auditJson(preference),
+    },
+  });
+
+  revalidatePath("/settings");
+  revalidatePath("/calendar");
+  revalidatePath("/dashboard");
 }

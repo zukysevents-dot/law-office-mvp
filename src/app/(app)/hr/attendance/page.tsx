@@ -107,7 +107,7 @@ export default async function HrAttendancePage() {
     <>
       <PageHeader
         title="Docházka"
-        description="Evidence odpracovaných hodin (ruční zadání nebo import)."
+        description="Evidence odpracovaných hodin (ruční zadání, píchačky nebo import z terminálu)."
       />
       <DatabaseNotice databaseReady={result.databaseReady} error={result.error} />
 
@@ -191,11 +191,13 @@ export default async function HrAttendancePage() {
       {data.canManage ? (
         <Section title="Import docházky (CSV)">
           <form action={importAttendance} className="grid gap-4 sm:max-w-2xl">
-            <Field label="CSV (osobní číslo;datum;odpracováno;přestávka)">
+            <Field label="CSV export z docházkového systému">
               <TextArea
                 name="csv"
-                rows={6}
-                placeholder={"1001;2026-06-22;8;0,5\n1002;2026-06-22;7,5"}
+                rows={8}
+                placeholder={
+                  "osobniCislo;datum;prichod;odchod;prestavka\n1001;2026-07-21;08:01;16:35;0,5"
+                }
                 required
               />
             </Field>
@@ -205,10 +207,19 @@ export default async function HrAttendancePage() {
               </Button>
             </div>
           </form>
-          <p className="mt-2 text-xs text-stone-600">
-            Středníkem oddělené řádky; zaměstnanci se párují podle osobního čísla.
-            Chybný řádek import zruší celý (nic se neuloží).
-          </p>
+          <div className="mt-3 grid gap-1 text-xs leading-5 text-stone-600">
+            <p>
+              Terminál: <code>osobniCislo;datum;prichod;odchod;prestavka</code>
+            </p>
+            <p>
+              Denní součet: <code>osobniCislo;datum;odpracovano;prestavka</code>
+            </p>
+            <p>
+              České i anglické hlavičky mohou být v libovolném pořadí.
+              Zaměstnanci se párují podle osobního čísla; chybný nebo neznámý
+              záznam zruší celý import a událost se zapíše do auditu.
+            </p>
+          </div>
         </Section>
       ) : null}
 

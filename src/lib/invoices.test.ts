@@ -6,6 +6,7 @@ import { InvoiceStatus, VatMode } from "@/generated/prisma/enums";
 import {
   areLockedWorkLogsInvoiceable,
   formatInvoiceNumber,
+  invoiceLineWorkLogIds,
   isDraft,
   isPastDue,
   resolvePaidStatus,
@@ -75,6 +76,21 @@ test("areLockedWorkLogsInvoiceable: rejects missing, duplicate and cross-org row
       ORG,
     ),
     false,
+  );
+});
+
+test("invoiceLineWorkLogIds: accepts one unique source work-log per line", () => {
+  assert.deepEqual(
+    invoiceLineWorkLogIds([{ workLogId: "wl-1" }, { workLogId: "wl-2" }]),
+    ["wl-1", "wl-2"],
+  );
+});
+
+test("invoiceLineWorkLogIds: rejects detached and duplicate invoice lines", () => {
+  assert.equal(invoiceLineWorkLogIds([{ workLogId: null }]), null);
+  assert.equal(
+    invoiceLineWorkLogIds([{ workLogId: "wl-1" }, { workLogId: "wl-1" }]),
+    null,
   );
 });
 

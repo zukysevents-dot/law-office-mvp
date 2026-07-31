@@ -3,6 +3,7 @@ import {
   createUser,
   setUserCapabilities,
   setUserPassword,
+  updateCalendarPreference,
   updateNotificationPreference,
   updateUserHoursPlan,
 } from "@/app/actions/users";
@@ -27,6 +28,10 @@ import {
 import { getNotificationPreference } from "@/lib/notifications/notification-service";
 import { canViewAllLegalData } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { calendarViewOptions, normalizeCalendarView } from "@/lib/calendar-view";
+import { getAresBaseUrl, isAresLookupEnabled } from "@/lib/ares/config";
+import { getSharepointConfig } from "@/lib/microsoft/config";
+import { isGraphConfigured } from "@/lib/microsoft/graph";
 
 export const dynamic = "force-dynamic";
 
@@ -53,7 +58,32 @@ type SettingsData = {
   }>;
   auditLogCount: number;
   allowed: boolean;
+  integrations: {
+    aresEnabled: boolean;
+    aresHost: string;
+    sharepointSiteConfigured: boolean;
+    sharepointHost: string | null;
+    graphConfigured: boolean;
+  };
 };
+
+function integrationConfigStatus(): SettingsData["integrations"] {
+  const sharepoint = getSharepointConfig();
+  const hostname = (value: string) => {
+    try {
+      return new URL(value).hostname;
+    } catch {
+      return value;
+    }
+  };
+  return {
+    aresEnabled: isAresLookupEnabled(),
+    aresHost: hostname(getAresBaseUrl()),
+    sharepointSiteConfigured: Boolean(sharepoint),
+    sharepointHost: sharepoint ? hostname(sharepoint.siteUrl) : null,
+    graphConfigured: isGraphConfigured(),
+  };
+}
 
 function PreferenceCheckbox({
   name,
@@ -85,6 +115,7 @@ export default async function SettingsPage() {
       users: [],
       auditLogCount: 0,
       allowed: false,
+      integrations: integrationConfigStatus(),
     },
     async () => {
       const prisma = getPrisma();
@@ -154,6 +185,7 @@ export default async function SettingsPage() {
         })),
         auditLogCount,
         allowed,
+        integrations: integrationConfigStatus(),
       };
     },
   );
@@ -169,6 +201,28 @@ export default async function SettingsPage() {
         databaseReady={result.databaseReady}
         error={result.error}
       />
+      {preference ? (
+        <Section title="Můj kalendář">
+          <form
+            action={updateCalendarPreference}
+            className="flex max-w-xl flex-col gap-4 sm:flex-row sm:items-end"
+          >
+            <Field label="Výchozí zobrazení kalendáře">
+              <SelectInput
+                name="calendarDefaultView"
+                defaultValue={normalizeCalendarView(preference.calendarDefaultView)}
+              >
+                {calendarViewOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </SelectInput>
+            </Field>
+            <Button type="submit">Uložit kalendář</Button>
+          </form>
+        </Section>
+      ) : null}
       {preference ? (
         <Section title="Moje notifikace">
           <form action={updateNotificationPreference} className="grid gap-5">
@@ -289,6 +343,57 @@ export default async function SettingsPage() {
       </Section>
       {result.data.allowed ? (
         <>
+          <Section title="Stav integrací">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="rounded-lg border border-stone-200 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="font-semibold text-stone-950">ARES</h3>
+                  <Badge
+                    tone={
+                      result.data.integrations.aresEnabled ? "green" : "amber"
+                    }
+                  >
+                    {result.data.integrations.aresEnabled
+                      ? "Vyhledávání zapnuto"
+                      : "Vyhledávání vypnuto"}
+                  </Badge>
+                </div>
+                <p className="mt-2 text-sm text-stone-600">
+                  Veřejné REST API: {result.data.integrations.aresHost}
+                </p>
+              </div>
+              <div className="rounded-lg border border-stone-200 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="font-semibold text-stone-950">SharePoint</h3>
+                  <Badge
+                    tone={
+                      result.data.integrations.graphConfigured &&
+                      result.data.integrations.sharepointSiteConfigured
+                        ? "green"
+                        : result.data.integrations.sharepointSiteConfigured
+                          ? "blue"
+                          : "amber"
+                    }
+                  >
+                    {result.data.integrations.graphConfigured &&
+                    result.data.integrations.sharepointSiteConfigured
+                      ? "Graph zápis aktivní"
+                      : result.data.integrations.sharepointSiteConfigured
+                        ? "Pouze URL režim"
+                        : "Nenakonfigurováno"}
+                  </Badge>
+                </div>
+                <p className="mt-2 text-sm text-stone-600">
+                  {result.data.integrations.sharepointHost
+                    ? `Web: ${result.data.integrations.sharepointHost}. `
+                    : "Chybí SHAREPOINT_SITE_URL. "}
+                  {result.data.integrations.graphConfigured
+                    ? "Přihlašovací údaje Microsoft Graph jsou nastavené."
+                    : "Pro zakládání složek a upload doplňte přihlašovací údaje Microsoft Graph."}
+                </p>
+              </div>
+            </div>
+          </Section>
           <div className="grid gap-4 lg:grid-cols-[1fr_24rem]">
             <Section title="Uživatelé">
               {result.data.users.length > 0 ? (

@@ -3,11 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import {
-  ApprovalStatus,
-  BillingStatus,
-  InternalTaskCategory,
-} from "@/generated/prisma/enums";
+import { ApprovalStatus, BillingStatus, InternalTaskCategory } from "@/generated/prisma/enums";
 import { setArchived } from "@/lib/archive";
 import { auditJson } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
@@ -26,6 +22,7 @@ import {
 } from "@/lib/permissions";
 import { resolveVisibleMatterSelection } from "@/lib/matter-integrity.server";
 import { getPrisma } from "@/lib/prisma";
+import { roundHoursToIncrement } from "@/lib/work-logs/time-rounding";
 
 // Internal (non-billable) hours carry an internal category instead of a legal
 // area; the form only renders one of the two, so the unused one isn't submitted
@@ -41,20 +38,13 @@ function parseInternalCategory(formData: FormData): InternalTaskCategory | null 
   return null;
 }
 
-// Junior roles may only file work as "ke schválení" or "interní" — never
-// directly billable. Coerce any other request down to NEEDS_APPROVAL so a
-// crafted POST can't bypass the UI restriction.
-function resolveBillingStatus(
-  user: Parameters<typeof canSetBillableStatus>[0],
-  requested: BillingStatus,
-): BillingStatus {
-  if (canSetBillableStatus(user)) {
-    return requested;
-  }
-
+// Approval is a separate lifecycle. The reporting form therefore only decides
+// whether work is billable or internal; write-offs are decisions made later by
+// an approver, and the legacy NEEDS_APPROVAL billing value is no longer created.
+function resolveReportingBillingStatus(requested: BillingStatus): BillingStatus {
   return requested === BillingStatus.INTERNAL_NON_BILLABLE
     ? BillingStatus.INTERNAL_NON_BILLABLE
-    : BillingStatus.NEEDS_APPROVAL;
+    : BillingStatus.BILLABLE;
 }
 
 type RateInput = {
@@ -71,10 +61,18 @@ function resolveHourlyRate({ caseRate, projectRate, subjectRate }: RateInput) {
 export async function createWorkLog(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  const hours = requiredNumber(formData, "hours");
+  const rawHours = requiredNumber(formData, "hours");
+  const organization = await prisma.organization.findUniqueOrThrow({
+    where: { id: currentUser.organizationId },
+    select: { billingTimeIncrementMinutes: true },
+  });
+  const hours = roundHoursToIncrement(
+    rawHours,
+    organization.billingTimeIncrementMinutes,
+  );
   // Guard against negative/zero or absurd hour counts (a crafted POST could
   // otherwise yield a negative amountCzk). Upper bound 24 = one day's work.
-  if (!(hours > 0) || hours > 24) {
+  if (!(rawHours > 0) || rawHours > 24) {
     throw new Error("Počet hodin musí být větší než 0 a nejvýše 24.");
   }
   // Only rate-viewers (admin/partner) may override the rate; for everyone else
@@ -101,6 +99,13 @@ export async function createWorkLog(formData: FormData) {
   const hourlyRate = derivedHourlyRate > 0 ? derivedHourlyRate : null;
   const amountCzk = hourlyRate ? hours * hourlyRate : null;
 
+  const billingStatus = resolveReportingBillingStatus(
+    enumValue(
+      BillingStatus,
+      formData.get("billingStatus"),
+      BillingStatus.BILLABLE,
+    ),
+  );
   const workLog = await prisma.workLog.create({
     data: {
       organizationId: currentUser.organizationId,
@@ -114,19 +119,11 @@ export async function createWorkLog(formData: FormData) {
       hourlyRate,
       amountCzk,
       description: optionalString(formData, "description"),
-      billingStatus: resolveBillingStatus(
-        currentUser,
-        enumValue(
-          BillingStatus,
-          formData.get("billingStatus"),
-          BillingStatus.BILLABLE,
-        ),
-      ),
-      approvalStatus: enumValue(
-        ApprovalStatus,
-        formData.get("approvalStatus"),
-        ApprovalStatus.DRAFT,
-      ),
+      billingStatus,
+      approvalStatus:
+        billingStatus === BillingStatus.BILLABLE
+          ? ApprovalStatus.SUBMITTED
+          : ApprovalStatus.DRAFT,
       legalArea: optionalString(formData, "legalArea"),
       internalCategory: parseInternalCategory(formData),
     },
@@ -151,6 +148,7 @@ export async function createWorkLog(formData: FormData) {
   });
 
   revalidatePath("/work-logs");
+  redirect("/work-logs");
 }
 
 function sameNumber(
@@ -172,10 +170,18 @@ export async function updateWorkLog(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
   const workLogId = requiredString(formData, "id");
-  const hours = requiredNumber(formData, "hours");
+  const rawHours = requiredNumber(formData, "hours");
+  const organization = await prisma.organization.findUniqueOrThrow({
+    where: { id: currentUser.organizationId },
+    select: { billingTimeIncrementMinutes: true },
+  });
+  const hours = roundHoursToIncrement(
+    rawHours,
+    organization.billingTimeIncrementMinutes,
+  );
   // Guard against negative/zero or absurd hour counts (a crafted POST could
   // otherwise yield a negative amountCzk). Upper bound 24 = one day's work.
-  if (!(hours > 0) || hours > 24) {
+  if (!(rawHours > 0) || rawHours > 24) {
     throw new Error("Počet hodin musí být větší než 0 a nejvýše 24.");
   }
   const manualAmount = optionalNumber(formData, "amountCzk");
@@ -236,9 +242,13 @@ export async function updateWorkLog(formData: FormData) {
   );
   const billingStatus = canSetBillableStatus(currentUser)
     ? requestedBillingStatus
-    : oldWorkLog.billingStatus === BillingStatus.BILLABLE
-      ? BillingStatus.BILLABLE
-      : resolveBillingStatus(currentUser, requestedBillingStatus);
+    : resolveReportingBillingStatus(requestedBillingStatus);
+  const approvalStatus =
+    billingStatus === BillingStatus.INTERNAL_NON_BILLABLE
+      ? ApprovalStatus.DRAFT
+      : oldWorkLog.approvalStatus === ApprovalStatus.APPROVED
+        ? ApprovalStatus.ADJUSTED
+        : oldWorkLog.approvalStatus;
 
   const workLog = await prisma.workLog.update({
     where: { id: workLogId },
@@ -253,11 +263,7 @@ export async function updateWorkLog(formData: FormData) {
       amountCzk,
       description: optionalString(formData, "description"),
       billingStatus,
-      approvalStatus: enumValue(
-        ApprovalStatus,
-        formData.get("approvalStatus"),
-        ApprovalStatus.DRAFT,
-      ),
+      approvalStatus,
       legalArea: optionalString(formData, "legalArea"),
       internalCategory: parseInternalCategory(formData),
     },

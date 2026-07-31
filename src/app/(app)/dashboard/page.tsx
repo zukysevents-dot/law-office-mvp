@@ -1,5 +1,6 @@
 import Link from "next/link";
 import {
+  AlarmClock,
   CheckCircle2,
   Clock3,
   ListChecks,
@@ -9,10 +10,12 @@ import {
   UserRound,
 } from "lucide-react";
 
+import { CalendarView } from "@/components/calendar/calendar-view";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
 import { StatCard } from "@/components/stat-card";
 import { WeeklyHoursChart } from "@/components/weekly-hours-chart";
+import { DashboardWidgetGrid } from "@/components/dashboard-widget-grid";
 import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
@@ -27,6 +30,7 @@ import {
   SubjectType,
   TaskPriority,
   TaskStatus,
+  DeadlineType,
 } from "@/generated/prisma/enums";
 import { activeTaskCount, statusCount } from "@/lib/dashboard/task-counts";
 import { cn } from "@/lib/utils";
@@ -51,21 +55,32 @@ import {
   subjectTypeLabels,
   taskPriorityLabels,
   taskStatusLabels,
+  deadlineTypeLabels,
 } from "@/lib/labels";
 import { safeQuery } from "@/lib/db-safe";
 import { getCurrentUser } from "@/lib/auth";
 import {
   andWhere,
+  canViewAllLegalData,
   canViewRates,
   caseVisibilityWhere,
   projectVisibilityWhere,
   referenceVisibilityWhere,
   subjectVisibilityWhere,
   taskVisibilityWhere,
+  deadlineVisibilityWhere,
   workLogVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
-import { billingStatusTone, taskStatusTone } from "@/lib/status-tones";
+import {
+  billingStatusTone,
+  deadlineTypeTone,
+  taskStatusTone,
+} from "@/lib/status-tones";
+import {
+  normalizeCalendarView,
+  type CalendarDefaultView,
+} from "@/lib/calendar-view";
 
 export const dynamic = "force-dynamic";
 
@@ -168,16 +183,19 @@ type DashboardData = {
     createdAt: Date;
     subject: { id: string; name: string } | null;
   }>;
-  calendarTasks: Array<{
+  upcomingDeadlines: Array<{
     id: string;
     title: string;
-    deadline: Date | null;
-    status: TaskStatus;
-    project: { id: string; name: string } | null;
+    dueDate: Date;
+    type: DeadlineType;
+    case: { id: string; name: string };
+    responsibleUser: { name: string } | null;
   }>;
   weeklyHours: DayBucket[];
   weeklyHoursTarget: number | null;
   canViewRates: boolean;
+  canApprove: boolean;
+  calendarDefaultView: CalendarDefaultView;
 };
 
 const fallbackData: DashboardData = {
@@ -197,17 +215,12 @@ const fallbackData: DashboardData = {
   cases: [],
   references: [],
   recentChecks: [],
-  calendarTasks: [],
+  upcomingDeadlines: [],
   weeklyHours: [],
   weeklyHoursTarget: null,
   canViewRates: false,
-};
-
-const sizeClasses: Record<DashboardWidgetSize, string> = {
-  SMALL: "lg:col-span-4",
-  MEDIUM: "lg:col-span-12 2xl:col-span-6",
-  LARGE: "lg:col-span-12 2xl:col-span-8",
-  FULL: "lg:col-span-12",
+  canApprove: false,
+  calendarDefaultView: "dayGridMonth",
 };
 
 function subjectFromTask(task: DashboardData["myTasks"][number]) {
@@ -569,10 +582,29 @@ function renderWidget(widget: DashboardWidgetView, data: DashboardData) {
     case DashboardWidgetType.WEEKLY_HOURS_CHART:
       return (
         <Section title={widget.title}>
-          <WeeklyHoursChart
-            buckets={data.weeklyHours}
-            weeklyTarget={data.weeklyHoursTarget}
-          />
+          <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,3fr)_minmax(12rem,1fr)] lg:items-stretch">
+            <div className="min-w-0">
+              <WeeklyHoursChart
+                buckets={data.weeklyHours}
+                weeklyTarget={data.weeklyHoursTarget}
+              />
+            </div>
+            <Link
+              href="/work-logs"
+              className="group flex min-h-40 flex-col justify-between rounded-xl border border-emerald-900/15 bg-emerald-950 px-5 py-5 text-white transition hover:-translate-y-0.5 hover:bg-emerald-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-2"
+              aria-label={`Hodiny tento měsíc: ${data.monthHours} hodin. Otevřít výkazy práce.`}
+            >
+              <span className="text-sm font-semibold text-emerald-100">
+                Hodiny tento měsíc
+              </span>
+              <span className="mt-6 text-4xl font-semibold tracking-tight">
+                {data.monthHours} h
+              </span>
+              <span className="mt-3 text-xs text-emerald-100/80 group-hover:text-white">
+                Otevřít výkazy práce →
+              </span>
+            </Link>
+          </div>
         </Section>
       );
     case DashboardWidgetType.MY_TASKS_TABLE:
@@ -597,11 +629,15 @@ function renderWidget(widget: DashboardWidgetView, data: DashboardData) {
       );
     case DashboardWidgetType.WORK_LOGS_TABLE: {
       // Drop rate/amount columns for roles that may not see pricing.
-      const workLogColumns = data.canViewRates
-        ? columns
-        : columns.filter(
-            (column) => column !== "hourlyRate" && column !== "amount",
-          );
+      const workLogColumns = columns.filter((column) => {
+        if (
+          !data.canViewRates &&
+          (column === "hourlyRate" || column === "amount")
+        ) {
+          return false;
+        }
+        return data.canApprove || column !== "approvalStatus";
+      });
       return (
         <Section title={widget.title}>
           {data.workLogs.length > 0 ? (
@@ -748,32 +784,53 @@ function renderWidget(widget: DashboardWidgetView, data: DashboardData) {
       );
     case DashboardWidgetType.CALENDAR_PREVIEW:
       return (
+        <CalendarView
+          compact
+          title={widget.title}
+          initialView={data.calendarDefaultView}
+        />
+      );
+    case DashboardWidgetType.DEADLINES_PREVIEW:
+      return (
         <Section title={widget.title}>
-          {data.calendarTasks.length > 0 ? (
-            <div className="grid gap-3">
-              {data.calendarTasks.map((task) => (
-                <div
-                  key={task.id}
-                  className="min-w-0 rounded-md border border-[#dce4e8] bg-[#F4F7F8]/55 p-3"
+          <div className="mb-3 flex justify-end">
+            <ButtonLink
+              href={dashboardWidgetHref(widget.type) ?? "/deadlines"}
+              variant="ghost"
+              className="h-8 px-3"
+            >
+              Všechny lhůty
+            </ButtonLink>
+          </div>
+          {data.upcomingDeadlines.length > 0 ? (
+            <div className="grid gap-2">
+              {data.upcomingDeadlines.map((deadline) => (
+                <Link
+                  key={deadline.id}
+                  href={`/cases/${deadline.case.id}`}
+                  className="flex min-w-0 items-start gap-3 rounded-md border border-[#dce4e8] bg-[#F4F7F8]/55 p-3 transition hover:bg-[#F4F7F8]"
                 >
-                  <Link
-                    href={`/tasks/${task.id}`}
-                    className="font-medium text-[#0e1822] hover:underline"
-                  >
-                    {task.title}
-                  </Link>
-                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[#566673]">
-                    <Badge tone={taskStatusTone(task.status)}>
-                      {taskStatusLabels[task.status]}
-                    </Badge>
-                    <span>{formatDateUtc(task.deadline)}</span>
-                    {task.project ? <span>{task.project.name}</span> : null}
-                  </div>
-                </div>
+                  <AlarmClock className="mt-0.5 h-4 w-4 shrink-0 text-[#0e1822]" aria-hidden="true" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium text-[#0e1822]">
+                      {deadline.title}
+                    </span>
+                    <span className="mt-1 flex flex-wrap gap-2 text-xs text-[#566673]">
+                      <Badge tone={deadlineTypeTone(deadline.type)}>
+                        {deadlineTypeLabels[deadline.type]}
+                      </Badge>
+                      <span>{formatDateUtc(deadline.dueDate)}</span>
+                      <span>{deadline.case.name}</span>
+                      {deadline.responsibleUser ? (
+                        <span>{deadline.responsibleUser.name}</span>
+                      ) : null}
+                    </span>
+                  </span>
+                </Link>
               ))}
             </div>
           ) : (
-            <EmptyState>Žádné nadcházející termíny.</EmptyState>
+            <EmptyState>Žádné blížící se lhůty.</EmptyState>
           )}
         </Section>
       );
@@ -821,9 +878,11 @@ export default async function DashboardPage() {
       cases,
       references,
       recentChecks,
-      calendarTasks,
+      upcomingDeadlines,
       weeklyHoursGroups,
       hoursPlan,
+      notificationPreference,
+      approvalAssignmentCount,
     ] = await Promise.all([
       prisma.dashboardWidget.findMany({
         where: {
@@ -1003,16 +1062,24 @@ export default async function DashboardPage() {
           subject: { select: { id: true, name: true } },
         },
       }),
-      prisma.task.findMany({
-        where: andWhere(activeTaskWhere, { deadline: { gte: now } }),
-        orderBy: { deadline: "asc" },
-        take: 6,
+      prisma.deadline.findMany({
+        where: andWhere(
+          {
+            archivedAt: null,
+            status: "OPEN",
+            dueDate: { gte: now },
+          },
+          deadlineVisibilityWhere(currentUser),
+        ),
+        orderBy: { dueDate: "asc" },
+        take: 8,
         select: {
           id: true,
           title: true,
-          deadline: true,
-          status: true,
-          project: { select: { id: true, name: true } },
+          dueDate: true,
+          type: true,
+          case: { select: { id: true, name: true } },
+          responsibleUser: { select: { name: true } },
         },
       }),
       // Vlastní výkazy přihlášeného uživatele za aktuální týden pro graf.
@@ -1028,6 +1095,16 @@ export default async function DashboardPage() {
       prisma.userHoursPlan.findUnique({
         where: { userId: currentUser.id },
         select: { weeklyHoursTarget: true },
+      }),
+      prisma.notificationPreference.findUnique({
+        where: { userId: currentUser.id },
+        select: { calendarDefaultView: true },
+      }),
+      prisma.subjectBillingApprover.count({
+        where: {
+          organizationId: currentUser.organizationId,
+          userId: currentUser.id,
+        },
       }),
     ]);
 
@@ -1054,7 +1131,7 @@ export default async function DashboardPage() {
       cases,
       references,
       recentChecks,
-      calendarTasks,
+      upcomingDeadlines,
       weeklyHours: weeklyHoursBuckets(
         weekStartMs,
         weeklyHoursGroups.map((group) => ({
@@ -1067,6 +1144,11 @@ export default async function DashboardPage() {
           ? Number(hoursPlan.weeklyHoursTarget)
           : null,
       canViewRates: canViewRates(currentUser),
+      canApprove:
+        canViewAllLegalData(currentUser) || approvalAssignmentCount > 0,
+      calendarDefaultView: normalizeCalendarView(
+        notificationPreference?.calendarDefaultView,
+      ),
     };
   });
 
@@ -1087,20 +1169,15 @@ export default async function DashboardPage() {
         error={result.error}
       />
       {result.data.widgets.length > 0 ? (
-        <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-12">
-          {result.data.widgets.map((widget) => (
-            <div
-              key={widget.id}
-              className={cn("min-w-0", sizeClasses[widget.size])}
-              data-testid="dashboard-widget"
-              data-widget-id={widget.id}
-              data-widget-size={widget.size}
-              data-widget-type={widget.type}
-            >
-              {renderWidget(widget, result.data)}
-            </div>
-          ))}
-        </div>
+        <DashboardWidgetGrid
+          initialWidgets={result.data.widgets.map((widget) => ({
+            id: widget.id,
+            title: widget.title,
+            type: widget.type,
+            size: widget.size,
+            content: renderWidget(widget, result.data),
+          }))}
+        />
       ) : (
         <Section>
           <EmptyState>

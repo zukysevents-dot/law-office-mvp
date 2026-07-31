@@ -375,54 +375,6 @@ export default async function ProjectDetailPage({
               </form>
             </Section>
           ) : null}
-          <Section title="Reference projektu">
-            {project.references.length > 0 ? (
-              <div className="table-scroll">
-                <table className="w-max min-w-full table-auto">
-                  <thead>
-                    <tr>
-                      <th>Název</th>
-                      <th>Právní odvětví</th>
-                      <th>Hodnota</th>
-                      <th>Období</th>
-                      <th>Případ</th>
-                      <th>Popis</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {project.references.map((reference) => (
-                      <tr key={reference.id}>
-                        <td className="font-medium text-stone-950">
-                          {reference.title}
-                        </td>
-                        <td>{reference.legalArea ?? "—"}</td>
-                        <td>{formatMoney(reference.valueCzk)}</td>
-                        <td>
-                          {formatDate(reference.startDate)} –{" "}
-                          {reference.endDate
-                            ? formatDate(reference.endDate)
-                            : "Probíhající"}
-                        </td>
-                        <td>{reference.case?.name ?? "—"}</td>
-                        <td className="max-w-md">{reference.description ?? "—"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <EmptyState>Projekt zatím nemá reference.</EmptyState>
-            )}
-          </Section>
-          {canManageReferences ? (
-            <Section title="Přidat referenci k projektu">
-              <ReferenceForm
-                returnTo={`/projects/${project.id}`}
-                fixedProjectId={project.id}
-                fixedSubjectId={project.mainSubject.id}
-              />
-            </Section>
-          ) : null}
           <Section title="Případy">
             {project.cases.length > 0 ? (
               <div className="table-scroll">
@@ -519,6 +471,54 @@ export default async function ProjectDetailPage({
               <EmptyState>Projekt zatím nemá výkazy práce.</EmptyState>
             )}
           </Section>
+          <Section title="Reference projektu">
+            {project.references.length > 0 ? (
+              <div className="table-scroll">
+                <table className="w-max min-w-full table-auto">
+                  <thead>
+                    <tr>
+                      <th>Název</th>
+                      <th>Právní odvětví</th>
+                      <th>Hodnota</th>
+                      <th>Období</th>
+                      <th>Případ</th>
+                      <th>Popis</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {project.references.map((reference) => (
+                      <tr key={reference.id}>
+                        <td className="font-medium text-stone-950">
+                          {reference.title}
+                        </td>
+                        <td>{reference.legalArea ?? "—"}</td>
+                        <td>{formatMoney(reference.valueCzk)}</td>
+                        <td>
+                          {formatDate(reference.startDate)} –{" "}
+                          {reference.endDate
+                            ? formatDate(reference.endDate)
+                            : "Probíhající"}
+                        </td>
+                        <td>{reference.case?.name ?? "—"}</td>
+                        <td className="max-w-md">{reference.description ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <EmptyState>Projekt zatím nemá reference.</EmptyState>
+            )}
+          </Section>
+          {canManageReferences ? (
+            <Section title="Přidat referenci k projektu">
+              <ReferenceForm
+                returnTo={`/projects/${project.id}`}
+                fixedProjectId={project.id}
+                fixedSubjectId={project.mainSubject.id}
+              />
+            </Section>
+          ) : null}
         </>
       ) : (
         <EmptyState>Detail projektu není dostupný bez databáze.</EmptyState>

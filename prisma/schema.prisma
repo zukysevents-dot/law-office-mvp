@@ -201,6 +201,7 @@ enum DashboardWidgetType {
   RECENT_CONFLICT_CHECKS
   CALENDAR_PREVIEW
   WEEKLY_HOURS_CHART
+  DEADLINES_PREVIEW
 }
 
 enum DashboardWidgetSize {
@@ -377,6 +378,8 @@ model User {
   grantedCapabilities         UserCapabilityGrant[]     @relation("UserCapabilityGrantGrantedBy")
   notifications               Notification[]            @relation("NotificationRecipient")
   memberships                 OrganizationMember[]
+  legalTeamMemberships        LegalTeamMember[]
+  subjectBillingApprovals     SubjectBillingApprover[]  @relation("SubjectBillingApproverUser")
   createdInvoices             Invoice[]                 @relation("InvoiceCreatedBy")
   issuedInvoices              Invoice[]                 @relation("InvoiceIssuedBy")
   recordedPayments            Payment[]                 @relation("PaymentRecordedBy")
@@ -489,10 +492,10 @@ model Subject {
   updatedAt                DateTime    @updatedAt
   archivedAt               DateTime?
 
-  organization         Organization          @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  organization         Organization             @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   relations            SubjectRelation[]
   conflictChecks       ConflictCheck[]
-  mainProjects         Project[]             @relation("ProjectMainSubject")
+  mainProjects         Project[]                @relation("ProjectMainSubject")
   references           Reference[]
   workLogs             WorkLog[]
   invoices             Invoice[]
@@ -505,6 +508,7 @@ model Subject {
   sanctionsScreenings  SanctionsScreening[]
   contactPersons       ContactPerson[]
   registryChangeEvents RegistryChangeEvent[]
+  billingApprovers     SubjectBillingApprover[]
 
   // IČO is unique PER organization, not globally — the same company can be a
   // subject of more than one law office (multi-tenant). NULL ico is allowed
@@ -905,6 +909,7 @@ model DashboardWidget {
   organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@unique([userId, type])
   @@index([organizationId])
   @@index([userId, position])
   @@index([userId, visible])
@@ -951,6 +956,8 @@ model NotificationPreference {
   deadlineWatchDaysBefore Int      @default(3)
   // Hlídání rejstříků: e-mail při zjištěné změně v ISIR/OR.
   registryChangeEmail     Boolean  @default(true)
+  // FullCalendar view persisted per user: day, week, month, or year agenda.
+  calendarDefaultView     String   @default("dayGridMonth")
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 
@@ -1082,16 +1089,18 @@ model Notification {
 }
 
 model Organization {
-  id                  String             @id @default(cuid())
-  name                String
-  slug                String             @unique
-  seatLimit           Int                @default(0)
-  status              OrganizationStatus @default(ACTIVE)
+  id                          String             @id @default(cuid())
+  name                        String
+  slug                        String             @unique
+  seatLimit                   Int                @default(0)
+  status                      OrganizationStatus @default(ACTIVE)
   // Optional, unused this phase — email domain is NOT a join restriction.
-  allowedEmailDomains Json?
-  createdAt           DateTime           @default(now())
-  updatedAt           DateTime           @updatedAt
-  archivedAt          DateTime?
+  allowedEmailDomains         Json?
+  // Firemní krok pro zaokrouhlení výkazů: 6 minut = 0,1 h; 15 minut = 0,25 h.
+  billingTimeIncrementMinutes Int                @default(15)
+  createdAt                   DateTime           @default(now())
+  updatedAt                   DateTime           @updatedAt
+  archivedAt                  DateTime?
 
   members                   OrganizationMember[]
   joinCodes                 OrganizationJoinCode[]
@@ -1141,10 +1150,32 @@ model Organization {
   projectAssignees          ProjectAssignee[]
   caseAssignees             CaseAssignee[]
   capabilityGrants          UserCapabilityGrant[]
+  legalTeams                LegalTeam[]
+  legalTeamMembers          LegalTeamMember[]
+  subjectBillingApprovers   SubjectBillingApprover[]
   retainerInvoicePeriods    RetainerInvoicePeriod[]
 
   @@index([status])
   @@map("organizations")
+}
+
+// Additional billing approvers selected per client. ADMIN/PARTNER retain their
+// role-level permission even when no explicit row exists.
+model SubjectBillingApprover {
+  id             String   @id @default(cuid())
+  organizationId String
+  subjectId      String
+  userId         String
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  subject      Subject      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  user         User         @relation("SubjectBillingApproverUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([subjectId, userId])
+  @@index([organizationId])
+  @@index([userId])
+  @@map("subjectBillingApprovers")
 }
 
 // Read-mostly catalog of sellable modules. Seeded (prisma/seed.ts); the guard
@@ -1236,6 +1267,41 @@ model OrganizationJoinCode {
 
   @@index([organizationId])
   @@map("organizationJoinCodes")
+}
+
+model LegalTeam {
+  id             String    @id @default(cuid())
+  organizationId String
+  name           String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  archivedAt     DateTime?
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  members      LegalTeamMember[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("legalTeams")
+}
+
+model LegalTeamMember {
+  id             String   @id @default(cuid())
+  organizationId String
+  legalTeamId    String
+  userId         String
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  legalTeam    LegalTeam    @relation(fields: [legalTeamId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@unique([legalTeamId, userId])
+  @@index([organizationId])
+  @@index([legalTeamId])
+  @@index([userId])
+  @@map("legalTeamMembers")
 }
 
 model OrganizationMember {

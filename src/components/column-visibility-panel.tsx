@@ -1,6 +1,9 @@
-import { Save, SlidersHorizontal } from "lucide-react";
+import { RotateCcw, Save, SlidersHorizontal } from "lucide-react";
 
-import { updateTableViewPreference } from "@/app/actions/table-view-preferences";
+import {
+  resetTableViewPreference,
+  updateTableViewPreference,
+} from "@/app/actions/table-view-preferences";
 import { Button } from "@/components/ui/button";
 import type {
   TableColumnDefinition,
@@ -53,10 +56,18 @@ export function ColumnVisibilityPanel({
             </label>
           ))}
         </div>
-        <div>
+        <div className="flex flex-wrap gap-2">
           <Button type="submit" variant="secondary">
             <Save className="h-4 w-4" aria-hidden="true" />
             Uložit sloupce
+          </Button>
+          <Button
+            type="submit"
+            variant="ghost"
+            formAction={resetTableViewPreference}
+          >
+            <RotateCcw className="h-4 w-4" aria-hidden="true" />
+            Obnovit výchozí
           </Button>
         </div>
       </form>

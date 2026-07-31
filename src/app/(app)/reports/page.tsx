@@ -54,6 +54,13 @@ const reportViews: ReportEntry[] = [
     gated: true,
   },
   {
+    href: "/reports/by-team",
+    title: "Reporting podle právních týmů",
+    description: "Hodiny, částky a právní oblasti rozdělené podle týmů.",
+    icon: Users,
+    gated: true,
+  },
+  {
     href: "/reports/billability",
     title: "KPI fakturovatelnosti",
     description: "Podíl fakturovatelných hodin na odpracovaných.",
@@ -103,7 +110,10 @@ export default async function ReportsPage() {
   );
 
   const allowed = (entry: ReportEntry) => {
-    if (entry.href.startsWith("/reports/by-person")) {
+    if (
+      entry.href.startsWith("/reports/by-person") ||
+      entry.href.startsWith("/reports/by-team")
+    ) {
       return result.data.canViewPersonReports;
     }
     if (entry.href.startsWith("/reports/billability")) {

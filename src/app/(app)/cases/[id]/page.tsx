@@ -26,7 +26,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ModuleKey } from "@/generated/prisma/enums";
 import { getCurrentUser } from "@/lib/auth";
 import { isModuleEnabled } from "@/lib/entitlements";
-import { formatDate, formatDateUtc, formatMoney } from "@/lib/format";
+import { formatDate, formatDateUtc, formatHours, formatMoney } from "@/lib/format";
 import {
   caseStatusLabels,
   options,
@@ -50,6 +50,7 @@ import {
   referenceVisibilityWhere,
   subjectVisibilityWhere,
   taskVisibilityWhere,
+  workLogVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { subjectRoleTone } from "@/lib/status-tones";
@@ -115,6 +116,22 @@ async function loadCase(id: string) {
             status: true,
             deadline: true,
             assignedTo: { select: { name: true } },
+          },
+        },
+        workLogs: {
+          where: andWhere(
+            { archivedAt: null },
+            workLogVisibilityWhere(currentUser),
+          ),
+          orderBy: [{ workDate: "desc" }, { createdAt: "desc" }],
+          take: 100,
+          select: {
+            id: true,
+            workDate: true,
+            hours: true,
+            description: true,
+            user: { select: { name: true } },
+            task: { select: { id: true, title: true } },
           },
         },
       },
@@ -488,6 +505,124 @@ export default async function CaseDetailPage({
               </form>
             </Section>
           ) : null}
+          {deadlinesEnabled ? (
+            <CaseDeadlinesSection
+              caseId={legalCase.id}
+              deadlines={deadlines}
+              hearings={hearings}
+              members={members}
+              canManage={canManageDeadlinesFlag}
+            />
+          ) : null}
+          <Section title="Úkoly případu">
+            {legalCase.tasks.length > 0 ? (
+              <div className="table-scroll">
+                <table className="w-max min-w-full table-auto">
+                  <thead>
+                    <tr>
+                      <th>Úkol</th>
+                      <th>Řešitel</th>
+                      <th>Stav</th>
+                      <th>Deadline</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {legalCase.tasks.map((task) => (
+                      <tr key={task.id}>
+                        <td>
+                          <Link
+                            href={`/tasks/${task.id}`}
+                            className="font-medium text-emerald-950 hover:underline"
+                          >
+                            {task.title}
+                          </Link>
+                        </td>
+                        <td>{task.assignedTo?.name ?? "—"}</td>
+                        <td>{taskStatusLabels[task.status]}</td>
+                        <td>{formatDateUtc(task.deadline)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <EmptyState>Případ zatím nemá úkoly.</EmptyState>
+            )}
+          </Section>
+          <Section title="Výkazy práce případu">
+            {legalCase.workLogs.length > 0 ? (
+              <div className="table-scroll">
+                <table className="w-max min-w-full table-auto">
+                  <thead>
+                    <tr>
+                      <th>Datum</th>
+                      <th>Pracovník</th>
+                      <th>Úkol</th>
+                      <th>Hodiny</th>
+                      <th>Popis</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {legalCase.workLogs.map((log) => (
+                      <tr key={log.id}>
+                        <td>{formatDateUtc(log.workDate)}</td>
+                        <td>{log.user?.name ?? "—"}</td>
+                        <td>
+                          {log.task ? (
+                            <Link
+                              href={`/tasks/${log.task.id}`}
+                              className="font-medium text-emerald-950 hover:underline"
+                            >
+                              {log.task.title}
+                            </Link>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                        <td>{formatHours(log.hours)}</td>
+                        <td className="max-w-md">{log.description ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <EmptyState>Případ zatím nemá výkazy práce.</EmptyState>
+            )}
+          </Section>
+          {documentsEnabled ? (
+            <CaseDocumentsSection
+              caseId={legalCase.id}
+              documents={documents}
+              templates={templates}
+              canManage={canManageDocumentsFlag}
+            />
+          ) : null}
+          {portalTargets.length > 0 ? (
+            <Section title="Sdílet spis s klientem">
+              <form action={shareCase} className="flex flex-wrap items-end gap-3">
+                <input type="hidden" name="caseId" value={legalCase.id} />
+                <Field label="Klient (portálový přístup)">
+                  <SelectInput
+                    name="portalAccessId"
+                    defaultValue={portalTargets[0].id}
+                  >
+                    {portalTargets.map((target) => (
+                      <option key={target.id} value={target.id}>
+                        {target.subject.name}
+                      </option>
+                    ))}
+                  </SelectInput>
+                </Field>
+                <Button type="submit" variant="secondary">
+                  Sdílet spis
+                </Button>
+              </form>
+              <p className="mt-2 text-xs text-stone-600">
+                Klient uvidí jen stav a spisovou značku, ne interní poznámky.
+              </p>
+            </Section>
+          ) : null}
           <Section title="Reference případu">
             {legalCase.references.length > 0 ? (
               <div className="table-scroll">
@@ -535,83 +670,6 @@ export default async function CaseDetailPage({
                 fixedCaseId={legalCase.id}
                 fixedSubjectId={legalCase.project.mainSubject.id}
               />
-            </Section>
-          ) : null}
-          <Section title="Úkoly případu">
-            {legalCase.tasks.length > 0 ? (
-              <div className="table-scroll">
-                <table className="w-max min-w-full table-auto">
-                  <thead>
-                    <tr>
-                      <th>Úkol</th>
-                      <th>Řešitel</th>
-                      <th>Stav</th>
-                      <th>Deadline</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {legalCase.tasks.map((task) => (
-                      <tr key={task.id}>
-                        <td>
-                          <Link
-                            href={`/tasks/${task.id}`}
-                            className="font-medium text-emerald-950 hover:underline"
-                          >
-                            {task.title}
-                          </Link>
-                        </td>
-                        <td>{task.assignedTo?.name ?? "—"}</td>
-                        <td>{taskStatusLabels[task.status]}</td>
-                        <td>{formatDateUtc(task.deadline)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <EmptyState>Případ zatím nemá úkoly.</EmptyState>
-            )}
-          </Section>
-          {deadlinesEnabled ? (
-            <CaseDeadlinesSection
-              caseId={legalCase.id}
-              deadlines={deadlines}
-              hearings={hearings}
-              members={members}
-              canManage={canManageDeadlinesFlag}
-            />
-          ) : null}
-          {documentsEnabled ? (
-            <CaseDocumentsSection
-              caseId={legalCase.id}
-              documents={documents}
-              templates={templates}
-              canManage={canManageDocumentsFlag}
-            />
-          ) : null}
-          {portalTargets.length > 0 ? (
-            <Section title="Sdílet spis s klientem">
-              <form action={shareCase} className="flex flex-wrap items-end gap-3">
-                <input type="hidden" name="caseId" value={legalCase.id} />
-                <Field label="Klient (portálový přístup)">
-                  <SelectInput
-                    name="portalAccessId"
-                    defaultValue={portalTargets[0].id}
-                  >
-                    {portalTargets.map((target) => (
-                      <option key={target.id} value={target.id}>
-                        {target.subject.name}
-                      </option>
-                    ))}
-                  </SelectInput>
-                </Field>
-                <Button type="submit" variant="secondary">
-                  Sdílet spis
-                </Button>
-              </form>
-              <p className="mt-2 text-xs text-stone-600">
-                Klient uvidí jen stav a spisovou značku, ne interní poznámky.
-              </p>
             </Section>
           ) : null}
         </>

@@ -68,7 +68,15 @@ type NavSection = {
 const navSections: NavSection[] = [
   {
     title: "Přehled",
-    items: [{ href: "/dashboard", label: "Dashboard", icon: LayoutDashboard }],
+    items: [
+      { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+      {
+        href: "/documents",
+        label: "Spisovna",
+        icon: FolderOpen,
+        module: ModuleKey.DOCUMENTS,
+      },
+    ],
   },
   {
     title: "Spisy",
@@ -116,7 +124,6 @@ const navSections: NavSection[] = [
     items: [
       { href: "/deadlines", label: "Lhůtník", icon: AlarmClock, module: ModuleKey.DEADLINES },
       { href: "/calendar", label: "Kalendář", icon: CalendarDays, module: ModuleKey.DEADLINES },
-      { href: "/documents", label: "Spisy", icon: FolderOpen, module: ModuleKey.DOCUMENTS },
     ],
   },
   {

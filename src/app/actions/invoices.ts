@@ -24,6 +24,7 @@ import {
   areLockedWorkLogsInvoiceable,
   DEFAULT_VAT_RATE,
   formatInvoiceNumber,
+  invoiceLineWorkLogIds,
   vatModeForProfile,
 } from "@/lib/invoices";
 import { getSmtpTransporter } from "@/lib/notifications/notification-service";
@@ -232,6 +233,12 @@ export async function issueInvoice(formData: FormData) {
     if (invoice.lines.length === 0) {
       throw new Error("Faktura nemá žádné položky.");
     }
+    const workLogIds = invoiceLineWorkLogIds(invoice.lines);
+    if (!workLogIds) {
+      throw new Error(
+        "Fakturu lze vystavit pouze z jedinečných schválených výkazů práce. Vytvořte ji znovu z přehledu fakturace.",
+      );
+    }
 
     const profile = await tx.organizationBillingProfile.findUnique({
       where: { organizationId },
@@ -309,10 +316,7 @@ export async function issueInvoice(formData: FormData) {
     // current state. This serializes invoice issuance with billing decisions;
     // without the locks, a concurrent rejection could commit after our count
     // query but before updateMany and still be marked invoiced.
-    const workLogIds = invoice.lines
-      .map((line) => line.workLogId)
-      .filter((id): id is string => Boolean(id))
-      .sort();
+    workLogIds.sort();
     if (workLogIds.length > 0) {
       await tx.$queryRaw`SELECT id FROM "workLogs" WHERE id IN (${Prisma.join(
         workLogIds,

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { BillingStatus } from "@/generated/prisma/enums";
+import { ApprovalStatus, BillingStatus } from "@/generated/prisma/enums";
 
 import {
   billabilityKpi,
@@ -17,6 +17,7 @@ function row(o: Partial<Record<string, unknown>>): ReportWorkLog {
     hours: 0,
     amountCzk: 0,
     billingStatus: BillingStatus.BILLABLE,
+    approvalStatus: ApprovalStatus.APPROVED,
     workDate: new Date("2026-01-15T00:00:00.000Z"),
     userId: "u1",
     user: { name: "User One" },
@@ -38,7 +39,11 @@ test("billabilityKpi: buckets by billing status and computes ratio", () => {
   const kpi = billabilityKpi([
     row({ billingStatus: BillingStatus.BILLABLE, hours: 3, amountCzk: 150 }),
     row({ billingStatus: BillingStatus.INTERNAL_NON_BILLABLE, hours: 1 }),
-    row({ billingStatus: BillingStatus.NEEDS_APPROVAL, hours: 2 }),
+    row({
+      billingStatus: BillingStatus.BILLABLE,
+      approvalStatus: ApprovalStatus.SUBMITTED,
+      hours: 2,
+    }),
   ]);
   assert.equal(kpi.billableHours, 3);
   assert.equal(kpi.nonBillableHours, 1);

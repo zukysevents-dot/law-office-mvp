@@ -17,7 +17,6 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { getCurrentUser } from "@/lib/auth";
 import { dateInputValue, numberInputValue } from "@/lib/form-values";
 import {
-  approvalStatusLabels,
   billingStatusLabels,
   internalTaskCategoryLabels,
   legalAreaOptions,
@@ -47,7 +46,7 @@ type WorkLogEditProps = {
 async function loadWorkLogEdit(id: string) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  const [workLog, subjects, projects, cases, tasks] = await Promise.all([
+  const [workLog, subjects, projects, cases, tasks, organization] = await Promise.all([
     prisma.workLog.findUnique({ where: { id } }),
     prisma.subject.findMany({
       where: andWhere(
@@ -81,6 +80,10 @@ async function loadWorkLogEdit(id: string) {
       orderBy: { createdAt: "desc" },
       select: { id: true, title: true },
     }),
+    prisma.organization.findUnique({
+      where: { id: currentUser.organizationId },
+      select: { billingTimeIncrementMinutes: true },
+    }),
   ]);
 
   return {
@@ -95,6 +98,7 @@ async function loadWorkLogEdit(id: string) {
     canArchive: canViewAllLegalData(currentUser),
     canViewRates: canViewRates(currentUser),
     canSetBillable: canSetBillableStatus(currentUser),
+    timeIncrementMinutes: organization?.billingTimeIncrementMinutes ?? 15,
   };
 }
 
@@ -109,6 +113,7 @@ const emptyWorkLogEdit: WorkLogEditData = {
   canArchive: false,
   canViewRates: false,
   canSetBillable: false,
+  timeIncrementMinutes: 15,
 };
 
 export default async function WorkLogEditPage({ params }: WorkLogEditProps) {
@@ -131,14 +136,14 @@ export default async function WorkLogEditPage({ params }: WorkLogEditProps) {
     canArchive,
     canViewRates: showRates,
     canSetBillable,
+    timeIncrementMinutes,
   } = result.data;
   const billingStatusChoices: BillingStatus[] = canSetBillable
     ? [
         BillingStatus.BILLABLE,
-        BillingStatus.NEEDS_APPROVAL,
         BillingStatus.INTERNAL_NON_BILLABLE,
       ]
-    : [BillingStatus.NEEDS_APPROVAL, BillingStatus.INTERNAL_NON_BILLABLE];
+    : [BillingStatus.BILLABLE, BillingStatus.INTERNAL_NON_BILLABLE];
   // Keep the current status selectable even if the role couldn't normally set it
   // (e.g. a junior editing a partner-approved BILLABLE item).
   const currentBillingStatus = workLog?.billingStatus;
@@ -238,7 +243,7 @@ export default async function WorkLogEditPage({ params }: WorkLogEditProps) {
                   name="hours"
                   type="number"
                   min="0"
-                  step="0.25"
+                  step={timeIncrementMinutes === 6 ? 0.1 : 0.25}
                   defaultValue={numberInputValue(workLog.hours)}
                   required
                 />
@@ -255,7 +260,7 @@ export default async function WorkLogEditPage({ params }: WorkLogEditProps) {
                 </Field>
               ) : null}
             </div>
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className={showRates ? "grid gap-4" : "hidden"}>
               {showRates ? (
                 <Field label="Částka">
                   <TextInput
@@ -267,18 +272,6 @@ export default async function WorkLogEditPage({ params }: WorkLogEditProps) {
                   />
                 </Field>
               ) : null}
-              <Field label="Approval status">
-                <SelectInput
-                  name="approvalStatus"
-                  defaultValue={workLog.approvalStatus}
-                >
-                  {options.approvalStatuses.map((status) => (
-                    <option key={status} value={status}>
-                      {approvalStatusLabels[status]}
-                    </option>
-                  ))}
-                </SelectInput>
-              </Field>
             </div>
             {/* Interní hodiny nabízejí interní kategorie místo právní oblasti. */}
             <WorkLogCategoryFields

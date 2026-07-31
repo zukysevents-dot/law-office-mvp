@@ -8,11 +8,16 @@ import { getCurrentUser } from "@/lib/auth";
 import { getEnabledModules } from "@/lib/entitlements";
 import { userRoleLabels } from "@/lib/labels";
 import { canManageInvoices, canViewAllLegalData } from "@/lib/permissions";
+import { getPrisma } from "@/lib/prisma";
 
 export async function AppShell({ children }: { children: React.ReactNode }) {
   // Middleware guarantees a valid session on (app) routes, so this resolves a
   // real user (or redirects to /login as a fallback).
   const currentUser = await getCurrentUser();
+  const organization = await getPrisma().organization.findUnique({
+    where: { id: currentUser.organizationId },
+    select: { billingTimeIncrementMinutes: true },
+  });
   const showAuditLog = canViewAllLegalData(currentUser);
   // Hide nav items for modules the org hasn't bought (UX only). The authoritative
   // guard is assertModuleEnabled, wired into each module's pages/actions as that
@@ -43,11 +48,13 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
       <main id="app-main" tabIndex={-1} className="min-w-0 flex-1">
         {/* pb-24: the FloatingTimer is fixed to the bottom-right corner and was
             covering the last table row / pagination on every list page. */}
-        <div className="mx-auto flex w-full max-w-[1800px] min-w-0 flex-col gap-6 px-4 pt-6 pb-24 sm:px-6 lg:px-8">
+        <div className="flex w-full min-w-0 flex-col gap-6 px-4 pt-6 pb-24 sm:px-6 lg:px-8">
           {children}
         </div>
       </main>
-      <FloatingTimer />
+      <FloatingTimer
+        incrementMinutes={organization?.billingTimeIncrementMinutes ?? 15}
+      />
       <CommandPalette />
     </div>
   );

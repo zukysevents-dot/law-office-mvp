@@ -79,8 +79,8 @@ npm run db:studio
 - modul Úkoly se změnou statusu a zápisem historie,
 - modul Výkazy práce,
 - role uživatelů v Nastavení,
-- připravené hranice pro Microsoft login, notifikace, SharePoint URL a budoucí
-  AI asistenci u work logů.
+- připravené hranice pro Microsoft login a notifikace, SharePoint URL i přímý
+  upload přes Microsoft Graph a budoucí AI asistenci u work logů.
 
 ## Další krok
 

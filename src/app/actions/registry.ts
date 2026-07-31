@@ -40,6 +40,7 @@ export async function setSubjectRegistryWatch(formData: FormData) {
   }
 
   revalidatePath(`/subjects/${subjectId}`);
+  revalidatePath("/registry");
 }
 
 // On-demand re-check of one subject against ARES/registry (the "Zkontrolovat teď"

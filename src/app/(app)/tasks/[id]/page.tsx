@@ -18,7 +18,7 @@ import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getCurrentUser } from "@/lib/auth";
-import { formatDate, formatDateUtc } from "@/lib/format";
+import { formatDate, formatDateUtc, formatHours } from "@/lib/format";
 import {
   options,
   taskDeadlineTypeLabels,
@@ -31,6 +31,7 @@ import {
   canViewAllLegalData,
   canEditRecord,
   taskVisibilityWhere,
+  workLogVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import {
@@ -82,6 +83,21 @@ async function loadTask(id: string) {
       comments: {
         orderBy: { createdAt: "desc" },
         include: { author: { select: { name: true } } },
+      },
+      workLogs: {
+        where: andWhere(
+          { archivedAt: null },
+          workLogVisibilityWhere(currentUser),
+        ),
+        orderBy: [{ workDate: "desc" }, { createdAt: "desc" }],
+        take: 100,
+        select: {
+          id: true,
+          workDate: true,
+          hours: true,
+          description: true,
+          user: { select: { name: true } },
+        },
       },
     },
   });
@@ -260,6 +276,34 @@ export default async function TaskDetailPage({ params }: TaskDetailProps) {
               </form>
             </Section>
           ) : null}
+          <Section title="Výkazy práce k úkolu">
+            {task.workLogs.length > 0 ? (
+              <div className="table-scroll">
+                <table className="w-max min-w-full table-auto">
+                  <thead>
+                    <tr>
+                      <th>Datum</th>
+                      <th>Pracovník</th>
+                      <th>Hodiny</th>
+                      <th>Popis</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {task.workLogs.map((log) => (
+                      <tr key={log.id}>
+                        <td>{formatDateUtc(log.workDate)}</td>
+                        <td>{log.user?.name ?? "—"}</td>
+                        <td>{formatHours(log.hours)}</td>
+                        <td className="max-w-md">{log.description ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <EmptyState>Úkol zatím nemá výkazy práce.</EmptyState>
+            )}
+          </Section>
           <Section title="Historie změn statusu">
             {task.statusHistory.length > 0 ? (
               <div className="table-scroll">

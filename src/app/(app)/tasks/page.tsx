@@ -13,9 +13,10 @@ import { CascadingMatterSelect } from "@/components/cascading-matter-select";
 import { ColumnVisibilityPanel } from "@/components/column-visibility-panel";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
-import { RowDblClickNav } from "@/components/row-dblclick-nav";
+import { RowClickNav } from "@/components/row-click-nav";
 import { Section } from "@/components/section";
 import { StatCard } from "@/components/stat-card";
+import { TaskStatusLegend } from "@/components/task-status-legend";
 import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
@@ -51,6 +52,7 @@ import {
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import {
+  isTaskOverdue,
   taskDeadlineTypeTone,
   taskStatusRowClass,
   taskStatusTone,
@@ -126,6 +128,7 @@ type TasksPageData = {
     overdue: number;
   };
   tableView: TableViewState;
+  currentUserId: string;
 };
 
 // Upper bound on rows pulled into a single list render. Filters keep normal
@@ -213,6 +216,7 @@ export default async function TasksPage({ searchParams }: TasksProps) {
       truncated: false,
       cards: { review: 0, waitingClient: 0, waitingCounterparty: 0, overdue: 0 },
       tableView: getDefaultTableView("tasks"),
+      currentUserId: "",
     },
     async () => {
       const prisma = getPrisma();
@@ -375,6 +379,7 @@ export default async function TasksPage({ searchParams }: TasksProps) {
           overdue,
         },
         tableView,
+        currentUserId: currentUser.id,
       };
     },
   );
@@ -452,16 +457,20 @@ export default async function TasksPage({ searchParams }: TasksProps) {
               ))}
             </SelectInput>
           </Field>
-          <Field label="Klient">
-            <SelectInput name="subjectId" defaultValue={subjectId}>
-              <option value="">Všichni klienti</option>
-              {result.data.subjects.map((subject) => (
-                <option key={subject.id} value={subject.id}>
-                  {subject.name}
-                </option>
-              ))}
-            </SelectInput>
-          </Field>
+          <CascadingMatterSelect
+            subjects={result.data.subjects}
+            projects={result.data.projects}
+            cases={result.data.cases.map((legalCase) => ({
+              id: legalCase.id,
+              name: legalCase.name,
+              projectId: legalCase.projectId,
+              projectName: legalCase.project.name,
+            }))}
+            defaultSubjectId={subjectId}
+            defaultProjectId={projectId}
+            defaultCaseId={caseId}
+            filterMode
+          />
           <Field label="Řešitel">
             <SelectInput name="assignedToId" defaultValue={assignedToId}>
               <option value="">Všichni řešitelé</option>
@@ -478,26 +487,6 @@ export default async function TasksPage({ searchParams }: TasksProps) {
               {result.data.users.map((user) => (
                 <option key={user.id} value={user.id}>
                   {user.name}
-                </option>
-              ))}
-            </SelectInput>
-          </Field>
-          <Field label="Projekt">
-            <SelectInput name="projectId" defaultValue={projectId}>
-              <option value="">Všechny projekty</option>
-              {result.data.projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </SelectInput>
-          </Field>
-          <Field label="Případ">
-            <SelectInput name="caseId" defaultValue={caseId}>
-              <option value="">Všechny případy</option>
-              {result.data.cases.map((legalCase) => (
-                <option key={legalCase.id} value={legalCase.id}>
-                  {legalCase.name} / {legalCase.project.name}
                 </option>
               ))}
             </SelectInput>
@@ -533,6 +522,21 @@ export default async function TasksPage({ searchParams }: TasksProps) {
           <Button type="submit" variant="secondary" className="self-end">
             Filtrovat
           </Button>
+          {status ||
+          priority ||
+          assignedToId ||
+          responsibleUserId ||
+          subjectId ||
+          projectId ||
+          caseId ||
+          deadlineType ||
+          overdueOnly ||
+          sort !== "deadline" ||
+          archive !== "active" ? (
+            <ButtonLink href="/tasks" variant="ghost" className="self-end">
+              Zrušit filtry
+            </ButtonLink>
+          ) : null}
         </form>
       </Section>
       <Section title="Seznam úkolů">
@@ -541,6 +545,7 @@ export default async function TasksPage({ searchParams }: TasksProps) {
           columns={result.data.tableView.columns}
           visibleColumns={result.data.tableView.visibleColumns}
         />
+        <TaskStatusLegend />
         {result.data.truncated ? (
           <p className="mb-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
             Zobrazeno prvních {TASK_LIST_LIMIT} úkolů. Pro zobrazení dalších
@@ -548,7 +553,7 @@ export default async function TasksPage({ searchParams }: TasksProps) {
           </p>
         ) : null}
         {result.data.tasks.length > 0 ? (
-          <RowDblClickNav>
+          <RowClickNav>
           <div className="table-scroll">
             <table className="w-max min-w-full [&_td]:align-top">
               <thead>
@@ -566,8 +571,10 @@ export default async function TasksPage({ searchParams }: TasksProps) {
                   <tr
                     key={task.id}
                     data-href={`/tasks/${task.id}`}
-                    title="Dvojklik otevře podrobnosti úkolu"
-                    className={taskStatusRowClass(task.status) || undefined}
+                    tabIndex={0}
+                    aria-label={`Otevřít úkol ${task.title}`}
+                    title="Kliknutím otevřete podrobnosti úkolu"
+                    className={`${taskStatusRowClass(task.status)} cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-emerald-900`}
                   >
                     {visibleColumnSet.has("title") ? (
                       <td className="max-w-xs">
@@ -662,7 +669,15 @@ export default async function TasksPage({ searchParams }: TasksProps) {
                       <td>{formatDateUtc(task.startDate)}</td>
                     ) : null}
                     {visibleColumnSet.has("deadline") ? (
-                      <td>{formatDateUtc(task.deadline)}</td>
+                      <td
+                        className={
+                          isTaskOverdue(task.deadline, task.status, now)
+                            ? "font-semibold text-red-700"
+                            : undefined
+                        }
+                      >
+                        {formatDateUtc(task.deadline)}
+                      </td>
                     ) : null}
                     {visibleColumnSet.has("sharePointUrl") ? (
                       <td className="max-w-xs truncate">
@@ -689,7 +704,7 @@ export default async function TasksPage({ searchParams }: TasksProps) {
               </tbody>
             </table>
           </div>
-          </RowDblClickNav>
+          </RowClickNav>
         ) : (
           <EmptyState>Žádné úkoly neodpovídají filtrům.</EmptyState>
         )}
@@ -722,7 +737,10 @@ export default async function TasksPage({ searchParams }: TasksProps) {
               </SelectInput>
             </Field>
             <Field label="Odpovědná osoba">
-              <SelectInput name="responsibleUserId">
+              <SelectInput
+                name="responsibleUserId"
+                defaultValue={result.data.currentUserId}
+              >
                 <option value="">Bez přiřazení</option>
                 {result.data.users.map((user) => (
                   <option key={user.id} value={user.id}>
@@ -758,7 +776,11 @@ export default async function TasksPage({ searchParams }: TasksProps) {
               </SelectInput>
             </Field>
             <Field label="Začátek">
-              <TextInput name="startDate" type="date" />
+              <TextInput
+                name="startDate"
+                type="date"
+                defaultValue={now.toISOString().slice(0, 10)}
+              />
             </Field>
             <Field label="Deadline">
               <TextInput name="deadline" type="date" />

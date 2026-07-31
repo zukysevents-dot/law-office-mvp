@@ -5,6 +5,7 @@ import { Capability, UserRole } from "@/generated/prisma/enums";
 
 import {
   andWhere,
+  billingApproverWorkLogWhere,
   assertCanManageReferences,
   assertCanManageSubjects,
   assertCanManageAml,
@@ -722,6 +723,13 @@ test("caseVisibilityWhere: LAWYER and TRAINEE gain case + project-assignee paths
 
 test("workLogVisibilityWhere: LAWYER OR mirrors assignee on project/case", () => {
   assert.equal(orBranches(workLogVisibilityWhere(lawyer)).length, 8);
+});
+
+test("billingApproverWorkLogWhere covers direct, project, and case client", () => {
+  const where = billingApproverWorkLogWhere("u-approver");
+  assert.equal(where.OR?.length, 3);
+  assert.match(JSON.stringify(where), /billingApprovers/);
+  assert.match(JSON.stringify(where), /u-approver/);
 });
 
 test("invoiceVisibilityWhere: LAWYER gains assignee paths; juniors stay created-only", () => {

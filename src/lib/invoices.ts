@@ -117,6 +117,29 @@ export function areLockedWorkLogsInvoiceable(
   );
 }
 
+/**
+ * Return the exact source work-log ids for an invoice, or null when a line is
+ * not backed by a work-log / the same work-log is referenced twice. LawOffice
+ * invoices are generated from approved work logs, so issuing a detached manual
+ * line would break the audit trail and is rejected.
+ */
+export function invoiceLineWorkLogIds(
+  lines: Array<{ workLogId: string | null }>,
+): string[] | null {
+  const ids: string[] = [];
+  const unique = new Set<string>();
+
+  for (const line of lines) {
+    if (!line.workLogId || unique.has(line.workLogId)) {
+      return null;
+    }
+    unique.add(line.workLogId);
+    ids.push(line.workLogId);
+  }
+
+  return ids;
+}
+
 // Statuses that can still go overdue (an unpaid receivable). PAID and CANCELLED
 // never are; DRAFT has no due date yet.
 const OVERDUE_STATUSES: InvoiceStatus[] = [

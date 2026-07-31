@@ -474,8 +474,8 @@ export async function punchAttendance(formData: FormData) {
   revalidatePath("/hr/attendance");
 }
 
-// Bulk import attendance from CSV (manual file, no hardware). One batch = one
-// transaction; a parse error writes nothing.
+// Bulk import attendance from a vendor-neutral daily-total or terminal CSV.
+// One batch = one transaction; validation errors write nothing.
 export async function importAttendance(formData: FormData) {
   const prisma = getPrisma();
   const { currentUser, organizationId } = await authorize();
@@ -497,18 +497,19 @@ export async function importAttendance(formData: FormData) {
     select: { id: true, personalNumber: true },
   });
   const byNumber = new Map(employees.map((e) => [e.personalNumber, e.id]));
+  const missingNumbers = personalNumbers.filter((number) => !byNumber.has(number));
+  if (missingNumbers.length > 0) {
+    throw new Error(
+      `Nenalezená osobní čísla zaměstnanců: ${missingNumbers.slice(0, 20).join(", ")}${missingNumbers.length > 20 ? "…" : ""}.`,
+    );
+  }
 
-  const importBatchId = `imp_${currentUser.id}_${rows.length}`;
+  const importBatchId = `imp_${crypto.randomUUID()}`;
   let imported = 0;
-  const skipped: string[] = [];
 
   await prisma.$transaction(async (tx) => {
     for (const row of rows) {
-      const employeeId = byNumber.get(row.personalNumber);
-      if (!employeeId) {
-        skipped.push(row.personalNumber);
-        continue;
-      }
+      const employeeId = byNumber.get(row.personalNumber) as string;
       const workedHours =
         row.checkIn && row.checkOut
           ? computeWorkedHours(row.checkIn, row.checkOut, row.breakHours)
@@ -545,7 +546,7 @@ export async function importAttendance(formData: FormData) {
         action: "IMPORT_ATTENDANCE",
         changedById: currentUser.id,
         organizationId: currentUser.organizationId,
-        newValue: auditJson({ imported, skipped }),
+        newValue: auditJson({ importBatchId, imported, personalNumbers }),
       },
     });
   });

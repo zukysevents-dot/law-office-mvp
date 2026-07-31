@@ -39,8 +39,10 @@ export async function addDashboardWidget(formData: FormData) {
     _max: { position: true },
   });
 
-  await prisma.dashboardWidget.create({
-    data: {
+  await prisma.dashboardWidget.upsert({
+    where: { userId_type: { userId: currentUser.id, type } },
+    update: { visible: true },
+    create: {
       userId: currentUser.id,
       type,
       title: dashboardWidgetTypeLabels[type],
@@ -133,5 +135,54 @@ export async function resetDashboardWidgets() {
     });
   });
 
+  revalidateDashboard();
+}
+
+export async function saveDashboardWidgetOrder(widgetIds: string[]) {
+  const prisma = getPrisma();
+  const currentUser = await getCurrentUser();
+  const uniqueIds = [
+    ...new Set(
+      widgetIds.filter(
+        (id): id is string => typeof id === "string" && id.length > 0,
+      ),
+    ),
+  ];
+  const owned = await prisma.dashboardWidget.findMany({
+    where: { userId: currentUser.id },
+    orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+    select: { id: true },
+  });
+  const ownedIds = new Set(owned.map((widget) => widget.id));
+  const visibleOrder = uniqueIds.filter((id) => ownedIds.has(id));
+  const remaining = owned
+    .map((widget) => widget.id)
+    .filter((id) => !visibleOrder.includes(id));
+  const order = [...visibleOrder, ...remaining];
+
+  await prisma.$transaction(
+    order.map((id, position) =>
+      prisma.dashboardWidget.updateMany({
+        where: { id, userId: currentUser.id },
+        data: { position },
+      }),
+    ),
+  );
+  revalidateDashboard();
+}
+
+export async function saveDashboardWidgetSize(id: string, rawSize: string) {
+  const prisma = getPrisma();
+  const currentUser = await getCurrentUser();
+  const size = enumValue(
+    DashboardWidgetSize,
+    rawSize,
+    DashboardWidgetSize.MEDIUM,
+  );
+
+  await prisma.dashboardWidget.updateMany({
+    where: { id, userId: currentUser.id },
+    data: { size },
+  });
   revalidateDashboard();
 }

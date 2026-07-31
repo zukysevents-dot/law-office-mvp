@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { Plus, Search } from "lucide-react";
 
 import { createProject } from "@/app/actions/projects";
 import { ColumnVisibilityPanel } from "@/components/column-visibility-panel";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
+import { RowClickNav } from "@/components/row-click-nav";
 import { Section } from "@/components/section";
 import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
@@ -37,7 +38,7 @@ import type { TableViewState } from "@/lib/table-view-preferences";
 export const dynamic = "force-dynamic";
 
 type ProjectsPageProps = {
-  searchParams: Promise<{ archive?: string; subjectId?: string }>;
+  searchParams: Promise<{ q?: string; archive?: string; subjectId?: string }>;
 };
 
 type ProjectPageData = {
@@ -63,6 +64,7 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
   const params = await searchParams;
   const archive = archiveFilterValue(params.archive);
   const subjectId = params.subjectId ?? "";
+  const query = params.q?.trim() ?? "";
   const result = await safeQuery<ProjectPageData>(
     {
       projects: [],
@@ -81,6 +83,18 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
             archivedWhere(archive),
             projectVisibilityWhere(currentUser),
             subjectId ? { mainSubjectId: subjectId } : {},
+            query
+              ? {
+                  OR: [
+                    { name: { contains: query, mode: "insensitive" } },
+                    {
+                      mainSubject: {
+                        name: { contains: query, mode: "insensitive" },
+                      },
+                    },
+                  ],
+                }
+              : {},
           ),
           orderBy: { createdAt: "desc" },
           include: {
@@ -131,7 +145,21 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
         error={result.error}
       />
       <Section>
-        <form className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <form className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <Field label="Hledat">
+            <div className="relative">
+              <Search
+                className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-stone-600"
+                aria-hidden="true"
+              />
+              <TextInput
+                name="q"
+                defaultValue={query}
+                placeholder="Projekt nebo klient"
+                className="pl-9"
+              />
+            </div>
+          </Field>
           <Field label="Klient">
             <SelectInput name="subjectId" defaultValue={subjectId}>
               <option value="">Všichni klienti</option>
@@ -154,6 +182,11 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
           <Button type="submit" variant="secondary" className="self-end">
             Filtrovat
           </Button>
+          {query || subjectId || archive !== "active" ? (
+            <ButtonLink href="/projects" variant="ghost" className="self-end">
+              Zrušit filtry
+            </ButtonLink>
+          ) : null}
         </form>
       </Section>
       <Section title="Seznam projektů">
@@ -163,6 +196,7 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
           visibleColumns={tableView.visibleColumns}
         />
         {result.data.projects.length > 0 ? (
+          <RowClickNav>
           <div className="table-scroll">
             <table className="w-max min-w-full">
               <thead>
@@ -177,7 +211,13 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
               </thead>
               <tbody>
                 {result.data.projects.map((project) => (
-                  <tr key={project.id}>
+                  <tr
+                    key={project.id}
+                    data-href={`/projects/${project.id}`}
+                    tabIndex={0}
+                    aria-label={`Otevřít projekt ${project.name}`}
+                    className="cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-emerald-900"
+                  >
                     {/* Pořadí buněk MUSÍ odpovídat pořadí sloupců v configu
                         (table-view-preferences: Klient první, pak Název), jinak
                         hlavička nesedí na obsah — „Klient" nad názvem projektu. */}
@@ -233,6 +273,7 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
               </tbody>
             </table>
           </div>
+          </RowClickNav>
         ) : (
           <EmptyState>Zatím nejsou založené žádné projekty.</EmptyState>
         )}

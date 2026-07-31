@@ -16,6 +16,7 @@ import timeGridPlugin from "@fullcalendar/timegrid";
 import type { BadgeTone } from "@/components/ui/badge";
 import { fetchCalendarEvents } from "@/app/actions/calendar";
 import type { SerializedCalendarEvent } from "@/lib/calendar-events";
+import type { CalendarDefaultView } from "@/lib/calendar-view";
 
 // Load FullCalendar client-only: it touches the DOM, so this avoids SSR/
 // hydration mismatches without a setState-in-effect mount gate.
@@ -64,7 +65,15 @@ function toEventInput(event: SerializedCalendarEvent): EventInput {
   };
 }
 
-export function CalendarView() {
+export function CalendarView({
+  compact = false,
+  title,
+  initialView = "dayGridMonth",
+}: {
+  compact?: boolean;
+  title?: string;
+  initialView?: CalendarDefaultView;
+} = {}) {
   const router = useRouter();
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -100,6 +109,9 @@ export function CalendarView() {
 
   return (
     <section className="min-w-0 space-y-3 rounded-lg border border-[#dce4e8] bg-white p-4 shadow-sm shadow-[#0e1822]/5">
+      {title ? (
+        <h2 className="text-lg font-semibold text-[#0e1822]">{title}</h2>
+      ) : null}
       <div className="flex flex-wrap items-center gap-4 text-xs text-[#566673]">
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-full bg-red-300" aria-hidden="true" />
@@ -133,7 +145,7 @@ export function CalendarView() {
       <div className="calendar-shell min-w-0">
         <FullCalendar
           plugins={[dayGridPlugin, timeGridPlugin, listPlugin]}
-          initialView="dayGridMonth"
+          initialView={initialView}
           locale={csLocale}
           timeZone="UTC"
           firstDay={1}
@@ -141,7 +153,9 @@ export function CalendarView() {
           headerToolbar={{
             left: "prev,next today",
             center: "title",
-            right: "dayGridMonth,timeGridWeek,timeGridDay,listWeek",
+            right: compact
+              ? "dayGridMonth,listWeek"
+              : "dayGridMonth,timeGridWeek,timeGridDay,listYear",
           }}
           buttonText={{
             today: "Dnes",
@@ -150,6 +164,7 @@ export function CalendarView() {
             day: "Den",
             list: "Agenda",
           }}
+          views={{ listYear: { buttonText: "Rok" } }}
           events={loadEvents}
           eventClick={handleEventClick}
           dayMaxEvents

@@ -1,12 +1,16 @@
 import Link from "next/link";
+import { Plus } from "lucide-react";
 
+import { createDeadline } from "@/app/actions/deadlines";
+import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
 import { Badge } from "@/components/ui/badge";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
 import type { Prisma } from "@/generated/prisma/client";
-import { DeadlineStatus, ModuleKey } from "@/generated/prisma/enums";
+import { DeadlineStatus, DeadlineType, ModuleKey } from "@/generated/prisma/enums";
 import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import { assertModuleEnabled } from "@/lib/entitlements";
@@ -14,6 +18,8 @@ import { formatDateTime, formatDateUtc } from "@/lib/format";
 import { deadlineTypeLabels } from "@/lib/labels";
 import {
   andWhere,
+  canManageDeadlines,
+  caseVisibilityWhere,
   courtHearingVisibilityWhere,
   deadlineVisibilityWhere,
 } from "@/lib/permissions";
@@ -41,9 +47,19 @@ type Data = {
   overdue: DeadlineRow[];
   upcoming: DeadlineRow[];
   hearings: HearingRow[];
+  cases: Array<{ id: string; name: string; project: { name: string } }>;
+  members: Array<{ id: string; name: string }>;
+  canManage: boolean;
 };
 
-const emptyData: Data = { overdue: [], upcoming: [], hearings: [] };
+const emptyData: Data = {
+  overdue: [],
+  upcoming: [],
+  hearings: [],
+  cases: [],
+  members: [],
+  canManage: false,
+};
 
 function deadlineRows(rows: DeadlineRow[]) {
   return (
@@ -96,7 +112,7 @@ export default async function DeadlinesPage() {
       now.getTime() + UPCOMING_WINDOW_DAYS * 24 * 60 * 60 * 1000,
     );
 
-    const [overdue, upcoming, hearings] = await Promise.all([
+    const [overdue, upcoming, hearings, cases, memberRows] = await Promise.all([
       prisma.deadline.findMany({
         where: andWhere(
           {
@@ -132,9 +148,33 @@ export default async function DeadlinesPage() {
         orderBy: { hearingAt: "asc" },
         take: 500,
       }),
+      prisma.case.findMany({
+        where: andWhere(
+          { archivedAt: null },
+          caseVisibilityWhere(currentUser),
+        ),
+        orderBy: [{ project: { name: "asc" } }, { name: "asc" }],
+        select: { id: true, name: true, project: { select: { name: true } } },
+        take: 1000,
+      }),
+      prisma.organizationMember.findMany({
+        where: {
+          organizationId: currentUser.organizationId,
+          status: "ACTIVE",
+        },
+        orderBy: { user: { name: "asc" } },
+        select: { user: { select: { id: true, name: true } } },
+      }),
     ]);
 
-    return { overdue, upcoming, hearings };
+    return {
+      overdue,
+      upcoming,
+      hearings,
+      cases,
+      members: memberRows.map((row) => row.user),
+      canManage: canManageDeadlines(currentUser),
+    };
   });
 
   const data = result.data ?? emptyData;
@@ -144,8 +184,75 @@ export default async function DeadlinesPage() {
       <PageHeader
         title="Lhůtník"
         description="Lhůty po termínu, blížící se lhůty a nadcházející soudní jednání."
+        action={
+          data.canManage ? (
+            <ButtonLink href="#new-deadline">
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              Nová lhůta
+            </ButtonLink>
+          ) : null
+        }
       />
       <DatabaseNotice databaseReady={result.databaseReady} error={result.error} />
+
+      {data.canManage ? (
+        <Section title="Nová lhůta" id="new-deadline" className="scroll-mt-6">
+          <form action={createDeadline} className="grid gap-4">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <Field label="Případ">
+                <SelectInput name="caseId" required>
+                  <option value="">Vyberte případ</option>
+                  {data.cases.map((legalCase) => (
+                    <option key={legalCase.id} value={legalCase.id}>
+                      {legalCase.name} / {legalCase.project.name}
+                    </option>
+                  ))}
+                </SelectInput>
+              </Field>
+              <Field label="Název lhůty">
+                <TextInput name="title" required />
+              </Field>
+              <Field label="Typ">
+                <SelectInput name="type" defaultValue={DeadlineType.PROCEDURAL}>
+                  {Object.values(DeadlineType).map((type) => (
+                    <option key={type} value={type}>
+                      {deadlineTypeLabels[type]}
+                    </option>
+                  ))}
+                </SelectInput>
+              </Field>
+              <Field label="Termín">
+                <TextInput name="dueDate" type="date" required />
+              </Field>
+              <Field label="Odpovědný">
+                <SelectInput name="responsibleUserId" defaultValue="">
+                  <option value="">Bez přiřazení</option>
+                  {data.members.map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {member.name}
+                    </option>
+                  ))}
+                </SelectInput>
+              </Field>
+              <Field label="Událost počátku">
+                <TextInput name="originEvent" />
+              </Field>
+              <Field label="Datum počátku">
+                <TextInput name="originDate" type="date" />
+              </Field>
+              <Field label="Pravidlo výpočtu">
+                <TextInput name="computedRule" />
+              </Field>
+            </div>
+            <Field label="Poznámka">
+              <TextArea name="note" />
+            </Field>
+            <div>
+              <Button type="submit">Vytvořit lhůtu</Button>
+            </div>
+          </form>
+        </Section>
+      ) : null}
 
       <Section title="Po termínu">
         {data.overdue.length > 0 ? (

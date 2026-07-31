@@ -17,7 +17,7 @@
 | F2 | Datové schránky (`DATA_BOXES`) | ✅ evidence zpráv hotová (chybí živá ISDS integrace) |
 | F3 | AML (`AML`) | ✅ hotovo (PEP/sankce ruční checkbox) |
 | F4 | Lhůtník (`DEADLINES`) | ✅ hotovo (výpočet lhůt manuální) |
-| F5 | Dokumenty + šablony (`DOCUMENTS`) | ✅ hotovo na SharePoint odkazech (blob storage + e-podpis odloženo) |
+| F5 | Dokumenty + šablony (`DOCUMENTS`) | ✅ SharePoint odkazy + volitelný přímý Graph upload (e-podpis odložen) |
 | F6 | Klientský portál (`CLIENT_PORTAL`) | ✅ hotovo |
 | F7 | HR / docházka (`HR_ATTENDANCE`) | ✅ hotovo |
 | **F8** | **Produktizace v2 (Stripe/ČR předplatné, trialy, self-service)** | ❌ **zbývá** |
@@ -27,7 +27,7 @@
 2. **Účetní export fakturace** (ISDOC / Pohoda / Money) — „fáze 2" BILLINGu.
 3. **Živá ISDS integrace** datových schránek (oficiální API vs partner) — dnes jen evidence.
 4. **AML automatizace** — PEP / sankční seznamy (dnes ruční checkbox).
-5. **Dokumenty** — rozhodnutí trvalého úložiště (blob vs SharePoint) + e-podpis.
+5. **Dokumenty** — SharePoint je zvolené úložiště; zbývá tenant konfigurace a e-podpis.
 6. **E0-8** — volitelný middleware prefix-guard (UX, ne bezpečnost).
 7. **Otevřené otázky** sekce 7 — stále k rozhodnutí.
 
@@ -285,7 +285,7 @@ Rozhodnutí: fakturace **předplatného produktu** (Subscription) je oddělená 
 
 ### 3.5 Epik 5 — Dokumenty + chytré šablony (`DOCUMENTS`)
 
-**Cíl:** Vlastní DMS s verzováním, generování dokumentů ze šablon s předvyplněním klient/protistrana/spis, fulltext. Dnes jen odkaz na SharePoint.
+**Cíl:** DMS s verzováním, generování dokumentů ze šablon s předvyplněním klient/protistrana/spis a fulltextem. Dokument lze odkázat nebo přímo nahrát do SharePointu přes Microsoft Graph.
 **Reference:** SingleCase (DMS + šablony), Praetor.
 
 **Nové modely/pole:** `Document` (organizationId, caseId?/subjectId?, `name`, `mimeType`, `storageUrl`, `currentVersionId`), `DocumentVersion` (documentId, `version`, `storageUrl`, `uploadedById`, `uploadedAt`, `checksum`), `DocumentTemplate` (organizationId, `name`, `bodyTemplate`, `placeholders` JSON), enum dokumentových typů. Fulltext přes Postgres `tsvector` index.
@@ -321,14 +321,14 @@ Rozhodnutí: fakturace **předplatného produktu** (Subscription) je oddělená 
 
 ### 3.7 Epik 7 — HR / Docházka (`HR_ATTENDANCE`) — JINÁ doména
 
-**Cíl:** Zaměstnanci, směny, fond prac. doby, přesčasy, home office, dovolená + saldo, žádosti/schvalování absencí, export do mzdových programů. **Software-only** (žádné terminály/hardware).
-**Reference:** Alveno (HR/docházka).
+**Cíl:** Zaměstnanci, směny, fond prac. doby, přesčasy, home office, dovolená + saldo, žádosti/schvalování absencí, export do mzdových programů a import z externích terminálů. LawOffice nedodává hardware, přijímá jeho CSV export.
+**Reference:** GIRITON (doporučený terminál/API kandidát), Alveno.
 
 **Nové modely/pole:** `Employee` (org, vazba na User?), `WorkSchedule`/`Shift`, `AttendanceRecord` (in/out, zdroj manuální/import), `AbsenceRequest` (typ DOVOLENÁ/NEMOC/HOME_OFFICE, stav schválení), `LeaveBalance` (saldo dovolené), enumy absencí. Doména **oddělená** od právní části — vlastní `module` namespace, neplést do spisové logiky.
 
 **Klíčové routy/akce:** `/hr/employees`, `/hr/attendance`, `/hr/absences` (žádost/schválení), `/hr/exports` (mzdy: Pamica…), akce `requestAbsence`, `approveAbsence`, `exportPayroll`.
 
-**Integrace/rizika:** mzdový export (Pamica) — formát; bez hardwaru jen import/manuál. Schvalovací workflow podobné billing approvals (znovupoužít vzor). Saldo dovolené = výpočet, hlídat konzistenci v transakci.
+**Integrace/rizika:** mzdový export (Pamica) a vendor-neutrální CSV z terminálů; pro plně automatický přenos lze navázat REST API vybraného dodavatele. Schvalovací workflow podobné billing approvals (znovupoužít vzor). Saldo dovolené = výpočet, hlídat konzistenci v transakci.
 
 **Úkoly:**
 - [x] HR-1 Prisma modely + enumy + migrace (oddělený namespace).

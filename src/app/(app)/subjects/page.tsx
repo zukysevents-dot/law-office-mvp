@@ -5,6 +5,7 @@ import { createSubject } from "@/app/actions/subjects";
 import { ColumnVisibilityPanel } from "@/components/column-visibility-panel";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
+import { RowClickNav } from "@/components/row-click-nav";
 import { Section } from "@/components/section";
 import { SubjectAresFields } from "@/components/subject-ares-fields";
 import { Badge } from "@/components/ui/badge";
@@ -157,6 +158,11 @@ export default async function SubjectsPage({ searchParams }: SubjectsPageProps) 
           <Button type="submit" variant="secondary" className="md:self-end">
             Hledat
           </Button>
+          {query || archive !== "active" ? (
+            <ButtonLink href="/subjects" variant="ghost" className="md:self-end">
+              Zrušit filtry
+            </ButtonLink>
+          ) : null}
         </form>
       </Section>
       <Section title="Seznam subjektů">
@@ -166,6 +172,7 @@ export default async function SubjectsPage({ searchParams }: SubjectsPageProps) 
           visibleColumns={tableView.visibleColumns}
         />
         {result.data.subjects.length > 0 ? (
+          <RowClickNav>
           <div className="table-scroll">
             <table className="w-max min-w-full">
               <thead>
@@ -180,7 +187,13 @@ export default async function SubjectsPage({ searchParams }: SubjectsPageProps) 
               </thead>
               <tbody>
                 {result.data.subjects.map((subject) => (
-                  <tr key={subject.id}>
+                  <tr
+                    key={subject.id}
+                    data-href={`/subjects/${subject.id}`}
+                    tabIndex={0}
+                    aria-label={`Otevřít subjekt ${subject.name}`}
+                    className="cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-emerald-900"
+                  >
                     {visibleColumnSet.has("name") ? (
                       <td className="max-w-xs">
                         <Link
@@ -255,6 +268,7 @@ export default async function SubjectsPage({ searchParams }: SubjectsPageProps) 
               </tbody>
             </table>
           </div>
+          </RowClickNav>
         ) : (
           <EmptyState>Žádné subjekty neodpovídají zadání.</EmptyState>
         )}

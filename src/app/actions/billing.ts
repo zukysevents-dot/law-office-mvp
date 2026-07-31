@@ -17,7 +17,7 @@ import {
   requiredString,
 } from "@/lib/form";
 import { assertUserInOrg } from "@/lib/org-users";
-import { assertCanApproveBilling, canViewRecord } from "@/lib/permissions";
+import { canViewAllLegalData } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 type Disposition = "APPROVE" | "REJECT" | "HIDDEN_WRITE_OFF" | "VISIBLE_WRITE_OFF";
@@ -39,7 +39,6 @@ export async function decideWorkLog(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
   await assertModuleEnabled(currentUser, ModuleKey.BILLING);
-  assertCanApproveBilling(currentUser);
 
   const workLogId = requiredString(formData, "id");
   const disposition = requiredString(formData, "disposition") as Disposition;
@@ -73,9 +72,36 @@ export async function decideWorkLog(formData: FormData) {
 
     const oldWorkLog = await tx.workLog.findFirst({
       where: { id: workLogId, organizationId: currentUser.organizationId },
+      include: {
+        project: { select: { mainSubjectId: true } },
+        case: {
+          select: { project: { select: { mainSubjectId: true } } },
+        },
+      },
     });
-    if (!oldWorkLog || !canViewRecord(currentUser, "WorkLog", oldWorkLog)) {
+    if (!oldWorkLog) {
       throw new Error("Nemáte oprávnění k tomuto výkazu práce.");
+    }
+    if (!canViewAllLegalData(currentUser)) {
+      const billingSubjectId =
+        oldWorkLog.subjectId ??
+        oldWorkLog.project?.mainSubjectId ??
+        oldWorkLog.case?.project.mainSubjectId ??
+        null;
+      const assignment = billingSubjectId
+        ? await tx.subjectBillingApprover.findUnique({
+            where: {
+              subjectId_userId: {
+                subjectId: billingSubjectId,
+                userId: currentUser.id,
+              },
+            },
+            select: { id: true },
+          })
+        : null;
+      if (!assignment) {
+        throw new Error("Nemáte oprávnění k tomuto výkazu práce.");
+      }
     }
     if (oldWorkLog.invoicedAt) {
       throw new Error(

@@ -9,6 +9,7 @@ import { ArchiveActionForm } from "@/components/archive-action-form";
 import { CascadingMatterSelect } from "@/components/cascading-matter-select";
 import { ColumnVisibilityPanel } from "@/components/column-visibility-panel";
 import { WorkLogCategoryFields } from "@/components/work-log-category-fields";
+import { WorkLogCreateDialog } from "@/components/work-log-create-dialog";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
@@ -51,6 +52,7 @@ import type { TableViewState } from "@/lib/table-view-preferences";
 import { BillingStatus } from "@/generated/prisma/enums";
 import {
   andWhere,
+  billingApproverWorkLogWhere,
   canViewAllLegalData,
   canEditRecord,
   canSetBillableStatus,
@@ -110,6 +112,8 @@ type WorkLogsPageData = {
   canArchive: boolean;
   canViewRates: boolean;
   canSetBillable: boolean;
+  canApprove: boolean;
+  timeIncrementMinutes: number;
   // Souhrn hodin přihlášeného uživatele (jeho vlastní výkazy).
   monthSummary: {
     billable: number;
@@ -150,6 +154,8 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
   // The floating timer stops into this form with ?hours=<elapsed> so the most
   // repeated daily action needs zero manual time math.
   const hoursPrefill = firstParam(params, "hours");
+  const showNewDialog =
+    firstParam(params, "new") === "1" || Boolean(hoursPrefill);
 
   const result = await safeQuery<WorkLogsPageData>(
     {
@@ -163,6 +169,8 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
       canArchive: false,
       canViewRates: false,
       canSetBillable: false,
+      canApprove: false,
+      timeIncrementMinutes: 15,
       monthSummary: { billable: 0, needsApproval: 0, internal: 0, total: 0 },
       weekHours: 0,
       weeklyTarget: null,
@@ -172,6 +180,29 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
       const prisma = getPrisma();
       const currentUser = await getCurrentUser();
       const tableView = await getCurrentTableView("workLogs");
+      const canApproveAll = canViewAllLegalData(currentUser);
+      const approvalAssignmentCount = canApproveAll
+        ? 0
+        : await prisma.subjectBillingApprover.count({
+            where: {
+              organizationId: currentUser.organizationId,
+              userId: currentUser.id,
+            },
+          });
+      const canApprove = canApproveAll || approvalAssignmentCount > 0;
+      const visibleWorkLogsWhere = canApproveAll
+        ? workLogVisibilityWhere(currentUser)
+        : canApprove
+          ? andWhere(
+              { organizationId: currentUser.organizationId },
+              {
+                OR: [
+                  workLogVisibilityWhere(currentUser),
+                  billingApproverWorkLogWhere(currentUser.id),
+                ],
+              },
+            )
+          : workLogVisibilityWhere(currentUser);
       // Hranice pro souhrn: aktuální měsíc a aktuální týden (od pondělí).
       // Týden přes sdílený weekStartUtcMs helper, aby karta „Tento týden" a
       // týdenní graf na dashboardu počítaly vždy stejný interval (workDate je
@@ -192,11 +223,12 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
         monthGroups,
         weekAgg,
         hoursPlan,
+        organization,
       ] = await Promise.all([
         prisma.workLog.findMany({
           where: andWhere(
             archivedWhere(archive),
-            workLogVisibilityWhere(currentUser),
+            visibleWorkLogsWhere,
             {
               ...(subjectId ? { subjectId } : {}),
               ...(projectId ? { projectId } : {}),
@@ -290,7 +322,7 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
         }),
         getOrgUserOptions(currentUser),
         prisma.workLog.groupBy({
-          by: ["billingStatus"],
+          by: ["billingStatus", "approvalStatus"],
           where: {
             userId: currentUser.id,
             archivedAt: null,
@@ -310,27 +342,36 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
           where: { userId: currentUser.id },
           select: { weeklyHoursTarget: true, monthlyHoursTarget: true },
         }),
+        prisma.organization.findUnique({
+          where: { id: currentUser.organizationId },
+          select: { billingTimeIncrementMinutes: true },
+        }),
       ]);
 
-      const sumForStatus = (status: BillingStatus) =>
-        Number(
-          monthGroups.find((group) => group.billingStatus === status)?._sum
-            .hours ?? 0,
-        );
-      const billable = sumForStatus(BillingStatus.BILLABLE);
-      const needsApproval = sumForStatus(BillingStatus.NEEDS_APPROVAL);
-      const internal = monthGroups
+      const sumGroups = (predicate: (group: (typeof monthGroups)[number]) => boolean) =>
+        monthGroups
+          .filter(predicate)
+          .reduce((acc, group) => acc + Number(group._sum.hours ?? 0), 0);
+      const billable = sumGroups(
+        (group) =>
+          group.billingStatus === BillingStatus.BILLABLE &&
+          group.approvalStatus === "APPROVED",
+      );
+      const needsApproval = monthGroups
         .filter(
           (group) =>
-            group.billingStatus !== BillingStatus.BILLABLE &&
-            group.billingStatus !== BillingStatus.NEEDS_APPROVAL,
+            group.billingStatus === BillingStatus.BILLABLE &&
+            group.approvalStatus !== "APPROVED" &&
+            group.approvalStatus !== "REJECTED",
         )
         .reduce((acc, group) => acc + Number(group._sum.hours ?? 0), 0);
+      const total = sumGroups(() => true);
+      const internal = total - billable - needsApproval;
       const monthSummary = {
         billable,
         needsApproval,
         internal,
-        total: billable + needsApproval + internal,
+        total,
       };
       const weekHours = Number(weekAgg._sum.hours ?? 0);
 
@@ -348,6 +389,9 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
         canArchive: canViewAllLegalData(currentUser),
         canViewRates: canViewRates(currentUser),
         canSetBillable: canSetBillableStatus(currentUser),
+        canApprove,
+        timeIncrementMinutes:
+          organization?.billingTimeIncrementMinutes ?? 15,
         monthSummary,
         weekHours,
         weeklyTarget:
@@ -362,22 +406,19 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
     },
   );
   // Hide rate + amount for roles that may not see pricing.
-  const tableView = result.data.canViewRates
+  let tableView = result.data.canViewRates
     ? result.data.tableView
     : restrictTableView(result.data.tableView, ["hourlyRate", "amount"]);
+  if (!result.data.canApprove) {
+    tableView = restrictTableView(tableView, ["approvalStatus"]);
+  }
   const visibleColumnSet = new Set(tableView.visibleColumns);
-  // Junior roles file work only as "ke schválení" / "interní". Odpisové statusy
-  // (skrytý/viditelný odpis) se nastavují jen ve schvalování, ne tady.
-  const billingStatusChoices = result.data.canSetBillable
-    ? [
-        BillingStatus.BILLABLE,
-        BillingStatus.NEEDS_APPROVAL,
-        BillingStatus.INTERNAL_NON_BILLABLE,
-      ]
-    : [BillingStatus.NEEDS_APPROVAL, BillingStatus.INTERNAL_NON_BILLABLE];
-  const defaultBillingStatus = result.data.canSetBillable
-    ? BillingStatus.BILLABLE
-    : BillingStatus.NEEDS_APPROVAL;
+  const billingStatusChoices = [
+    BillingStatus.BILLABLE,
+    BillingStatus.INTERNAL_NON_BILLABLE,
+  ];
+  const defaultBillingStatus = BillingStatus.BILLABLE;
+  const timeIncrementHours = result.data.timeIncrementMinutes === 6 ? 0.1 : 0.25;
   // % plnění týdenního a měsíčního plánu hodin (null = plán nenastaven).
   const weekPct = fulfillmentPercent(
     result.data.weekHours,
@@ -397,6 +438,34 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
   const timesheetHref = timesheetParams
     ? `/work-logs/timesheet?${timesheetParams}`
     : "/work-logs/timesheet";
+  const closeDialogParams = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (key === "new" || key === "hours" || value === undefined) {
+      continue;
+    }
+    for (const item of Array.isArray(value) ? value : [value]) {
+      closeDialogParams.append(key, item);
+    }
+  }
+  const closeDialogQuery = closeDialogParams.toString();
+  const closeDialogHref = closeDialogQuery
+    ? `/work-logs?${closeDialogQuery}`
+    : "/work-logs";
+  const hasFilters = Boolean(
+    subjectId ||
+      projectId ||
+      caseId ||
+      taskId ||
+      userId ||
+      billingStatus ||
+      approvalStatus ||
+      legalArea ||
+      archive !== "active" ||
+      dateFrom ||
+      dateTo ||
+      minAmount !== null ||
+      maxAmount !== null,
+  );
 
   return (
     <>
@@ -409,7 +478,7 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
               <FileText className="h-4 w-4" aria-hidden="true" />
               Výkaz pro klienta
             </ButtonLink>
-            <ButtonLink href="#new-work-log">
+            <ButtonLink href="/work-logs?new=1">
               <Plus className="h-4 w-4" aria-hidden="true" />
               Nový výkaz
             </ButtonLink>
@@ -475,47 +544,29 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
       <Section title="Filtry">
         <form className="grid gap-4">
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <Field label="Subjekt">
-              <SelectInput name="subjectId" defaultValue={subjectId}>
-                <option value="">Všechny subjekty</option>
-                {result.data.subjects.map((subject) => (
-                  <option key={subject.id} value={subject.id}>
-                    {subject.name}
-                    {subject.ico ? `, IČO ${subject.ico}` : ""}
-                  </option>
-                ))}
-              </SelectInput>
-            </Field>
-            <Field label="Projekt">
-              <SelectInput name="projectId" defaultValue={projectId}>
-                <option value="">Všechny projekty</option>
-                {result.data.projects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-              </SelectInput>
-            </Field>
-            <Field label="Případ">
-              <SelectInput name="caseId" defaultValue={caseId}>
-                <option value="">Všechny případy</option>
-                {result.data.cases.map((legalCase) => (
-                  <option key={legalCase.id} value={legalCase.id}>
-                    {legalCase.name} / {legalCase.project.name}
-                  </option>
-                ))}
-              </SelectInput>
-            </Field>
-            <Field label="Úkol">
-              <SelectInput name="taskId" defaultValue={taskId}>
-                <option value="">Všechny úkoly</option>
-                {result.data.tasks.map((task) => (
-                  <option key={task.id} value={task.id}>
-                    {task.title}
-                  </option>
-                ))}
-              </SelectInput>
-            </Field>
+            <CascadingMatterSelect
+              subjects={result.data.subjects.map((subject) => ({
+                id: subject.id,
+                name: subject.ico
+                  ? `${subject.name}, IČO ${subject.ico}`
+                  : subject.name,
+              }))}
+              projects={result.data.projects}
+              cases={result.data.cases.map((legalCase) => ({
+                id: legalCase.id,
+                name: legalCase.name,
+                projectId: legalCase.projectId,
+                projectName: legalCase.project.name,
+              }))}
+              tasks={result.data.tasks}
+              includeTask
+              defaultSubjectId={subjectId}
+              defaultProjectId={projectId}
+              defaultCaseId={caseId}
+              defaultTaskId={taskId}
+              subjectLabel="Subjekt"
+              filterMode
+            />
             <Field label="Pracovník">
               <SelectInput name="userId" defaultValue={userId}>
                 <option value="">Všichni pracovníci</option>
@@ -529,14 +580,16 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
             <Field label="Billing status">
               <SelectInput name="billingStatus" defaultValue={billingStatus}>
                 <option value="">Vše</option>
-                {options.billingStatuses.map((status) => (
+                {options.billingStatuses
+                  .filter((status) => status !== BillingStatus.NEEDS_APPROVAL)
+                  .map((status) => (
                   <option key={status} value={status}>
                     {billingStatusLabels[status]}
                   </option>
-                ))}
+                  ))}
               </SelectInput>
             </Field>
-            <Field label="Approval status">
+            {result.data.canApprove ? <Field label="Approval status">
               <SelectInput name="approvalStatus" defaultValue={approvalStatus}>
                 <option value="">Vše</option>
                 {options.approvalStatuses.map((status) => (
@@ -545,7 +598,7 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
                   </option>
                 ))}
               </SelectInput>
-            </Field>
+            </Field> : null}
             <Field label="Právní oblast">
               <SelectInput name="legalArea" defaultValue={legalArea}>
                 <option value="">Všechny oblasti</option>
@@ -578,10 +631,15 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
               <TextInput name="maxAmount" defaultValue={firstParam(params, "maxAmount")} />
             </Field>
           </div>
-          <div>
+          <div className="flex flex-wrap gap-2">
             <Button type="submit" variant="secondary">
               Filtrovat
             </Button>
+            {hasFilters ? (
+              <ButtonLink href="/work-logs" variant="ghost">
+                Zrušit filtry
+              </ButtonLink>
+            ) : null}
           </div>
         </form>
       </Section>
@@ -695,7 +753,10 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
           <EmptyState>Zatím nejsou založené žádné výkazy práce.</EmptyState>
         )}
       </Section>
-      <Section title="Nový výkaz práce" id="new-work-log" className="scroll-mt-6">
+      <WorkLogCreateDialog
+        open={showNewDialog}
+        closeHref={closeDialogHref}
+      >
         <form action={createWorkLog} className="grid gap-4">
           {/* Cascading subject → project → case → task. Choosing a project/case
               narrows the task list to only that matter's tasks. */}
@@ -720,19 +781,24 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
           <div
             className={
               result.data.canViewRates
-                ? "grid gap-4 md:grid-cols-4"
-                : "grid gap-4 md:grid-cols-3"
+                ? "grid gap-4 md:grid-cols-3"
+                : "grid gap-4 md:grid-cols-2"
             }
           >
             <Field label="Datum práce">
-              <TextInput name="workDate" type="date" required />
+              <TextInput
+                name="workDate"
+                type="date"
+                defaultValue={new Date().toISOString().slice(0, 10)}
+                required
+              />
             </Field>
             <Field label="Hodiny">
               <TextInput
                 name="hours"
                 type="number"
                 min="0"
-                step="0.25"
+                step={timeIncrementHours}
                 required
                 defaultValue={hoursPrefill}
               />
@@ -744,15 +810,6 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
                 <TextInput name="hourlyRate" type="number" min="0" step="0.01" />
               </Field>
             ) : null}
-            <Field label="Approval status">
-              <SelectInput name="approvalStatus" defaultValue="DRAFT">
-                {options.approvalStatuses.map((status) => (
-                  <option key={status} value={status}>
-                    {approvalStatusLabels[status]}
-                  </option>
-                ))}
-              </SelectInput>
-            </Field>
           </div>
           {/* Interní hodiny nabízejí interní kategorie místo právní oblasti. */}
           <WorkLogCategoryFields
@@ -774,7 +831,7 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
             <Button type="submit">Vytvořit výkaz</Button>
           </div>
         </form>
-      </Section>
+      </WorkLogCreateDialog>
     </>
   );
 }

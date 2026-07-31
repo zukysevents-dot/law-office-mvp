@@ -35,6 +35,7 @@ export function CascadingMatterSelect({
   cases,
   tasks,
   includeTask = false,
+  includeCase = true,
   requireProject = false,
   requireCase = false,
   defaultSubjectId = "",
@@ -42,12 +43,14 @@ export function CascadingMatterSelect({
   defaultCaseId = "",
   defaultTaskId = "",
   subjectLabel = "Klient",
+  filterMode = false,
 }: {
   subjects: CascadingSubject[];
   projects: CascadingProject[];
   cases: CascadingCase[];
   tasks?: CascadingTask[];
   includeTask?: boolean;
+  includeCase?: boolean;
   requireProject?: boolean;
   requireCase?: boolean;
   defaultSubjectId?: string;
@@ -55,6 +58,7 @@ export function CascadingMatterSelect({
   defaultCaseId?: string;
   defaultTaskId?: string;
   subjectLabel?: string;
+  filterMode?: boolean;
 }) {
   const initialSubject =
     defaultSubjectId ||
@@ -129,7 +133,13 @@ export function CascadingMatterSelect({
     setTaskId("");
   }
 
-  const columns = includeTask ? "md:grid-cols-2 xl:grid-cols-4" : "md:grid-cols-3";
+  const columns = filterMode
+    ? "contents"
+    : includeTask
+      ? "md:grid-cols-2 xl:grid-cols-4"
+      : includeCase
+        ? "md:grid-cols-3"
+        : "md:grid-cols-2";
 
   return (
     <div className={`grid gap-4 ${columns}`}>
@@ -139,7 +149,9 @@ export function CascadingMatterSelect({
           value={subjectId}
           onChange={(event) => handleSubjectChange(event.target.value)}
         >
-          <option value="">Vyberte klienta</option>
+          <option value="">
+            {filterMode ? "Všichni klienti" : "Vyberte klienta"}
+          </option>
           {subjects.map((subject) => (
             <option key={subject.id} value={subject.id}>
               {subject.name}
@@ -155,7 +167,11 @@ export function CascadingMatterSelect({
           onChange={(event) => handleProjectChange(event.target.value)}
         >
           <option value="">
-            {requireProject ? "Vyberte projekt" : "Bez projektu"}
+            {filterMode
+              ? "Všechny projekty"
+              : requireProject
+                ? "Vyberte projekt"
+                : "Bez projektu"}
           </option>
           {visibleProjects.map((project) => (
             <option key={project.id} value={project.id}>
@@ -164,7 +180,7 @@ export function CascadingMatterSelect({
           ))}
         </SelectInput>
       </Field>
-      <Field label="Případ">
+      {includeCase ? <Field label="Případ">
         <SelectInput
           name="caseId"
           value={caseId}
@@ -172,7 +188,11 @@ export function CascadingMatterSelect({
           onChange={(event) => handleCaseChange(event.target.value)}
         >
           <option value="">
-            {requireCase ? "Vyberte případ" : "Bez případu"}
+            {filterMode
+              ? "Všechny případy"
+              : requireCase
+                ? "Vyberte případ"
+                : "Bez případu"}
           </option>
           {visibleCases.map((legalCase) => (
             <option key={legalCase.id} value={legalCase.id}>
@@ -181,7 +201,7 @@ export function CascadingMatterSelect({
             </option>
           ))}
         </SelectInput>
-      </Field>
+      </Field> : null}
       {includeTask ? (
         <Field label="Úkol">
           <SelectInput
@@ -189,7 +209,7 @@ export function CascadingMatterSelect({
             value={taskId}
             onChange={(event) => setTaskId(event.target.value)}
           >
-            <option value="">Bez úkolu</option>
+            <option value="">{filterMode ? "Všechny úkoly" : "Bez úkolu"}</option>
             {visibleTasks.map((task) => (
               <option key={task.id} value={task.id}>
                 {task.title}
