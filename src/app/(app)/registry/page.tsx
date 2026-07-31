@@ -87,7 +87,7 @@ export default async function RegistryPage() {
             {data.events.map((event) => (
               <li
                 key={event.id}
-                className="rounded-lg border border-[#d4e2dc] bg-white p-3"
+                className="rounded-lg border border-[#dce4e8] bg-white p-3"
               >
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge tone={registryChangeTypeTone(event.changeType)}>
@@ -95,7 +95,7 @@ export default async function RegistryPage() {
                   </Badge>
                   <Link
                     href={`/subjects/${event.subject.id}`}
-                    className="text-sm font-medium text-[#072924] underline-offset-2 hover:underline"
+                    className="text-sm font-medium text-[#0e1822] underline-offset-2 hover:underline"
                   >
                     {event.subject.name}
                   </Link>

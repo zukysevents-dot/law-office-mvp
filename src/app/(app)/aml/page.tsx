@@ -161,9 +161,9 @@ export default async function AmlPage({
                   {data.searchResults.map((hit) => (
                     <li
                       key={hit.id}
-                      className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[#d4e2dc] bg-[#EEF5F1]/55 px-3 py-2"
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[#dce4e8] bg-[#F4F7F8]/55 px-3 py-2"
                     >
-                      <span className="font-medium text-[#072924]">
+                      <span className="font-medium text-[#0e1822]">
                         {hit.name}
                         {hit.ico ? `, IČO ${hit.ico}` : ""}
                       </span>
@@ -214,7 +214,7 @@ export default async function AmlPage({
                         <td className="font-medium text-stone-950">
                           <a
                             href={`/subjects/${assessment.subject.id}`}
-                            className="text-[#072924] underline-offset-2 hover:underline"
+                            className="text-[#0e1822] underline-offset-2 hover:underline"
                           >
                             {assessment.subject.name}
                           </a>
@@ -254,7 +254,7 @@ export default async function AmlPage({
                         <td className="font-medium text-stone-950">
                           <a
                             href={`/subjects/${assessment.subject.id}`}
-                            className="text-[#072924] underline-offset-2 hover:underline"
+                            className="text-[#0e1822] underline-offset-2 hover:underline"
                           >
                             {assessment.subject.name}
                           </a>

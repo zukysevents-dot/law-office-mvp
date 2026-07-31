@@ -89,7 +89,7 @@ export function FloatingTimer() {
         <button
           type="button"
           onClick={start}
-          className="inline-flex h-11 items-center gap-2 rounded-full bg-[#072924] px-4 text-sm font-medium text-white shadow-lg transition hover:bg-[#031c19]"
+          className="inline-flex h-11 items-center gap-2 rounded-full bg-[#0e1822] px-4 text-sm font-medium text-white shadow-lg transition hover:bg-[#16242f]"
         >
           <Timer className="h-4 w-4" aria-hidden="true" />
           Stopky
@@ -99,7 +99,7 @@ export function FloatingTimer() {
   }
 
   return (
-    <div className="no-print fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full bg-[#072924] py-2 pl-4 pr-2 text-white shadow-lg">
+    <div className="no-print fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full bg-[#0e1822] py-2 pl-4 pr-2 text-white shadow-lg">
       <span className="flex items-center gap-2 tabular-nums">
         <Play className="h-3.5 w-3.5 fill-current" aria-hidden="true" />
         {formatElapsed(now - state.startedAt)}
@@ -107,7 +107,7 @@ export function FloatingTimer() {
       <button
         type="button"
         onClick={stopAndLog}
-        className="inline-flex h-8 items-center gap-1.5 rounded-full bg-[#B9DCC6] px-3 text-xs font-medium text-[#072924] transition hover:bg-[#a8ceb7]"
+        className="inline-flex h-8 items-center gap-1.5 rounded-full bg-[#17A2A2] px-3 text-xs font-medium text-[#0e1822] transition hover:bg-[#2dc6c2]"
       >
         <Square className="h-3.5 w-3.5 fill-current" aria-hidden="true" />
         Zastavit a vykázat

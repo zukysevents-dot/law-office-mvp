@@ -249,12 +249,14 @@ export default async function ClientTimesheetPage({ searchParams }: Props) {
         </Section>
       </div>
 
-      <article className="mx-auto max-w-4xl rounded-lg border border-[#d4e2dc] bg-white p-8 text-stone-900 shadow-sm print:border-0 print:shadow-none">
+      <article className="mx-auto max-w-4xl rounded-lg border border-[#dce4e8] bg-white p-8 text-stone-900 shadow-sm print:border-0 print:shadow-none">
         <header className="flex items-start justify-between gap-6">
           <div>
-            <h1 className="text-2xl font-semibold text-[#072924]">
+            {/* h2, ne h1: stránka už má nadpis v PageHeader a dva h1 matou
+                čtečky obrazovky. V tisku je vizuálně stále hlavní titulek. */}
+            <h2 className="text-2xl font-semibold text-[#0e1822]">
               Výkaz práce
-            </h1>
+            </h2>
             {data.clientName ? (
               <p className="mt-1 text-sm text-stone-700">
                 Klient: <span className="font-medium">{data.clientName}</span>
@@ -320,7 +322,7 @@ export default async function ClientTimesheetPage({ searchParams }: Props) {
                 ))}
               </tbody>
               <tfoot>
-                <tr className="border-t-2 border-stone-300 font-semibold text-[#072924]">
+                <tr className="border-t-2 border-stone-300 font-semibold text-[#0e1822]">
                   <td className="py-2" colSpan={showPosition ? 4 : 3}>
                     Celkem ({data.totals.count} položek)
                   </td>

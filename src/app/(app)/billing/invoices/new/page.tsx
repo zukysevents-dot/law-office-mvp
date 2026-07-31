@@ -22,7 +22,7 @@ import {
 } from "@/lib/format";
 import {
   andWhere,
-  assertCanManageInvoices,
+  canManageInvoices,
   workLogVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
@@ -31,6 +31,7 @@ import { firstParam } from "@/lib/search-params";
 export const dynamic = "force-dynamic";
 
 type NewInvoiceData = {
+  allowed: boolean;
   subjects: Array<{ id: string; name: string }>;
   workLogs: BillingWorkLog[];
   selectedSubjectId: string;
@@ -46,19 +47,25 @@ export default async function NewInvoicePage({ searchParams }: NewInvoiceProps) 
   const params = await searchParams;
   const selectedSubjectId = firstParam(params, "subjectId") ?? "";
 
+  const emptyData: NewInvoiceData = {
+    allowed: false,
+    subjects: [],
+    workLogs: [],
+    selectedSubjectId,
+    issuers: [],
+    defaultIssuerName: "Kancelář",
+  };
+
   const result = await safeQuery<NewInvoiceData>(
-    {
-      subjects: [],
-      workLogs: [],
-      selectedSubjectId,
-      issuers: [],
-      defaultIssuerName: "Kancelář",
-    },
+    emptyData,
     async () => {
       const prisma = getPrisma();
       const currentUser = await getCurrentUser();
       await assertModuleEnabled(currentUser, ModuleKey.BILLING);
-      assertCanManageInvoices(currentUser);
+      // Bez oprávnění vykreslíme "Přístup odepřen" místo obecné chybové stránky.
+      if (!canManageInvoices(currentUser)) {
+        return emptyData;
+      }
 
       const [subjects, issuers, profile] = await Promise.all([
         prisma.subject.findMany({
@@ -98,6 +105,7 @@ export default async function NewInvoicePage({ searchParams }: NewInvoiceProps) 
         : [];
 
       return {
+        allowed: true,
         subjects,
         workLogs,
         selectedSubjectId,
@@ -107,13 +115,23 @@ export default async function NewInvoicePage({ searchParams }: NewInvoiceProps) 
     },
   );
 
-  const data = result.data ?? {
-    subjects: [],
-    workLogs: [],
-    selectedSubjectId,
-    issuers: [],
-    defaultIssuerName: "Kancelář",
-  };
+  const data = result.data ?? emptyData;
+
+  if (result.databaseReady && !data.allowed) {
+    return (
+      <>
+        <PageHeader
+          title="Nová faktura"
+          description="Vyberte klienta a schválené výkazy, ze kterých vznikne rozpracovaná faktura."
+        />
+        <Section title="Přístup odepřen">
+          <p className="text-sm text-stone-600">
+            Faktury mohou spravovat partneři a administrátoři.
+          </p>
+        </Section>
+      </>
+    );
+  }
 
   return (
     <>
@@ -194,7 +212,7 @@ export default async function NewInvoicePage({ searchParams }: NewInvoiceProps) 
                             value={log.id}
                             defaultChecked
                             aria-label="Zahrnout výkaz do faktury"
-                            className="h-4 w-4 rounded border-[#cfe0d7] text-[#072924] focus:ring-[#B9DCC6]"
+                            className="h-4 w-4 rounded border-[#dce4e8] text-[#0e1822] focus:ring-[#17A2A2]"
                           />
                         </td>
                         <td>{formatDateUtc(log.workDate)}</td>

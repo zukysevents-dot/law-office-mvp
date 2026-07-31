@@ -126,7 +126,7 @@ export default async function InvoiceDetailPage({
               </div>
               <div>
                 <dt className="text-xs font-medium text-stone-500">Klient</dt>
-                <dd className="mt-1 text-sm font-medium text-[#072924]">
+                <dd className="mt-1 text-sm font-medium text-[#0e1822]">
                   {invoice.subject.name}
                 </dd>
               </div>
@@ -211,9 +211,9 @@ export default async function InvoiceDetailPage({
                 <dt className="text-stone-500">DPH</dt>
                 <dd className="font-medium">{formatMoney(invoice.vatCzk)}</dd>
               </div>
-              <div className="flex justify-between border-t border-[#d4e2dc] pt-1 text-base">
-                <dt className="font-semibold text-[#072924]">Celkem</dt>
-                <dd className="font-semibold text-[#072924]">
+              <div className="flex justify-between border-t border-[#dce4e8] pt-1 text-base">
+                <dt className="font-semibold text-[#0e1822]">Celkem</dt>
+                <dd className="font-semibold text-[#0e1822]">
                   {formatMoney(invoice.totalCzk)}
                 </dd>
               </div>
@@ -286,7 +286,7 @@ export default async function InvoiceDetailPage({
                     <dt className="text-xs font-medium text-stone-500">
                       Uhrazeno
                     </dt>
-                    <dd className="mt-1 text-sm font-medium text-[#072924]">
+                    <dd className="mt-1 text-sm font-medium text-[#0e1822]">
                       {formatMoney(paidTotal)}
                     </dd>
                   </div>
@@ -294,7 +294,7 @@ export default async function InvoiceDetailPage({
                     <dt className="text-xs font-medium text-stone-500">
                       Zbývá uhradit
                     </dt>
-                    <dd className="mt-1 text-sm font-medium text-[#072924]">
+                    <dd className="mt-1 text-sm font-medium text-[#0e1822]">
                       {formatMoney(Math.max(0, remaining))}
                     </dd>
                   </div>

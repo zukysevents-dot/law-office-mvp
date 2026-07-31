@@ -51,7 +51,7 @@ export default async function PortalDashboardPage() {
               >
                 <Link
                   href={`/portal/documents/${document.id}`}
-                  className="font-medium text-[#072924] underline-offset-2 hover:underline"
+                  className="font-medium text-[#0e1822] underline-offset-2 hover:underline"
                 >
                   {document.name}
                 </Link>
@@ -80,7 +80,7 @@ export default async function PortalDashboardPage() {
               >
                 <Link
                   href={`/portal/cases/${legalCase.id}`}
-                  className="font-medium text-[#072924] underline-offset-2 hover:underline"
+                  className="font-medium text-[#0e1822] underline-offset-2 hover:underline"
                 >
                   {legalCase.name}
                 </Link>

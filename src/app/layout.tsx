@@ -3,14 +3,14 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: {
-    default: "syndikat.legal",
-    template: "%s — syndikat.legal",
+    default: "IURIVERSE",
+    template: "%s — IURIVERSE",
   },
-  description: "Interní právní systém syndikat.legal",
+  description: "Softwarový systém pro advokátní kanceláře",
 };
 
 export const viewport: Viewport = {
-  themeColor: "#072924",
+  themeColor: "#0e1822",
 };
 
 export default function RootLayout({

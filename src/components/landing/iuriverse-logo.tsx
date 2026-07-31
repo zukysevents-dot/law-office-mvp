@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
  * for the name, and accessible (aria-label on the wrapper, decorative parts
  * hidden). The symbol alone is reused as the favicon (src/app/icon.svg).
  *
- * Landing-only: colours come from the --iv-* tokens, which the app never reads.
+ * Colours come from the shared --iv-* product tokens.
  */
 
 /** The standalone orbit symbol (planet-square + tilted ring). */

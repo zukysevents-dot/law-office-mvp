@@ -90,10 +90,10 @@ export default async function BillingApprovalsPage() {
             {result.data.rows.map((row) => (
               <div
                 key={row.id}
-                className="rounded-lg border border-[#d4e2dc] bg-white p-4 shadow-sm shadow-[#072924]/5"
+                className="rounded-lg border border-[#dce4e8] bg-white p-4 shadow-sm shadow-[#0e1822]/5"
               >
-                <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-[#5f756e]">
-                  <span className="font-medium text-[#072924]">
+                <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-[#566673]">
+                  <span className="font-medium text-[#0e1822]">
                     {formatDateUtc(row.workDate)}
                   </span>
                   <span>{row.subject?.name ?? "—"}</span>

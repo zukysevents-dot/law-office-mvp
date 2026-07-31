@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { refresh, revalidatePath } from "next/cache";
 
 import { getCurrentUser } from "@/lib/auth";
 import {
@@ -23,4 +23,7 @@ export async function updateTableViewPreference(formData: FormData) {
   await upsertTableViewPreference(currentUser.id, tableKey, selectedColumns);
 
   revalidatePath(tableViewConfigs[tableKey].path);
+  // refresh() obnoví klientský router, takže se změněné sloupce projeví hned
+  // a beze ztráty aktuálních filtrů v URL (redirect by je zahodil).
+  refresh();
 }

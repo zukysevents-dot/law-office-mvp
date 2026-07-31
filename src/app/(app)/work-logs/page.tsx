@@ -456,14 +456,14 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
           ].map((cell) => (
             <div
               key={cell.label}
-              className="rounded-lg border border-[#d4e2dc] bg-white p-4 shadow-sm shadow-[#072924]/5"
+              className="rounded-lg border border-[#dce4e8] bg-white p-4 shadow-sm shadow-[#0e1822]/5"
             >
-              <p className="text-sm font-medium text-[#5f756e]">{cell.label}</p>
-              <p className="mt-2 text-2xl font-semibold text-[#072924]">
+              <p className="text-sm font-medium text-[#566673]">{cell.label}</p>
+              <p className="mt-2 text-2xl font-semibold text-[#0e1822]">
                 {formatHours(cell.value)}
               </p>
               {cell.target != null ? (
-                <p className="mt-1 text-xs text-[#5f756e]">
+                <p className="mt-1 text-xs text-[#566673]">
                   z {formatHours(cell.target)} h plánu
                   {cell.pct != null ? ` · ${cell.pct} % plnění` : ""}
                 </p>

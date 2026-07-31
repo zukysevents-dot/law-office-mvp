@@ -614,6 +614,7 @@ export default async function TasksPage({ searchParams }: TasksProps) {
                               <SelectInput
                                 name="status"
                                 defaultValue={task.status}
+                                aria-label={`Status úkolu ${task.title}`}
                                 className="min-w-0"
                               >
                                 {options.taskStatuses.map((taskStatus) => (
@@ -634,6 +635,7 @@ export default async function TasksPage({ searchParams }: TasksProps) {
                             <TextInput
                               name="note"
                               placeholder="Komentář ke změně statusu"
+                              aria-label={`Komentář ke změně statusu úkolu ${task.title}`}
                               className="min-w-0"
                             />
                           </form>

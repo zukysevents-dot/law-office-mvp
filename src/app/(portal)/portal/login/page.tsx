@@ -1,4 +1,5 @@
 import { requestPortalLink } from "@/app/(portal)/actions";
+import { AuthShell } from "@/components/auth-shell";
 import { Field, TextInput } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 
@@ -19,14 +20,13 @@ export default async function PortalLoginPage({
   const hasError = params.error === "1";
 
   return (
-    <main id="portal-main-content" tabIndex={-1} className="flex min-h-screen items-center justify-center bg-[#072924] px-4 py-12">
-      <div className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-2xl">
-        <h1 className="text-center text-xl font-semibold text-stone-900">
-          Klientský portál
-        </h1>
-        <p className="mt-1 mb-6 text-center text-sm text-stone-500">
-          Zadejte svůj e-mail a pošleme vám přihlašovací odkaz.
-        </p>
+    <AuthShell mainId="portal-main-content" tabIndex={-1}>
+      <h1 className="text-center text-xl font-semibold text-[var(--iv-ink)]">
+        Klientský portál
+      </h1>
+      <p className="mb-6 mt-1 text-center text-sm text-[var(--iv-muted)]">
+        Zadejte svůj e-mail a pošleme vám přihlašovací odkaz.
+      </p>
 
         {sent ? (
           <p className="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
@@ -61,7 +61,6 @@ export default async function PortalLoginPage({
             Použijte prosím odkaz na portál od vaší advokátní kanceláře.
           </p>
         ) : null}
-      </div>
-    </main>
+    </AuthShell>
   );
 }

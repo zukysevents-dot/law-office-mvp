@@ -20,11 +20,11 @@ export function ColumnVisibilityPanel({
 
   return (
     <details
-      className="mb-4 rounded-md border border-[#d4e2dc] bg-[#f8fbf9] p-4"
+      className="mb-4 rounded-md border border-[#dce4e8] bg-[#f8fbf9] p-4"
       data-testid="column-visibility-panel"
       data-table-key={tableKey}
     >
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-[#072924]">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-[#0e1822]">
         <span className="inline-flex items-center gap-2">
           <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
           Sloupce

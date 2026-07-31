@@ -134,10 +134,10 @@ export default async function InvoicePrintPage({
       <DatabaseNotice databaseReady={result.databaseReady} error={result.error} />
 
       {data ? (
-        <article className="rounded-lg border border-[#d4e2dc] bg-white p-8 text-stone-900 shadow-sm print:border-0 print:shadow-none">
+        <article className="rounded-lg border border-[#dce4e8] bg-white p-8 text-stone-900 shadow-sm print:border-0 print:shadow-none">
           <header className="flex items-start justify-between gap-6">
             <div>
-              <h1 className="text-2xl font-semibold text-[#072924]">Faktura</h1>
+              <h1 className="text-2xl font-semibold text-[#0e1822]">Faktura</h1>
               <p className="mt-1 text-sm text-stone-600">
                 č. {data.invoice.number ?? "(rozpracovaná)"}
               </p>
@@ -212,7 +212,7 @@ export default async function InvoicePrintPage({
                 <dt className="text-stone-500">DPH</dt>
                 <dd>{formatMoney(data.invoice.vatCzk)}</dd>
               </div>
-              <div className="flex justify-between border-t border-stone-300 pt-1 text-base font-semibold text-[#072924]">
+              <div className="flex justify-between border-t border-stone-300 pt-1 text-base font-semibold text-[#0e1822]">
                 <dt>Celkem k úhradě</dt>
                 <dd>{formatMoney(data.invoice.totalCzk)}</dd>
               </div>

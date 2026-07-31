@@ -47,9 +47,9 @@ export function AssigneeSection({
           {assignees.map((assignee) => (
             <li
               key={assignee.id}
-              className="flex items-center gap-2 rounded-md border border-[#d4e2dc] bg-[#EEF5F1]/55 px-3 py-1.5 text-sm"
+              className="flex items-center gap-2 rounded-md border border-[#dce4e8] bg-[#F4F7F8]/55 px-3 py-1.5 text-sm"
             >
-              <span className="font-medium text-[#072924]">
+              <span className="font-medium text-[#0e1822]">
                 {assignee.user.name}
               </span>
               {canEdit ? (
@@ -58,7 +58,7 @@ export function AssigneeSection({
                   <button
                     type="submit"
                     aria-label={`Odebrat řešitele ${assignee.user.name}`}
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-md text-stone-600 transition-colors hover:bg-red-50 hover:text-red-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#072924]"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md text-stone-600 transition-colors hover:bg-red-50 hover:text-red-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0e1822]"
                   >
                     <X className="h-4 w-4" aria-hidden="true" />
                   </button>

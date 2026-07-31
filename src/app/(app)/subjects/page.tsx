@@ -37,7 +37,7 @@ import type { TableViewState } from "@/lib/table-view-preferences";
 export const dynamic = "force-dynamic";
 
 type SubjectsPageProps = {
-  searchParams: Promise<{ q?: string; archive?: string }>;
+  searchParams: Promise<{ q?: string; archive?: string; error?: string }>;
 };
 
 type SubjectRow = {
@@ -131,18 +131,20 @@ export default async function SubjectsPage({ searchParams }: SubjectsPageProps) 
       />
       <Section>
         <form className="grid gap-3 md:grid-cols-[1fr_220px_auto]">
-          <div className="relative flex-1 md:self-end">
-            <Search
-              className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-stone-600"
-              aria-hidden="true"
-            />
-            <TextInput
-              name="q"
-              defaultValue={query}
-              placeholder="Název nebo IČO"
-              className="pl-9"
-            />
-          </div>
+          <Field label="Hledat" className="min-w-0 flex-1">
+            <div className="relative">
+              <Search
+                className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-stone-600"
+                aria-hidden="true"
+              />
+              <TextInput
+                name="q"
+                defaultValue={query}
+                placeholder="Název nebo IČO"
+                className="pl-9"
+              />
+            </div>
+          </Field>
           <Field label="Archiv">
             <SelectInput name="archive" defaultValue={archive}>
               {Object.entries(archiveFilterLabels).map(([value, label]) => (
@@ -259,6 +261,14 @@ export default async function SubjectsPage({ searchParams }: SubjectsPageProps) 
       </Section>
       {result.data.canManage ? (
         <Section title="Nový subjekt" className="scroll-mt-6" id="new-subject">
+          {params.error === "ico" ? (
+            <p
+              role="alert"
+              className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-800"
+            >
+              Subjekt s tímto IČO už ve vaší kanceláři existuje.
+            </p>
+          ) : null}
           <form action={createSubject} className="grid gap-4">
             <SubjectAresFields />
             <div className="grid gap-4 md:grid-cols-2">

@@ -318,10 +318,10 @@ export default async function TaskDetailPage({ params }: TaskDetailProps) {
                 {task.comments.map((comment) => (
                   <article
                     key={comment.id}
-                    className="rounded-md border border-[#d4e2dc] bg-[#EEF5F1] p-3"
+                    className="rounded-md border border-[#dce4e8] bg-[#F4F7F8] p-3"
                   >
                     <div className="flex flex-wrap justify-between gap-2 text-sm">
-                      <p className="font-medium text-[#072924]">
+                      <p className="font-medium text-[#0e1822]">
                         {comment.author?.name ?? "Neznámý autor"}
                       </p>
                       <p className="text-stone-500">{formatDate(comment.createdAt)}</p>

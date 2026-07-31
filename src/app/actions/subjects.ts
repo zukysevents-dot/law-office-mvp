@@ -22,23 +22,26 @@ import {
 import { getPrisma } from "@/lib/prisma";
 import { isSafeHttpUrl } from "@/lib/utils";
 
-// Map the per-org unique IČO violation to a readable Czech message instead of a
-// raw Prisma stack trace. Only IČO-scoped P2002s get the friendly message —
-// any other unique constraint (or non-P2002 error) rethrows unchanged.
-function rethrowDuplicateIco(error: unknown): never {
+// The per-org unique IČO violation is an EXPECTED user mistake, not a crash:
+// swallow it so the caller can redirect back to the form with an inline notice.
+// Only IČO-scoped P2002s are absorbed — any other unique constraint (or
+// non-P2002 error) rethrows unchanged.
+function nullOnDuplicateIco(error: unknown): null {
   if (
     error instanceof Prisma.PrismaClientKnownRequestError &&
     error.code === "P2002"
   ) {
-    // meta.target is the offending field(s): a string[] (or occasionally a
-    // string) naming the columns. Only claim "duplicate IČO" when it's the
-    // ico column that collided.
+    // Under the pg driver adapter (Prisma 7) `meta` carries only modelName +
+    // driverAdapterError — there is NO `meta.target`, so a column check alone
+    // would never match. `@@unique([organizationId, ico])` is Subject's only
+    // unique constraint besides the primary key, so any P2002 here IS the IČO
+    // collision. meta.target is still honoured when a future driver provides it.
     const target = error.meta?.target;
-    const targetsIco = Array.isArray(target)
-      ? target.includes("ico")
-      : target === "ico";
-    if (targetsIco) {
-      throw new Error("Subjekt s tímto IČO už ve vaší kanceláři existuje.");
+    const mentionsIco =
+      target === undefined ||
+      (Array.isArray(target) ? target.includes("ico") : target === "ico");
+    if (mentionsIco) {
+      return null;
     }
   }
   throw error;
@@ -79,7 +82,11 @@ export async function createSubject(formData: FormData) {
       flatFee: optionalNumber(formData, "flatFee"),
       feeNote: optionalString(formData, "feeNote"),
     },
-  }).catch(rethrowDuplicateIco);
+  }).catch(nullOnDuplicateIco);
+
+  if (!subject) {
+    redirect("/subjects?error=ico#new-subject");
+  }
 
   await prisma.auditLog.create({
     data: {
@@ -141,7 +148,11 @@ export async function updateSubject(formData: FormData) {
       flatFee: optionalNumber(formData, "flatFee"),
       feeNote: optionalString(formData, "feeNote"),
     },
-  }).catch(rethrowDuplicateIco);
+  }).catch(nullOnDuplicateIco);
+
+  if (!subject) {
+    redirect(`/subjects/${subjectId}/edit?error=ico`);
+  }
 
   await prisma.auditLog.create({
     data: {

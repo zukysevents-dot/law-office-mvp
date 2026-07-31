@@ -70,7 +70,7 @@ function deadlineRows(rows: DeadlineRow[]) {
               <td>
                 <Link
                   href={`/cases/${deadline.case.id}`}
-                  className="text-[#072924] underline-offset-2 hover:underline"
+                  className="text-[#0e1822] underline-offset-2 hover:underline"
                 >
                   {deadline.case.name}
                 </Link>
@@ -183,7 +183,7 @@ export default async function DeadlinesPage() {
                     <td>
                       <Link
                         href={`/cases/${hearing.case.id}`}
-                        className="text-[#072924] underline-offset-2 hover:underline"
+                        className="text-[#0e1822] underline-offset-2 hover:underline"
                       >
                         {hearing.case.name}
                       </Link>

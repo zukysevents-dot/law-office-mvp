@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -29,6 +28,7 @@ import {
   Radar,
   Receipt,
   ScrollText,
+  Search,
   Settings,
   ShieldAlert,
   ShieldCheck,
@@ -36,6 +36,11 @@ import {
 } from "lucide-react";
 
 import { logoutAction } from "@/app/actions/auth";
+import { OPEN_SEARCH_EVENT } from "@/components/command-palette";
+import {
+  IuriverseLogo,
+  OrbitMark,
+} from "@/components/landing/iuriverse-logo";
 import { ModuleKey } from "@/generated/prisma/enums";
 import { cn } from "@/lib/utils";
 
@@ -252,13 +257,13 @@ export function AppSidebar({
     <div className="mt-auto border-t border-white/10 pt-3">
       <div className="hidden min-w-0 px-3 pb-2 xl:block">
         <p className="truncate text-sm font-medium text-white">{userName}</p>
-        <p className="truncate text-xs text-[#9cc6ad]">{userRole}</p>
+        <p className="truncate text-xs text-[#aebecb]">{userRole}</p>
       </div>
       <form action={logoutAction}>
         <button
           type="submit"
           title="Odhlásit se"
-          className="flex h-11 w-full min-w-0 items-center gap-3 rounded-md px-3 text-sm font-medium text-[#d8eee0] transition hover:bg-[#B9DCC6]/15 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#B9DCC6] lg:h-10 lg:w-11 lg:justify-center lg:px-0 xl:w-auto xl:justify-start xl:px-3"
+          className="flex h-11 w-full min-w-0 items-center gap-3 rounded-md px-3 text-sm font-medium text-[#dbe7ec] transition hover:bg-[#17A2A2]/15 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#17A2A2] lg:h-10 lg:w-11 lg:justify-center lg:px-0 xl:w-auto xl:justify-start xl:px-3"
         >
           <LogOut className="h-5 w-5 shrink-0 lg:h-4 lg:w-4" aria-hidden="true" />
           <span className="min-w-0 truncate lg:sr-only xl:not-sr-only">
@@ -268,6 +273,10 @@ export function AppSidebar({
       </form>
     </div>
   );
+
+  const railItemClass =
+    "flex h-11 max-w-full min-w-0 items-center gap-3 rounded-md px-3 text-sm font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#17A2A2] lg:h-10 lg:w-11 lg:justify-center lg:px-0 xl:w-auto xl:justify-start xl:px-3";
+  const railIdleClass = "text-[#dbe7ec] hover:bg-[#17A2A2]/15 hover:text-white";
 
   const renderLink = (item: NavItem) => {
     const Icon = item.icon;
@@ -281,10 +290,8 @@ export function AppSidebar({
         aria-current={active ? "page" : undefined}
         onClick={() => setOpen(false)}
         className={cn(
-          "flex h-11 max-w-full min-w-0 items-center gap-3 rounded-md px-3 text-sm font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#B9DCC6] lg:h-10 lg:w-11 lg:justify-center lg:px-0 xl:w-auto xl:justify-start xl:px-3",
-          active
-            ? "bg-[#B9DCC6] text-[#072924]"
-            : "text-[#d8eee0] hover:bg-[#B9DCC6]/15 hover:text-white",
+          railItemClass,
+          active ? "bg-[#17A2A2] text-[#0e1822]" : railIdleClass,
         )}
       >
         <Icon className="h-5 w-5 shrink-0 lg:h-4 lg:w-4" aria-hidden="true" />
@@ -294,6 +301,40 @@ export function AppSidebar({
       </Link>
     );
   };
+
+  // ⌘K alone made global search invisible — and unusable on a touch device,
+  // where there is no keyboard shortcut at all. This is the visible entry point;
+  // the palette itself listens for the event.
+  function openSearch() {
+    setOpen(false);
+    window.dispatchEvent(new Event(OPEN_SEARCH_EVENT));
+  }
+
+  const searchTrigger = (
+    <div className="flex w-full flex-col items-stretch border-b border-white/10 pb-2 lg:items-center xl:items-stretch">
+      {/* Přístupné jméno je záměrně konkrétnější než viditelný text: „Hledat"
+          nese i odesílací tlačítko filtru na většině seznamů, takže by samotné
+          „Hledat" bylo pro čtečku i pro testy nejednoznačné. */}
+      <button
+        type="button"
+        onClick={openSearch}
+        aria-label="Hledat v celé aplikaci"
+        title="Hledat v celé aplikaci (⌘K)"
+        className={cn(railItemClass, railIdleClass)}
+      >
+        <Search className="h-5 w-5 shrink-0 lg:h-4 lg:w-4" aria-hidden="true" />
+        <span className="min-w-0 truncate lg:sr-only xl:not-sr-only">
+          Hledat
+        </span>
+        <kbd
+          aria-hidden="true"
+          className="ml-auto hidden rounded border border-white/20 px-1.5 py-0.5 text-[10px] font-medium text-[#aebecb] xl:inline"
+        >
+          ⌘K
+        </kbd>
+      </button>
+    </div>
+  );
 
   // One render reused by the mobile drawer and the desktop rail. Section headers
   // show at full width (mobile + xl); on the collapsed lg rail they're hidden
@@ -306,7 +347,7 @@ export function AppSidebar({
         index > 0 && "mt-1 border-t border-white/10 pt-2",
       )}
     >
-      <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-[#9cc6ad] lg:hidden xl:block">
+      <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-[#aebecb] lg:hidden xl:block">
         {section.title}
       </p>
       {section.items.map(renderLink)}
@@ -314,23 +355,29 @@ export function AppSidebar({
   ));
 
   return (
-    <aside className="w-full max-w-full shrink-0 overflow-x-hidden bg-[#072924] text-white lg:min-h-screen lg:w-20 lg:self-stretch lg:overflow-visible xl:w-72">
+    <aside className="w-full max-w-full shrink-0 overflow-x-hidden bg-[var(--iv-deep)] text-white lg:min-h-screen lg:w-20 lg:self-stretch lg:overflow-visible xl:w-72">
       {/* Mobile top bar (fixed) — hidden from lg up where the rail takes over. */}
-      <div className="fixed inset-x-0 top-0 z-40 flex h-16 items-center justify-between gap-3 bg-[#072924] px-4 lg:hidden">
+      <div className="fixed inset-x-0 top-0 z-40 flex h-16 items-center justify-between gap-3 border-b border-white/10 bg-[var(--iv-deep)] px-4 lg:hidden">
         <Link
           href="/dashboard"
-          className="block min-w-0 overflow-hidden"
-          aria-label="syndikat.legal"
+          className="flex min-w-0 items-center overflow-hidden rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--iv-teal-bright)]"
+          aria-label="IURIVERSE"
         >
-          <Image
-            src="/brand/logo-square.jpeg"
-            alt="syndikat.legal"
-            width={220}
-            height={220}
-            priority
-            className="h-10 w-10 rounded-md object-cover"
+          <IuriverseLogo
+            tone="light"
+            className="gap-2"
+            markClassName="h-8 w-8"
           />
         </Link>
+        <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={openSearch}
+          aria-label="Hledat v celé aplikaci"
+          className="inline-flex h-11 w-11 items-center justify-center rounded-md text-[#dbe7ec] transition hover:bg-[#17A2A2]/15 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#17A2A2]"
+        >
+          <Search className="h-6 w-6" aria-hidden="true" />
+        </button>
         <button
           ref={menuButtonRef}
           type="button"
@@ -338,7 +385,7 @@ export function AppSidebar({
           aria-expanded={open}
           aria-controls="mobile-nav"
           aria-label={open ? "Zavřít menu" : "Otevřít menu"}
-          className="inline-flex h-11 w-11 items-center justify-center rounded-md text-[#d8eee0] transition hover:bg-[#B9DCC6]/15 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#B9DCC6]"
+          className="inline-flex h-11 w-11 items-center justify-center rounded-md text-[#dbe7ec] transition hover:bg-[#17A2A2]/15 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#17A2A2]"
         >
           {open ? (
             <X className="h-6 w-6" aria-hidden="true" />
@@ -346,6 +393,7 @@ export function AppSidebar({
             <Menu className="h-6 w-6" aria-hidden="true" />
           )}
         </button>
+        </div>
       </div>
       {/* Spacer so page content clears the fixed mobile bar. */}
       <div className="h-16 lg:hidden" aria-hidden="true" />
@@ -355,8 +403,9 @@ export function AppSidebar({
           ref={mobileNavRef}
           id="mobile-nav"
           aria-label="Hlavní navigace"
-          className="fixed inset-x-0 top-16 bottom-0 z-40 flex flex-col gap-1 overflow-y-auto border-t border-white/10 bg-[#072924] p-3 lg:hidden"
+          className="fixed inset-x-0 top-16 bottom-0 z-40 flex flex-col gap-1 overflow-y-auto bg-[var(--iv-deep)] p-3 lg:hidden"
         >
+          {searchTrigger}
           {navContent}
           {accountFooter}
         </nav>
@@ -367,31 +416,24 @@ export function AppSidebar({
         <div className="flex h-20 min-w-0 items-center border-b border-white/10 px-4 xl:px-5">
           <Link
             href="/dashboard"
-            className="block min-w-0 max-w-full overflow-hidden"
-            aria-label="syndikat.legal"
+            className="flex min-w-0 max-w-full items-center overflow-hidden rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--iv-teal-bright)]"
+            aria-label="IURIVERSE"
           >
-            <Image
-              src="/brand/logo-light.jpeg"
-              alt="syndikat.legal"
-              width={520}
-              height={165}
-              priority
-              className="hidden h-auto max-h-12 w-full max-w-52 object-contain object-left xl:block"
-            />
-            <Image
-              src="/brand/logo-square.jpeg"
-              alt="syndikat.legal"
-              width={220}
-              height={220}
-              priority
-              className="h-11 w-11 rounded-md object-cover xl:hidden"
-            />
+            {/* Přepínač viditelnosti musí být na obalu, ne na samotném logu:
+                IuriverseLogo si nese vlastní `inline-flex`, které v Tailwindu
+                přebilo `hidden` — na 1024–1279 px se pak v úzké liště zobrazil
+                oříznutý wordmark a značka se smrskla na nulovou šířku. */}
+            <span className="hidden xl:inline-flex">
+              <IuriverseLogo tone="light" markClassName="h-8 w-8" />
+            </span>
+            <OrbitMark className="h-11 w-11 shrink-0 xl:hidden" />
           </Link>
         </div>
         <nav
           aria-label="Hlavní navigace"
           className="flex min-w-0 flex-1 flex-col flex-nowrap items-center gap-2 overflow-x-hidden overflow-y-auto p-3 xl:items-stretch"
         >
+          {searchTrigger}
           {navContent}
           {accountFooter}
         </nav>

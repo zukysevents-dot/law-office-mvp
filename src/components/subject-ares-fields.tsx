@@ -13,7 +13,7 @@ import { options, subjectTypeLabels } from "@/lib/labels";
 type NoticeTone = "ok" | "warning" | "error";
 
 const noticeStyles: Record<NoticeTone, string> = {
-  ok: "border-[#B9DCC6] bg-[#B9DCC6]/30 text-[#072924]",
+  ok: "border-[#17A2A2] bg-[#17A2A2]/30 text-[#0e1822]",
   warning: "border-amber-200 bg-amber-50 text-amber-950",
   error: "border-red-200 bg-red-50 text-red-900",
 };

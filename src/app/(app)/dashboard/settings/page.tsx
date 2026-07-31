@@ -145,7 +145,7 @@ export default async function DashboardSettingsPage() {
           className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
           data-testid="dashboard-reset-section"
         >
-          <p className="text-sm leading-6 text-[#5f756e]">
+          <p className="text-sm leading-6 text-[#566673]">
             Reset smaže pouze osobní konfiguraci dashboardu a znovu vytvoří
             výchozí widgety. Nezasahuje do právních dat.
           </p>
@@ -157,8 +157,8 @@ export default async function DashboardSettingsPage() {
           />
         </div>
       </Section>
-      <p className="text-xs text-[#5f756e]">
-        <Link href="/dashboard" className="text-[#072924] underline">
+      <p className="text-xs text-[#566673]">
+        <Link href="/dashboard" className="text-[#0e1822] underline">
           Dashboard
         </Link>{" "}
         se po uložení automaticky aktualizuje.

@@ -17,7 +17,7 @@ import {
 } from "@/lib/invoices";
 import {
   andWhere,
-  assertCanManageInvoices,
+  canManageInvoices,
   invoiceVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
@@ -28,23 +28,42 @@ export const dynamic = "force-dynamic";
 const INVOICE_ROW_LIMIT = 500;
 
 export default async function InvoicesPage() {
-  const result = await safeQuery<{ rows: InvoiceListRow[] }>(
-    { rows: [] },
+  const result = await safeQuery<{ allowed: boolean; rows: InvoiceListRow[] }>(
+    { allowed: false, rows: [] },
     async () => {
       const currentUser = await getCurrentUser();
       await assertModuleEnabled(currentUser, ModuleKey.BILLING);
-      assertCanManageInvoices(currentUser);
+      // Bez oprávnění vykreslíme "Přístup odepřen" místo obecné chybové stránky.
+      if (!canManageInvoices(currentUser)) {
+        return { allowed: false, rows: [] };
+      }
       const rows = await getPrisma().invoice.findMany({
         where: andWhere(invoiceVisibilityWhere(currentUser)),
         orderBy: [{ createdAt: "desc" }],
         include: invoiceListInclude,
         take: INVOICE_ROW_LIMIT,
       });
-      return { rows };
+      return { allowed: true, rows };
     },
   );
 
   const rows = result.data?.rows ?? [];
+
+  if (result.databaseReady && !result.data.allowed) {
+    return (
+      <>
+        <PageHeader
+          title="Faktury"
+          description="Vystavené a rozpracované faktury klientům."
+        />
+        <Section title="Přístup odepřen">
+          <p className="text-sm text-stone-600">
+            Faktury mohou spravovat partneři a administrátoři.
+          </p>
+        </Section>
+      </>
+    );
+  }
 
   return (
     <>
@@ -82,7 +101,7 @@ export default async function InvoicesPage() {
                     <td className="font-medium text-stone-950">
                       <a
                         href={`/billing/invoices/${invoice.id}`}
-                        className="text-[#072924] underline-offset-2 hover:underline"
+                        className="text-[#0e1822] underline-offset-2 hover:underline"
                       >
                         {invoice.number ?? "Rozpracovaná"}
                       </a>

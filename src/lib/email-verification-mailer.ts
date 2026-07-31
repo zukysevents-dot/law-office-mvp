@@ -14,7 +14,7 @@ export async function sendEmailVerification(
   const text = [
     "Dobrý den,",
     "",
-    "potvrďte svou e-mailovou adresu a dokončete registraci do syndikat.legal:",
+    "potvrďte svou e-mailovou adresu a dokončete registraci do IURIVERSE:",
     url,
     "",
     "Odkaz platí 24 hodin. Pokud jste o registraci nežádali, tento e-mail ignorujte; žádný účet zatím nevznikl.",
@@ -24,7 +24,7 @@ export async function sendEmailVerification(
     await transporter.sendMail({
       from: process.env.SMTP_FROM,
       to,
-      subject: "Potvrzení e-mailu pro syndikat.legal",
+      subject: "Potvrzení e-mailu pro IURIVERSE",
       text,
     });
     return true;
@@ -46,7 +46,7 @@ export async function sendExistingRegistrationNotice(
   const text = [
     "Dobrý den,",
     "",
-    "někdo se pokusil zaregistrovat do syndikat.legal s touto e-mailovou adresou.",
+    "někdo se pokusil zaregistrovat do IURIVERSE s touto e-mailovou adresou.",
     "Účet s adresou už existuje, proto jsme žádnou změnu neprovedli.",
     "",
     "Pokud jste to nebyli vy, můžete tento e-mail ignorovat.",
@@ -56,7 +56,7 @@ export async function sendExistingRegistrationNotice(
     await transporter.sendMail({
       from: process.env.SMTP_FROM,
       to,
-      subject: "Pokus o registraci do syndikat.legal",
+      subject: "Pokus o registraci do IURIVERSE",
       text,
     });
     return true;

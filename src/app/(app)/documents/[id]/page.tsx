@@ -146,14 +146,14 @@ export default async function DocumentDetailPage({
                   {document.case ? (
                     <Link
                       href={`/cases/${document.case.id}`}
-                      className="text-[#072924] underline-offset-2 hover:underline"
+                      className="text-[#0e1822] underline-offset-2 hover:underline"
                     >
                       {document.case.name}
                     </Link>
                   ) : document.subject ? (
                     <Link
                       href={`/subjects/${document.subject.id}`}
-                      className="text-[#072924] underline-offset-2 hover:underline"
+                      className="text-[#0e1822] underline-offset-2 hover:underline"
                     >
                       {document.subject.name}
                     </Link>
@@ -172,7 +172,7 @@ export default async function DocumentDetailPage({
                       href={document.storageUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-[#072924] underline-offset-2 hover:underline"
+                      className="text-[#0e1822] underline-offset-2 hover:underline"
                     >
                       Otevřít v SharePointu
                     </a>
@@ -212,7 +212,7 @@ export default async function DocumentDetailPage({
                           href={version.storageUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-[#072924] underline-offset-2 hover:underline"
+                          className="text-[#0e1822] underline-offset-2 hover:underline"
                         >
                           Otevřít
                         </a>

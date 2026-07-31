@@ -132,20 +132,20 @@ export default async function ReportsPage() {
               <Link
                 key={entry.href}
                 href={entry.href}
-                className="flex gap-3 rounded-lg border border-[#d4e2dc] p-4 transition hover:border-[#B9DCC6] hover:bg-[#EEF5F1]/60"
+                className="flex gap-3 rounded-lg border border-[#dce4e8] p-4 transition hover:border-[#17A2A2] hover:bg-[#F4F7F8]/60"
               >
                 <Icon
-                  className="mt-0.5 h-5 w-5 shrink-0 text-[#072924]"
+                  className="mt-0.5 h-5 w-5 shrink-0 text-[#0e1822]"
                   aria-hidden="true"
                 />
                 <span>
-                  <span className="flex items-center gap-2 text-sm font-semibold text-[#072924]">
+                  <span className="flex items-center gap-2 text-sm font-semibold text-[#0e1822]">
                     {entry.title}
                     {entry.gated ? (
-                      <Lock className="h-3.5 w-3.5 text-[#5f756e]" aria-hidden="true" />
+                      <Lock className="h-3.5 w-3.5 text-[#566673]" aria-hidden="true" />
                     ) : null}
                   </span>
-                  <span className="mt-1 block text-sm text-[#5f756e]">
+                  <span className="mt-1 block text-sm text-[#566673]">
                     {entry.description}
                   </span>
                 </span>
@@ -161,17 +161,17 @@ export default async function ReportsPage() {
             return (
               <div
                 key={entry.href}
-                className="flex flex-col gap-3 rounded-lg border border-[#d4e2dc] p-4"
+                className="flex flex-col gap-3 rounded-lg border border-[#dce4e8] p-4"
               >
                 <span>
-                  <span className="flex items-center gap-2 text-sm font-semibold text-[#072924]">
+                  <span className="flex items-center gap-2 text-sm font-semibold text-[#0e1822]">
                     <Icon
-                      className="h-5 w-5 shrink-0 text-[#072924]"
+                      className="h-5 w-5 shrink-0 text-[#0e1822]"
                       aria-hidden="true"
                     />
                     {entry.title}
                   </span>
-                  <span className="mt-1 block text-sm text-[#5f756e]">
+                  <span className="mt-1 block text-sm text-[#566673]">
                     {entry.description}
                   </span>
                 </span>
