@@ -18,7 +18,7 @@ const modules: Array<{
   { route: "/projects", heading: "Projekty", section: "Seznam projektů" },
   { route: "/cases", heading: "Případy", section: "Seznam případů" },
   { route: "/tasks", heading: "Úkoly", section: "Seznam úkolů" },
-  { route: "/tasks/my", heading: "Moje úkoly", section: "Moje aktivní úkoly" },
+  { route: "/tasks/my", heading: "Moje úkoly", section: "Moje úkoly" },
   { route: "/tasks/archive", heading: "Archiv úkolů", section: "Archivované úkoly" },
   { route: "/work-logs", heading: "Výkazy práce", section: "Seznam výkazů práce" },
   {
@@ -49,7 +49,7 @@ const modules: Array<{
   { route: "/references", heading: "Reference", section: "Seznam referencí" },
   { route: "/deadlines", heading: "Lhůtník", section: "Po termínu" },
   { route: "/calendar", heading: "Kalendář" },
-  { route: "/documents", heading: "Spisy", section: "Hledání" },
+  { route: "/documents", heading: "Spisovna", section: "Hledání" },
   {
     route: "/documents/templates",
     heading: "Šablony dokumentů",

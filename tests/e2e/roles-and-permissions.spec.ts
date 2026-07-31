@@ -87,8 +87,9 @@ test.describe("citlivá data podle role", () => {
 
   test("koncipient nemá ve výkazech práce pole pro sazbu", async ({ browser }) => {
     const page = await pageAs(browser, "trainee");
-    await page.goto("/work-logs");
-    const form = page.locator("#new-work-log");
+    // Formulář žije v modálu, který se otevírá přes ?new=1.
+    await page.goto("/work-logs?new=1");
+    const form = page.getByRole("dialog", { name: "Nový výkaz práce" });
 
     await expect(form.getByLabel("Hodiny")).toBeVisible();
     await expect(form.getByLabel("Sazba")).toHaveCount(0);

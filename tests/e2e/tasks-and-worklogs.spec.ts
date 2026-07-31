@@ -141,7 +141,9 @@ test.describe("výkazy práce", () => {
     await columns.getByRole("button", { name: "Uložit sloupce" }).click();
     await expect(page.getByRole("columnheader", { name: "Popis" })).toBeVisible();
 
-    const form = page.locator("#new-work-log");
+    await page.getByRole("link", { name: "Nový výkaz" }).click();
+    const form = page.getByRole("dialog", { name: "Nový výkaz práce" });
+    await expect(form).toBeVisible();
     await form.getByLabel("Datum práce").fill("2026-07-15");
     await form.getByLabel("Hodiny").fill("1.5");
     await form.getByLabel("Popis práce").fill(description);
