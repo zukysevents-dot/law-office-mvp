@@ -2,8 +2,8 @@ import { cn } from "@/lib/utils";
 
 export const badgeToneClasses = {
   neutral: "border-stone-200 bg-stone-50 text-stone-700",
-  mint: "border-[#B9DCC6] bg-[#B9DCC6]/45 text-[#072924]",
-  dark: "border-[#072924] bg-[#072924] text-white",
+  mint: "border-[#17A2A2] bg-[#17A2A2]/45 text-[#0e1822]",
+  dark: "border-[#0e1822] bg-[#0e1822] text-white",
   green: "border-emerald-200 bg-emerald-50 text-emerald-900",
   amber: "border-amber-200 bg-amber-50 text-amber-900",
   red: "border-red-200 bg-red-50 text-red-900",

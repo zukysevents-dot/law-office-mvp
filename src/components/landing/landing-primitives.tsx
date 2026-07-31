@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 /**
  * Shared building blocks for the IURIVERSE landing page so the sections share
  * rhythm, width and labelling without repeating boilerplate. Colours come from
- * the --iv-* tokens (globals.css) — scoped to the landing, the app is untouched.
+ * the shared --iv-* product tokens in globals.css.
  */
 
 /** Consistent content width + horizontal padding (matches AppShell's container). */
@@ -115,8 +115,7 @@ export function SectionHeading({
   );
 }
 
-/** Landing-only CTA (kept separate from the app's shared ui/Button so the
- *  IURIVERSE teal styling never bleeds into the authenticated app). */
+/** Marketing CTA, kept separate from the denser product UI button variants. */
 const ctaVariants = {
   // Bright teal fill, dark ink text — pops on both the dark hero and light
   // sections; dark-on-bright-teal clears WCAG AA comfortably. The focus ring is

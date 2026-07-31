@@ -51,7 +51,7 @@ export function CaseDocumentsSection({
                   <td className="font-medium text-stone-950">
                     <Link
                       href={`/documents/${document.id}`}
-                      className="text-[#072924] underline-offset-2 hover:underline"
+                      className="text-[#0e1822] underline-offset-2 hover:underline"
                     >
                       {document.name}
                     </Link>
@@ -68,7 +68,7 @@ export function CaseDocumentsSection({
                         href={document.storageUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-[#072924] underline-offset-2 hover:underline"
+                        className="text-[#0e1822] underline-offset-2 hover:underline"
                       >
                         Otevřít
                       </a>

@@ -77,7 +77,7 @@ export default async function PortalDocumentPage({
         Pro získání souboru kontaktujte prosím svou advokátní kancelář.
       </p>
       <p className="mt-6 text-sm">
-        <Link href="/portal" className="text-[#072924] hover:underline">
+        <Link href="/portal" className="text-[#0e1822] hover:underline">
           ← Zpět na přehled
         </Link>
       </p>

@@ -24,7 +24,7 @@ export function ComposeEmailButton({ email, subject, className }: ComposeEmailBu
     <a
       href={href}
       className={cn(
-        "inline-flex h-10 items-center justify-center gap-2 rounded-md border border-[#B9DCC6] bg-[#B9DCC6] px-4 text-sm font-medium text-[#072924] transition hover:bg-[#a8ceb7] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#B9DCC6]",
+        "inline-flex h-10 items-center justify-center gap-2 rounded-md border border-[#17A2A2] bg-[#17A2A2] px-4 text-sm font-medium text-[#0e1822] transition hover:bg-[#2dc6c2] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#17A2A2]",
         className,
       )}
     >

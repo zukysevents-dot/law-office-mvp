@@ -78,7 +78,7 @@ export function SubjectRegistrySection({
       ) : null}
 
       <div className="mt-4">
-        <p className="mb-2 text-sm font-medium text-[#072924]">
+        <p className="mb-2 text-sm font-medium text-[#0e1822]">
           Zjištěné změny
         </p>
         {events.length > 0 ? (
@@ -86,7 +86,7 @@ export function SubjectRegistrySection({
             {events.map((event) => (
               <li
                 key={event.id}
-                className="rounded-lg border border-[#d4e2dc] bg-white p-3"
+                className="rounded-lg border border-[#dce4e8] bg-white p-3"
               >
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge tone={registryChangeTypeTone(event.changeType)}>

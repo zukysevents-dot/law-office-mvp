@@ -28,10 +28,10 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
   ];
 
   return (
-    <div className="app-shell min-h-screen w-full max-w-full bg-background text-foreground lg:flex">
+    <div className="app-shell min-h-screen w-full max-w-full text-foreground lg:flex">
       <a
         href="#app-main"
-        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-3 focus:z-[10000] focus:rounded-md focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-[#072924] focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-[#072924]"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-3 focus:z-[10000] focus:rounded-md focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-[var(--iv-deep)] focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-[var(--iv-teal)]"
       >
         Přeskočit na obsah
       </a>
@@ -46,7 +46,9 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
         enabledModules={enabledModules}
       />
       <main id="app-main" tabIndex={-1} className="min-w-0 flex-1">
-        <div className="flex w-full min-w-0 flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
+        {/* pb-24: the FloatingTimer is fixed to the bottom-right corner and was
+            covering the last table row / pagination on every list page. */}
+        <div className="flex w-full min-w-0 flex-col gap-6 px-4 pt-6 pb-24 sm:px-6 lg:px-8">
           {children}
         </div>
       </main>

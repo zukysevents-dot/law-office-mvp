@@ -283,13 +283,13 @@ function renderTaskCell(
   switch (column) {
     case "title":
       return (
-        <Link href={`/tasks/${task.id}`} className="font-medium text-[#072924] hover:underline">
+        <Link href={`/tasks/${task.id}`} className="font-medium text-[#0e1822] hover:underline">
           {task.title}
         </Link>
       );
     case "subject":
       return subject ? (
-        <Link href={`/subjects/${subject.id}`} className="text-[#072924] hover:underline">
+        <Link href={`/subjects/${subject.id}`} className="text-[#0e1822] hover:underline">
           {subject.name}
         </Link>
       ) : (
@@ -297,7 +297,7 @@ function renderTaskCell(
       );
     case "project":
       return task.project ? (
-        <Link href={`/projects/${task.project.id}`} className="text-[#072924] hover:underline">
+        <Link href={`/projects/${task.project.id}`} className="text-[#0e1822] hover:underline">
           {task.project.name}
         </Link>
       ) : (
@@ -305,7 +305,7 @@ function renderTaskCell(
       );
     case "case":
       return task.case ? (
-        <Link href={`/cases/${task.case.id}`} className="text-[#072924] hover:underline">
+        <Link href={`/cases/${task.case.id}`} className="text-[#0e1822] hover:underline">
           {task.case.name}
           {task.case.fileNumber ? `, ${task.case.fileNumber}` : ""}
         </Link>
@@ -380,7 +380,7 @@ function renderSubjectCell(
   switch (column) {
     case "name":
       return (
-        <Link href={`/subjects/${subject.id}`} className="font-medium text-[#072924] hover:underline">
+        <Link href={`/subjects/${subject.id}`} className="font-medium text-[#0e1822] hover:underline">
           {subject.name}
         </Link>
       );
@@ -410,7 +410,7 @@ function renderProjectCell(
   switch (column) {
     case "name":
       return (
-        <Link href={`/projects/${project.id}`} className="font-medium text-[#072924] hover:underline">
+        <Link href={`/projects/${project.id}`} className="font-medium text-[#0e1822] hover:underline">
           {project.name}
         </Link>
       );
@@ -418,7 +418,7 @@ function renderProjectCell(
       return project.mainSubject ? (
         <Link
           href={`/subjects/${project.mainSubject.id}`}
-          className="text-[#072924] hover:underline"
+          className="text-[#0e1822] hover:underline"
         >
           {project.mainSubject.name}
         </Link>
@@ -443,7 +443,7 @@ function renderCaseCell(
   switch (column) {
     case "name":
       return (
-        <Link href={`/cases/${legalCase.id}`} className="font-medium text-[#072924] hover:underline">
+        <Link href={`/cases/${legalCase.id}`} className="font-medium text-[#0e1822] hover:underline">
           {legalCase.name}
         </Link>
       );
@@ -451,7 +451,7 @@ function renderCaseCell(
       return legalCase.fileNumber ?? "—";
     case "project":
       return (
-        <Link href={`/projects/${legalCase.project.id}`} className="text-[#072924] hover:underline">
+        <Link href={`/projects/${legalCase.project.id}`} className="text-[#0e1822] hover:underline">
           {legalCase.project.name}
         </Link>
       );
@@ -475,7 +475,7 @@ function renderReferenceCell(
       return (
         <Link
           href={`/references/${reference.id}/edit`}
-          className="font-medium text-[#072924] hover:underline"
+          className="font-medium text-[#0e1822] hover:underline"
         >
           {reference.title}
         </Link>
@@ -490,7 +490,7 @@ function renderReferenceCell(
       }`;
     case "subject":
       return reference.subject ? (
-        <Link href={`/subjects/${reference.subject.id}`} className="text-[#072924] hover:underline">
+        <Link href={`/subjects/${reference.subject.id}`} className="text-[#0e1822] hover:underline">
           {reference.subject.name}
         </Link>
       ) : (
@@ -498,7 +498,7 @@ function renderReferenceCell(
       );
     case "project":
       return reference.project ? (
-        <Link href={`/projects/${reference.project.id}`} className="text-[#072924] hover:underline">
+        <Link href={`/projects/${reference.project.id}`} className="text-[#0e1822] hover:underline">
           {reference.project.name}
         </Link>
       ) : (
@@ -506,7 +506,7 @@ function renderReferenceCell(
       );
     case "case":
       return reference.case ? (
-        <Link href={`/cases/${reference.case.id}`} className="text-[#072924] hover:underline">
+        <Link href={`/cases/${reference.case.id}`} className="text-[#0e1822] hover:underline">
           {reference.case.name}
           {reference.case.fileNumber ? `, ${reference.case.fileNumber}` : ""}
         </Link>
@@ -755,14 +755,14 @@ function renderWidget(widget: DashboardWidgetView, data: DashboardData) {
                 <tbody>
                   {data.recentChecks.map((check) => (
                     <tr key={check.id}>
-                      <td className="break-words font-medium text-[#072924]">
+                      <td className="break-words font-medium text-[#0e1822]">
                         {check.searchedQuery}
                       </td>
                       <td className="break-words">
                         {check.subject ? (
                           <Link
                             href={`/subjects/${check.subject.id}`}
-                            className="text-[#072924] hover:underline"
+                            className="text-[#0e1822] hover:underline"
                           >
                             {check.subject.name}
                           </Link>
@@ -808,14 +808,14 @@ function renderWidget(widget: DashboardWidgetView, data: DashboardData) {
                 <Link
                   key={deadline.id}
                   href={`/cases/${deadline.case.id}`}
-                  className="flex min-w-0 items-start gap-3 rounded-md border border-[#d4e2dc] bg-[#EEF5F1]/55 p-3 transition hover:bg-[#EEF5F1]"
+                  className="flex min-w-0 items-start gap-3 rounded-md border border-[#dce4e8] bg-[#F4F7F8]/55 p-3 transition hover:bg-[#F4F7F8]"
                 >
-                  <AlarmClock className="mt-0.5 h-4 w-4 shrink-0 text-[#072924]" aria-hidden="true" />
+                  <AlarmClock className="mt-0.5 h-4 w-4 shrink-0 text-[#0e1822]" aria-hidden="true" />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate font-medium text-[#072924]">
+                    <span className="block truncate font-medium text-[#0e1822]">
                       {deadline.title}
                     </span>
-                    <span className="mt-1 flex flex-wrap gap-2 text-xs text-[#5f756e]">
+                    <span className="mt-1 flex flex-wrap gap-2 text-xs text-[#566673]">
                       <Badge tone={deadlineTypeTone(deadline.type)}>
                         {deadlineTypeLabels[deadline.type]}
                       </Badge>

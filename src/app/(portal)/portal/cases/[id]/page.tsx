@@ -66,7 +66,7 @@ export default async function PortalCasePage({
       </dl>
 
       <p className="mt-6 text-sm">
-        <Link href="/portal" className="text-[#072924] hover:underline">
+        <Link href="/portal" className="text-[#0e1822] hover:underline">
           ← Zpět na přehled
         </Link>
       </p>
