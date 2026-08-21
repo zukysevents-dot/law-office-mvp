@@ -15,13 +15,13 @@ import { FinalCta } from "@/components/landing/final-cta";
 import { SiteFooter } from "@/components/landing/site-footer";
 
 export const metadata: Metadata = {
-  title: "IURIVERSE — softwarový systém pro advokátní kancelář",
+  title: "IURIVERSE | software pro advokátní kanceláře",
   description:
     "Evidence subjektů, kontrola střetu zájmů, lhůty, výkazy práce a fakturace v jednom bezpečném a auditovatelném systému pro advokátní kanceláře.",
   openGraph: {
-    title: "IURIVERSE — celá advokátní kancelář v jednom systému",
+    title: "IURIVERSE | celá advokátní kancelář v jednom systému",
     description:
-      "Subjekty, conflict check, lhůty, výkazy práce a fakturace — propojené, bezpečné a auditovatelné. Od IURIVERSE.",
+      "Subjekty, conflict check, lhůty, výkazy práce a fakturace v jednom systému pro advokátní kanceláře.",
     type: "website",
     locale: "cs_CZ",
   },

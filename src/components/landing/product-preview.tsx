@@ -138,7 +138,7 @@ const previewRegistry: { subject: string; event: string; tone: BadgeTone; badge:
 const previewDataBoxes: { sender: string; subject: string; time: string; unread?: boolean }[] = [
   {
     sender: "Městský soud v Brně",
-    subject: "Doručení usnesení — 12 C 45/2026",
+    subject: "Doručení usnesení, sp. zn. 12 C 45/2026",
     time: "dnes 9:12",
     unread: true,
   },
@@ -161,7 +161,7 @@ export function ProductPreview() {
           id="produkt-heading"
           eyebrow="Jedno pracovní prostředí"
           title="Přehled celé kanceláře na jedné obrazovce."
-          lead="Od subjektů, conflict checku a hlídání rejstříků přes datové schránky až po výkazy, fakturaci a lhůtník — bez přepínání mezi tabulkami, e‑maily a sdílenými disky."
+          lead="Od subjektů a conflict checku přes hlídání rejstříků a datové schránky až po výkazy, fakturaci a lhůtník. Bez přepínání mezi tabulkami, e‑maily a sdílenými disky."
         />
 
         <Reveal className="mt-12" variant="scale">

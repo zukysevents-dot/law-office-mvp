@@ -25,7 +25,7 @@ export function FinalCta({ showLogin = true }: { showLogin?: boolean }) {
               </h2>
               <p className="mt-4 text-pretty text-base leading-relaxed text-[var(--iv-on-dark)] sm:text-lg">
                 {withCzechNbsp(
-                  "Otevřete systém a projděte si dashboard, evidenci subjektů a přehled lhůt — připravené na každodenní provoz kanceláře.",
+                  "Otevřete systém a projděte si dashboard, evidenci subjektů a přehled lhůt.",
                 )}
               </p>
               <div className="mt-8">
@@ -45,7 +45,7 @@ export function FinalCta({ showLogin = true }: { showLogin?: boolean }) {
               </h2>
               <p className="mt-4 text-pretty text-base leading-relaxed text-[var(--iv-on-dark)] sm:text-lg">
                 {withCzechNbsp(
-                  "IURIVERSE zatím není veřejně dostupný — používá ho kancelář, pro kterou vznikl. Zpřístupnění dalším kancelářím připravujeme.",
+                  "IURIVERSE zatím není veřejně dostupný. Používá ho kancelář, pro kterou vznikl. Zpřístupnění dalším kancelářím připravujeme.",
                 )}
               </p>
             </>

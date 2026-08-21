@@ -10,7 +10,7 @@ import {
 const benefits = [
   {
     title: "Méně administrativy",
-    body: "Data zadáte jednou. Subjekt, sazba i případ se propíší tam, kde je potřebujete — bez kopírování mezi tabulkami.",
+    body: "Data zadáte jednou. Subjekt, sazba i případ se propíší tam, kde je potřebujete, bez kopírování mezi tabulkami.",
   },
   {
     title: "Jasný přehled",

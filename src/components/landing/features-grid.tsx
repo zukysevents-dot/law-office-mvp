@@ -32,7 +32,7 @@ const features: { icon: LucideIcon; title: string; body: string }[] = [
   {
     icon: ListTodo,
     title: "Úkoly a lhůty",
-    body: "Procesní i interní lhůty, priority, odpovědné osoby a stavy — s přehledem o termínech po splatnosti.",
+    body: "Procesní i interní lhůty, priority, odpovědné osoby a stavy, s přehledem o termínech po splatnosti.",
   },
   {
     icon: Clock3,
@@ -42,12 +42,12 @@ const features: { icon: LucideIcon; title: string; body: string }[] = [
   {
     icon: Receipt,
     title: "Fakturace",
-    body: "Podklady pro fakturaci po subjektech, projektech i případech — se schvalovacím workflow a exportem.",
+    body: "Podklady pro fakturaci po subjektech, projektech i případech, se schvalovacím workflow a exportem.",
   },
   {
     icon: CalendarDays,
     title: "Kalendář",
-    body: "Termíny úkolů — procesní a interní lhůty napříč projekty a případy na jednom místě.",
+    body: "Procesní a interní lhůty napříč projekty a případy na jednom místě.",
   },
   {
     icon: WandSparkles,
@@ -57,12 +57,12 @@ const features: { icon: LucideIcon; title: string; body: string }[] = [
   {
     icon: FolderOpen,
     title: "SharePoint",
-    body: "Konzistentní struktura složek pro každý subjekt, projekt a případ — dokumenty vždy tam, kde mají být.",
+    body: "Konzistentní struktura složek pro každý subjekt, projekt a případ.",
   },
   {
     icon: ScrollText,
     title: "Audit log",
-    body: "Neměnný záznam každé změny — kdo, kdy a co upravil. Pro vnitřní kontrolu i compliance.",
+    body: "Neměnný záznam každé změny: kdo, kdy a co upravil. Pro vnitřní kontrolu i compliance.",
   },
 ];
 
@@ -73,7 +73,7 @@ export function FeaturesGrid() {
         id="funkce-heading"
         eyebrow="Funkce"
         title="Postavené na skutečné práci advokátní kanceláře."
-        lead="Každý modul pokrývá konkrétní část agendy — a všechny sdílejí stejná data, role a auditní stopu."
+        lead="Každý modul pokrývá konkrétní část agendy. Všechny sdílejí stejná data, role a auditní stopu."
       />
 
       <div className="mt-12 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">

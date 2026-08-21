@@ -18,7 +18,7 @@ const steps: { icon: LucideIcon; title: string; body: string }[] = [
   {
     icon: Building2,
     title: "Založení subjektu",
-    body: "Subjekt vznikne načtením z ARES podle IČO — s adresou, právní formou i rizikovými příznaky.",
+    body: "Subjekt vznikne načtením z ARES podle IČO, s adresou, právní formou i rizikovými příznaky.",
   },
   {
     icon: ShieldCheck,

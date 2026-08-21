@@ -14,12 +14,12 @@ const pillars: { icon: LucideIcon; title: string; body: string }[] = [
   {
     icon: ShieldCheck,
     title: "Přístup podle rolí",
-    body: "Každá role vidí jen to, co jí přísluší. Viditelnost se vynucuje už na úrovni databázových dotazů — ne až v rozhraní.",
+    body: "Každá role vidí jen to, co jí přísluší. Viditelnost se vynucuje už na úrovni databázových dotazů, ne až v rozhraní.",
   },
   {
     icon: ScrollText,
     title: "Neměnná auditní stopa",
-    body: "Každé založení, úprava i archivace se zaznamená — kdo, kdy a co změnil, včetně původní a nové hodnoty. Historie se nepřepisuje.",
+    body: "Každé založení, úprava i archivace se zaznamená: kdo, kdy a co změnil, včetně původní a nové hodnoty. Historie se nepřepisuje.",
   },
   {
     icon: Building2,
