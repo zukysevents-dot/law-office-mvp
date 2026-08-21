@@ -13,32 +13,36 @@ import { cn } from "@/lib/utils";
  * reads. The mark inherits currentColor so callers pick the tone.
  */
 
-/** The standalone orbit mark. Color via currentColor. */
+/** The standalone orbit mark: the original single-ring composition (square
+ *  planet + tilted orbit), with a subtle brand-teal gradient on the planet.
+ *  Ring inherits currentColor so callers pick the tone. */
 export function BrandMark({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 48 48" className={className} aria-hidden fill="none">
+    <svg viewBox="0 0 44 44" className={className} aria-hidden fill="none">
+      <defs>
+        {/* Duplicate ids across instances are harmless: the defs are identical. */}
+        <linearGradient id="iv-mark-planet" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="var(--iv-teal-bright)" />
+          <stop offset="1" stopColor="var(--iv-teal)" />
+        </linearGradient>
+      </defs>
       <ellipse
-        cx="24"
-        cy="24"
-        rx="19"
-        ry="7.5"
-        transform="rotate(-28 24 24)"
+        cx="22"
+        cy="22"
+        rx="19.5"
+        ry="6.6"
+        transform="rotate(-24 22 22)"
         stroke="currentColor"
-        strokeWidth="2.6"
+        strokeWidth="2.4"
       />
-      <ellipse
-        cx="24"
-        cy="24"
-        rx="19"
-        ry="7.5"
-        transform="rotate(28 24 24)"
-        stroke="currentColor"
-        strokeWidth="2.6"
+      <rect
+        x="15.5"
+        y="13"
+        width="13"
+        height="13"
+        rx="3.2"
+        fill="url(#iv-mark-planet)"
       />
-      {/* Core (nucleus / planet). */}
-      <circle cx="24" cy="24" r="6" fill="currentColor" />
-      {/* Satellite riding the upper-right of the first orbit. */}
-      <circle cx="38.3" cy="22.4" r="2.4" fill="currentColor" />
     </svg>
   );
 }
