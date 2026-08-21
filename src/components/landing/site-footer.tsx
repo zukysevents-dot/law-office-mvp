@@ -82,7 +82,7 @@ export function SiteFooter({ showLogin = true }: { showLogin?: boolean }) {
 
         <div className="mt-12 flex flex-col gap-2 border-t border-white/10 pt-6 text-xs text-[var(--iv-on-dark)]/70 sm:flex-row sm:items-center sm:justify-between">
           <p>© {new Date().getFullYear()} IURIVERSE s.r.o. — software pro advokátní kanceláře.</p>
-          <p>Přístup podle rolí · Auditní stopa · Data v souladu s GDPR</p>
+          <p>Přístup podle rolí · Neměnná auditní stopa · Zabezpečené přihlášení</p>
         </div>
       </Container>
     </footer>

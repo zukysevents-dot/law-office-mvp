@@ -28,8 +28,8 @@ const pillars: { icon: LucideIcon; title: string; body: string }[] = [
   },
   {
     icon: Lock,
-    title: "Soukromí a GDPR",
-    body: "Interní systém kanceláře s oddělením přístupů a respektem k preferencím uživatelů u notifikací i sdílení.",
+    title: "Zabezpečené přihlášení",
+    body: "Ověření e-mailu při registraci, omezení počtu neúspěšných pokusů o přihlášení a možnost okamžitě odhlásit uživatele ze všech zařízení.",
   },
 ];
 
@@ -40,7 +40,7 @@ export function Trust() {
         id="duvera-heading"
         eyebrow="Důvěra a kontrola"
         title="Postaveno pro citlivá data advokátní kanceláře."
-        lead="Bezpečnost a dohledatelnost nejsou doplněk — jsou součástí každého modulu."
+        lead="Role, auditní stopa a ověřené přihlášení platí ve všech modulech stejně."
       />
 
       <div className="mt-12 grid grid-cols-1 gap-4 lg:grid-cols-2">

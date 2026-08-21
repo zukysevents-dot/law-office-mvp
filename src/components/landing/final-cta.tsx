@@ -14,29 +14,42 @@ export function FinalCta({ showLogin = true }: { showLogin?: boolean }) {
       />
       <Container>
         <div className="mx-auto flex max-w-2xl flex-col items-center text-center">
-          <Eyebrow tone="light">Začněte hned</Eyebrow>
-          <h2
-            id="demo-heading"
-            className="mt-4 text-balance text-3xl font-semibold tracking-tight text-white sm:text-4xl"
-          >
-            Mějte celou kancelář pod kontrolou.
-          </h2>
-          <p className="mt-4 text-pretty text-base leading-relaxed text-[var(--iv-on-dark)] sm:text-lg">
-            {withCzechNbsp(
-              "Otevřete systém a projděte si dashboard, evidenci subjektů a přehled lhůt — připravené na každodenní provoz kanceláře.",
-            )}
-          </p>
-          <div className="mt-8">
-            {showLogin ? (
-              <CtaLink href="/login" variant="solid" className="px-6">
-                Spustit systém
-              </CtaLink>
-            ) : (
-              <p className="rounded-full border border-white/20 bg-white/5 px-5 py-2.5 text-sm font-medium text-white/85">
-                Systém je zatím dostupný pouze interně pro tým kanceláře.
+          {showLogin ? (
+            <>
+              <Eyebrow tone="light">Začněte hned</Eyebrow>
+              <h2
+                id="demo-heading"
+                className="mt-4 text-balance text-3xl font-semibold tracking-tight text-white sm:text-4xl"
+              >
+                Mějte celou kancelář pod kontrolou.
+              </h2>
+              <p className="mt-4 text-pretty text-base leading-relaxed text-[var(--iv-on-dark)] sm:text-lg">
+                {withCzechNbsp(
+                  "Otevřete systém a projděte si dashboard, evidenci subjektů a přehled lhůt — připravené na každodenní provoz kanceláře.",
+                )}
               </p>
-            )}
-          </div>
+              <div className="mt-8">
+                <CtaLink href="/login" variant="solid" className="px-6">
+                  Spustit systém
+                </CtaLink>
+              </div>
+            </>
+          ) : (
+            <>
+              <Eyebrow tone="light">Dostupnost</Eyebrow>
+              <h2
+                id="demo-heading"
+                className="mt-4 text-balance text-3xl font-semibold tracking-tight text-white sm:text-4xl"
+              >
+                Ověřeno každodenním provozem advokátní kanceláře.
+              </h2>
+              <p className="mt-4 text-pretty text-base leading-relaxed text-[var(--iv-on-dark)] sm:text-lg">
+                {withCzechNbsp(
+                  "IURIVERSE zatím není veřejně dostupný — používá ho kancelář, pro kterou vznikl. Zpřístupnění dalším kancelářím připravujeme.",
+                )}
+              </p>
+            </>
+          )}
         </div>
       </Container>
     </section>

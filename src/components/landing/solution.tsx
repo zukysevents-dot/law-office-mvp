@@ -30,7 +30,7 @@ export function Solution() {
         id="reseni-heading"
         eyebrow="Řešení"
         title="Jeden systém, kde na sebe data navazují."
-        lead="Subjekt, který založíte, projde celým životním cyklem práce — od prověření konfliktu přes případ a výkaz až po fakturu. Nic se neztratí mezi nástroji."
+        lead="Subjekt, který založíte, projde celým životním cyklem práce — od prověření konfliktu přes případ a výkaz až po fakturu."
       />
 
       <div className="mt-12 grid grid-cols-1 gap-5 lg:grid-cols-2">

@@ -81,7 +81,7 @@ export function Hero({ showLogin = true }: { showLogin?: boolean }) {
           style={{ animationDelay: "160ms" }}
         >
           {withCzechNbsp(
-            "Evidence subjektů, kontrola střetu zájmů, lhůty, výkazy práce a fakturace — propojené v jednom bezpečném a auditovatelném systému. Žádné roztroušené tabulky, žádné přehlédnuté termíny.",
+            "Evidence subjektů, kontrola střetu zájmů, lhůty, výkazy práce a fakturace na jednom místě, s auditní stopou každé změny.",
           )}
         </p>
 
