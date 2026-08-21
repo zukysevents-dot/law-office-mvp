@@ -21,7 +21,7 @@ import type { LucideIcon } from "lucide-react";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { Reveal } from "@/components/landing/reveal";
-import { BrandMark } from "@/components/landing/iuriverse-logo";
+import { OrbitMark } from "@/components/landing/iuriverse-logo";
 import {
   Container,
   SectionHeading,
@@ -191,7 +191,7 @@ export function ProductPreview() {
               {/* Mini sidebar (hidden on small screens) */}
               <aside className="hidden w-56 shrink-0 flex-col bg-[var(--iv-deep)] p-3 md:flex">
                 <div className="flex h-12 items-center gap-2 px-2">
-                  <BrandMark className="h-6 w-6 text-[var(--iv-teal-bright)]" />
+                  <OrbitMark className="h-6 w-6" />
                   <span className="font-display text-sm tracking-[0.16em] text-white">
                     IURIVERSE
                   </span>

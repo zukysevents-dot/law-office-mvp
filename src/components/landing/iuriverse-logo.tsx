@@ -1,53 +1,59 @@
 import { cn } from "@/lib/utils";
 
 /**
- * IURIVERSE brand lockup — the "orbit" mark (a circular core with two crossed
- * elliptical orbits and a small satellite riding the outer one; reads as both
- * a planetary system and an atom) next to the IURIVERSE wordmark set in the
- * geometric display face (Michroma, via .font-display). Crisp at any size,
- * real selectable text for the name, and accessible (aria-label on the
- * wrapper, decorative parts hidden). The mark alone is reused as the favicon
- * (src/app/icon.svg).
+ * IURIVERSE brand lockup — an SVG "orbit" symbol (a teal planet-square circled
+ * by a tilted ring) next to the IURIVERSE wordmark set in the geometric display
+ * face (Michroma, via .font-display). Crisp at any size, real selectable text
+ * for the name, and accessible (aria-label on the wrapper, decorative parts
+ * hidden). The symbol alone is reused as the favicon (src/app/icon.svg).
  *
- * Landing-only: colours come from the --iv-* tokens, which the app never
- * reads. The mark inherits currentColor so callers pick the tone.
+ * Landing-only: colours come from the --iv-* tokens, which the app never reads.
  */
 
-/** The standalone orbit mark: the original single-ring composition (square
- *  planet + tilted orbit), with a subtle brand-teal gradient on the planet.
- *  Ring inherits currentColor so callers pick the tone. */
-export function BrandMark({ className }: { className?: string }) {
+/** The standalone orbit symbol (planet-square + tilted ring). */
+export function OrbitMark({
+  className,
+  animated = false,
+}: {
+  className?: string;
+  animated?: boolean;
+}) {
   return (
-    <svg viewBox="0 0 44 44" className={className} aria-hidden fill="none">
-      <defs>
-        {/* Duplicate ids across instances are harmless: the defs are identical. */}
-        <linearGradient id="iv-mark-planet" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="var(--iv-teal-bright)" />
-          <stop offset="1" stopColor="var(--iv-teal)" />
-        </linearGradient>
-      </defs>
-      <ellipse
-        cx="22"
-        cy="22"
-        rx="19.5"
-        ry="6.6"
-        transform="rotate(-24 22 22)"
-        stroke="currentColor"
-        strokeWidth="2.4"
-      />
+    <svg
+      viewBox="0 0 44 44"
+      className={className}
+      aria-hidden
+      fill="none"
+    >
+      {/* Tilted orbit ring (sits behind the planet where they overlap). */}
+      <g
+        className={cn(animated && "iv-orbit-spin")}
+        style={{ transformOrigin: "22px 22px" }}
+      >
+        <ellipse
+          cx="22"
+          cy="22"
+          rx="19.5"
+          ry="6.6"
+          transform="rotate(-24 22 22)"
+          stroke="var(--iv-teal)"
+          strokeWidth="2.4"
+        />
+      </g>
+      {/* The "planet" — the square dot from the logo. */}
       <rect
         x="15.5"
         y="13"
         width="13"
         height="13"
         rx="3.2"
-        fill="url(#iv-mark-planet)"
+        fill="var(--iv-teal)"
       />
     </svg>
   );
 }
 
-/** Full lockup: pillar mark + IURIVERSE wordmark. */
+/** Full lockup: orbit symbol + IURIVERSE wordmark. */
 export function IuriverseLogo({
   className,
   tone = "dark",
@@ -63,15 +69,7 @@ export function IuriverseLogo({
       className={cn("inline-flex items-center gap-2.5", className)}
       aria-label="IURIVERSE"
     >
-      <BrandMark
-        className={cn(
-          "h-7 w-7 shrink-0",
-          tone === "dark"
-            ? "text-[var(--iv-teal)]"
-            : "text-[var(--iv-teal-bright)]",
-          markClassName,
-        )}
-      />
+      <OrbitMark className={cn("h-7 w-7 shrink-0", markClassName)} />
       <span
         aria-hidden
         className={cn(
