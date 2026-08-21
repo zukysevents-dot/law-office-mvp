@@ -71,7 +71,7 @@ export function Hero({ showLogin = true }: { showLogin?: boolean }) {
               className="iv-line text-[var(--iv-teal-bright)]"
               style={{ animationDelay: "220ms" }}
             >
-              na jedné oběžné dráze.
+              v jednom systému.
             </span>
           </span>
         </h1>

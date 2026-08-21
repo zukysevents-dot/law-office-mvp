@@ -17,7 +17,7 @@ import { SiteFooter } from "@/components/landing/site-footer";
 export const metadata: Metadata = {
   title: "IURIVERSE — softwarový systém pro advokátní kancelář",
   description:
-    "Evidence subjektů, kontrola střetu zájmů, lhůty, výkazy práce a fakturace v jednom bezpečném a auditovatelném systému. Celá advokátní kancelář na jedné oběžné dráze.",
+    "Evidence subjektů, kontrola střetu zájmů, lhůty, výkazy práce a fakturace v jednom bezpečném a auditovatelném systému pro advokátní kanceláře.",
   openGraph: {
     title: "IURIVERSE — celá advokátní kancelář v jednom systému",
     description:

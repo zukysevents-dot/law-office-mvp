@@ -64,13 +64,12 @@ export function Eyebrow({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em]",
+        "inline-flex items-center text-xs font-semibold uppercase tracking-[0.14em]",
         tone === "dark"
           ? "text-[var(--iv-teal-ink)]"
           : "text-[var(--iv-teal-bright)]",
       )}
     >
-      <span aria-hidden className="h-px w-6 bg-[var(--iv-teal)]" />
       {children}
     </span>
   );
