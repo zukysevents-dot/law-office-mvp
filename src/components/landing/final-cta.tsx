@@ -1,4 +1,5 @@
 import { Container, Eyebrow, CtaLink } from "@/components/landing/landing-primitives";
+import { withCzechNbsp } from "@/lib/typography";
 
 export function FinalCta({ showLogin = true }: { showLogin?: boolean }) {
   return (
@@ -21,8 +22,9 @@ export function FinalCta({ showLogin = true }: { showLogin?: boolean }) {
             Mějte celou kancelář pod kontrolou.
           </h2>
           <p className="mt-4 text-pretty text-base leading-relaxed text-[var(--iv-on-dark)] sm:text-lg">
-            Otevřete systém a projděte si dashboard, evidenci subjektů
-            a přehled lhůt — připravené na každodenní provoz kanceláře.
+            {withCzechNbsp(
+              "Otevřete systém a projděte si dashboard, evidenci subjektů a přehled lhůt — připravené na každodenní provoz kanceláře.",
+            )}
           </p>
           <div className="mt-8">
             {showLogin ? (

@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { cn } from "@/lib/utils";
+import { withCzechNbsp } from "@/lib/typography";
 
 /**
  * Shared building blocks for the IURIVERSE landing page so the sections share
@@ -104,11 +105,11 @@ export function SectionHeading({
         id={id}
         className="max-w-3xl text-balance text-3xl font-semibold tracking-tight text-[var(--iv-ink)] sm:text-4xl"
       >
-        {title}
+        {typeof title === "string" ? withCzechNbsp(title) : title}
       </h2>
       {lead ? (
         <p className="max-w-2xl text-pretty text-base leading-relaxed text-[var(--iv-muted)] sm:text-lg">
-          {lead}
+          {typeof lead === "string" ? withCzechNbsp(lead) : lead}
         </p>
       ) : null}
     </div>
@@ -128,7 +129,7 @@ const ctaVariants = {
     "bg-[var(--iv-teal-bright)] text-[var(--iv-deep)] shadow-lg shadow-[#17a2a2]/30 hover:bg-[#3ad2cd] focus-visible:outline-[var(--iv-deep)] focus-visible:[box-shadow:0_0_0_2px_#ffffff]",
   // Outline for use on dark backgrounds (hero, final CTA).
   outlineLight:
-    "border border-white/25 bg-white/5 text-white hover:border-white/45 hover:bg-white/10 focus-visible:outline-white",
+    "border border-white/40 bg-white/5 text-white hover:border-white/60 hover:bg-white/10 focus-visible:outline-white",
   // Outline for use on light backgrounds (header).
   outlineDark:
     "border border-[var(--iv-line)] bg-white text-[var(--iv-ink)] hover:border-[var(--iv-teal)] hover:text-[var(--iv-teal-ink)] focus-visible:outline-[var(--iv-teal-ink)]",
@@ -151,7 +152,7 @@ export function CtaLink({
     <Link
       href={href}
       className={cn(
-        "inline-flex h-11 items-center justify-center gap-2 rounded-lg px-5 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2",
+        "inline-flex h-11 items-center justify-center gap-2 rounded-lg px-5 text-sm font-semibold transition duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2",
         ctaVariants[variant],
         className,
       )}

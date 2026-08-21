@@ -50,7 +50,6 @@ export function MarketingHeader({ showLogin = true }: { showLogin?: boolean }) {
 
   return (
     <header
-      aria-label="Hlavní navigace"
       className={cn(
         "sticky top-0 z-50 border-b transition-colors duration-300",
         // At the top the header is opaque deep so it blends seamlessly into the
@@ -121,7 +120,7 @@ export function MarketingHeader({ showLogin = true }: { showLogin?: boolean }) {
           className={cn(
             "inline-flex h-10 w-10 items-center justify-center rounded-md border transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 lg:hidden",
             darkTone
-              ? "border-white/25 text-white hover:bg-white/10 focus-visible:outline-[var(--iv-teal-bright)]"
+              ? "border-white/40 text-white hover:bg-white/10 focus-visible:outline-[var(--iv-teal-bright)]"
               : "border-[var(--iv-line)] bg-white text-[var(--iv-ink)] hover:bg-[var(--iv-bg)] focus-visible:outline-[var(--iv-teal-ink)]",
           )}
         >

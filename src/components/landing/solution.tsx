@@ -1,5 +1,6 @@
 import { X, Check } from "lucide-react";
 
+import { withCzechNbsp } from "@/lib/typography";
 import { Reveal } from "@/components/landing/reveal";
 import {
   SectionShell,
@@ -45,7 +46,7 @@ export function Solution() {
                     <X className="h-3.5 w-3.5" aria-hidden />
                   </span>
                   <span className="text-sm leading-relaxed text-[var(--iv-muted)]">
-                    {item}
+                    {withCzechNbsp(item)}
                   </span>
                 </li>
               ))}
@@ -69,7 +70,7 @@ export function Solution() {
                     <Check className="h-3.5 w-3.5" aria-hidden />
                   </span>
                   <span className="text-sm leading-relaxed text-[var(--iv-on-dark)]">
-                    {item}
+                    {withCzechNbsp(item)}
                   </span>
                 </li>
               ))}

@@ -1,5 +1,6 @@
 import { CheckCircle2 } from "lucide-react";
 
+import { withCzechNbsp } from "@/lib/typography";
 import { Reveal } from "@/components/landing/reveal";
 import {
   SectionShell,
@@ -52,7 +53,7 @@ export function Benefits() {
                       {benefit.title}
                     </h3>
                     <p className="mt-1.5 text-sm leading-relaxed text-[var(--iv-muted)]">
-                      {benefit.body}
+                      {withCzechNbsp(benefit.body)}
                     </p>
                   </div>
                 </div>

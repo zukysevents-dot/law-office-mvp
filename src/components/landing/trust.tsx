@@ -1,6 +1,7 @@
 import { ShieldCheck, ScrollText, Building2, Lock } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
+import { withCzechNbsp } from "@/lib/typography";
 import { Reveal } from "@/components/landing/reveal";
 import {
   SectionShell,
@@ -53,7 +54,7 @@ export function Trust() {
                 {pillar.title}
               </h3>
               <p className="mt-2 text-sm leading-relaxed text-[var(--iv-muted)]">
-                {pillar.body}
+                {withCzechNbsp(pillar.body)}
               </p>
               {pillar.title === "Přístup podle rolí" ? (
                 <div className="mt-5 flex flex-wrap gap-2">

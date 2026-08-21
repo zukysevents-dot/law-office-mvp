@@ -1,6 +1,7 @@
 import { ShieldCheck, ScrollText, Building2 } from "lucide-react";
 
 import { Container, Eyebrow, CtaLink } from "@/components/landing/landing-primitives";
+import { withCzechNbsp } from "@/lib/typography";
 
 const trustChips = [
   { icon: ShieldCheck, label: "Přístup podle rolí" },
@@ -58,21 +59,30 @@ export function Hero({ showLogin = true }: { showLogin?: boolean }) {
 
         <h1
           id="hero-heading"
-          className="landing-rise-in mt-6 max-w-4xl text-balance text-4xl font-semibold leading-[1.05] tracking-tight text-white sm:text-5xl lg:text-6xl"
-          style={{ animationDelay: "80ms" }}
+          className="mt-6 max-w-4xl text-balance text-4xl font-semibold leading-[1.05] tracking-tight text-white sm:text-5xl lg:text-6xl"
         >
-          Celá advokátní kancelář
-          <br className="hidden sm:block" />{" "}
-          <span className="text-[var(--iv-teal-bright)]">na jedné oběžné dráze.</span>
+          <span className="iv-line-mask">
+            <span className="iv-line" style={{ animationDelay: "100ms" }}>
+              Celá advokátní kancelář
+            </span>
+          </span>{" "}
+          <span className="iv-line-mask">
+            <span
+              className="iv-line text-[var(--iv-teal-bright)]"
+              style={{ animationDelay: "220ms" }}
+            >
+              na jedné oběžné dráze.
+            </span>
+          </span>
         </h1>
 
         <p
           className="landing-rise-in mt-6 max-w-2xl text-pretty text-lg leading-relaxed text-[var(--iv-on-dark)]"
           style={{ animationDelay: "160ms" }}
         >
-          Evidence subjektů, kontrola střetu zájmů, lhůty, výkazy práce
-          a fakturace — propojené v jednom bezpečném a auditovatelném systému.
-          Žádné roztroušené tabulky, žádné přehlédnuté termíny.
+          {withCzechNbsp(
+            "Evidence subjektů, kontrola střetu zájmů, lhůty, výkazy práce a fakturace — propojené v jednom bezpečném a auditovatelném systému. Žádné roztroušené tabulky, žádné přehlédnuté termíny.",
+          )}
         </p>
 
         <div

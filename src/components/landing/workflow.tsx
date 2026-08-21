@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
+import { withCzechNbsp } from "@/lib/typography";
 import { Reveal } from "@/components/landing/reveal";
 import {
   SectionShell,
@@ -73,7 +74,7 @@ export function Workflow() {
                 {step.title}
               </h3>
               <p className="mt-1.5 text-sm leading-relaxed text-[var(--iv-muted)]">
-                {step.body}
+                {withCzechNbsp(step.body)}
               </p>
             </Reveal>
           </li>

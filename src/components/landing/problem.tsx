@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
+import { withCzechNbsp } from "@/lib/typography";
 import { Reveal } from "@/components/landing/reveal";
 import {
   SectionShell,
@@ -57,7 +58,7 @@ export function Problem() {
                   {pain.title}
                 </h3>
                 <p className="mt-1.5 text-sm leading-relaxed text-[var(--iv-muted)]">
-                  {pain.body}
+                  {withCzechNbsp(pain.body)}
                 </p>
               </div>
             </article>

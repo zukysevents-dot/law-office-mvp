@@ -36,12 +36,27 @@ export const viewport: Viewport = {
 export default async function LandingPage() {
   // On landing-only hosts (public domain before launch) the app is not
   // reachable, so the login CTAs must not render — see src/lib/landing-mode.ts.
-  const showLogin = !isLandingOnlyHost((await headers()).get("host"));
+  const requestHeaders = await headers();
+  const showLogin = !isLandingOnlyHost(
+    requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host"),
+  );
 
   return (
     <>
       <MarketingHeader showLogin={showLogin} />
-      <main id="main" className="landing-root">
+      {/* suppressHydrationWarning: the inline script below adds .js-on before
+          hydration; the class gates reveal-hiding so no-JS visitors always see
+          the content (see globals.css). */}
+      <main id="main" className="landing-root" suppressHydrationWarning>
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              // Hide reveals only when JS runs — and un-hide again if the
+              // client bundle never hydrates (chunk 404, hydration crash):
+              // Reveal marks the root .js-live once it mounts.
+              'var m=document.currentScript.parentElement;m.classList.add("js-on");setTimeout(function(){if(!m.classList.contains("js-live"))m.classList.remove("js-on")},3000);',
+          }}
+        />
         <Hero showLogin={showLogin} />
         <ProductPreview />
         <Problem />

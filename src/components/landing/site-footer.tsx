@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { Container } from "@/components/landing/landing-primitives";
 import { IuriverseLogo } from "@/components/landing/iuriverse-logo";
+import { withCzechNbsp } from "@/lib/typography";
 
 const productLinks = [
   { href: "#produkt", label: "Produkt" },
@@ -34,8 +35,9 @@ export function SiteFooter({ showLogin = true }: { showLogin?: boolean }) {
           <div className="max-w-xs">
             <IuriverseLogo tone="light" />
             <p className="mt-4 text-sm leading-relaxed text-[var(--iv-on-dark)]/80">
-              Softwarový systém pro správu subjektů, případů, lhůt a výkazů práce
-              advokátní kanceláře.
+              {withCzechNbsp(
+                "Softwarový systém pro správu subjektů, případů, lhůt a výkazů práce advokátní kanceláře.",
+              )}
             </p>
           </div>
 

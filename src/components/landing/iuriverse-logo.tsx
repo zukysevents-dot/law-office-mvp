@@ -65,6 +65,7 @@ export function IuriverseLogo({
 }) {
   return (
     <span
+      role="img"
       className={cn("inline-flex items-center gap-2.5", className)}
       aria-label="IURIVERSE"
     >

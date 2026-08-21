@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
+import { withCzechNbsp } from "@/lib/typography";
 import { Reveal } from "@/components/landing/reveal";
 import {
   SectionShell,
@@ -86,7 +87,7 @@ export function FeaturesGrid() {
                 {feature.title}
               </h3>
               <p className="mt-2 text-sm leading-relaxed text-[var(--iv-muted)]">
-                {feature.body}
+                {withCzechNbsp(feature.body)}
               </p>
             </article>
           </Reveal>
