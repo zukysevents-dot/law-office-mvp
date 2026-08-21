@@ -1,6 +1,6 @@
 import { Container, Eyebrow, CtaLink } from "@/components/landing/landing-primitives";
 
-export function FinalCta() {
+export function FinalCta({ showLogin = true }: { showLogin?: boolean }) {
   return (
     <section
       id="demo"
@@ -25,9 +25,15 @@ export function FinalCta() {
             a přehled lhůt — připravené na každodenní provoz kanceláře.
           </p>
           <div className="mt-8">
-            <CtaLink href="/login" variant="solid" className="px-6">
-              Spustit systém
-            </CtaLink>
+            {showLogin ? (
+              <CtaLink href="/login" variant="solid" className="px-6">
+                Spustit systém
+              </CtaLink>
+            ) : (
+              <p className="rounded-full border border-white/20 bg-white/5 px-5 py-2.5 text-sm font-medium text-white/85">
+                Systém je zatím dostupný pouze interně pro tým kanceláře.
+              </p>
+            )}
           </div>
         </div>
       </Container>

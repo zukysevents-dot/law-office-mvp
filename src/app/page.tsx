@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
+import { headers } from "next/headers";
 
+import { isLandingOnlyHost } from "@/lib/landing-mode";
 import { MarketingHeader } from "@/components/landing/marketing-header";
 import { Hero } from "@/components/landing/hero";
 import { ProductPreview } from "@/components/landing/product-preview";
@@ -31,12 +33,16 @@ export const viewport: Viewport = {
   themeColor: "#0e1822",
 };
 
-export default function LandingPage() {
+export default async function LandingPage() {
+  // On landing-only hosts (public domain before launch) the app is not
+  // reachable, so the login CTAs must not render — see src/lib/landing-mode.ts.
+  const showLogin = !isLandingOnlyHost((await headers()).get("host"));
+
   return (
     <>
-      <MarketingHeader />
+      <MarketingHeader showLogin={showLogin} />
       <main id="main" className="landing-root">
-        <Hero />
+        <Hero showLogin={showLogin} />
         <ProductPreview />
         <Problem />
         <Solution />
@@ -44,9 +50,9 @@ export default function LandingPage() {
         <Workflow />
         <Trust />
         <Benefits />
-        <FinalCta />
+        <FinalCta showLogin={showLogin} />
       </main>
-      <SiteFooter />
+      <SiteFooter showLogin={showLogin} />
     </>
   );
 }

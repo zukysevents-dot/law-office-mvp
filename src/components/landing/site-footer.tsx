@@ -17,14 +17,20 @@ const systemLinks = [
   { href: "/calendar", label: "Kalendář" },
 ];
 
-export function SiteFooter() {
+export function SiteFooter({ showLogin = true }: { showLogin?: boolean }) {
   return (
     <footer
       aria-label="Patička"
       className="border-t border-white/10 bg-[var(--iv-deep)] text-[var(--iv-on-dark)]"
     >
       <Container className="py-14">
-        <div className="grid grid-cols-1 gap-10 md:grid-cols-[1.4fr_1fr_1fr]">
+        <div
+          className={
+            showLogin
+              ? "grid grid-cols-1 gap-10 md:grid-cols-[1.4fr_1fr_1fr]"
+              : "grid grid-cols-1 gap-10 md:grid-cols-[1.4fr_1fr]"
+          }
+        >
           <div className="max-w-xs">
             <IuriverseLogo tone="light" />
             <p className="mt-4 text-sm leading-relaxed text-[var(--iv-on-dark)]/80">
@@ -51,23 +57,25 @@ export function SiteFooter() {
             </ul>
           </nav>
 
-          <nav aria-label="Systém">
-            <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--iv-teal-bright)]">
-              Systém
-            </h2>
-            <ul className="mt-4 space-y-2.5">
-              {systemLinks.map((link) => (
-                <li key={link.href}>
-                  <Link
-                    href={link.href}
-                    className="rounded-sm text-sm text-[var(--iv-on-dark)]/85 transition hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--iv-teal-bright)]"
-                  >
-                    {link.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </nav>
+          {showLogin ? (
+            <nav aria-label="Systém">
+              <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--iv-teal-bright)]">
+                Systém
+              </h2>
+              <ul className="mt-4 space-y-2.5">
+                {systemLinks.map((link) => (
+                  <li key={link.href}>
+                    <Link
+                      href={link.href}
+                      className="rounded-sm text-sm text-[var(--iv-on-dark)]/85 transition hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--iv-teal-bright)]"
+                    >
+                      {link.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+          ) : null}
         </div>
 
         <div className="mt-12 flex flex-col gap-2 border-t border-white/10 pt-6 text-xs text-[var(--iv-on-dark)]/70 sm:flex-row sm:items-center sm:justify-between">

@@ -15,7 +15,7 @@ const navLinks = [
   { href: "#duvera", label: "Důvěra" },
 ];
 
-export function MarketingHeader() {
+export function MarketingHeader({ showLogin = true }: { showLogin?: boolean }) {
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
@@ -103,11 +103,13 @@ export function MarketingHeader() {
           ))}
         </nav>
 
-        <div className="hidden items-center gap-3 lg:flex">
-          <CtaLink href="/login" variant="solid">
-            Spustit systém
-          </CtaLink>
-        </div>
+        {showLogin ? (
+          <div className="hidden items-center gap-3 lg:flex">
+            <CtaLink href="/login" variant="solid">
+              Spustit systém
+            </CtaLink>
+          </div>
+        ) : null}
 
         <button
           ref={menuButtonRef}
@@ -163,9 +165,11 @@ export function MarketingHeader() {
               {link.label}
             </a>
           ))}
-          <CtaLink href="/login" variant="solid" className="mt-2 w-full">
-            Spustit systém
-          </CtaLink>
+          {showLogin ? (
+            <CtaLink href="/login" variant="solid" className="mt-2 w-full">
+              Spustit systém
+            </CtaLink>
+          ) : null}
         </nav>
       </div>
     </header>

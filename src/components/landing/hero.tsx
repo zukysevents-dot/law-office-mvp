@@ -8,7 +8,7 @@ const trustChips = [
   { icon: Building2, label: "Napojení na ARES" },
 ];
 
-export function Hero() {
+export function Hero({ showLogin = true }: { showLogin?: boolean }) {
   return (
     <section
       aria-labelledby="hero-heading"
@@ -79,10 +79,16 @@ export function Hero() {
           className="landing-rise-in mt-9 flex flex-col gap-3 sm:flex-row sm:items-center"
           style={{ animationDelay: "240ms" }}
         >
-          <CtaLink href="/login" variant="solid" className="px-6">
-            Spustit systém
-          </CtaLink>
-          <CtaLink href="#produkt" variant="outlineLight" className="px-6">
+          {showLogin ? (
+            <CtaLink href="/login" variant="solid" className="px-6">
+              Spustit systém
+            </CtaLink>
+          ) : null}
+          <CtaLink
+            href="#produkt"
+            variant={showLogin ? "outlineLight" : "solid"}
+            className="px-6"
+          >
             Prohlédnout produkt
           </CtaLink>
         </div>
