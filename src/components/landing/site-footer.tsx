@@ -83,6 +83,14 @@ export function SiteFooter({ showLogin = true }: { showLogin?: boolean }) {
         <div className="mt-12 flex flex-col gap-2 border-t border-white/10 pt-6 text-xs text-[var(--iv-on-dark)]/70 sm:flex-row sm:items-center sm:justify-between">
           <p>© {new Date().getFullYear()} IURIVERSE s.r.o.</p>
           <p>Přístup podle rolí · Neměnná auditní stopa · Zabezpečené přihlášení</p>
+          <p>
+            <a
+              href="https://patrikz.dev/cs"
+              className="rounded-sm transition hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--iv-teal-bright)]"
+            >
+              Web: Patrik Zukal
+            </a>
+          </p>
         </div>
       </Container>
     </footer>
