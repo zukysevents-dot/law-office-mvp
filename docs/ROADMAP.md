@@ -25,7 +25,7 @@
 **Co reálně zbývá (backlog):**
 1. **F8 — produktizace předplatného:** Stripe/ČR fakturace předplatného, trialy, self-service zapínání modulů (dnes ruční z `/admin`). Sem patří E0-9.
 2. **Účetní export fakturace** (ISDOC / Pohoda / Money) — „fáze 2" BILLINGu.
-3. **Živá ISDS integrace** datových schránek (oficiální API vs partner) — dnes jen evidence.
+3. **Živá ISDS integrace** datových schránek — způsob napojení rozhodnut, viz [architecture/isds-live-integration.md](architecture/isds-live-integration.md); dnes jen evidence.
 4. **AML automatizace** — PEP / sankční seznamy (dnes ruční checkbox).
 5. **Dokumenty** — SharePoint je zvolené úložiště; zbývá tenant konfigurace a e-podpis.
 6. **E0-8** — volitelný middleware prefix-guard (UX, ne bezpečnost).
@@ -245,6 +245,8 @@ Rozhodnutí: fakturace **předplatného produktu** (Subscription) je oddělená 
 - [x] D-7 Stažení/uložení příloh (návaznost na DMS, zatím odkaz/blob).
 - [x] D-8 Hook na vznik procesní lhůty z doručení (připravit rozhraní pro Epik 4).
 
+> **Fáze 2 — živé napojení (nehotové):** rozhodnutí a návrh v [architecture/isds-live-integration.md](architecture/isds-live-integration.md) — víc schránek na kancelář (firemní + osobní schránky advokátů), samoobslužné připojení per uživatel, heslo vs certifikát, viditelnost osobních zpráv, hlídání expirace přístupu.
+
 ### 3.3 Epik 3 — AML (`AML`)
 
 **Cíl:** Identifikace klienta, hodnocení rizik, evidence — zákonná povinnost (AML zákon). Dnes jen `riskFlag` boolean.
@@ -392,7 +394,9 @@ Pravidlo: každá fáze končí zeleným `build` (vč. typecheck) + `lint` + tes
 
 - [ ] **Předplatné:** Stripe vs česká fakturace předplatného? A vůbec self-service onboarding, nebo napořád manuální zapínání z `/admin`? (ovlivní F0-9 a F8) — *stále otevřené*
 - [ ] **Úložiště dokumentů:** SharePoint (už máme hranice) vs blob storage? Rozcestník pro celý Epik 5/6 (DOC-6 ADR). — *MVP jede na SharePoint odkazech; dlouhodobé rozhodnutí (blob) stále otevřené*
-- [ ] **Datové schránky — ⚖️ VYŘEŠIT S PRÁVNÍKY:** oficiální ISDS API vs partner à la EXevido? Ovlivní rozsah a riziko Epiku 2. Nesprávné nakládání s DS má právní/legislativní následky → způsob integrace musí projít právním posouzením. Teď jen evidence zpráv (UI banner na `/data-boxes` na to upozorňuje), bez živé ISDS integrace.
+- [x] **Datové schránky — ROZHODNUTO (2026-09-12):** oficiální ISDS rozhraní (ne partner à la EXevido). Připojení je samoobslužné **per uživatel** (každý advokát si připojí svou osobní schránku sám, firemní zvlášť), výchozí ověření **jméno + heslo**, certifikát volitelný pro ty, kdo chtějí vyšší zabezpečení. Zprávy z osobní schránky vidí napřed **jen její vlastník**; týmu se zpřístupní až přiřazením ke spisu. Rozhodnutí, dopad na model a náklady: [architecture/isds-live-integration.md](architecture/isds-live-integration.md). Implementace zatím nehotová — dnes jen evidence zpráv (UI banner na `/data-boxes` na to upozorňuje).
+- [ ] **ISDS — odesílání jménem advokáta:** má appka zprávy jen přijímat, nebo i odesílat? Odesílání je právně citlivější a mění rozsah. K potvrzení s advokáty.
+- [ ] **Microsoft 365 pro víc kanceláří:** integrace je dnes jen z env (`MS_TENANT_ID`, `MS_CLIENT_SECRET`, `SHAREPOINT_SITE_URL`) + jedna sdílená token cache → **jedna instance = jedna kancelář**. Druhá kancelář na téže instanci by psala do SharePointu té první. Pro pilot stačí, pro prodej ne. Potřeba multi-tenant app registration + admin-consent flow, `tenantId` a knihovna u `Organization`, `Sites.Selected`. Viz [ONBOARDING.md](ONBOARDING.md).
 
 ---
 
