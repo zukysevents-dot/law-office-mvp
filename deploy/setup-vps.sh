@@ -136,6 +136,14 @@ docker compose run --rm --no-deps app npx prisma migrate deploy
 log "Startuji aplikaci a cron"
 docker compose up -d --remove-orphans
 
+# Denní záloha DB ve 2:30 (jen když DB běží tady na VPS).
+if grep -qE '^COMPOSE_PROFILES=.*local-db' .env; then
+  log "Nastavuji denní zálohu databáze (/var/backups/law-office)"
+  cat > /etc/cron.d/law-office-backup <<CRON
+30 2 * * * root bash ${APP_DIR}/deploy/backup.sh >> /var/log/law-office-backup.log 2>&1
+CRON
+fi
+
 # --- 6. nginx --------------------------------------------------------------------
 log "Konfiguruji nginx pro: ${ALL_DOMAINS}"
 SITE=/etc/nginx/sites-available/law-office

@@ -132,7 +132,10 @@ docker compose exec -T postgres pg_dump -U postgres law_office_mvp | gzip > back
 gunzip -c backup-YYYY-MM-DD.sql.gz | docker compose exec -T postgres psql -U postgres law_office_mvp
 ```
 
-Doporučení: denní dump přes `crontab -e` na hostu + kopie mimo server.
+`setup-vps.sh` nastaví **denní zálohu ve 2:30** (`/etc/cron.d/law-office-backup`
+→ [`deploy/backup.sh`](backup.sh)) do `/var/backups/law-office`, drží 14 dní.
+Ruční záloha: `sudo bash deploy/backup.sh`. Doporučení: kopírovat zálohy i mimo
+server (např. OVH Object Storage / rclone).
 
 ### Ruční spuštění cron úloh
 
