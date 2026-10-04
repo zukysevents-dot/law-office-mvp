@@ -15,10 +15,13 @@ export function Reveal({
   children,
   className,
   delay = 0,
+  variant = "up",
 }: {
   children: React.ReactNode;
   className?: string;
   delay?: number;
+  /** "up" = fade+slide, "scale" = fade+slide+settle (for large frames). */
+  variant?: "up" | "scale";
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
@@ -26,6 +29,19 @@ export function Reveal({
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
+
+    // Signal to the landing's inline fail-open script that the client bundle
+    // hydrated — the reveal-hiding CSS stays active only when this runs.
+    el.closest(".landing-root")?.classList.add("js-live");
+
+    // Fail open: without IntersectionObserver (old/exotic browsers) show the
+    // content immediately instead of throwing from the effect — an error here
+    // would bubble to the root error boundary and blank the whole landing.
+    // Direct DOM class (not setState) keeps the effect render-free.
+    if (typeof IntersectionObserver === "undefined") {
+      el.classList.add("is-visible");
+      return;
+    }
 
     // Reduced motion is handled in CSS (globals.css forces .reveal visible),
     // so the observer can run unconditionally; the animation is suppressed there.
@@ -48,7 +64,12 @@ export function Reveal({
   return (
     <div
       ref={ref}
-      className={cn("landing-reveal", visible && "is-visible", className)}
+      className={cn(
+        "landing-reveal",
+        variant === "scale" && "landing-reveal--scale",
+        visible && "is-visible",
+        className,
+      )}
       style={delay ? { animationDelay: `${delay}ms` } : undefined}
     >
       {children}

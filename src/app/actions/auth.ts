@@ -105,6 +105,13 @@ export async function loginAction(formData: FormData) {
 // prevents unauthenticated callers from reserving/squatting another person's
 // unique e-mail address.
 export async function registerAction(formData: FormData) {
+  // Hard kill-switch, independent of the host-based landing gate (which is
+  // presentation-only and fail-open). Responds like a successful submission
+  // so the switch does not leak account-enumeration signals.
+  if (process.env.REGISTRATION_ENABLED === "false") {
+    redirect("/register?sent=1");
+  }
+
   const name = String(formData.get("name") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const password = String(formData.get("password") ?? "");

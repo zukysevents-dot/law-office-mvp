@@ -1,6 +1,7 @@
 import { ShieldCheck, ScrollText, Building2, Lock } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
+import { withCzechNbsp } from "@/lib/typography";
 import { Reveal } from "@/components/landing/reveal";
 import {
   SectionShell,
@@ -13,12 +14,12 @@ const pillars: { icon: LucideIcon; title: string; body: string }[] = [
   {
     icon: ShieldCheck,
     title: "Přístup podle rolí",
-    body: "Každá role vidí jen to, co jí přísluší. Viditelnost se vynucuje už na úrovni databázových dotazů — ne až v rozhraní.",
+    body: "Každá role vidí jen to, co jí přísluší. Viditelnost se vynucuje už na úrovni databázových dotazů, ne až v rozhraní.",
   },
   {
     icon: ScrollText,
     title: "Neměnná auditní stopa",
-    body: "Každé založení, úprava i archivace se zaznamená — kdo, kdy a co změnil, včetně původní a nové hodnoty. Historie se nepřepisuje.",
+    body: "Každé založení, úprava i archivace se zaznamená: kdo, kdy a co změnil, včetně původní a nové hodnoty. Historie se nepřepisuje.",
   },
   {
     icon: Building2,
@@ -27,8 +28,8 @@ const pillars: { icon: LucideIcon; title: string; body: string }[] = [
   },
   {
     icon: Lock,
-    title: "Soukromí a GDPR",
-    body: "Interní systém kanceláře s oddělením přístupů a respektem k preferencím uživatelů u notifikací i sdílení.",
+    title: "Zabezpečené přihlášení",
+    body: "Ověření e-mailu při registraci, omezení počtu neúspěšných pokusů o přihlášení a možnost okamžitě odhlásit uživatele ze všech zařízení.",
   },
 ];
 
@@ -39,7 +40,7 @@ export function Trust() {
         id="duvera-heading"
         eyebrow="Důvěra a kontrola"
         title="Postaveno pro citlivá data advokátní kanceláře."
-        lead="Bezpečnost a dohledatelnost nejsou doplněk — jsou součástí každého modulu."
+        lead="Role, auditní stopa a ověřené přihlášení platí ve všech modulech stejně."
       />
 
       <div className="mt-12 grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -53,7 +54,7 @@ export function Trust() {
                 {pillar.title}
               </h3>
               <p className="mt-2 text-sm leading-relaxed text-[var(--iv-muted)]">
-                {pillar.body}
+                {withCzechNbsp(pillar.body)}
               </p>
               {pillar.title === "Přístup podle rolí" ? (
                 <div className="mt-5 flex flex-wrap gap-2">

@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
+import { withCzechNbsp } from "@/lib/typography";
 import { Reveal } from "@/components/landing/reveal";
 import {
   SectionShell,
@@ -26,7 +27,7 @@ const pains: { icon: LucideIcon; title: string; body: string }[] = [
   {
     icon: Hourglass,
     title: "Zmeškané lhůty",
-    body: "Procesní i interní lhůty jsou roztroušené v hlavách, kalendářích a poznámkách. Stačí jeden přehlédnutý termín.",
+    body: "Procesní i interní lhůty jsou roztroušené v hlavách, kalendářích a poznámkách. Zmeškaná procesní lhůta se přitom nedá vzít zpět.",
   },
   {
     icon: Clock3,
@@ -42,7 +43,7 @@ export function Problem() {
         id="problem-heading"
         eyebrow="Proč to vzniklo"
         title="Administrativa kanceláře se rozpadá do nástrojů, které spolu nemluví."
-        lead="Excel, e‑mail, sdílený disk a papír. Informace nikdy nejsou na jednom místě — a každá mezera je riziko."
+        lead="Excel, e‑mail, sdílený disk a papír. V každodenním provozu z toho vznikají čtyři opakující se problémy."
       />
 
       <div className="mt-12 grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -57,7 +58,7 @@ export function Problem() {
                   {pain.title}
                 </h3>
                 <p className="mt-1.5 text-sm leading-relaxed text-[var(--iv-muted)]">
-                  {pain.body}
+                  {withCzechNbsp(pain.body)}
                 </p>
               </div>
             </article>

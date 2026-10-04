@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
+import { withCzechNbsp } from "@/lib/typography";
 import { Reveal } from "@/components/landing/reveal";
 import {
   SectionShell,
@@ -17,7 +18,7 @@ const steps: { icon: LucideIcon; title: string; body: string }[] = [
   {
     icon: Building2,
     title: "Založení subjektu",
-    body: "Subjekt vznikne načtením z ARES podle IČO — s adresou, právní formou i rizikovými příznaky.",
+    body: "Subjekt vznikne načtením z ARES podle IČO, s adresou, právní formou i rizikovými příznaky.",
   },
   {
     icon: ShieldCheck,
@@ -47,7 +48,7 @@ export function Workflow() {
       <SectionHeading
         id="postup-heading"
         eyebrow="Jak to funguje"
-        title="Od prvního kontaktu po fakturu — jedna souvislá linka."
+        title="Od založení subjektu po fakturu."
         lead="Data nepřepisujete mezi nástroji. Každý krok navazuje na předchozí a zůstává dohledatelný."
       />
 
@@ -60,20 +61,14 @@ export function Workflow() {
         {steps.map((step, index) => (
           <li key={step.title} className="relative">
             <Reveal delay={index * 80}>
-              <div className="flex items-center gap-3 lg:flex-col lg:items-start">
-                <span className="relative z-10 flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[var(--iv-deep)] text-base font-semibold text-white ring-4 ring-[var(--iv-bg)]">
-                  {index + 1}
-                </span>
-                <step.icon
-                  className="h-5 w-5 text-[var(--iv-teal-ink)] lg:mt-4"
-                  aria-hidden
-                />
-              </div>
+              <span className="relative z-10 flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[var(--iv-deep)] text-[var(--iv-teal-bright)] ring-4 ring-[var(--iv-bg)]">
+                <step.icon className="h-5 w-5" aria-hidden />
+              </span>
               <h3 className="mt-4 text-base font-semibold text-[var(--iv-ink)]">
                 {step.title}
               </h3>
               <p className="mt-1.5 text-sm leading-relaxed text-[var(--iv-muted)]">
-                {step.body}
+                {withCzechNbsp(step.body)}
               </p>
             </Reveal>
           </li>

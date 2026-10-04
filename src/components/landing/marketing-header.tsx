@@ -15,7 +15,7 @@ const navLinks = [
   { href: "#duvera", label: "Důvěra" },
 ];
 
-export function MarketingHeader() {
+export function MarketingHeader({ showLogin = true }: { showLogin?: boolean }) {
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
@@ -50,7 +50,6 @@ export function MarketingHeader() {
 
   return (
     <header
-      aria-label="Hlavní navigace"
       className={cn(
         "sticky top-0 z-50 border-b transition-colors duration-300",
         // At the top the header is opaque deep so it blends seamlessly into the
@@ -103,11 +102,13 @@ export function MarketingHeader() {
           ))}
         </nav>
 
-        <div className="hidden items-center gap-3 lg:flex">
-          <CtaLink href="/login" variant="solid">
-            Spustit systém
-          </CtaLink>
-        </div>
+        {showLogin ? (
+          <div className="hidden items-center gap-3 lg:flex">
+            <CtaLink href="/login" variant="solid">
+              Spustit systém
+            </CtaLink>
+          </div>
+        ) : null}
 
         <button
           ref={menuButtonRef}
@@ -119,7 +120,7 @@ export function MarketingHeader() {
           className={cn(
             "inline-flex h-10 w-10 items-center justify-center rounded-md border transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 lg:hidden",
             darkTone
-              ? "border-white/25 text-white hover:bg-white/10 focus-visible:outline-[var(--iv-teal-bright)]"
+              ? "border-white/40 text-white hover:bg-white/10 focus-visible:outline-[var(--iv-teal-bright)]"
               : "border-[var(--iv-line)] bg-white text-[var(--iv-ink)] hover:bg-[var(--iv-bg)] focus-visible:outline-[var(--iv-teal-ink)]",
           )}
         >
@@ -163,9 +164,11 @@ export function MarketingHeader() {
               {link.label}
             </a>
           ))}
-          <CtaLink href="/login" variant="solid" className="mt-2 w-full">
-            Spustit systém
-          </CtaLink>
+          {showLogin ? (
+            <CtaLink href="/login" variant="solid" className="mt-2 w-full">
+              Spustit systém
+            </CtaLink>
+          ) : null}
         </nav>
       </div>
     </header>

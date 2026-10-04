@@ -1,6 +1,7 @@
 import { Container, Eyebrow, CtaLink } from "@/components/landing/landing-primitives";
+import { withCzechNbsp } from "@/lib/typography";
 
-export function FinalCta() {
+export function FinalCta({ showLogin = true }: { showLogin?: boolean }) {
   return (
     <section
       id="demo"
@@ -13,22 +14,42 @@ export function FinalCta() {
       />
       <Container>
         <div className="mx-auto flex max-w-2xl flex-col items-center text-center">
-          <Eyebrow tone="light">Začněte hned</Eyebrow>
-          <h2
-            id="demo-heading"
-            className="mt-4 text-balance text-3xl font-semibold tracking-tight text-white sm:text-4xl"
-          >
-            Mějte celou kancelář pod kontrolou.
-          </h2>
-          <p className="mt-4 text-pretty text-base leading-relaxed text-[var(--iv-on-dark)] sm:text-lg">
-            Otevřete systém a projděte si dashboard, evidenci subjektů
-            a přehled lhůt — připravené na každodenní provoz kanceláře.
-          </p>
-          <div className="mt-8">
-            <CtaLink href="/login" variant="solid" className="px-6">
-              Spustit systém
-            </CtaLink>
-          </div>
+          {showLogin ? (
+            <>
+              <Eyebrow tone="light">Začněte hned</Eyebrow>
+              <h2
+                id="demo-heading"
+                className="mt-4 text-balance text-3xl font-semibold tracking-tight text-white sm:text-4xl"
+              >
+                Mějte celou kancelář pod kontrolou.
+              </h2>
+              <p className="mt-4 text-pretty text-base leading-relaxed text-[var(--iv-on-dark)] sm:text-lg">
+                {withCzechNbsp(
+                  "Otevřete systém a projděte si dashboard, evidenci subjektů a přehled lhůt.",
+                )}
+              </p>
+              <div className="mt-8">
+                <CtaLink href="/login" variant="solid" className="px-6">
+                  Spustit systém
+                </CtaLink>
+              </div>
+            </>
+          ) : (
+            <>
+              <Eyebrow tone="light">Dostupnost</Eyebrow>
+              <h2
+                id="demo-heading"
+                className="mt-4 text-balance text-3xl font-semibold tracking-tight text-white sm:text-4xl"
+              >
+                Ověřeno každodenním provozem advokátní kanceláře.
+              </h2>
+              <p className="mt-4 text-pretty text-base leading-relaxed text-[var(--iv-on-dark)] sm:text-lg">
+                {withCzechNbsp(
+                  "IURIVERSE zatím není veřejně dostupný. Používá ho kancelář, pro kterou vznikl. Zpřístupnění dalším kancelářím připravujeme.",
+                )}
+              </p>
+            </>
+          )}
         </div>
       </Container>
     </section>
