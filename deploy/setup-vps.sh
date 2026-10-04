@@ -4,7 +4,8 @@
 #
 #   sudo DOMAIN=app.kancelar.cz EMAIL=it@kancelar.cz bash deploy/setup-vps.sh
 #
-# Optional env: LANDING_DOMAINS ("kancelar.cz www.kancelar.cz" — hosts that
+# Optional env: EMAIL (Let's Encrypt expiry notices; without it the account is
+#               registered with no e-mail), LANDING_DOMAINS ("kancelar.cz www.kancelar.cz" — hosts that
 #               serve only the public landing page, from the same app),
 #               BRANCH (default main), APP_DIR (default /opt/law-office-mvp),
 #               REPO_URL (default the GitHub repo), SKIP_TLS=1 (HTTP only).
@@ -16,7 +17,7 @@
 set -euo pipefail
 
 DOMAIN="${DOMAIN:?Nastav DOMAIN=tvoje.domena.cz}"
-EMAIL="${EMAIL:?Nastav EMAIL=kontakt@pro-lets-encrypt.cz}"
+EMAIL="${EMAIL:-}"
 LANDING_DOMAINS="$(echo "${LANDING_DOMAINS:-}" | tr ',' ' ' | xargs)"
 ALL_DOMAINS="$(echo "$DOMAIN $LANDING_DOMAINS" | xargs)"
 BRANCH="${BRANCH:-main}"
@@ -36,11 +37,18 @@ log "Instaluji balíčky (git, nginx, certbot, ufw)"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq git curl ca-certificates openssl nginx certbot \
-  python3-certbot-nginx ufw dnsutils >/dev/null
+  python3-certbot-nginx ufw bind9-dnsutils >/dev/null
 
 if ! command -v docker >/dev/null 2>&1; then
-  log "Instaluji Docker (oficiální skript get.docker.com)"
-  curl -fsSL https://get.docker.com | sh
+  # Ubuntu má Docker i compose v2 v distribučních balíčcích; jinde (Debian 12)
+  # je compose v2 jen v oficiálním repu Dockeru.
+  if apt-cache show docker-compose-v2 >/dev/null 2>&1; then
+    log "Instaluji Docker z balíčků distribuce"
+    apt-get install -y -qq docker.io docker-compose-v2 docker-buildx >/dev/null
+  else
+    log "Instaluji Docker (oficiální skript get.docker.com)"
+    curl -fsSL https://get.docker.com | sh
+  fi
 fi
 systemctl enable --now docker >/dev/null
 
@@ -161,7 +169,12 @@ else
   done
   if [ "${#CERT_ARGS[@]}" -gt 0 ]; then
     log "Vydávám Let's Encrypt certifikát"
-    certbot --nginx "${CERT_ARGS[@]}" --cert-name law-office -m "$EMAIL" \
+    if [ -n "$EMAIL" ]; then
+      EMAIL_ARGS=(-m "$EMAIL")
+    else
+      EMAIL_ARGS=(--register-unsafely-without-email)
+    fi
+    certbot --nginx "${CERT_ARGS[@]}" --cert-name law-office "${EMAIL_ARGS[@]}" \
       --agree-tos -n --redirect --expand
     systemctl reload nginx
   else
