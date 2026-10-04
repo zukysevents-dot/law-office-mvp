@@ -3,6 +3,8 @@ import { test } from "node:test";
 
 import {
   buildSharepointFolderUrl,
+  formatRelativePath,
+  parseRelativePath,
   sanitizeSegment,
   sharepointFolderSegments,
   uniqueSharepointFilename,
@@ -70,7 +72,38 @@ test("sharepointFolderSegments: Case nests under its project, uses file number",
   );
 });
 
-test("buildSharepointFolderUrl: null when SHAREPOINT_SITE_URL is unset", () => {
-  // No env configured in the test process → not derivable.
-  assert.equal(buildSharepointFolderUrl(["Subjekty", "ACME"]), null);
+test("buildSharepointFolderUrl: null when SHAREPOINT_SITE_URL is unset", async () => {
+  // organizationId=null zkratuje čtení z DB → čistý env fallback.
+  const saved = process.env.SHAREPOINT_SITE_URL;
+  delete process.env.SHAREPOINT_SITE_URL;
+  try {
+    assert.equal(await buildSharepointFolderUrl(null, ["Subjekty", "ACME"]), null);
+  } finally {
+    if (saved === undefined) {
+      delete process.env.SHAREPOINT_SITE_URL;
+    } else {
+      process.env.SHAREPOINT_SITE_URL = saved;
+    }
+  }
+});
+
+test("parseRelativePath: zahodí .., . a prázdné segmenty", () => {
+  assert.deepEqual(parseRelativePath("a/b/c"), ["a", "b", "c"]);
+  assert.deepEqual(parseRelativePath("../../etc"), ["etc"]);
+  assert.deepEqual(parseRelativePath("a/../../../b"), ["a", "b"]);
+  assert.deepEqual(parseRelativePath("//a///b//"), ["a", "b"]);
+  assert.deepEqual(parseRelativePath("a/./b"), ["a", "b"]);
+  assert.deepEqual(parseRelativePath("a/..\\b"), ["a"]);
+  assert.deepEqual(parseRelativePath(""), []);
+  assert.deepEqual(parseRelativePath(null), []);
+});
+
+test("parseRelativePath: omezí hloubku", () => {
+  const deep = Array.from({ length: 25 }, (_, i) => `s${i}`).join("/");
+  assert.equal(parseRelativePath(deep).length, 10);
+});
+
+test("formatRelativePath: zpětný převod na ?path=", () => {
+  assert.equal(formatRelativePath(["a", "b"]), "a/b");
+  assert.equal(formatRelativePath([]), "");
 });

@@ -91,6 +91,7 @@ function safeStorageUrl(value: string): string {
 }
 
 async function resolveStorage(
+  organizationId: string,
   formData: FormData,
   folderSegments: string[],
 ): Promise<{ storageUrl: string; mimeType: string | null }> {
@@ -107,7 +108,7 @@ async function resolveStorage(
     }
     return { storageUrl: safeStorageUrl(url), mimeType: null };
   }
-  if (!isSharepointUploadConfigured()) {
+  if (!(await isSharepointUploadConfigured(organizationId))) {
     throw new Error(
       "Přímý upload vyžaduje konfiguraci SharePointu a Microsoft Graph.",
     );
@@ -122,6 +123,7 @@ async function resolveStorage(
   );
   const mimeType = file.type || "application/octet-stream";
   const uploadedUrl = await uploadSharepointFile(
+    organizationId,
     [...folderSegments, "Dokumenty"],
     filename,
     await file.arrayBuffer(),
@@ -230,7 +232,7 @@ export async function createDocument(formData: FormData) {
     }
   }
 
-  const storage = await resolveStorage(formData, folderSegments);
+  const storage = await resolveStorage(organizationId, formData, folderSegments);
   const mimeType =
     storage.mimeType ?? clampText(optionalString(formData, "mimeType"), MAX_NAME);
   const storageUrl = storage.storageUrl;
@@ -330,7 +332,7 @@ export async function addDocumentVersion(formData: FormData) {
   if (!folderSegments) {
     throw new Error("Dokument nemá platnou vazbu na spis nebo subjekt.");
   }
-  const storage = await resolveStorage(formData, folderSegments);
+  const storage = await resolveStorage(organizationId, formData, folderSegments);
   const storageUrl = storage.storageUrl;
   const note = clampText(optionalString(formData, "note"), MAX_TEXT);
 
