@@ -13,13 +13,13 @@ export function Section({
   return (
     <section
       className={cn(
-        "min-w-0 rounded-lg border border-[#d4e2dc] bg-white p-5 shadow-sm shadow-[#072924]/5",
+        "min-w-0 rounded-lg border border-[#dce4e8] bg-white p-5 shadow-sm shadow-[#0e1822]/5",
         className,
       )}
       {...props}
     >
       {title ? (
-        <h2 className="mb-4 text-base font-semibold text-[#072924]">
+        <h2 className="mb-4 text-base font-semibold text-[#0e1822]">
           {title}
         </h2>
       ) : null}

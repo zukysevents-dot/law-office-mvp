@@ -9,11 +9,11 @@ import { cn } from "@/lib/utils";
 
 const variants = {
   primary:
-    "bg-[#072924] text-white shadow-sm hover:bg-[#031c19] focus-visible:outline-[#072924]",
+    "bg-[#0e1822] text-white shadow-sm hover:bg-[#16242f] focus-visible:outline-[#0e1822]",
   secondary:
-    "border border-[#B9DCC6] bg-[#B9DCC6] text-[#072924] hover:bg-[#a8ceb7] focus-visible:outline-[#072924]",
+    "border border-[#17A2A2] bg-[#17A2A2] text-[#0e1822] hover:bg-[#2dc6c2] focus-visible:outline-[#0e1822]",
   ghost:
-    "border border-[#B9DCC6] bg-transparent text-[#072924] hover:bg-[#B9DCC6]/30 focus-visible:outline-[#072924]",
+    "border border-[#17A2A2] bg-transparent text-[#0e1822] hover:bg-[#17A2A2]/30 focus-visible:outline-[#0e1822]",
   danger:
     "bg-red-900 text-white hover:bg-red-800 focus-visible:outline-red-700",
 };

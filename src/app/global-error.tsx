@@ -13,7 +13,7 @@ export default function GlobalError({ reset }: { error: Error; reset: () => void
           alignItems: "center",
           justifyContent: "center",
           fontFamily: "system-ui, sans-serif",
-          background: "#072924",
+          background: "#0e1822",
           color: "#fff",
           textAlign: "center",
           padding: "1rem",

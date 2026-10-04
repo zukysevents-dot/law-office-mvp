@@ -6,6 +6,7 @@ import {
   parseTokenResponse,
   retryDelayMs,
   shouldRetryStatus,
+  tokenCacheKey,
 } from "./graph";
 
 // --- parseTokenResponse ------------------------------------------------------
@@ -79,4 +80,11 @@ test("retryDelayMs: bez Retry-After → exponenciální backoff (cap 30s)", () =
 test("retryDelayMs: neplatný/záporný Retry-After → fallback backoff", () => {
   assert.equal(retryDelayMs(0, "abc"), 500);
   assert.equal(retryDelayMs(1, "-5"), 1000);
+});
+
+test("tokenCacheKey: jiná app registrace → jiný klíč", () => {
+  const base = { tenantId: "t", clientId: "c", clientSecret: "s" };
+  assert.equal(tokenCacheKey(base), tokenCacheKey({ ...base, clientSecret: "jiny" }));
+  assert.notEqual(tokenCacheKey(base), tokenCacheKey({ ...base, clientId: "c2" }));
+  assert.notEqual(tokenCacheKey(base), tokenCacheKey({ ...base, tenantId: "t2" }));
 });

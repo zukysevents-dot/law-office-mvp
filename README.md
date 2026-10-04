@@ -45,6 +45,17 @@ npm run lint
 npm run build
 ```
 
+## Testy
+
+```bash
+npm run test          # unit testy (node:test)
+npm run test:e2e      # E2E v prohlížeči (Playwright)
+```
+
+E2E sada si sama připraví vlastní databázi `law_office_e2e`, sestaví aplikaci do
+`.next-e2e` a spustí server na portu 3101 — vývojářská databáze ani `.next` cache
+se nedotkne. Podrobnosti a známá omezení: [`tests/e2e/README.md`](tests/e2e/README.md).
+
 ## Prisma
 
 Prisma schema je v `prisma/schema.prisma`. Prisma v7 používá `prisma.config.ts`

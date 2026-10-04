@@ -12,13 +12,15 @@ export function PageHeader({
   return (
     <>
       <DocumentTitle title={title} />
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-normal text-[#072924]">
+      <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        {/* min-w-0 + break-words: názvy subjektů/úkolů mohou být jedno velmi
+            dlouhé slovo, které by jinak roztáhlo celou stránku do šířky. */}
+        <div className="min-w-0">
+          <h1 className="break-words text-2xl font-semibold tracking-normal text-[#0e1822]">
             {title}
           </h1>
           {description ? (
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-[#5f756e]">
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-[#566673]">
               {description}
             </p>
           ) : null}

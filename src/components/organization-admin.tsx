@@ -120,6 +120,7 @@ export function OrganizationAdminPanel({
                             <SelectInput
                               name="role"
                               defaultValue={member.role}
+                              aria-label={`Role uživatele ${member.user.name}`}
                               className="h-9 w-40"
                             >
                               {orgMemberRoleOptions.map((role: UserRole) => (

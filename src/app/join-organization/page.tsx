@@ -1,8 +1,8 @@
-import Image from "next/image";
 import { redirect } from "next/navigation";
 
 import { logoutAction } from "@/app/actions/auth";
 import { joinOrganization } from "@/app/actions/organizations";
+import { AuthShell } from "@/components/auth-shell";
 import { Field, TextInput } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { OrganizationMemberStatus, OrganizationStatus } from "@/generated/prisma/enums";
@@ -51,59 +51,50 @@ export default async function JoinOrganizationPage({
   const message = error ? errorMessages[error] : undefined;
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#072924] px-4 py-12">
-      <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-2xl">
-        <div className="mb-6 flex justify-center">
-          <Image
-            src="/brand/logo-light.jpeg"
-            alt="syndikat.legal"
-            width={1015}
-            height={326}
-            priority
-            className="h-12 w-auto rounded-lg"
-          />
-        </div>
-        <h1 className="text-center text-xl font-semibold text-stone-900">
-          Připojení ke kanceláři
-        </h1>
-        <p className="mt-1 mb-6 text-center text-sm text-stone-500">
-          Zadejte registrační kód, který vám předal správce vaší advokátní
-          kanceláře. Kód není přihlašovací údaj — pouze vás připojí ke kanceláři.
+    <AuthShell className="max-w-md">
+      <h1 className="text-center text-xl font-semibold text-[var(--iv-ink)]">
+        Připojení ke kanceláři
+      </h1>
+      <p className="mb-6 mt-1 text-center text-sm text-[var(--iv-muted)]">
+        Zadejte registrační kód, který vám předal správce vaší advokátní
+        kanceláře. Kód není přihlašovací údaj — pouze vás připojí ke kanceláři.
+      </p>
+
+      {message ? (
+        <p
+          role="alert"
+          className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-800"
+        >
+          {message}
         </p>
+      ) : null}
 
-        {message ? (
-          <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-800">
-            {message}
-          </p>
-        ) : null}
+      <form action={joinOrganization} className="grid gap-4">
+        <Field label="Registrační kód">
+          <TextInput
+            name="code"
+            placeholder="ABCD-EFGH-JKLM"
+            autoComplete="off"
+            autoCapitalize="characters"
+            required
+          />
+        </Field>
+        <Field label="Jméno a příjmení">
+          <TextInput name="name" defaultValue={user.name} autoComplete="name" />
+        </Field>
+        <Button type="submit" className="mt-2 w-full">
+          Připojit se ke kanceláři
+        </Button>
+      </form>
 
-        <form action={joinOrganization} className="grid gap-4">
-          <Field label="Registrační kód">
-            <TextInput
-              name="code"
-              placeholder="ABCD-EFGH-JKLM"
-              autoComplete="off"
-              autoCapitalize="characters"
-              required
-            />
-          </Field>
-          <Field label="Jméno a příjmení">
-            <TextInput name="name" defaultValue={user.name} autoComplete="name" />
-          </Field>
-          <Button type="submit" className="mt-2 w-full">
-            Připojit se ke kanceláři
-          </Button>
-        </form>
-
-        <form action={logoutAction} className="mt-6 text-center">
-          <button
-            type="submit"
-            className="inline-flex min-h-10 items-center rounded-md px-3 text-sm text-stone-600 underline-offset-2 hover:bg-stone-100 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#072924]"
-          >
-            Odhlásit se
-          </button>
-        </form>
-      </div>
-    </main>
+      <form action={logoutAction} className="mt-6 text-center">
+        <button
+          type="submit"
+          className="inline-flex min-h-10 items-center rounded-md px-3 text-sm text-[var(--iv-muted)] underline-offset-2 hover:bg-[var(--iv-bg)] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--iv-teal-ink)]"
+        >
+          Odhlásit se
+        </button>
+      </form>
+    </AuthShell>
   );
 }

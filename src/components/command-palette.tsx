@@ -1,29 +1,46 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { Search } from "lucide-react";
 
 import { globalSearch, type SearchHit } from "@/app/actions/search";
+
+/** Event any component can dispatch to open the palette without a keyboard. */
+export const OPEN_SEARCH_EVENT = "iuriverse:open-search";
 
 // F5: ⌘K / Ctrl-K global search. Results come from the globalSearch server
 // action, which enforces per-user visibility — this component only renders them.
 export function CommandPalette() {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const titleId = useId();
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<SearchHit[]>([]);
-  const [, startTransition] = useTransition();
+  const [isSearching, startTransition] = useTransition();
   const router = useRouter();
 
   useEffect(() => {
+    function open() {
+      const dialog = dialogRef.current;
+      if (dialog && !dialog.open) {
+        dialog.showModal();
+        // showModal() focuses the dialog itself; move to the field so typing works.
+        inputRef.current?.focus();
+      }
+    }
     function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        const dialog = dialogRef.current;
-        if (dialog && !dialog.open) dialog.showModal();
+        open();
       }
     }
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener(OPEN_SEARCH_EVENT, open);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener(OPEN_SEARCH_EVENT, open);
+    };
   }, []);
 
   useEffect(() => {
@@ -50,23 +67,45 @@ export function CommandPalette() {
   return (
     <dialog
       ref={dialogRef}
-      className="m-auto w-full max-w-lg rounded-xl p-0 backdrop:bg-black/40"
+      aria-labelledby={titleId}
+      className="m-auto w-full max-w-lg rounded-xl border border-[#dce4e8] p-0 shadow-xl backdrop:bg-[#0e1822]/50"
       onClose={() => setQuery("")}
     >
-      <div className="border-b border-stone-200 p-3">
+      <h2 id={titleId} className="sr-only">
+        Rychlé hledání
+      </h2>
+      <div className="relative border-b border-[#dce4e8] p-3">
+        <Search
+          className="pointer-events-none absolute left-6 top-1/2 h-4 w-4 -translate-y-1/2 text-[#566673]"
+          aria-hidden="true"
+        />
         <input
-          autoFocus
+          ref={inputRef}
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          aria-label="Hledat subjekt, projekt, případ nebo úkol"
           placeholder="Hledat subjekt, projekt, případ, úkol…"
-          className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm outline-none focus:border-stone-500"
+          className="h-10 w-full rounded-md border border-[#dce4e8] pl-9 pr-3 text-sm outline-none transition focus:border-[#0e1822] focus:ring-2 focus:ring-[#0e1822]/20"
         />
       </div>
+      {/* Results arrive asynchronously: without a live region a screen-reader
+          user gets no signal that anything happened. */}
+      <p role="status" aria-live="polite" className="sr-only">
+        {query.trim().length < 2
+          ? ""
+          : isSearching
+            ? "Hledám…"
+            : `Nalezeno výsledků: ${visibleHits.length}`}
+      </p>
       <ul className="max-h-80 overflow-y-auto p-2">
         {visibleHits.length === 0 ? (
-          <li className="px-3 py-6 text-center text-sm text-stone-400">
-            {query.trim().length < 2 ? "Zadejte hledaný výraz" : "Žádné výsledky"}
+          <li className="px-3 py-6 text-center text-sm text-[#566673]">
+            {query.trim().length < 2
+              ? "Zadejte hledaný výraz"
+              : isSearching
+                ? "Hledám…"
+                : "Žádné výsledky"}
           </li>
         ) : (
           visibleHits.map((hit) => (
@@ -74,10 +113,14 @@ export function CommandPalette() {
               <button
                 type="button"
                 onClick={() => go(hit.href)}
-                className="flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm hover:bg-stone-100"
+                className="flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm transition hover:bg-[#17A2A2]/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#17A2A2]"
               >
-                <span className="truncate font-medium">{hit.label}</span>
-                <span className="shrink-0 text-xs text-stone-400">{hit.sub}</span>
+                <span className="truncate font-medium text-[#0e1822]">
+                  {hit.label}
+                </span>
+                <span className="shrink-0 text-xs text-[#566673]">
+                  {hit.sub}
+                </span>
               </button>
             </li>
           ))

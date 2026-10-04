@@ -184,7 +184,7 @@ export default async function DataMessageDetailPage({
                 {message.attachments.map((attachment) => (
                   <li
                     key={attachment.id}
-                    className="flex items-center justify-between gap-3 rounded-md border border-[#d4e2dc] px-3 py-2"
+                    className="flex items-center justify-between gap-3 rounded-md border border-[#dce4e8] px-3 py-2"
                   >
                     <span className="text-sm text-stone-800">
                       {attachment.fileName}

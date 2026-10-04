@@ -65,7 +65,7 @@ export function ConflictCheckSaveForm({
       </Field>
       <SubmitButton label={buttonLabel} saved={saved} className={buttonClassName} />
       {saved ? (
-        <p className="text-sm font-medium text-[#072924]">
+        <p className="text-sm font-medium text-[#0e1822]">
           {state.message ?? "Conflict check uložen"}
         </p>
       ) : null}

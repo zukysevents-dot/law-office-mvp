@@ -16,6 +16,9 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   outputFileTracingRoot: __dirname,
+  // Lets the E2E suite build into its own directory so it can never clobber the
+  // .next cache of a dev server running at the same time.
+  ...(process.env.NEXT_DIST_DIR ? { distDir: process.env.NEXT_DIST_DIR } : {}),
   poweredByHeader: false,
   productionBrowserSourceMaps: false,
   // Heavy, server-only CJS packages: keep them out of the bundle so they load

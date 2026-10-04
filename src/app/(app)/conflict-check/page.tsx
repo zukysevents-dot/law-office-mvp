@@ -1,7 +1,7 @@
 import { AlertTriangle, Search } from "lucide-react";
 
 import { ConflictCheckSaveForm } from "@/components/conflict-check-save-form";
-import { TextInput } from "@/components/form-field";
+import { Field, TextInput } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
 import { Badge } from "@/components/ui/badge";
@@ -103,19 +103,21 @@ export default async function ConflictCheckPage({
         error={result.error}
       />
       <Section>
-        <form className="flex flex-col gap-3 sm:flex-row">
-          <div className="relative flex-1">
-            <Search
-              className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-stone-600"
-              aria-hidden="true"
-            />
-            <TextInput
-              name="q"
-              defaultValue={query}
-              placeholder="Název subjektu nebo IČO"
-              className="pl-9"
-            />
-          </div>
+        <form className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <Field label="Hledat" className="min-w-0 flex-1">
+            <div className="relative">
+              <Search
+                className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-stone-600"
+                aria-hidden="true"
+              />
+              <TextInput
+                name="q"
+                defaultValue={query}
+                placeholder="Název subjektu nebo IČO"
+                className="pl-9"
+              />
+            </div>
+          </Field>
           <Button type="submit" variant="secondary">
             Prověřit
           </Button>

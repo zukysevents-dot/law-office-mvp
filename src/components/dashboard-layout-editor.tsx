@@ -113,7 +113,7 @@ export function DashboardLayoutEditor({
   return (
     <form action={saveDashboardLayout} className="grid min-w-0 gap-4">
       <input type="hidden" name="payload" value={payload} />
-      <p className="text-sm text-[#5f756e]">
+      <p className="text-sm text-[#566673]">
         Pořadí změníte přetažením widgetu nebo tlačítky nahoru a dolů. Změny se
         uloží najednou tlačítkem níže.
       </p>
@@ -137,10 +137,10 @@ export function DashboardLayoutEditor({
             event.preventDefault();
             handleDrop(index);
           }}
-          className={`min-w-0 rounded-lg border bg-[#EEF5F1]/45 p-4 ${
+          className={`min-w-0 rounded-lg border bg-[#F4F7F8]/45 p-4 ${
             overIndex === index
-              ? "border-[#072924] ring-2 ring-[#072924]/20"
-              : "border-[#d4e2dc]"
+              ? "border-[#0e1822] ring-2 ring-[#0e1822]/20"
+              : "border-[#dce4e8]"
           }`}
           data-testid="dashboard-widget-setting"
           data-widget-id={widget.id}
@@ -178,14 +178,14 @@ export function DashboardLayoutEditor({
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <h3 className="truncate text-sm font-semibold text-[#072924]">
+                <h3 className="truncate text-sm font-semibold text-[#0e1822]">
                   {widget.title || widget.typeLabel}
                 </h3>
                 <Badge tone={widget.visible ? "mint" : "neutral"}>
                   {widget.visible ? "Viditelný" : "Skrytý"}
                 </Badge>
               </div>
-              <p className="mt-1 text-xs text-[#5f756e]">
+              <p className="mt-1 text-xs text-[#566673]">
                 {widget.typeLabel} · pořadí {index + 1}
               </p>
 
@@ -214,14 +214,14 @@ export function DashboardLayoutEditor({
                     ))}
                   </SelectInput>
                 </Field>
-                <label className="flex items-end gap-2 pb-2 text-sm font-medium text-[#072924]">
+                <label className="flex items-end gap-2 pb-2 text-sm font-medium text-[#0e1822]">
                   <input
                     type="checkbox"
                     checked={widget.visible}
                     onChange={(event) =>
                       patch(widget.id, { visible: event.target.checked })
                     }
-                    className="h-4 w-4 rounded border-[#cfe0d7]"
+                    className="h-4 w-4 rounded border-[#dce4e8]"
                     data-testid="dashboard-widget-visible"
                   />
                   Zobrazit
@@ -230,7 +230,7 @@ export function DashboardLayoutEditor({
 
               {widget.isTable && widget.columns.length > 0 ? (
                 <div className="mt-3 min-w-0">
-                  <p className="mb-2 text-sm font-medium text-[#072924]">
+                  <p className="mb-2 text-sm font-medium text-[#0e1822]">
                     Viditelné sloupce
                   </p>
                   <div className="grid min-w-0 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -245,7 +245,7 @@ export function DashboardLayoutEditor({
                           onChange={(event) =>
                             toggleColumn(widget.id, column.key, event.target.checked)
                           }
-                          className="h-4 w-4 shrink-0 rounded border-[#cfe0d7]"
+                          className="h-4 w-4 shrink-0 rounded border-[#dce4e8]"
                           data-testid="dashboard-widget-column"
                         />
                         <span className="min-w-0 truncate">{column.label}</span>

@@ -1,14 +1,15 @@
 /**
- * Microsoft Graph app-only (client-credentials) client. Degrades gracefully when
- * the Azure AD app credentials are not configured — every entry point returns
- * null / a typed "not configured" result instead of throwing, mirroring the SMTP
- * and SharePoint-URL patterns elsewhere in the codebase.
+ * Microsoft Graph app-only (client-credentials) transport. Bez znalosti env —
+ * přihlašovací údaje dostane od volajícího (viz `getGraphConfigForOrg`
+ * v `config.ts`), aby jedna instance mohla obsloužit víc kanceláří.
  *
- * Configure with MS_TENANT_ID, MS_CLIENT_ID, MS_CLIENT_SECRET (Azure AD app
- * registration with application Graph permissions + admin consent). The pure
- * helpers (token parsing, expiry, retry decisions) are unit-tested; the fetch
- * I/O is a thin shell over them.
+ * Čisté helpery (parsování tokenu, expirace, retry) jsou unit-testované; fetch
+ * I/O je nad nimi tenká slupka.
  */
+
+import type { GraphConfig } from "@/lib/microsoft/config";
+
+export type { GraphConfig };
 
 const GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0";
 // Refresh a little before actual expiry so an in-flight request never uses a
@@ -18,32 +19,6 @@ const MAX_RETRIES = 3;
 // Per-request network timeout so a hung Graph/login call can never block the
 // server action indefinitely (a timeout aborts the fetch and throws).
 const FETCH_TIMEOUT_MS = 15_000;
-
-function env(name: string): string | null {
-  const value = process.env[name]?.trim();
-  return value ? value : null;
-}
-
-export type GraphConfig = {
-  tenantId: string;
-  clientId: string;
-  clientSecret: string;
-};
-
-/** App-only Graph config, or null when any credential is missing. */
-export function getGraphConfig(): GraphConfig | null {
-  const tenantId = env("MS_TENANT_ID");
-  const clientId = env("MS_CLIENT_ID");
-  const clientSecret = env("MS_CLIENT_SECRET");
-  if (!tenantId || !clientId || !clientSecret) {
-    return null;
-  }
-  return { tenantId, clientId, clientSecret };
-}
-
-export function isGraphConfigured(): boolean {
-  return getGraphConfig() !== null;
-}
 
 // --- Pure helpers (unit-tested) ---------------------------------------------
 
@@ -100,7 +75,15 @@ export function retryDelayMs(
 
 // --- Token acquisition + fetch (I/O) ----------------------------------------
 
-let cachedToken: { accessToken: string; expiresAtMs: number } | null = null;
+// Klíčováno dvojicí údajů, které token vydaly — token se tak nikdy nedostane
+// k requestu běžícímu pod jiným tenantem / jinou app registrací. Klíčování přes
+// credentials (ne přes organizationId) navíc znamená, že změna údajů se
+// invaliduje sama na všech instancích naráz, bez cache bustingu.
+const tokenCache = new Map<string, { accessToken: string; expiresAtMs: number }>();
+
+export function tokenCacheKey(config: GraphConfig): string {
+  return `${config.tenantId}|${config.clientId}`;
+}
 
 function tokenEndpoint(tenantId: string): string {
   return `https://login.microsoftonline.com/${encodeURIComponent(
@@ -109,17 +92,15 @@ function tokenEndpoint(tenantId: string): string {
 }
 
 /**
- * Acquire (and cache) an app-only Graph access token. Returns null when Graph is
- * not configured. Throws on an authentication failure (misconfigured app), so
- * callers can surface a clear error rather than silently doing nothing.
+ * Získá (a nacachuje) app-only Graph token pro dané údaje. Vyhodí výjimku při
+ * selhání ověření (špatně nastavená aplikace), ať volající umí ohlásit srozumitelnou
+ * chybu. Stav „není nakonfigurováno" se rozhoduje výš, v config.ts.
  */
-export async function getGraphToken(): Promise<string | null> {
-  const config = getGraphConfig();
-  if (!config) {
-    return null;
-  }
-  if (cachedToken && !isTokenExpired(cachedToken.expiresAtMs, Date.now())) {
-    return cachedToken.accessToken;
+export async function getGraphToken(config: GraphConfig): Promise<string> {
+  const key = tokenCacheKey(config);
+  const cached = tokenCache.get(key);
+  if (cached && !isTokenExpired(cached.expiresAtMs, Date.now())) {
+    return cached.accessToken;
   }
 
   const response = await fetch(tokenEndpoint(config.tenantId), {
@@ -135,7 +116,7 @@ export async function getGraphToken(): Promise<string | null> {
   });
 
   if (!response.ok) {
-    cachedToken = null;
+    tokenCache.delete(key);
     throw new Error(
       `Microsoft Graph: získání tokenu selhalo (HTTP ${response.status}).`,
     );
@@ -146,16 +127,17 @@ export async function getGraphToken(): Promise<string | null> {
     throw new Error("Microsoft Graph: neplatná odpověď tokenového endpointu.");
   }
 
-  cachedToken = {
+  const entry = {
     accessToken: parsed.accessToken,
     expiresAtMs: Date.now() + parsed.expiresInSec * 1000,
   };
-  return cachedToken.accessToken;
+  tokenCache.set(key, entry);
+  return entry.accessToken;
 }
 
-/** Drop the cached token (used by tests / after an auth error). */
+/** Zahodí všechny nacachované tokeny (testy / po změně konfigurace). */
 export function resetGraphTokenCache(): void {
-  cachedToken = null;
+  tokenCache.clear();
 }
 
 export type GraphRequest = {
@@ -168,17 +150,14 @@ export type GraphRequest = {
 };
 
 /**
- * Authenticated Graph fetch with retry on transient errors. Returns null when
- * Graph is not configured (caller treats as "integration off"). Throws on a
- * non-retryable error response so the caller can audit/report it.
+ * Ověřený Graph fetch s retry na přechodné chyby. Vyhodí výjimku u neretryovatelné
+ * chybové odpovědi, ať to volající umí zauditovat / ohlásit.
  */
-export async function graphFetch(request: GraphRequest): Promise<Response> {
-  const token = await getGraphToken();
-  if (!token) {
-    throw new Error(
-      "Microsoft Graph není nakonfigurováno (chybí MS_TENANT_ID / MS_CLIENT_ID / MS_CLIENT_SECRET).",
-    );
-  }
+export async function graphFetch(
+  config: GraphConfig,
+  request: GraphRequest,
+): Promise<Response> {
+  const token = await getGraphToken(config);
 
   const url = request.path.startsWith("http")
     ? request.path

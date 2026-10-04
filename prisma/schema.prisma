@@ -1117,6 +1117,7 @@ model Organization {
   modules                   OrganizationModule[]
   subscription              Subscription?
   billingProfile            OrganizationBillingProfile?
+  sharepointConfig          OrganizationSharepointConfig?
   invoiceSequences          InvoiceNumberSequence[]
   billingIssuers            BillingIssuer[]
   invoices                  Invoice[]
@@ -1353,6 +1354,32 @@ model OrganizationBillingProfile {
 
   @@index([organizationId])
   @@map("organizationBillingProfiles")
+}
+
+// Per-organizace připojení na SharePoint / Microsoft Graph. 1:1 s Organization.
+// Chybějící řádek (nebo NULL skupina polí) znamená fallback na procesní env
+// proměnné SHAREPOINT_* / MS_* — viz src/lib/microsoft/config.ts. Skupiny se
+// vyhodnocují celé: buď web z DB, nebo z env; buď Graph údaje z DB, nebo z env.
+model OrganizationSharepointConfig {
+  id                    String   @id @default(cuid())
+  organizationId        String   @unique
+  // URL konvence (bez API). Bez siteUrl nelze odvodit odkaz na složku.
+  siteUrl               String?
+  // URL segment knihovny dokumentů; NULL → "Dokumenty".
+  library               String?
+  // Microsoft Graph app-only údaje (registrace aplikace v Azure AD). Pro
+  // skutečné zakládání složek a upload musí být vyplněné všechny tři.
+  tenantId              String?
+  clientId              String?
+  // encryptSecret() blob — NEVER plaintext.
+  clientSecretEncrypted String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("organizationSharepointConfigs")
 }
 
 // Další fakturující subjekty kanceláře (kromě hlavního profilu): jednotliví

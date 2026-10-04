@@ -3,6 +3,8 @@
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
+import { OrbitMark } from "@/components/landing/iuriverse-logo";
+
 /**
  * Loading indicator at the cursor (revize „nabíhací kolečko místo myši").
  * After a click on an internal link, a small spinner — the office logo with a
@@ -104,21 +106,16 @@ export function NavigationCursor() {
     >
       <div className="relative h-7 w-7 -translate-x-1/2 -translate-y-1/2">
         {/* dráha */}
-        <div className="absolute inset-0 rounded-full border border-[#072924]/20" />
+        <div className="absolute inset-0 rounded-full border border-[#0e1822]/20" />
         {/* obíhající pixel */}
         <div
           className="absolute inset-0 animate-spin motion-reduce:animate-none"
           style={{ animationDuration: "0.9s" }}
         >
-          <span className="absolute left-1/2 top-0 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-[#072924] shadow" />
+          <span className="absolute left-1/2 top-0 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-[#0e1822] shadow" />
         </div>
-        {/* logo uprostřed */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/brand/logo-square.jpeg"
-          alt=""
-          className="absolute inset-[5px] h-[18px] w-[18px] rounded-full object-cover"
-        />
+        {/* značka IURIVERSE uprostřed */}
+        <OrbitMark className="absolute inset-1 h-[20px] w-[20px]" />
       </div>
     </div>
   );

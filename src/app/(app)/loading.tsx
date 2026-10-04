@@ -4,7 +4,7 @@
 // swaps), and on a fresh load it streams as the shell flushes before data is
 // ready. Pages opt out by providing their own loading.tsx.
 const cardClass =
-  "min-w-0 rounded-lg border border-[#d4e2dc] bg-white p-5 shadow-sm shadow-[#072924]/5";
+  "min-w-0 rounded-lg border border-[#dce4e8] bg-white p-5 shadow-sm shadow-[#0e1822]/5";
 
 function Bar({ className }: { className?: string }) {
   return (
@@ -20,10 +20,10 @@ export default function AppLoading() {
           clear something is happening). The skeleton below fills in the layout. */}
       <div
         role="status"
-        className="flex items-center gap-3 text-sm font-medium text-[#5f756e]"
+        className="flex items-center gap-3 text-sm font-medium text-[#566673]"
       >
         <span
-          className="h-5 w-5 animate-spin rounded-full border-2 border-[#B9DCC6] border-t-[#072924]"
+          className="h-5 w-5 animate-spin rounded-full border-2 border-[#17A2A2] border-t-[#0e1822]"
           aria-hidden="true"
         />
         Načítání…

@@ -66,7 +66,7 @@ function DocLeaf({ document }: { document: DocNode }) {
     <li className="flex flex-wrap items-center gap-2 py-1">
       <Link
         href={`/documents/${document.id}`}
-        className="font-medium text-[#072924] underline-offset-2 hover:underline"
+        className="font-medium text-[#0e1822] underline-offset-2 hover:underline"
       >
         {document.name}
       </Link>
@@ -244,7 +244,7 @@ export default async function DocumentsPage({
                       <td className="font-medium text-stone-950">
                         <Link
                           href={`/documents/${document.id}`}
-                          className="text-[#072924] underline-offset-2 hover:underline"
+                          className="text-[#0e1822] underline-offset-2 hover:underline"
                         >
                           {document.name}
                         </Link>
@@ -258,14 +258,14 @@ export default async function DocumentsPage({
                         {document.case ? (
                           <Link
                             href={`/cases/${document.case.id}`}
-                            className="text-[#072924] underline-offset-2 hover:underline"
+                            className="text-[#0e1822] underline-offset-2 hover:underline"
                           >
                             {document.case.name}
                           </Link>
                         ) : document.subject ? (
                           <Link
                             href={`/subjects/${document.subject.id}`}
-                            className="text-[#072924] underline-offset-2 hover:underline"
+                            className="text-[#0e1822] underline-offset-2 hover:underline"
                           >
                             {document.subject.name}
                           </Link>
@@ -291,13 +291,13 @@ export default async function DocumentsPage({
           tree.unfiled.length === 0 ? (
             <EmptyState>Zatím nejsou založené žádné projekty ani dokumenty.</EmptyState>
           ) : (
-            <div className="divide-y divide-[#d4e2dc] border border-[#d4e2dc]">
+            <div className="divide-y divide-[#dce4e8] border border-[#dce4e8]">
               {tree.projects.map((project) => (
                 <details
                   key={project.id}
                   className="bg-white px-4 py-3"
                 >
-                  <summary className="flex cursor-pointer items-center gap-2 font-medium text-[#072924]">
+                  <summary className="flex cursor-pointer items-center gap-2 font-medium text-[#0e1822]">
                     <FolderTree className="h-4 w-4" aria-hidden="true" />
                     {project.name}
                     <span className="text-xs font-normal text-stone-600">
@@ -345,7 +345,7 @@ export default async function DocumentsPage({
 
               {tree.subjects.length > 0 ? (
                 <details className="bg-white px-4 py-3">
-                  <summary className="cursor-pointer font-medium text-[#072924]">
+                  <summary className="cursor-pointer font-medium text-[#0e1822]">
                     Dokumenty u subjektů (bez případu)
                   </summary>
                   <div className="mt-2 space-y-1 pl-6">
@@ -375,7 +375,7 @@ export default async function DocumentsPage({
 
               {tree.unfiled.length > 0 ? (
                 <details className="bg-white px-4 py-3">
-                  <summary className="cursor-pointer font-medium text-[#072924]">
+                  <summary className="cursor-pointer font-medium text-[#0e1822]">
                     Nezařazené dokumenty
                     <span className="ml-2 text-xs font-normal text-stone-600">
                       {tree.unfiled.length} dok.

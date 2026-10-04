@@ -1,8 +1,11 @@
-import { FolderOpen, FolderPlus } from "lucide-react";
+import { FolderOpen, FolderPlus, FolderSearch } from "lucide-react";
+import Link from "next/link";
 
 import { provisionSharepointFolder } from "@/app/actions/sharepoint";
 import { Button } from "@/components/ui/button";
+import { getCurrentUser } from "@/lib/auth";
 import { isSharepointUrlConfigured } from "@/lib/microsoft/config";
+import { matterBrowsePath } from "@/lib/microsoft/matter-folder";
 import type { SharepointEntityType } from "@/lib/microsoft/sharepoint";
 import { cn, isSafeHttpUrl } from "@/lib/utils";
 
@@ -18,14 +21,15 @@ type SharepointFolderFieldProps = {
  * Displays the SharePoint folder as a clickable link and, when no folder URL is
  * set yet and SharePoint is configured, offers a button to create/derive it.
  */
-export function SharepointFolderField({
+export async function SharepointFolderField({
   entityType,
   id,
   url,
   canEdit,
   className,
 }: SharepointFolderFieldProps) {
-  const configured = isSharepointUrlConfigured();
+  const currentUser = await getCurrentUser();
+  const configured = await isSharepointUrlConfigured(currentUser.organizationId);
   const showProvision = canEdit && configured && !url;
   // Only ever render a stored value as a live link when it's an http(s) URL,
   // so a manually-entered javascript:/data: value can't execute on click.
@@ -51,6 +55,15 @@ export function SharepointFolderField({
           {showProvision ? "Složka zatím nebyla vytvořena." : "—"}
         </p>
       )}
+      {configured ? (
+        <Link
+          href={matterBrowsePath(entityType, id)}
+          className="inline-flex items-center gap-2 font-medium text-emerald-950 hover:underline"
+        >
+          <FolderSearch className="h-4 w-4 shrink-0" aria-hidden="true" />
+          Procházet soubory
+        </Link>
+      ) : null}
       {showProvision ? (
         <form action={provisionSharepointFolder}>
           <input type="hidden" name="entityType" value={entityType} />

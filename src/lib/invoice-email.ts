@@ -153,7 +153,7 @@ export function buildInvoiceEmail(
       ([key, value]) =>
         `<tr><td style="padding:2px 12px 2px 0;color:#57534e;">${escapeHtml(
           key,
-        )}</td><td style="padding:2px 0;font-weight:600;color:#072924;">${escapeHtml(
+        )}</td><td style="padding:2px 0;font-weight:600;color:#0e1822;">${escapeHtml(
           value,
         )}</td></tr>`,
     )

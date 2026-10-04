@@ -100,7 +100,7 @@ export default async function DataBoxesPage() {
                     <td className="font-medium text-stone-950">
                       <a
                         href={`/data-boxes/${message.id}`}
-                        className="text-[#072924] underline-offset-2 hover:underline"
+                        className="text-[#0e1822] underline-offset-2 hover:underline"
                       >
                         {message.messageSubject}
                       </a>

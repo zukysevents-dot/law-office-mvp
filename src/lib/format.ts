@@ -53,6 +53,24 @@ export function formatDateTime(value: Date | string | null | undefined) {
   return dateTimeFormatter.format(new Date(value));
 }
 
+/** Velikost souboru česky: „512 B", „1,4 MB". */
+export function formatBytes(size: number | null | undefined): string {
+  if (size === null || size === undefined) {
+    return "—";
+  }
+  if (size < 1024) {
+    return `${size} B`;
+  }
+  const units = ["kB", "MB", "GB"];
+  let value = size / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${numberFormatter.format(Number(value.toFixed(value < 10 ? 1 : 0)))} ${units[unit]}`;
+}
+
 // Use for date-only fields so the calendar date is stable regardless of the
 // server timezone (see utcDateFormatter).
 export function formatDateUtc(value: Date | string | null | undefined) {

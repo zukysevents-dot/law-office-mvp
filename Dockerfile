@@ -46,6 +46,6 @@ USER node
 
 EXPOSE 3000
 
-# `npm start` binds 127.0.0.1 (dev convenience) — bind 0.0.0.0 so Caddy (a
-# separate container) can reach it.
+# `npm start` binds 127.0.0.1 (dev convenience) — bind 0.0.0.0 so the published
+# port (127.0.0.1:3000 on the host, proxied by nginx) reaches it.
 CMD ["npx", "next", "start", "-H", "0.0.0.0", "-p", "3000"]

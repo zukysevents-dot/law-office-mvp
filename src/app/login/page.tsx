@@ -1,6 +1,7 @@
-import Image from "next/image";
+import Link from "next/link";
 
 import { loginAction } from "@/app/actions/auth";
+import { AuthShell } from "@/components/auth-shell";
 import { Field, TextInput } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 
@@ -20,51 +21,67 @@ export default async function LoginPage({
   const from = typeof params.from === "string" ? params.from : "/dashboard";
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#072924] px-4 py-12">
-      <div className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-2xl">
-        <div className="mb-6 flex justify-center">
-          <Image
-            src="/brand/logo-light.jpeg"
-            alt="syndikat.legal"
-            width={1015}
-            height={326}
-            priority
-            className="h-12 w-auto rounded-lg"
-          />
-        </div>
-        <h1 className="text-center text-xl font-semibold text-stone-900">
-          Přihlášení
-        </h1>
-        <p className="mt-1 mb-6 text-center text-sm text-stone-500">
-          Interní systém advokátní kanceláře
+    <AuthShell>
+      <h1 className="text-center text-xl font-semibold text-[var(--iv-ink)]">
+        Přihlášení
+      </h1>
+      <p className="mb-6 mt-1 text-center text-sm text-[var(--iv-muted)]">
+        Pracovní prostředí pro vaši advokátní kancelář
+      </p>
+
+      {error ? (
+        <p
+          role="alert"
+          className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-800"
+        >
+          {error === "rate"
+            ? "Příliš mnoho neúspěšných pokusů. Zkuste to prosím za 15 minut."
+            : "Nesprávný e-mail nebo heslo."}
         </p>
+      ) : null}
 
-        {error ? (
-          <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-800">
-            {error === "rate"
-              ? "Příliš mnoho neúspěšných pokusů. Zkuste to prosím za 15 minut."
-              : "Nesprávný e-mail nebo heslo."}
-          </p>
-        ) : null}
+      <form action={loginAction} className="grid gap-4">
+        <input type="hidden" name="from" value={from} />
+        <Field label="E-mail">
+          <TextInput
+            name="email"
+            type="email"
+            autoComplete="username"
+            required
+          />
+        </Field>
+        <Field label="Heslo">
+          <TextInput
+            name="password"
+            type="password"
+            autoComplete="current-password"
+            required
+          />
+        </Field>
+        <Button type="submit" className="mt-2 w-full">
+          Přihlásit se
+        </Button>
+      </form>
 
-        <form action={loginAction} className="grid gap-4">
-          <input type="hidden" name="from" value={from} />
-          <Field label="E-mail">
-            <TextInput name="email" type="email" autoComplete="username" required />
-          </Field>
-          <Field label="Heslo">
-            <TextInput
-              name="password"
-              type="password"
-              autoComplete="current-password"
-              required
-            />
-          </Field>
-          <Button type="submit" className="mt-2 w-full">
-            Přihlásit se
-          </Button>
-        </form>
-      </div>
-    </main>
+      {/* Bez tohoto odkazu byl /login slepá ulička: nový uživatel se odsud
+          nedostal na registraci ani zpět na úvodní stránku. */}
+      <p className="mt-6 text-center text-sm text-[var(--iv-muted)]">
+        Nemáte účet?{" "}
+        <Link
+          href="/register"
+          className="font-medium text-[var(--iv-teal-ink)] hover:underline"
+        >
+          Zaregistrujte se
+        </Link>
+      </p>
+      <p className="mt-2 text-center text-sm">
+        <Link
+          href="/"
+          className="text-[var(--iv-muted)] underline-offset-2 hover:underline"
+        >
+          Zpět na úvodní stránku
+        </Link>
+      </p>
+    </AuthShell>
   );
 }

@@ -76,31 +76,32 @@
   --font-geist-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo,
     Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   --font-michroma: "Michroma", ui-sans-serif, system-ui, sans-serif;
-  --brand-dark: #072924;
-  --brand-mint: #b9dcc6;
-  --brand-bg: #eef5f1;
-  --background: var(--brand-bg);
-  --foreground: var(--brand-dark);
-  --panel: #ffffff;
-  --muted: #5f756e;
-  --line: #d4e2dc;
-  --primary: var(--brand-dark);
-  --accent: var(--brand-mint);
 
-  /* --- IURIVERSE landing palette (used ONLY by the public landing page) ------
-     New token names so the authenticated app — which reads --brand-* and the
-     hardcoded teal/mint — is never affected. */
-  --iv-deep: #0e1822; /* cinematic hero / dark section background */
-  --iv-deep-2: #16242f; /* raised panels on dark */
-  --iv-ink: #1e2a35; /* headings / primary text on light */
-  --iv-slate: #2e3a45; /* wordmark slate (matches logo) */
-  --iv-teal: #17a2a2; /* brand teal — marks, icon chips, borders */
-  --iv-teal-ink: #0b6e6e; /* AA-safe teal for text/links on white */
-  --iv-teal-bright: #2dc6c2; /* glow + solid CTA fill on dark */
-  --iv-bg: #f4f7f8; /* light section background */
-  --iv-line: #dce4e8; /* borders / dividers */
-  --iv-muted: #566673; /* secondary text on light */
-  --iv-on-dark: #aebecb; /* secondary text on deep */
+  /* IURIVERSE product palette. The public landing page and authenticated
+     workspace intentionally share one visual system. */
+  --iv-deep: #0e1822;
+  --iv-deep-2: #16242f;
+  --iv-ink: #1e2a35;
+  --iv-slate: #2e3a45;
+  --iv-teal: #17a2a2;
+  --iv-teal-ink: #0b6e6e;
+  --iv-teal-bright: #2dc6c2;
+  --iv-bg: #f4f7f8;
+  --iv-line: #dce4e8;
+  --iv-muted: #566673;
+  --iv-on-dark: #aebecb;
+
+  /* Semantic aliases used throughout the product UI. */
+  --brand-dark: var(--iv-deep);
+  --brand-mint: var(--iv-teal);
+  --brand-bg: var(--iv-bg);
+  --background: var(--iv-bg);
+  --foreground: var(--iv-ink);
+  --panel: #ffffff;
+  --muted: var(--iv-muted);
+  --line: var(--iv-line);
+  --primary: var(--iv-deep);
+  --accent: var(--iv-teal);
 }
 
 @theme inline {
@@ -114,12 +115,20 @@
   --color-brand-dark: var(--brand-dark);
   --color-brand-mint: var(--brand-mint);
   --color-brand-bg: var(--brand-bg);
+  --color-iv-deep: var(--iv-deep);
+  --color-iv-deep-2: var(--iv-deep-2);
+  --color-iv-ink: var(--iv-ink);
+  --color-iv-teal: var(--iv-teal);
+  --color-iv-teal-bright: var(--iv-teal-bright);
+  --color-iv-bg: var(--iv-bg);
+  --color-iv-line: var(--iv-line);
+  --color-iv-muted: var(--iv-muted);
   --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, SFMono-Regular,
     Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  /* IURIVERSE wordmark face (landing only). Falls back gracefully. */
-  --font-display: var(--font-michroma), "Michroma", ui-sans-serif, system-ui,
-    sans-serif;
+  /* Literal font names keep Tailwind v4 from resolving a circular runtime
+     variable while still using the vendored @font-face above. */
+  --font-display: "Michroma", ui-sans-serif, system-ui, sans-serif;
 }
 
 body {
@@ -150,8 +159,27 @@ textarea {
 }
 
 ::selection {
-  background: var(--brand-mint);
-  color: var(--brand-dark);
+  background: var(--iv-teal-bright);
+  color: var(--iv-deep);
+}
+
+/* Required-field marker. `<Field>` renders `<label><span>Popisek</span>{pole}</label>`,
+   so one `:has()` rule marks every required control app-wide instead of a prop
+   threaded through ~200 call sites. Assistive tech already gets this from the
+   `required` attribute — the asterisk is the sighted-user half of it. Two
+   depths cover a control placed directly in the label and one wrapper div
+   (e.g. the search inputs with a leading icon). */
+label:has(> input[required]) > span:first-child::after,
+label:has(> select[required]) > span:first-child::after,
+label:has(> textarea[required]) > span:first-child::after,
+label:has(> * > input[required]) > span:first-child::after,
+label:has(> * > select[required]) > span:first-child::after,
+label:has(> * > textarea[required]) > span:first-child::after {
+  /* `/ ""` je alternativní text generovaného obsahu: hvězdička zůstane
+     vizuální, ale nevleze se do přístupného jména pole (čtečka povinnost
+     hlásí z atributu `required`). */
+  content: " *" / "";
+  color: #b42318;
 }
 
 table {
@@ -165,11 +193,18 @@ table {
   overflow-x: auto;
   padding-bottom: 0.125rem;
   scrollbar-gutter: stable;
+  /* An absolutely positioned descendant (e.g. the .sr-only label inside an
+     icon-only button) resolves its containing block to the nearest POSITIONED
+     ancestor. Without this the chain skipped straight to the initial containing
+     block, so the label escaped the clip below and made the whole document
+     scroll sideways on mobile. `relative` keeps such elements inside the
+     scroller; layout is unchanged. */
+  position: relative;
 }
 
 th {
-  background: #eef5f1;
-  color: var(--brand-dark);
+  background: var(--iv-bg);
+  color: var(--iv-ink);
   font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0;
@@ -188,24 +223,24 @@ tbody tr {
 }
 
 tbody tr:hover {
-  background: rgba(185, 220, 198, 0.18);
+  background: rgba(23, 162, 162, 0.07);
 }
 
 /* --- FullCalendar (Kalendář) brand theming -------------------------------- */
 /* Scope brand variables + neutralize the global table base styles above so
    they don't leak into FullCalendar's internal tables. */
 .calendar-shell {
-  --fc-border-color: #d4e2dc;
+  --fc-border-color: #dce4e8;
   --fc-page-bg-color: #ffffff;
-  --fc-neutral-bg-color: #eef5f1;
-  --fc-today-bg-color: rgba(185, 220, 198, 0.18);
-  --fc-button-text-color: #072924;
+  --fc-neutral-bg-color: #f4f7f8;
+  --fc-today-bg-color: rgba(23, 162, 162, 0.08);
+  --fc-button-text-color: #0e1822;
   --fc-button-bg-color: #ffffff;
-  --fc-button-border-color: #d4e2dc;
-  --fc-button-hover-bg-color: #eef5f1;
-  --fc-button-hover-border-color: #b9dcc6;
-  --fc-button-active-bg-color: #072924;
-  --fc-button-active-border-color: #072924;
+  --fc-button-border-color: #dce4e8;
+  --fc-button-hover-bg-color: #f4f7f8;
+  --fc-button-hover-border-color: #17a2a2;
+  --fc-button-active-bg-color: #0e1822;
+  --fc-button-active-border-color: #0e1822;
   --fc-now-indicator-color: #b91c1c;
 }
 
@@ -226,7 +261,7 @@ tbody tr:hover {
 .calendar-shell .fc-toolbar-title {
   font-size: 1.05rem;
   font-weight: 600;
-  color: #072924;
+  color: #1e2a35;
 }
 
 .calendar-shell .fc .fc-button {
@@ -273,6 +308,19 @@ tbody tr:hover {
 
 .calendar-shell .fc-event-done .fc-event-title {
   text-decoration: line-through;
+}
+
+/* Product workspace: the same restrained orbital glow used in the landing hero,
+   softened for long working sessions and kept behind all content. */
+.app-shell {
+  background-color: var(--iv-bg);
+  background-image:
+    radial-gradient(
+      900px 420px at 78% -120px,
+      rgba(45, 198, 194, 0.12),
+      transparent 68%
+    ),
+    linear-gradient(180deg, #f8fafb 0, var(--iv-bg) 22rem);
 }
 
 /* --- Landing page motion (scoped to the landing route only) ---------------- */

@@ -110,11 +110,11 @@ export default async function HrAbsencesPage() {
                 <TextInput name="endDate" type="date" required />
               </Field>
             </div>
-            <label className="flex items-center gap-2 text-sm font-medium text-[#072924]">
+            <label className="flex items-center gap-2 text-sm font-medium text-[#0e1822]">
               <input
                 type="checkbox"
                 name="halfDay"
-                className="h-4 w-4 rounded border-[#cfe0d7] text-[#072924] focus:ring-[#B9DCC6]"
+                className="h-4 w-4 rounded border-[#dce4e8] text-[#0e1822] focus:ring-[#17A2A2]"
               />
               <span>Půldenní (jen pro jeden den)</span>
             </label>

@@ -530,7 +530,7 @@ export default async function SubjectDetailPage({
                 <p className="text-xs font-semibold uppercase text-stone-500">
                   Interní poznámka
                 </p>
-                <p className="whitespace-pre-wrap rounded-md border border-[#d4e2dc] bg-[#EEF5F1] p-3">
+                <p className="whitespace-pre-wrap rounded-md border border-[#dce4e8] bg-[#F4F7F8] p-3">
                   {subject.internalNote ?? "—"}
                 </p>
               </div>
@@ -592,7 +592,7 @@ export default async function SubjectDetailPage({
                 <p className="text-xs font-semibold uppercase text-stone-500">
                   Poznámka k odměně
                 </p>
-                <p className="whitespace-pre-wrap rounded-md border border-[#d4e2dc] bg-[#EEF5F1] p-3">
+                <p className="whitespace-pre-wrap rounded-md border border-[#dce4e8] bg-[#F4F7F8] p-3">
                   {subject.feeNote ?? "—"}
                 </p>
               </div>

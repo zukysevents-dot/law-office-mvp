@@ -25,10 +25,10 @@ const FullCalendar = nextDynamic(() => import("@fullcalendar/react"), {
   loading: () => (
     <div
       role="status"
-      className="flex min-h-[28rem] items-center justify-center rounded-lg border border-[#d4e2dc] bg-[#eef5f1] text-sm font-medium text-[#5f756e] sm:min-h-[40rem]"
+      className="flex min-h-[28rem] items-center justify-center rounded-lg border border-[#dce4e8] bg-[#f4f7f8] text-sm font-medium text-[#566673] sm:min-h-[40rem]"
     >
       <span
-        className="mr-3 h-5 w-5 animate-spin rounded-full border-2 border-[#B9DCC6] border-t-[#072924] motion-reduce:animate-none"
+        className="mr-3 h-5 w-5 animate-spin rounded-full border-2 border-[#17A2A2] border-t-[#0e1822] motion-reduce:animate-none"
         aria-hidden="true"
       />
       Načítání kalendáře…
@@ -39,8 +39,8 @@ const FullCalendar = nextDynamic(() => import("@fullcalendar/react"), {
 // Event colors mirror the Badge tones so the calendar stays on-brand.
 const TONE_COLORS: Record<BadgeTone, { bg: string; border: string; text: string }> = {
   neutral: { bg: "#fafaf9", border: "#e7e5e4", text: "#44403c" },
-  mint: { bg: "#dcede4", border: "#b9dcc6", text: "#072924" },
-  dark: { bg: "#072924", border: "#072924", text: "#ffffff" },
+  mint: { bg: "#dcede4", border: "#17a2a2", text: "#0e1822" },
+  dark: { bg: "#0e1822", border: "#0e1822", text: "#ffffff" },
   green: { bg: "#ecfdf5", border: "#a7f3d0", text: "#064e3b" },
   amber: { bg: "#fffbeb", border: "#fde68a", text: "#78350f" },
   red: { bg: "#fef2f2", border: "#fecaca", text: "#7f1d1d" },
@@ -108,18 +108,18 @@ export function CalendarView({
   );
 
   return (
-    <section className="min-w-0 space-y-3 rounded-lg border border-[#d4e2dc] bg-white p-4 shadow-sm shadow-[#072924]/5">
+    <section className="min-w-0 space-y-3 rounded-lg border border-[#dce4e8] bg-white p-4 shadow-sm shadow-[#0e1822]/5">
       {title ? (
-        <h2 className="text-lg font-semibold text-[#072924]">{title}</h2>
+        <h2 className="text-lg font-semibold text-[#0e1822]">{title}</h2>
       ) : null}
-      <div className="flex flex-wrap items-center gap-4 text-xs text-[#5f756e]">
+      <div className="flex flex-wrap items-center gap-4 text-xs text-[#566673]">
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-full bg-red-300" aria-hidden="true" />
           Procesní lhůta
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span
-            className="h-2.5 w-2.5 rounded-full bg-[#b9dcc6]"
+            className="h-2.5 w-2.5 rounded-full bg-[#17a2a2]"
             aria-hidden="true"
           />
           Interní lhůta

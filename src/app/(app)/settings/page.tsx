@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import {
   changeOwnPassword,
   createUser,
@@ -30,8 +32,12 @@ import { canViewAllLegalData } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { calendarViewOptions, normalizeCalendarView } from "@/lib/calendar-view";
 import { getAresBaseUrl, isAresLookupEnabled } from "@/lib/ares/config";
-import { getSharepointConfig } from "@/lib/microsoft/config";
-import { isGraphConfigured } from "@/lib/microsoft/graph";
+import {
+  getGraphConfigForOrg,
+  getGraphConfigFromEnv,
+  getSharepointConfigFromEnv,
+  getSharepointUrlConfig,
+} from "@/lib/microsoft/config";
 
 export const dynamic = "force-dynamic";
 
@@ -67,23 +73,40 @@ type SettingsData = {
   };
 };
 
-function integrationConfigStatus(): SettingsData["integrations"] {
-  const sharepoint = getSharepointConfig();
-  const hostname = (value: string) => {
-    try {
-      return new URL(value).hostname;
-    } catch {
-      return value;
-    }
-  };
+function hostnameOf(value: string): string {
+  try {
+    return new URL(value).hostname;
+  } catch {
+    return value;
+  }
+}
+
+// Fallback varianta pro safeQuery: běží dřív, než víme, že DB žije, a bez
+// currentUser — proto smí číst jen env, nikdy konfiguraci kanceláře.
+function envIntegrationStatus(): SettingsData["integrations"] {
+  const sharepoint = getSharepointConfigFromEnv();
   return {
     aresEnabled: isAresLookupEnabled(),
-    aresHost: hostname(getAresBaseUrl()),
+    aresHost: hostnameOf(getAresBaseUrl()),
     sharepointSiteConfigured: Boolean(sharepoint),
-    sharepointHost: sharepoint ? hostname(sharepoint.siteUrl) : null,
-    graphConfigured: isGraphConfigured(),
+    sharepointHost: sharepoint ? hostnameOf(sharepoint.siteUrl) : null,
+    graphConfigured: getGraphConfigFromEnv() !== null,
   };
 }
+
+async function integrationConfigStatus(
+  organizationId: string,
+): Promise<SettingsData["integrations"]> {
+  const sharepoint = await getSharepointUrlConfig(organizationId);
+  return {
+    aresEnabled: isAresLookupEnabled(),
+    aresHost: hostnameOf(getAresBaseUrl()),
+    sharepointSiteConfigured: Boolean(sharepoint),
+    sharepointHost: sharepoint ? hostnameOf(sharepoint.siteUrl) : null,
+    graphConfigured: (await getGraphConfigForOrg(organizationId)) !== null,
+  };
+}
+
 
 function PreferenceCheckbox({
   name,
@@ -115,7 +138,7 @@ export default async function SettingsPage() {
       users: [],
       auditLogCount: 0,
       allowed: false,
-      integrations: integrationConfigStatus(),
+      integrations: envIntegrationStatus(),
     },
     async () => {
       const prisma = getPrisma();
@@ -185,7 +208,9 @@ export default async function SettingsPage() {
         })),
         auditLogCount,
         allowed,
-        integrations: integrationConfigStatus(),
+        integrations: await integrationConfigStatus(
+          currentUser.organizationId,
+        ),
       };
     },
   );
@@ -386,11 +411,17 @@ export default async function SettingsPage() {
                 <p className="mt-2 text-sm text-stone-600">
                   {result.data.integrations.sharepointHost
                     ? `Web: ${result.data.integrations.sharepointHost}. `
-                    : "Chybí SHAREPOINT_SITE_URL. "}
+                    : "Web SharePointu není nastavený. "}
                   {result.data.integrations.graphConfigured
                     ? "Přihlašovací údaje Microsoft Graph jsou nastavené."
                     : "Pro zakládání složek a upload doplňte přihlašovací údaje Microsoft Graph."}
                 </p>
+                <Link
+                  href="/settings/sharepoint"
+                  className="mt-2 inline-block text-sm font-medium text-emerald-950 hover:underline"
+                >
+                  Nastavit připojení →
+                </Link>
               </div>
             </div>
           </Section>

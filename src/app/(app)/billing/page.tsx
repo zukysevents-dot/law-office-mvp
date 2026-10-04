@@ -29,7 +29,7 @@ import { getPrisma } from "@/lib/prisma";
 import { filterQuery, firstParam } from "@/lib/search-params";
 import {
   andWhere,
-  assertCanManageInvoices,
+  canManageInvoices,
   caseVisibilityWhere,
   projectVisibilityWhere,
   subjectVisibilityWhere,
@@ -45,6 +45,7 @@ type BillingProps = {
 type SummaryRow = { key: string; hours: number; amount: number; count: number };
 
 type BillingPageData = {
+  allowed: boolean;
   rows: BillingWorkLog[];
   capped: boolean;
   bySubject: SummaryRow[];
@@ -55,6 +56,20 @@ type BillingPageData = {
   projects: Array<{ id: string; name: string }>;
   cases: Array<{ id: string; name: string; project: { name: string } }>;
   users: Array<{ id: string; name: string }>;
+};
+
+const emptyBillingData: BillingPageData = {
+  allowed: false,
+  rows: [],
+  capped: false,
+  bySubject: [],
+  byProject: [],
+  byCase: [],
+  totals: { hours: 0, amount: 0, count: 0 },
+  subjects: [],
+  projects: [],
+  cases: [],
+  users: [],
 };
 
 function summarize(
@@ -78,24 +93,18 @@ export default async function BillingPage({ searchParams }: BillingProps) {
   const filters = readBillingFilters((key) => firstParam(params, key));
 
   const result = await safeQuery<BillingPageData>(
-    {
-      rows: [],
-      capped: false,
-      bySubject: [],
-      byProject: [],
-      byCase: [],
-      totals: { hours: 0, amount: 0, count: 0 },
-      subjects: [],
-      projects: [],
-      cases: [],
-      users: [],
-    },
+    emptyBillingData,
     async () => {
       const prisma = getPrisma();
       const currentUser = await getCurrentUser();
       await assertModuleEnabled(currentUser, ModuleKey.BILLING);
       // Fakturace jen pro ADMIN/PARTNER + uživatele s grantem MANAGE_INVOICES.
-      assertCanManageInvoices(currentUser);
+      // Bez oprávnění vrátíme prázdná data a stránka vykreslí "Přístup odepřen"
+      // — stejně jako /billing/retainers. Dřív zde byl assert, jehož výjimka
+      // uživateli ukázala obecnou chybovou stránku ("Něco se pokazilo").
+      if (!canManageInvoices(currentUser)) {
+        return emptyBillingData;
+      }
       const [rows, subjects, projects, cases, users] = await Promise.all([
         prisma.workLog.findMany({
           where: andWhere(
@@ -135,6 +144,7 @@ export default async function BillingPage({ searchParams }: BillingProps) {
       );
 
       return {
+        allowed: true,
         rows,
         capped: rows.length >= BILLING_ROW_LIMIT,
         bySubject: summarize(rows, (row) => row.subject?.name ?? ""),
@@ -151,6 +161,22 @@ export default async function BillingPage({ searchParams }: BillingProps) {
 
   const query = filterQuery(filters);
   const exportSuffix = query ? `&${query}` : "";
+
+  if (result.databaseReady && !result.data.allowed) {
+    return (
+      <>
+        <PageHeader
+          title="Fakturace"
+          description="Fakturační podklady – schválené a fakturovatelné výkazy práce, souhrny a export."
+        />
+        <Section title="Přístup odepřen">
+          <p className="text-sm text-stone-600">
+            Fakturaci mohou spravovat partneři a administrátoři.
+          </p>
+        </Section>
+      </>
+    );
+  }
 
   return (
     <>

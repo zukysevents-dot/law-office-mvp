@@ -74,7 +74,7 @@ export default async function OrganizationSettingsPage() {
       {data && data.allowed && data.organization ? (
         <>
           <Section title="Kancelář">
-            <p className="text-lg font-semibold text-[#072924]">
+            <p className="text-lg font-semibold text-[#0e1822]">
               {data.organization.name}
             </p>
             <p className="text-sm text-stone-600">

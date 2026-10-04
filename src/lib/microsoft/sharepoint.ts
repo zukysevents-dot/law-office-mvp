@@ -3,7 +3,7 @@
  * The path segments feed the URL builder (`buildSharepointFolderUrl`).
  */
 
-import { getSharepointConfig } from "@/lib/microsoft/config";
+import { getSharepointUrlConfig } from "@/lib/microsoft/config";
 
 export type SharepointEntityType = "Subject" | "Project" | "Case";
 
@@ -72,17 +72,54 @@ export function sharepointFolderSegments(input: SharepointEntityInput): string[]
 }
 
 /**
- * Full clickable SharePoint URL for the folder. Returns null when the SharePoint
- * site is not configured (`SHAREPOINT_SITE_URL` missing).
+ * Full clickable SharePoint URL for the folder. Returns null when the org has no
+ * SharePoint site configured (ani v /settings/sharepoint, ani v env).
  */
-export function buildSharepointFolderUrl(segments: string[]): string | null {
-  const config = getSharepointConfig();
+export async function buildSharepointFolderUrl(
+  organizationId: string | null | undefined,
+  segments: string[],
+): Promise<string | null> {
+  const config = await getSharepointUrlConfig(organizationId);
   if (!config) {
     return null;
   }
 
   // The library may be a multi-segment path (e.g. "Shared Documents/Spisy"); encode each part.
-  const libraryParts = config.library.split("/").map((part) => part.trim()).filter(Boolean);
+  const libraryParts = config.library
+    .split("/")
+    .map((part: string) => part.trim())
+    .filter(Boolean);
   const path = [...libraryParts, ...segments].map(encodeURIComponent).join("/");
   return `${config.siteUrl}/${path}`;
+}
+
+// Hlubší zanoření než tohle je v praxi překlep nebo pokus o zahlcení, ne spis.
+const MAX_RELATIVE_DEPTH = 10;
+
+/**
+ * Rozparsuje relativní cestu z `?path=` na segmenty. Trust boundary: výsledek se
+ * lepí za kořen spisu, takže se tu zahazuje všechno, čím by se dalo z kořene
+ * uniknout — "..", ".", prázdné segmenty i zpětná lomítka. Escapovat tedy nejde
+ * ani zakódovaným vstupem: co projde, jsou vždy jen názvy podsložek.
+ */
+export function parseRelativePath(raw: string | null | undefined): string[] {
+  if (!raw) {
+    return [];
+  }
+  return raw
+    .split("/")
+    .map((segment) => segment.trim())
+    .filter(
+      (segment) =>
+        segment.length > 0 &&
+        segment !== "." &&
+        segment !== ".." &&
+        !segment.includes("\\"),
+    )
+    .slice(0, MAX_RELATIVE_DEPTH);
+}
+
+/** Zpětně poskládá segmenty do hodnoty pro `?path=`. */
+export function formatRelativePath(segments: string[]): string {
+  return segments.join("/");
 }

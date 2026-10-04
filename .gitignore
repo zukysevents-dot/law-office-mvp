@@ -28,6 +28,11 @@ next-env.d.ts
 # --- Testing / coverage ----------------------------------------------------
 /coverage/
 .playwright-mcp/
+# Playwright E2E: build dir, stored sessions, artefakty a report.
+/.next-e2e/
+/tests/e2e/.auth/
+/tests/e2e/.output/
+/tests/e2e/.report/
 
 # --- Environment variables -------------------------------------------------
 # Ignore every .env file except the tracked example.

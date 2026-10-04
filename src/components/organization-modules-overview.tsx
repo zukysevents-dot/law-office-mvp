@@ -80,13 +80,13 @@ export function OrganizationModulesOverview({
             </div>
             <div>
               <dt className="text-xs font-medium text-stone-500">Plán</dt>
-              <dd className="mt-1 text-sm font-medium text-[#072924]">
+              <dd className="mt-1 text-sm font-medium text-[#0e1822]">
                 {subscription.plan?.name ?? "—"}
               </dd>
             </div>
             <div>
               <dt className="text-xs font-medium text-stone-500">Platnost do</dt>
-              <dd className="mt-1 text-sm font-medium text-[#072924]">
+              <dd className="mt-1 text-sm font-medium text-[#0e1822]">
                 {formatDate(subscription.currentPeriodEnd)}
               </dd>
             </div>

@@ -64,7 +64,7 @@ export default async function DocumentTemplatesPage() {
             {data.templates.map((template) => (
               <details
                 key={template.id}
-                className="rounded-md border border-[#d4e2dc] px-3 py-2"
+                className="rounded-md border border-[#dce4e8] px-3 py-2"
               >
                 <summary className="flex cursor-pointer items-center gap-3 text-sm font-medium text-stone-900">
                   <Badge tone={documentKindTone(template.kind)}>
@@ -109,12 +109,12 @@ export default async function DocumentTemplatesPage() {
                           rows={8}
                         />
                       </Field>
-                      <label className="flex items-center gap-2 text-sm font-medium text-[#072924]">
+                      <label className="flex items-center gap-2 text-sm font-medium text-[#0e1822]">
                         <input
                           type="checkbox"
                           name="active"
                           defaultChecked={template.active}
-                          className="h-4 w-4 rounded border-[#cfe0d7] text-[#072924] focus:ring-[#B9DCC6]"
+                          className="h-4 w-4 rounded border-[#dce4e8] text-[#0e1822] focus:ring-[#17A2A2]"
                         />
                         <span>Aktivní</span>
                       </label>
@@ -179,7 +179,7 @@ export default async function DocumentTemplatesPage() {
             <ul className="mt-1 grid gap-x-6 gap-y-1 sm:grid-cols-2">
               {SUPPORTED_PLACEHOLDERS.map((placeholder) => (
                 <li key={placeholder.key}>
-                  <code className="text-[#072924]">{`{{${placeholder.key}}}`}</code>{" "}
+                  <code className="text-[#0e1822]">{`{{${placeholder.key}}}`}</code>{" "}
                   — {placeholder.label}
                 </li>
               ))}

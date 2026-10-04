@@ -70,7 +70,7 @@ export function SubjectPortalSection({
                 return (
                   <li
                     key={share.id}
-                    className="flex items-center justify-between gap-3 rounded-md border border-[#d4e2dc] px-3 py-2"
+                    className="flex items-center justify-between gap-3 rounded-md border border-[#dce4e8] px-3 py-2"
                   >
                     <span className="text-sm text-stone-800">
                       <Badge tone={share.document ? "blue" : "purple"}>
@@ -79,7 +79,7 @@ export function SubjectPortalSection({
                       {href && target ? (
                         <Link
                           href={href}
-                          className="text-[#072924] underline-offset-2 hover:underline"
+                          className="text-[#0e1822] underline-offset-2 hover:underline"
                         >
                           {target.name}
                         </Link>

@@ -100,21 +100,21 @@ export function SubjectAmlSection({
             </Field>
           </div>
           <div className="flex flex-wrap gap-6">
-            <label className="flex items-center gap-2 text-sm font-medium text-[#072924]">
+            <label className="flex items-center gap-2 text-sm font-medium text-[#0e1822]">
               <input
                 type="checkbox"
                 name="isPep"
                 defaultChecked={assessment?.isPep ?? false}
-                className="h-4 w-4 rounded border-[#cfe0d7] text-[#072924] focus:ring-[#B9DCC6]"
+                className="h-4 w-4 rounded border-[#dce4e8] text-[#0e1822] focus:ring-[#17A2A2]"
               />
               <span>Politicky exponovaná osoba (PEP)</span>
             </label>
-            <label className="flex items-center gap-2 text-sm font-medium text-[#072924]">
+            <label className="flex items-center gap-2 text-sm font-medium text-[#0e1822]">
               <input
                 type="checkbox"
                 name="hasSanctions"
                 defaultChecked={assessment?.hasSanctions ?? false}
-                className="h-4 w-4 rounded border-[#cfe0d7] text-[#072924] focus:ring-[#B9DCC6]"
+                className="h-4 w-4 rounded border-[#dce4e8] text-[#0e1822] focus:ring-[#17A2A2]"
               />
               <span>Shoda na sankčním seznamu</span>
             </label>
@@ -252,7 +252,7 @@ export function SubjectAmlSection({
             action={updateIdentificationScan}
             className="mt-6 grid gap-4 sm:max-w-2xl"
           >
-            <p className="text-sm font-medium text-[#072924]">
+            <p className="text-sm font-medium text-[#0e1822]">
               Doplnit / změnit sken u existující identifikace
             </p>
             <div className="grid gap-4 sm:grid-cols-2">

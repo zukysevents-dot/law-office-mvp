@@ -133,12 +133,12 @@ export default async function BillingSettingsPage() {
                   defaultValue={String(profile?.defaultDueDays ?? 14)}
                 />
               </Field>
-              <label className="flex items-center gap-2 self-end pb-2 text-sm font-medium text-[#072924]">
+              <label className="flex items-center gap-2 self-end pb-2 text-sm font-medium text-[#0e1822]">
                 <input
                   type="checkbox"
                   name="vatPayer"
                   defaultChecked={profile?.vatPayer ?? false}
-                  className="h-4 w-4 rounded border-[#cfe0d7] text-[#072924] focus:ring-[#B9DCC6]"
+                  className="h-4 w-4 rounded border-[#dce4e8] text-[#0e1822] focus:ring-[#17A2A2]"
                 />
                 <span>Kancelář je plátce DPH</span>
               </label>
@@ -149,7 +149,7 @@ export default async function BillingSettingsPage() {
                 defaultValue={profile?.invoicePrefix ?? "AK"}
                 placeholder="AK"
               />
-              <p className="mt-1 text-xs text-[#5f756e]">
+              <p className="mt-1 text-xs text-[#566673]">
                 Číslo faktury má tvar PREFIX_ROK_MĚSÍC_pořadové (např.
                 AK_2026_06_0001). Prázdný prefix → ROK_MĚSÍC_pořadové.
               </p>
@@ -169,7 +169,7 @@ export default async function BillingSettingsPage() {
 
       {data && data.allowed ? (
         <Section title="Další fakturující subjekty">
-          <p className="mb-4 text-sm text-[#5f756e]">
+          <p className="mb-4 text-sm text-[#566673]">
             Kromě hlavního profilu kanceláře lze fakturovat i pod dalšími
             subjekty (jednotliví advokáti, poradenská společnost). U konkrétní
             faktury se vybere, kdo ji vystavuje.
@@ -240,11 +240,11 @@ export default async function BillingSettingsPage() {
                 <TextInput name="iban" />
               </Field>
             </div>
-            <label className="flex items-center gap-2 text-sm font-medium text-[#072924]">
+            <label className="flex items-center gap-2 text-sm font-medium text-[#0e1822]">
               <input
                 type="checkbox"
                 name="vatPayer"
-                className="h-4 w-4 rounded border-[#cfe0d7] text-[#072924] focus:ring-[#B9DCC6]"
+                className="h-4 w-4 rounded border-[#dce4e8] text-[#0e1822] focus:ring-[#17A2A2]"
               />
               <span>Subjekt je plátce DPH</span>
             </label>

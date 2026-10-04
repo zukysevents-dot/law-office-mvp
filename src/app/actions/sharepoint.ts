@@ -107,15 +107,17 @@ export async function provisionSharepointFolder(formData: FormData) {
   }
 
   const segments = sharepointFolderSegments(input);
-  const conventionUrl = buildSharepointFolderUrl(segments);
+  // Po assertCanEditRecord je shoda organizace se záznamem zaručená.
+  const organizationId = currentUser.organizationId;
+  const conventionUrl = await buildSharepointFolderUrl(organizationId, segments);
 
   // With Graph configured, actually CREATE the folder and use its real webUrl.
   // Without Graph it stays URL-only (today's convention behavior).
   let createdUrl: string | null = null;
   let graphFailed = false;
-  if (isSharepointUploadConfigured()) {
+  if (await isSharepointUploadConfigured(organizationId)) {
     try {
-      createdUrl = await ensureSharepointFolder(segments);
+      createdUrl = await ensureSharepointFolder(organizationId, segments);
     } catch {
       graphFailed = true;
     }

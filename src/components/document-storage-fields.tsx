@@ -1,8 +1,12 @@
 import { Field, TextInput } from "@/components/form-field";
+import { getCurrentUser } from "@/lib/auth";
 import { isSharepointUploadConfigured } from "@/lib/microsoft/graph-drive";
 
-export function DocumentStorageFields() {
-  const canUpload = isSharepointUploadConfigured();
+export async function DocumentStorageFields() {
+  const currentUser = await getCurrentUser();
+  const canUpload = await isSharepointUploadConfigured(
+    currentUser.organizationId,
+  );
 
   return (
     <div className="grid gap-3 sm:col-span-2">
@@ -23,7 +27,7 @@ export function DocumentStorageFields() {
       <p className="text-xs leading-5 text-stone-600">
         {canUpload
           ? "Vyplňte právě jednu možnost. Nahraný soubor dostane unikátní název a aplikace uloží jeho skutečný SharePoint odkaz."
-          : "Přímý upload se zobrazí po nastavení SharePoint webu a přihlašovacích údajů Microsoft Graph."}
+          : "Přímý upload se zobrazí po připojení SharePointu v Nastavení → SharePoint."}
       </p>
     </div>
   );

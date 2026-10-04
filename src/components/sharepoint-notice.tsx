@@ -3,7 +3,7 @@ import { AlertTriangle } from "lucide-react";
 const messages: Record<string, { title: string; detail: string }> = {
   failed: {
     title: "Složku se nepodařilo založit.",
-    detail: "Zkontrolujte nastavení SharePointu (SHAREPOINT_SITE_URL).",
+    detail: "Zkontrolujte připojení v Nastavení → SharePoint.",
   },
 };
 

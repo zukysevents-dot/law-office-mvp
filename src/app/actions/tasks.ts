@@ -91,6 +91,11 @@ export async function createTask(formData: FormData) {
 
   revalidatePath("/tasks");
   revalidatePath("/tasks/my");
+  // Redirect na detail nového úkolu — stejný vzor jako createSubject/updateTask.
+  // Bez něj uživatel zůstal na /tasks se starým renderem a nový úkol v seznamu
+  // vůbec neviděl (revalidatePath na force-dynamic stránce nemá co invalidovat
+  // a refresh() se na tuto stránku nedostane spolehlivě).
+  redirect(`/tasks/${task.id}`);
 }
 
 export async function updateTask(formData: FormData) {
