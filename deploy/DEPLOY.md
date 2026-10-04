@@ -1,296 +1,125 @@
-# Deploy na vlastní VPS (Docker Compose + Caddy)
+# Deploy na vlastní VPS (Docker Compose + nginx + Let's Encrypt)
 
-Krok-za-krokem návod, jak rozjet aplikaci na čistém Linux serveru. Cílem je,
-aby sis to prošel sám a rozuměl **proč** každý krok děláš. Počítej tak s hodinou
-při prvním nasazení.
+Aplikace běží v Dockeru, před ní je **nginx na hostu** a HTTPS certifikát
+vydává a sám obnovuje **certbot** (Let's Encrypt). Celé nasazení obstará jeden
+skript, [`deploy/setup-vps.sh`](setup-vps.sh), který jde spouštět opakovaně.
 
 ---
 
-## Co vlastně poběží (architektura)
-
-Compose spustí několik kontejnerů na jednom serveru:
+## Co poběží
 
 ```
               internet
                  │  :80 / :443
           ┌──────▼───────┐
-          │    caddy      │  reverse proxy + automatické HTTPS (Let's Encrypt)
+          │    nginx      │  na hostu: TLS (certbot), limity, proxy
           └──────┬───────┘
-                 │  http://app:3000  (jen uvnitř docker sítě)
+                 │  http://127.0.0.1:3000   (jen loopback, zvenku nedostupné)
           ┌──────▼───────┐
-          │     app       │  Next.js (next start), tvá aplikace
+          │     app       │  Docker: Next.js (next start)
           └──────┬───────┘
                  │  DATABASE_URL
-        ┌────────▼─────────┐
-        │  Postgres        │  Supabase (managed)  NEBO  kontejner `postgres`
-        └──────────────────┘
-
+          ┌──────▼───────┐
+          │   postgres    │  Docker: Postgres 17, data ve volume `postgres-data`
+          └──────────────┘
           ┌──────────────┐
-          │    cron       │  každou hodinu volá /api/internal/*/run (notifikace, rejstříky)
+          │    cron       │  Docker: každou hodinu volá /api/internal/*/run
           └──────────────┘
 ```
 
-- **caddy** — jediný kontejner „ven" (porty 80/443). Sám si vyřídí HTTPS
-  certifikát, pokud mu dáš doménu. Zbytek je schovaný v interní docker síti.
-- **app** — aplikace. Poslouchá na `0.0.0.0:3000` jen uvnitř sítě; zvenčí se k ní
-  chodí přes Caddy.
-- **cron** — malý Alpine kontejner, který nahrazuje Vercel cron. Každou hodinu
-  „ťukne" na interní endpointy s tajným tokenem (`CRON_SECRET`).
-- **postgres** — *volitelný*. Zapíná se profilem `local-db`. Když používáš
-  Supabase, tenhle kontejner nespouštíš.
-
-Konfigurace i tajné klíče jdou do souboru **`.env`** v kořeni repa **na serveru**
-(nikdy se necommituje). Compose ho vstříkne do kontejnerů (`env_file: .env`).
+- **nginx** — jediné, co je vidět z internetu (porty 80/443). Konfigurace je
+  v [`deploy/nginx/law-office.conf`](nginx/law-office.conf): přeposílá hlavičky,
+  které potřebují Server Actions, vypíná buffering kvůli streamování, omezuje
+  pokusy o přihlášení a `/api/internal/*` zvenku vůbec nepustí.
+- **certbot** — po prvním vydání certifikátu ho obnovuje systemd timer
+  (`systemctl list-timers | grep certbot`).
+- **app / postgres / cron** — `compose.prod.yaml`. Všechna nastavení a secrety
+  jsou v `/opt/law-office-mvp/.env` (nikdy se necommituje, práva `600`).
 
 ---
 
-## 0. Předpoklady
+## Rychlé nasazení
 
-- VPS s čistým **Ubuntu 24.04 LTS** (funguje i Debian 12), root nebo sudo přístup přes SSH.
-  Pro tuhle aplikaci bohatě stačí **2 vCPU / 4 GB RAM / 40 GB disk**.
-- Přístup k repozitáři na GitHubu (deploy klíč nebo Personal Access Token — viz krok 4).
-- (Volitelně, doporučeno) **doména** nebo subdoména, kterou nasměruješ na server → dostaneš HTTPS.
-
-> **DB rozhodnutí (probrat se Standou):** necháte databázi na **Supabase**
-> (nejméně práce, žádná migrace dat), nebo pojede **Postgres přímo na VPS**?
-> Návod pokrývá obě varianty — liší se jen pár řádků v `.env` a jeden přepínač
-> u `docker compose`.
-
----
-
-## 1. (Volitelné) Nasměruj doménu na server
-
-U svého DNS providera přidej **A záznam**:
-
-```
-app.tvojekancelar.cz   →   <IP adresa VPS>
-```
-
-Než budeš pokračovat s HTTPS, ověř, že se to propsalo (může to trvat pár minut):
+Předpoklady: čisté **Ubuntu 22.04/24.04** nebo **Debian 12**, root/sudo přes SSH,
+a **A záznam domény** nasměrovaný na IP serveru (`dig +short app.kancelar.cz`).
 
 ```bash
-dig +short app.tvojekancelar.cz     # musí vrátit IP tvého VPS
+# na serveru (repo je veřejné, klon nepotřebuje přihlášení)
+apt-get update && apt-get install -y git
+git clone https://github.com/zukysevents-dot/law-office-mvp.git /opt/law-office-mvp
+cd /opt/law-office-mvp
+sudo DOMAIN=app.kancelar.cz EMAIL=it@kancelar.cz bash deploy/setup-vps.sh
 ```
 
-Bez domény to jde taky — pojedeš zatím jen na `http://<IP>` (viz krok 5, `APP_DOMAIN=":80"`).
+Skript postupně:
 
----
+1. nainstaluje `git`, `nginx`, `certbot`, `ufw` a Docker (oficiální `get.docker.com`),
+   na malém stroji založí 2 GB swap (jinak `next build` spadne na paměti),
+2. pustí ve firewallu jen SSH + HTTP/HTTPS,
+3. naklonuje / fast-forwardne repo (větev `BRANCH`, výchozí `main`),
+4. vytvoří `.env` a **vygeneruje všechny secrety** a heslo do Postgresu
+   (už vyplněné hodnoty nikdy nepřepíše),
+5. postaví image, spustí Postgres, aplikuje migrace (`prisma migrate deploy`),
+   spustí app + cron,
+6. nainstaluje nginx site a vydá certifikát (`certbot --nginx --redirect`).
+   Když DNS ještě neukazuje na server, HTTPS přeskočí a řekne to — stačí skript
+   pustit znovu, až se DNS propíše.
 
-## 2. Základní zabezpečení serveru
+Volitelné proměnné: `BRANCH=…`, `APP_DIR=…`, `SKIP_TLS=1` (jen HTTP).
 
-Přihlas se na server (`ssh root@<IP>`) a zapni firewall — pustíš dovnitř jen SSH a web:
-
-```bash
-apt update && apt upgrade -y
-ufw allow OpenSSH
-ufw allow 80/tcp
-ufw allow 443/tcp
-ufw --force enable
-```
-
-> Tip: později se hodí založit neroot uživatele se `sudo` a SSH klíčem místo hesla.
-> Pro první nasazení to není nutné.
-
----
-
-## 3. Nainstaluj Docker
-
-Oficiální skript nainstaluje Docker Engine i `docker compose` (v2):
-
-```bash
-curl -fsSL https://get.docker.com | sh
-docker --version && docker compose version   # ověření
-```
-
-(Volitelně, ať nemusíš psát `sudo`: `usermod -aG docker $USER` a znovu se přihlas.)
-
----
-
-## 4. Stáhni repozitář na server
-
-Repo je privátní, takže potřebuješ autentizaci. Nejjednodušší je **Personal
-Access Token** (GitHub → Settings → Developer settings → Fine-grained token,
-read-only na tenhle repo):
-
-```bash
-cd /opt
-git clone https://github.com/zukysevents-dot/law-office-mvp.git
-cd law-office-mvp
-git checkout main        # deployuje se main
-```
-
-Když si Git řekne o heslo, vlož místo něj ten token.
-
----
-
-## 5. Vytvoř `.env` a vygeneruj tajné klíče
-
-Zkopíruj šablonu a otevři k editaci:
-
-```bash
-cp deploy/.env.example .env
-nano .env
-```
-
-**Vygeneruj silné secrety** (pro každý zvlášť) a vlož do `.env`:
-
-```bash
-openssl rand -base64 32     # spusť 4× → SESSION_SECRET, PORTAL_SESSION_SECRET,
-                            #             DATA_ENCRYPTION_KEY, CRON_SECRET
-```
-
-Doplň v `.env` minimálně:
-
-| Proměnná | Hodnota |
-|---|---|
-| `APP_DOMAIN` | `app.tvojekancelar.cz` (doména) **nebo** `:80` (jen IP, bez HTTPS) |
-| `ACME_EMAIL` | tvůj e-mail (pro Let's Encrypt) |
-| `APP_BASE_URL` | `https://app.tvojekancelar.cz` (musí sedět s doménou) |
-| `SESSION_SECRET`, `PORTAL_SESSION_SECRET`, `DATA_ENCRYPTION_KEY`, `CRON_SECRET` | z `openssl rand` výše |
-| `NOTIFICATION_RUN_SECRET` | dej stejné jako `CRON_SECRET` (kompatibilita) |
-| `DATABASE_URL`, `DIRECT_URL` | podle volby DB — viz krok 6 |
-
-SMTP/SharePoint/ISDS/AML vyplň jen když ty funkce hned zapínáš; jinak nech prázdné.
-
----
-
-## 6. Databáze — vyber jednu variantu
-
-### Varianta A — Supabase (managed, doporučeno na start)
-
-V Supabase dashboardu → **Connect** zkopíruj dvě connection stringy a vlož do `.env`:
-
-```env
-# pooled (port 6543) — pro runtime aplikace
-DATABASE_URL=postgresql://postgres.<ref>:<heslo>@aws-...pooler.supabase.com:6543/postgres?pgbouncer=true
-# direct (port 5432) — pro migrace/studio
-DIRECT_URL=postgresql://postgres.<ref>:<heslo>@aws-...supabase.com:5432/postgres
-```
-
-Postgres kontejner **nespouštíš**. Přeskoč na krok 7 (bez `--profile`).
-
-### Varianta B — Postgres na VPS
-
-Nastav heslo a nasměruj oba URL na interní kontejner `postgres`:
-
-```env
-POSTGRES_PASSWORD=<silné-heslo>
-DATABASE_URL=postgresql://postgres:<silné-heslo>@postgres:5432/law_office_mvp
-DIRECT_URL=postgresql://postgres:<silné-heslo>@postgres:5432/law_office_mvp
-```
-
-V kroku 7 pak přidáš `--profile local-db`. (Přenos dat ze Supabase = `pg_dump`
-ze Supabase → `psql` do kontejneru; řešte se Standou, až padne rozhodnutí.)
-
----
-
-## 7. Postav a spusť
-
-> **Konvence:** produkční compose se jmenuje `compose.prod.yaml` (ne default
-> `compose.yaml`), aby nekolidoval s lokálním `docker-compose.yml`. Nastav ho
-> pro celou session jednou — pak platí pro všechny příkazy `docker compose` níže:
-> ```bash
-> export COMPOSE_FILE=compose.prod.yaml
-> ```
-> (Alternativně přidávej ke každému příkazu `-f compose.prod.yaml`. Po novém SSH
-> přihlášení `export` zopakuj, nebo si ho přidej do `~/.bashrc`.)
-
-```bash
-# Varianta A (Supabase):
-docker compose up -d --build
-
-# Varianta B (Postgres na VPS):
-docker compose --profile local-db up -d --build
-```
-
-První build chvíli trvá (stahuje node image, `npm ci`, `next build`). Průběh:
-
-```bash
-docker compose ps          # měly by běžet: app, caddy, cron (+ postgres u B)
-docker compose logs -f app # sleduj start aplikace (Ctrl+C ukončí sledování)
-```
-
----
-
-## 8. Aplikuj databázové migrace
-
-Aplikace při startu **sama nemigruje** (schválně — bezpečnější). Spusť migrace
-ručně z běžícího `app` kontejneru (má v sobě Prisma CLI i schéma):
-
-```bash
-docker compose exec app npx prisma migrate deploy
-```
-
-Použije `DIRECT_URL` (nepooled spojení — Prisma to tak vyžaduje pro migrace).
-Uvidíš seznam aplikovaných migrací. Když je DB už migrovaná (Supabase prod),
-napíše „No pending migrations" — to je v pořádku.
-
----
-
-## 9. Založ první kancelář a admina
-
-> Jen když je DB **prázdná** (nová instance). Pokud jedeš na existující Supabase
-> prod DB, která už uživatele má, tenhle krok přeskoč.
-
-Skript `db:bootstrap` vytvoří organizaci + účet s plnými právy (platform admin
-i org ADMIN). Údaje předáš přes `BOOTSTRAP_*` proměnné inline:
-
-```bash
-docker compose exec \
-  -e BOOTSTRAP_EMAIL="ty@tvojekancelar.cz" \
-  -e BOOTSTRAP_PASSWORD="<silné-heslo-min-8>" \
-  -e BOOTSTRAP_NAME="Jméno Příjmení" \
-  -e BOOTSTRAP_ORG_NAME="Tvoje kancelář s.r.o." \
-  -e BOOTSTRAP_ORG_SLUG="tvoje-kancelar" \
-  app npm run db:bootstrap
-```
-
-Skript je **idempotentní** — když ho pustíš znovu, jen resetuje heslo na zadané.
-
----
-
-## 10. Ověř, že to jede
-
-1. **Web**: otevři `https://app.tvojekancelar.cz` (nebo `http://<IP>`). Měl bys
-   vidět přihlášení. Přihlas se účtem z kroku 9.
-2. **HTTPS**: certifikát naskočí do pár desítek vteřin po prvním requestu na doménu.
-   Pokud drhne, mrkni `docker compose logs caddy` (častá příčina: DNS ještě
-   neukazuje na server, nebo port 80 není otevřený).
-3. **Cron** — ověř, že sidecar umí zavolat endpoint (nemusíš čekat na celou hodinu):
-   ```bash
-   docker compose exec cron /usr/local/bin/run.sh notifications
-   # očekávej: cron[notifications]: ok (200)
-   ```
-4. **Logy** čehokoli: `docker compose logs -f <app|caddy|cron>`.
-
-Hotovo. 🎉
-
----
-
-## Provoz — co budeš potřebovat běžně
-
-### Nasazení nové verze (po merge do `main`)
+### První kancelář a admin (jen prázdná DB)
 
 ```bash
 cd /opt/law-office-mvp
-git pull
-docker compose up -d --build            # (+ --profile local-db u varianty B)
-docker compose exec app npx prisma migrate deploy   # když přibyly migrace
+docker compose exec \
+  -e BOOTSTRAP_EMAIL="ty@kancelar.cz" \
+  -e BOOTSTRAP_PASSWORD="<silné-heslo-min-8>" \
+  -e BOOTSTRAP_NAME="Jméno Příjmení" \
+  -e BOOTSTRAP_ORG_NAME="Kancelář s.r.o." \
+  -e BOOTSTRAP_ORG_SLUG="kancelar" \
+  app npm run db:bootstrap
 ```
 
-Starý kontejner běží, dokud se nová verze nepostaví → prakticky bez výpadku.
+Skript je idempotentní — opakované spuštění jen resetuje heslo.
 
-### Užitečné příkazy
+---
+
+## SharePoint
+
+Připojení se nastavuje **v aplikaci**, ne v `.env`: *Nastavení → SharePoint*
+(partner/administrátor). Postup registrace aplikace v Azure (Entra ID) je přímo
+na té stránce. Client secret se ukládá šifrovaně přes `DATA_ENCRYPTION_KEY` —
+**tenhle klíč po nasazení neměň**, jinak uložený secret nepůjde přečíst.
+
+Po připojení:
+
+- **SharePoint → Procházet celou knihovnu** (`/documents/sharepoint/library`) —
+  strom složek jako v SharePointu; kliknutím na soubor se otevře přímo
+  v SharePointu (Office Online). Filtry: název souboru/složky, „ve složce
+  s názvem", čas změny (24 h / 7 / 30 / 90 dní / rok / vlastní od–do), typ,
+  řazení. Filtry hledají v aktuální složce a všech podsložkách.
+  Celou knihovnu vidí jen partner/administrátor (aplikace čte SharePoint
+  aplikačním oprávněním, takže by jinak obešla oprávnění ke spisům).
+- **Složky spisů** — každý uživatel prochází složky spisů, ke kterým má přístup.
+
+---
+
+## Provoz
 
 ```bash
-docker compose ps                 # stav
-docker compose logs -f app        # živé logy
-docker compose restart app        # restart jedné služby
-docker compose down               # zastav vše (data v DB volume zůstanou)
-docker image prune -f             # úklid starých image po redeployi
+cd /opt/law-office-mvp
+sudo bash deploy/update.sh          # nová verze z GitHubu: pull, build, migrace, restart
+docker compose ps                   # stav
+docker compose logs -f app          # živé logy aplikace
+docker compose restart app          # restart
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot renew --dry-run        # test obnovy certifikátu
 ```
 
-### Zálohy databáze (jen varianta B — u Supabase zálohuje Supabase)
+`docker compose` na serveru automaticky bere `compose.prod.yaml` a profil
+`local-db` (nastavené v `.env` přes `COMPOSE_FILE` / `COMPOSE_PROFILES`).
+
+### Zálohy databáze
 
 ```bash
 # záloha
@@ -299,28 +128,41 @@ docker compose exec -T postgres pg_dump -U postgres law_office_mvp | gzip > back
 gunzip -c backup-YYYY-MM-DD.sql.gz | docker compose exec -T postgres psql -U postgres law_office_mvp
 ```
 
-Doporučení: dej si tenhle dump do denního `cron` na hostu + kopii mimo server.
+Doporučení: denní dump přes `crontab -e` na hostu + kopie mimo server.
+
+### Ruční spuštění cron úloh
+
+```bash
+docker compose exec cron /usr/local/bin/run.sh notifications   # čekej: ok (200)
+docker compose exec cron /usr/local/bin/run.sh registry
+```
+
+---
+
+## Managed DB (Supabase) místo Postgresu na VPS
+
+V `.env` nastav `COMPOSE_PROFILES=` (prázdné), `DATABASE_URL` = pooled URL
+(port 6543, `?pgbouncer=true`) a `DIRECT_URL` = direct URL (port 5432), pak
+`sudo bash deploy/update.sh`.
 
 ---
 
 ## Řešení potíží
 
-| Příznak | Pravděpodobná příčina / řešení |
+| Příznak | Příčina / řešení |
 |---|---|
-| Caddy nevydá certifikát | DNS ještě neukazuje na server, nebo port 80/443 blokovaný firewallem/cloud panelem. Zkontroluj `dig`, `ufw status`, `docker compose logs caddy`. |
-| App padá na startu, v logu Prisma chyba o připojení | Špatné `DATABASE_URL` (u Supabase použij **pooled** 6543 pro runtime). Ověř `docker compose logs app`. |
-| Migrace hlásí chybu spojení | `DIRECT_URL` musí být **nepooled** (Supabase port 5432). |
-| `cron` vrací 503 `CRON_SECRET_NOT_CONFIGURED` | V `.env` chybí `CRON_SECRET`. Doplň a `docker compose up -d`. |
-| `cron` vrací 401 | `CRON_SECRET` v `.env` nesedí s tím, co čeká app (musí být totožné pro app i cron — obojí čte stejný `.env`, takže stačí jednou). |
-| Změnil jsem `.env`, ale nic se nezměnilo | Env se načítá při startu kontejneru: `docker compose up -d` (přetvoří kontejnery s novým env). |
-| Web běží, ale odkazy/e-maily mají špatnou adresu | Zkontroluj `APP_BASE_URL` (musí být plná veřejná URL). |
+| certbot: *Challenge failed* | DNS ještě neukazuje na server, nebo port 80 blokuje firewall poskytovatele (OVH/Hetzner panel). `dig +short <doména>`, `ufw status`. |
+| 502 Bad Gateway | App neběží / startuje. `docker compose ps`, `docker compose logs app`. |
+| Build spadne (`Killed`, exit 137) | Málo paměti — ověř swap (`swapon --show`). |
+| Formuláře hlásí chybu „origin" / Server Action | nginx musí posílat `Host` a `X-Forwarded-Host` (je v dodané konfiguraci). |
+| Změna `.env` se neprojevila | `docker compose up -d` (kontejnery se přetvoří s novým env). |
+| Odkazy v e-mailech vedou jinam | `APP_BASE_URL` v `.env` musí být `https://<doména>`. |
+| SharePoint: „Připojení selhalo" | Adresa webu, admin consent v Azure, platnost client secretu. |
 
----
+## Bezpečnost
 
-## Bezpečnostní poznámky
-
-- `.env` **nikdy** necommituj (je v `.gitignore` / `.dockerignore`). Drž práva `chmod 600 .env`.
-- Secrety generuj náhodně (`openssl rand`), nepoužívej defaulty ze šablony.
-- Ven jsou vystavené jen porty 80/443 (Caddy). App ani Postgres nemají veřejný port.
-- Po prvním přihlášení změň bootstrap heslo a nezakládej produkci s demo seedy
-  (`db:seed*` jsou jen pro testovací data).
+- `.env` je jen na serveru (`chmod 600`), secrety generuje skript (`openssl rand`).
+- Ven jsou jen 80/443 (nginx) a SSH. App poslouchá na `127.0.0.1:3000`,
+  Postgres nemá publikovaný port vůbec.
+- Veřejná registrace je vypnutá (`REGISTRATION_ENABLED=false`).
+- Po prvním přihlášení změň bootstrap heslo; `db:seed*` jsou jen testovací data.
