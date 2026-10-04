@@ -4,7 +4,9 @@
 #
 #   sudo DOMAIN=app.kancelar.cz EMAIL=it@kancelar.cz bash deploy/setup-vps.sh
 #
-# Optional env: BRANCH (default main), APP_DIR (default /opt/law-office-mvp),
+# Optional env: LANDING_DOMAINS ("kancelar.cz www.kancelar.cz" — hosts that
+#               serve only the public landing page, from the same app),
+#               BRANCH (default main), APP_DIR (default /opt/law-office-mvp),
 #               REPO_URL (default the GitHub repo), SKIP_TLS=1 (HTTP only).
 #
 # Idempotent: an existing .env is never overwritten (only missing keys are
@@ -15,6 +17,8 @@ set -euo pipefail
 
 DOMAIN="${DOMAIN:?Nastav DOMAIN=tvoje.domena.cz}"
 EMAIL="${EMAIL:?Nastav EMAIL=kontakt@pro-lets-encrypt.cz}"
+LANDING_DOMAINS="$(echo "${LANDING_DOMAINS:-}" | tr ',' ' ' | xargs)"
+ALL_DOMAINS="$(echo "$DOMAIN $LANDING_DOMAINS" | xargs)"
 BRANCH="${BRANCH:-main}"
 APP_DIR="${APP_DIR:-/opt/law-office-mvp}"
 REPO_URL="${REPO_URL:-https://github.com/zukysevents-dot/law-office-mvp.git}"
@@ -91,6 +95,9 @@ ensure_env COMPOSE_FILE compose.prod.yaml
 ensure_env COMPOSE_PROFILES local-db
 ensure_env APP_BASE_URL "https://${DOMAIN}"
 ensure_env REGISTRATION_ENABLED false
+if [ -n "$LANDING_DOMAINS" ]; then
+  ensure_env LANDING_ONLY_HOSTS "$(echo "$LANDING_DOMAINS" | tr ' ' ',')"
+fi
 # Hex heslo — bez znaků, které by bylo nutné escapovat v connection stringu.
 ensure_env POSTGRES_PASSWORD "$(openssl rand -hex 24)"
 PG_PASSWORD="$(grep -E '^POSTGRES_PASSWORD=' .env | cut -d= -f2-)"
@@ -122,13 +129,14 @@ log "Startuji aplikaci a cron"
 docker compose up -d --remove-orphans
 
 # --- 6. nginx --------------------------------------------------------------------
-log "Konfiguruji nginx pro ${DOMAIN}"
+log "Konfiguruji nginx pro: ${ALL_DOMAINS}"
 SITE=/etc/nginx/sites-available/law-office
 if [ -f "$SITE" ] && grep -q "managed by Certbot" "$SITE"; then
-  # Certbot už do souboru dopsal HTTPS blok — nepřepisovat, jen ověřit.
-  warn "nginx site už obsahuje certifikát (Certbot) — ponechávám beze změny."
+  # Certbot už do souboru dopsal HTTPS blok — nepřepisovat, jen aktualizovat
+  # seznam domén (certbot --expand pak doplní certifikát a přesměrování).
+  sed -i "s/^\(\s*server_name\) .*;/\1 ${ALL_DOMAINS};/" "$SITE"
 else
-  sed "s/__DOMAIN__/${DOMAIN}/g" deploy/nginx/law-office.conf > "$SITE"
+  sed "s/__DOMAIN__/${ALL_DOMAINS}/g" deploy/nginx/law-office.conf > "$SITE"
 fi
 ln -sf "$SITE" /etc/nginx/sites-enabled/law-office
 rm -f /etc/nginx/sites-enabled/default
@@ -140,14 +148,24 @@ if [ "${SKIP_TLS:-0}" = "1" ]; then
   warn "SKIP_TLS=1 — HTTPS přeskočeno."
 else
   SERVER_IP="$(curl -4 -fsS https://api.ipify.org || true)"
-  DOMAIN_IP="$(dig +short A "$DOMAIN" | tail -n1)"
-  if [ -n "$SERVER_IP" ] && [ "$SERVER_IP" != "$DOMAIN_IP" ]; then
-    warn "DNS ${DOMAIN} ukazuje na '${DOMAIN_IP:-nic}', server má ${SERVER_IP}."
-    warn "Nastav A záznam a spusť skript znovu (HTTPS se zatím nevydá)."
-  else
+  # Certifikát jen pro domény, které už v DNS ukazují sem — jinak by certbot
+  # selhal celý. Zbylé se doplní dalším spuštěním (--expand).
+  CERT_ARGS=()
+  for name in $ALL_DOMAINS; do
+    resolved="$(dig +short A "$name" | tail -n1)"
+    if [ -n "$SERVER_IP" ] && [ "$resolved" != "$SERVER_IP" ]; then
+      warn "DNS ${name} ukazuje na '${resolved:-nic}', server má ${SERVER_IP} — zatím bez HTTPS."
+    else
+      CERT_ARGS+=(-d "$name")
+    fi
+  done
+  if [ "${#CERT_ARGS[@]}" -gt 0 ]; then
     log "Vydávám Let's Encrypt certifikát"
-    certbot --nginx -d "$DOMAIN" -m "$EMAIL" --agree-tos -n --redirect
+    certbot --nginx "${CERT_ARGS[@]}" --cert-name law-office -m "$EMAIL" \
+      --agree-tos -n --redirect --expand
     systemctl reload nginx
+  else
+    warn "Žádná doména zatím neukazuje na server — nastav A záznamy a spusť skript znovu."
   fi
 fi
 

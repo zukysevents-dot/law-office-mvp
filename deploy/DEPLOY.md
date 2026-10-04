@@ -65,7 +65,11 @@ Skript postupně:
    Když DNS ještě neukazuje na server, HTTPS přeskočí a řekne to — stačí skript
    pustit znovu, až se DNS propíše.
 
-Volitelné proměnné: `BRANCH=…`, `APP_DIR=…`, `SKIP_TLS=1` (jen HTTP).
+Volitelné proměnné: `BRANCH=…`, `APP_DIR=…`, `SKIP_TLS=1` (jen HTTP) a
+`LANDING_DOMAINS="kancelar.cz www.kancelar.cz"` — domény, které ze stejné
+aplikace servírují **jen veřejnou landing page** (nastaví `LANDING_ONLY_HOSTS`).
+Certifikát se vydá pro všechny domény, které už v DNS ukazují na server;
+zbylé doplní další spuštění skriptu.
 
 ### První kancelář a admin (jen prázdná DB)
 
