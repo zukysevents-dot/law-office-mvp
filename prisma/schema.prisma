@@ -410,24 +410,6 @@ model User {
   @@map("users")
 }
 
-// Pending public registration. Keeping it separate from User means an attacker
-// cannot reserve/squat somebody else's e-mail address before proving control of
-// the mailbox. Only a scrypt hash (never the submitted plaintext password) is
-// retained. Verification consumes all pending rows for the address.
-model EmailVerificationToken {
-  id           String   @id @default(cuid())
-  tokenHash    String   @unique
-  email        String
-  name         String
-  passwordHash String
-  expiresAt    DateTime
-  createdAt    DateTime @default(now())
-
-  @@index([email, createdAt])
-  @@index([expiresAt])
-  @@map("emailVerificationTokens")
-}
-
 // Failed staff-login ledger. Rows are recorded only for failed/blocked
 // attempts, uniformly for existing and non-existing accounts. Both the client
 // IP and a one-way normalized e-mail identifier are limited.
@@ -1092,7 +1074,8 @@ model Organization {
   id                          String             @id @default(cuid())
   name                        String
   slug                        String             @unique
-  seatLimit                   Int                @default(0)
+  // null = bez limitu účtů (kancelář založená uživatelem po registraci).
+  seatLimit                   Int?               @default(0)
   status                      OrganizationStatus @default(ACTIVE)
   // Optional, unused this phase — email domain is NOT a join restriction.
   allowedEmailDomains         Json?

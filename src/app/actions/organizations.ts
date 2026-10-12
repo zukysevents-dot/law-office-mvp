@@ -123,7 +123,7 @@ export async function joinOrganization(formData: FormData) {
       }
 
       const activeCount = await countActiveMembers(tx, org.id);
-      if (activeCount >= org.seatLimit) {
+      if (org.seatLimit !== null && activeCount >= org.seatLimit) {
         throw new JoinError("FULL");
       }
 
@@ -180,6 +180,146 @@ export async function joinOrganization(formData: FormData) {
   }
 
   redirect("/dashboard");
+}
+
+// --- Self-service firm creation (run by a freshly registered user) -----------
+
+const SELF_SERVICE_INVITE_LABEL = "Pozvánka pro kolegy";
+
+export type CreateOwnOrganizationState = {
+  ok: boolean;
+  organizationName?: string;
+  // Plaintext invite code shown exactly once, right after the firm is created.
+  code?: string;
+  error?: string;
+};
+
+// The founder becomes the firm's ADMIN and gets a first join code to hand out.
+// Returns state instead of redirecting so the one-time code can be shown.
+export async function createOwnOrganization(
+  _prev: CreateOwnOrganizationState,
+  formData: FormData,
+): Promise<CreateOwnOrganizationState> {
+  const user = await getAuthUser();
+  if (user.isPlatformAdmin) {
+    redirect("/admin");
+  }
+
+  const name = optionalString(formData, "organizationName");
+  if (!name) {
+    return { ok: false, error: "Zadejte název kanceláře." };
+  }
+
+  const prisma = getPrisma();
+  const baseSlug = slugify(name) || "kancelar";
+  const plaintext = generateCode();
+
+  let created: { id: string } | null;
+  try {
+    created = await prisma.$transaction(async (tx) => {
+      // Serialize per user so a double submit cannot found two firms.
+      await tx.$queryRaw`SELECT id FROM "users" WHERE id = ${user.id} FOR UPDATE`;
+
+      // Single active org per user this phase (same check as the page).
+      const existingActive = await tx.organizationMember.findFirst({
+        where: {
+          userId: user.id,
+          status: OrganizationMemberStatus.ACTIVE,
+          organization: { is: { status: OrganizationStatus.ACTIVE } },
+        },
+      });
+      if (existingActive) {
+        return null;
+      }
+
+      const taken = await tx.organization.findMany({
+        where: { slug: { startsWith: baseSlug } },
+        select: { slug: true },
+      });
+      const takenSlugs = new Set(taken.map((org) => org.slug));
+      let slug = baseSlug;
+      for (let i = 2; takenSlugs.has(slug); i++) {
+        slug = `${baseSlug}-${i}`;
+      }
+
+      const now = new Date();
+      const org = await tx.organization.create({
+        data: {
+          name,
+          slug,
+          // Self-founded firms have no seat cap.
+          seatLimit: null,
+          status: OrganizationStatus.ACTIVE,
+        },
+      });
+
+      await tx.organizationMember.create({
+        data: {
+          organizationId: org.id,
+          userId: user.id,
+          role: UserRole.ADMIN,
+          status: OrganizationMemberStatus.ACTIVE,
+          approvedAt: now,
+        },
+      });
+
+      // Keep the global User.role in sync with the org role (single-org phase).
+      await tx.user.update({
+        where: { id: user.id },
+        data: { role: UserRole.ADMIN },
+      });
+
+      await tx.organizationJoinCode.create({
+        data: {
+          organizationId: org.id,
+          codeHash: hashCode(plaintext),
+          label: SELF_SERVICE_INVITE_LABEL,
+          createdByUserId: user.id,
+        },
+      });
+
+      await tx.auditLog.createMany({
+        data: [
+          {
+            organizationId: org.id,
+            entityType: "Organization",
+            entityId: org.id,
+            action: "CREATE",
+            changedById: user.id,
+            newValue: { name, slug, seatLimit: org.seatLimit, selfService: true },
+          },
+          {
+            organizationId: org.id,
+            entityType: "OrganizationMember",
+            entityId: org.id,
+            action: "JOIN",
+            changedById: user.id,
+            newValue: { organizationId: org.id, role: UserRole.ADMIN },
+          },
+          {
+            organizationId: org.id,
+            entityType: "OrganizationJoinCode",
+            entityId: org.id,
+            action: "CREATE",
+            changedById: user.id,
+            newValue: { label: SELF_SERVICE_INVITE_LABEL, maxUses: null },
+          },
+        ],
+      });
+
+      return { id: org.id };
+    });
+  } catch (error) {
+    // e.g. a concurrent firm grabbed the same slug between lookup and insert.
+    console.error("self-service organization creation failed", error);
+    return { ok: false, error: "Kancelář se nepodařilo založit. Zkuste to prosím znovu." };
+  }
+
+  if (!created) {
+    redirect("/dashboard");
+  }
+
+  return { ok: true, organizationName: name, code: plaintext };
 }
 
 // --- Join codes (org admin or platform admin) --------------------------------
@@ -380,7 +520,9 @@ export async function createOrganization(formData: FormData) {
     data: {
       name,
       slug,
-      seatLimit: seatLimit && seatLimit > 0 ? Math.floor(seatLimit) : 0,
+      // Empty = bez limitu.
+      seatLimit:
+        seatLimit !== null && seatLimit >= 0 ? Math.floor(seatLimit) : null,
       status: OrganizationStatus.ACTIVE,
     },
   });
@@ -420,8 +562,9 @@ export async function updateOrganization(formData: FormData) {
   const updated = await prisma.organization.update({
     where: { id: organizationId },
     data: {
+      // Empty = bez limitu (the form is prefilled with the current value).
       seatLimit:
-        seatLimit !== null && seatLimit >= 0 ? Math.floor(seatLimit) : old.seatLimit,
+        seatLimit !== null && seatLimit >= 0 ? Math.floor(seatLimit) : null,
       status,
       archivedAt: status === OrganizationStatus.ARCHIVED ? new Date() : null,
     },

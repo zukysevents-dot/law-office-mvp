@@ -65,8 +65,8 @@ export default async function AdminOrganizationsPage() {
           <Field label="Identifikátor (volitelné)">
             <TextInput name="slug" placeholder="napr-nova-kancelar" />
           </Field>
-          <Field label="Limit účtů">
-            <TextInput name="seatLimit" type="number" min="0" step="1" defaultValue="5" />
+          <Field label="Limit účtů (prázdné = bez limitu)">
+            <TextInput name="seatLimit" type="number" min="0" step="1" placeholder="Bez limitu" />
           </Field>
           <div className="md:col-span-3">
             <Button type="submit">Vytvořit kancelář</Button>
@@ -93,7 +93,7 @@ export default async function AdminOrganizationsPage() {
                     <td className="font-medium text-stone-950">{org.name}</td>
                     <td className="font-mono text-xs">{org.slug}</td>
                     <td>
-                      {org.activeMembers} / {org.seatLimit}
+                      {org.activeMembers} / {org.seatLimit ?? "bez limitu"}
                     </td>
                     <td>
                       <form
@@ -106,7 +106,9 @@ export default async function AdminOrganizationsPage() {
                           type="number"
                           min="0"
                           step="1"
-                          defaultValue={org.seatLimit}
+                          defaultValue={org.seatLimit ?? ""}
+                          placeholder="∞"
+                          title="Prázdné = bez limitu"
                           className="h-9 w-20"
                         />
                         <SelectInput

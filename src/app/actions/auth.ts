@@ -4,17 +4,6 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { UserRole } from "@/generated/prisma/enums";
-import {
-  EMAIL_VERIFICATION_TTL_SECONDS,
-  emailVerificationUrl,
-  generateEmailVerificationToken,
-  hashEmailVerificationToken,
-} from "@/lib/email-verification";
-import {
-  isEmailVerificationDeliveryAvailable,
-  sendEmailVerification,
-  sendExistingRegistrationNotice,
-} from "@/lib/email-verification-mailer";
 import { safeInternalRedirectPath } from "@/lib/form";
 import {
   clearAccountLoginFailures,
@@ -100,16 +89,13 @@ export async function loginAction(formData: FormData) {
   redirect(target);
 }
 
-// Self-registration stores only a pending verification row. The User (which can
-// join a firm) does not exist until the mailbox owner consumes the token. This
-// prevents unauthenticated callers from reserving/squatting another person's
-// unique e-mail address.
+// Self-registration creates the account immediately (no e-mail confirmation)
+// and signs the user in; joining a firm still requires a registration code.
 export async function registerAction(formData: FormData) {
   // Hard kill-switch, independent of the host-based landing gate (which is
-  // presentation-only and fail-open). Responds like a successful submission
-  // so the switch does not leak account-enumeration signals.
+  // presentation-only and fail-open).
   if (process.env.REGISTRATION_ENABLED === "false") {
-    redirect("/register?sent=1");
+    redirect("/register?error=disabled");
   }
 
   const name = String(formData.get("name") ?? "").trim();
@@ -142,23 +128,20 @@ export async function registerAction(formData: FormData) {
     withinRegistrationRateLimit = process.env.NODE_ENV !== "production";
   }
   if (!withinRegistrationRateLimit) {
-    redirect("/register?sent=1");
+    redirect("/register?error=rate");
+  }
+
+  const existing = await prisma.user.findUnique({
+    where: { email },
+    select: { id: true },
+  });
+  if (existing) {
+    redirect("/register?error=exists");
   }
 
   const passwordHash = await hashPassword(password);
-
-  // Keep local setup ergonomic: without SMTP, non-production behaves like the
-  // historical flow. Production always fails closed — no User is materialized
-  // when a verification message cannot be delivered.
-  if (
-    process.env.NODE_ENV !== "production" &&
-    !isEmailVerificationDeliveryAvailable()
-  ) {
-    const existing = await prisma.user.findUnique({ where: { email } });
-    if (existing) {
-      redirect("/register?sent=1");
-    }
-    const user = await prisma.user.create({
+  const user = await prisma.user
+    .create({
       data: {
         name,
         email,
@@ -166,110 +149,17 @@ export async function registerAction(formData: FormData) {
         emailVerifiedAt: new Date(),
         role: UserRole.LAWYER,
       },
-    });
-    await setUserSessionCookie(user.id, user.sessionVersion);
-    redirect("/join-organization");
-  }
-
-  const existing = await prisma.user.findUnique({ where: { email } });
-  // Same outward result for existing and new addresses: do not turn the public
-  // registration form into an account-enumeration endpoint.
-  if (existing?.emailVerifiedAt) {
-    await sendExistingRegistrationNotice(email);
-    redirect("/register?sent=1");
-  }
-
-  const token = generateEmailVerificationToken();
-  const pending = await prisma.emailVerificationToken.create({
-    data: {
-      name,
-      email,
-      passwordHash,
-      tokenHash: hashEmailVerificationToken(token),
-      expiresAt: new Date(Date.now() + EMAIL_VERIFICATION_TTL_SECONDS * 1000),
-    },
-  });
-
-  const delivered = await sendEmailVerification(
-    email,
-    emailVerificationUrl(token),
-  );
-  if (!delivered) {
-    // No account exists yet, and remove the undeliverable pending credential so
-    // production fails closed without leaving stale password material behind.
-    await prisma.emailVerificationToken.deleteMany({
-      where: { id: pending.id },
-    });
-  }
-
-  try {
-    await prisma.emailVerificationToken.deleteMany({
-      where: { expiresAt: { lt: new Date() } },
-    });
-  } catch {
-    // non-critical housekeeping
-  }
-
-  // Deliberately generic even on SMTP failure or throttling. Revealing delivery
-  // success would reveal whether an e-mail is already registered.
-  redirect("/register?sent=1");
-}
-
-export async function verifyEmailAction(formData: FormData) {
-  const rawToken = String(formData.get("token") ?? "");
-  if (!rawToken) redirect("/verify-email?error=1");
-
-  const prisma = getPrisma();
-  const tokenHash = hashEmailVerificationToken(rawToken);
-
-  const user = await prisma
-    .$transaction(async (tx) => {
-      // Single-use under concurrency; link preview scanners only render the GET
-      // page and cannot consume this token because the mutation is a POST action.
-      await tx.$queryRaw`SELECT id FROM "emailVerificationTokens" WHERE "tokenHash" = ${tokenHash} FOR UPDATE`;
-      const pending = await tx.emailVerificationToken.findUnique({
-        where: { tokenHash },
-      });
-      if (!pending || pending.expiresAt <= new Date()) return null;
-
-      const existing = await tx.user.findUnique({
-        where: { email: pending.email },
-      });
-      if (existing?.emailVerifiedAt) return null;
-
-      const verifiedAt = new Date();
-      const verified = existing
-        ? await tx.user.update({
-            where: { id: existing.id },
-            data: {
-              name: pending.name,
-              passwordHash: pending.passwordHash,
-              emailVerifiedAt: verifiedAt,
-              active: true,
-              sessionVersion: { increment: 1 },
-            },
-          })
-        : await tx.user.create({
-            data: {
-              name: pending.name,
-              email: pending.email,
-              passwordHash: pending.passwordHash,
-              emailVerifiedAt: verifiedAt,
-              role: UserRole.LAWYER,
-            },
-          });
-
-      await tx.emailVerificationToken.deleteMany({
-        where: { email: pending.email },
-      });
-      return verified;
+      select: { id: true, sessionVersion: true },
     })
     .catch((error) => {
-      console.error("e-mail verification failed", error);
+      // Unique violation from a concurrent registration of the same address.
+      console.error("registration failed", error);
       return null;
     });
+  if (!user) {
+    redirect("/register?error=exists");
+  }
 
-  if (!user) redirect("/verify-email?error=1");
   await setUserSessionCookie(user.id, user.sessionVersion);
   redirect("/join-organization");
 }

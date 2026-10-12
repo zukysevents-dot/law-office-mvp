@@ -61,7 +61,7 @@ test.describe("veřejné stránky", () => {
       await expect(page.getByLabel(label)).toBeVisible();
     }
     await expect(
-      page.getByRole("button", { name: "Odeslat potvrzovací odkaz" }),
+      page.getByRole("button", { name: "Vytvořit účet" }),
     ).toBeEnabled();
   });
 
