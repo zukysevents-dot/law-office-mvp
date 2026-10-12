@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
 import { Prisma } from "@/generated/prisma/client";
 import {
@@ -17,7 +18,6 @@ import {
   checkboxValue,
   enumValue,
   optionalDate,
-  optionalDateTime,
   optionalNumber,
   optionalString,
   requiredDate,
@@ -25,7 +25,11 @@ import {
   requiredString,
 } from "@/lib/form";
 import { computeAbsenceHours } from "@/lib/hr/absence-calc";
-import { computeWorkedHours, officeWorkDate } from "@/lib/hr/attendance-calc";
+import {
+  computeWorkedHours,
+  officeWallClockToInstant,
+  officeWorkDate,
+} from "@/lib/hr/attendance-calc";
 import {
   assertNoOverdraw,
   computeRemainingHours,
@@ -185,6 +189,7 @@ export async function updateEmployee(formData: FormData) {
 
   const firstName = clampText(requiredString(formData, "firstName"), MAX_NAME)!;
   const lastName = clampText(requiredString(formData, "lastName"), MAX_NAME)!;
+  const personalNumber = clampText(optionalString(formData, "personalNumber"), MAX_NAME);
   const position = clampText(optionalString(formData, "position"), MAX_NAME);
   const employmentType = enumValue(
     HrEmploymentType,
@@ -196,6 +201,7 @@ export async function updateEmployee(formData: FormData) {
   if (weeklyHours < 0 || weeklyHours > 168 || dailyHours < 0 || dailyHours > 24) {
     throw new Error("Neplatný fond pracovní doby.");
   }
+  const startDate = optionalDate(formData, "startDate");
   const { grossSalaryCzk, salaryTaxMode, salaryNote } =
     parseSalaryFields(formData);
   const userId = await validateEmployeeUser(
@@ -204,35 +210,50 @@ export async function updateEmployee(formData: FormData) {
     employeeId,
   );
 
-  await prisma.$transaction(async (tx) => {
-    await tx.hrEmployee.update({
-      where: { id: employeeId },
-      data: {
-        firstName,
-        lastName,
-        position,
-        employmentType,
-        weeklyHours,
-        dailyHours,
-        grossSalaryCzk,
-        salaryTaxMode,
-        salaryNote,
-        userId,
-      },
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.hrEmployee.update({
+        where: { id: employeeId },
+        data: {
+          firstName,
+          lastName,
+          personalNumber,
+          position,
+          employmentType,
+          weeklyHours,
+          dailyHours,
+          grossSalaryCzk,
+          salaryTaxMode,
+          salaryNote,
+          startDate,
+          userId,
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          entityType: "HrEmployee",
+          entityId: employeeId,
+          action: "UPDATE",
+          changedById: currentUser.id,
+          organizationId: currentUser.organizationId,
+          newValue: auditJson({ firstName, lastName, employmentType }),
+        },
+      });
     });
-    await tx.auditLog.create({
-      data: {
-        entityType: "HrEmployee",
-        entityId: employeeId,
-        action: "UPDATE",
-        changedById: currentUser.id,
-        organizationId: currentUser.organizationId,
-        newValue: auditJson({ firstName, lastName, employmentType }),
-      },
-    });
-  });
+  } catch (error) {
+    // Osobní číslo je unikátní v rámci kanceláře.
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      throw new Error("Toto osobní číslo už má jiný zaměstnanec.");
+    }
+    throw error;
+  }
 
   revalidatePath("/hr/employees");
+  revalidatePath("/hr/attendance");
+  redirect("/hr/employees");
 }
 
 export async function archiveEmployee(formData: FormData) {
@@ -321,14 +342,37 @@ export async function setLeaveBalance(formData: FormData) {
 
 // --- Attendance (HR-4) -------------------------------------------------------
 
+// HH:MM from an <input type="time">; null when left empty.
+function optionalTimeOfDay(
+  formData: FormData,
+  key: string,
+): { hour: number; minute: number } | null {
+  const value = optionalString(formData, key);
+  if (!value) {
+    return null;
+  }
+  const match = /^(\d{1,2}):(\d{2})(?::\d{2})?$/.exec(value);
+  const hour = Number(match?.[1]);
+  const minute = Number(match?.[2]);
+  if (!match || hour > 23 || minute > 59) {
+    throw new Error("Neplatný čas příchodu nebo odchodu.");
+  }
+  return { hour, minute };
+}
+
+// Ruční zápis docházky za konkrétní den (i zpětně). Správce HR zapisuje komukoli,
+// ostatní jen sami sobě — typicky zapomenutý příchod/odchod. Časy jsou pražské
+// a váží se k vybranému datu; prázdné pole ponechá dříve zaznamenaný čas.
 export async function recordAttendance(formData: FormData) {
   const prisma = getPrisma();
   const { currentUser, organizationId } = await authorize();
-  assertCanManageHr(currentUser);
 
   const employeeId = requiredString(formData, "employeeId");
   const employee = await prisma.hrEmployee.findFirst({
-    where: { id: employeeId, organizationId, archivedAt: null },
+    where: andWhere(
+      { id: employeeId, organizationId, archivedAt: null },
+      hrEmployeeVisibilityWhere(currentUser),
+    ),
     select: { id: true },
   });
   if (!employee) {
@@ -337,16 +381,44 @@ export async function recordAttendance(formData: FormData) {
 
   const workDate = requiredDate(formData, "workDate");
   const breakHours = optionalNumber(formData, "breakHours") ?? 0;
-  const checkIn = optionalDateTime(formData, "checkIn");
-  const checkOut = optionalDateTime(formData, "checkOut");
+  const checkInTime = optionalTimeOfDay(formData, "checkIn");
+  const checkOutTime = optionalTimeOfDay(formData, "checkOut");
+  const note = clampText(optionalString(formData, "note"), MAX_TEXT);
+
+  const existing = await prisma.hrAttendanceRecord.findUnique({
+    where: { employeeId_workDate: { employeeId, workDate } },
+    select: { checkIn: true, checkOut: true },
+  });
+
+  const checkIn = checkInTime
+    ? officeWallClockToInstant(workDate, checkInTime.hour, checkInTime.minute)
+    : (existing?.checkIn ?? null);
+  let checkOut = checkOutTime
+    ? officeWallClockToInstant(workDate, checkOutTime.hour, checkOutTime.minute)
+    : (existing?.checkOut ?? null);
+
   let workedHours = optionalNumber(formData, "workedHours") ?? 0;
   if (checkIn && checkOut) {
+    if (checkOutTime && checkOut.getTime() === checkIn.getTime()) {
+      throw new Error("Příchod a odchod nesmí být stejný.");
+    }
+    // A lower checkout time is a night shift ending on the following day.
+    if (checkOutTime && checkOut < checkIn) {
+      const nextDay = new Date(workDate.getTime() + 24 * 60 * 60 * 1000);
+      checkOut = officeWallClockToInstant(
+        nextDay,
+        checkOutTime.hour,
+        checkOutTime.minute,
+      );
+    }
+    if (checkOut <= checkIn) {
+      throw new Error("Odchod musí být po příchodu.");
+    }
     workedHours = computeWorkedHours(checkIn, checkOut, breakHours);
   }
   if (workedHours < 0 || workedHours > 24 || breakHours < 0) {
     throw new Error("Neplatné hodnoty docházky.");
   }
-  const note = clampText(optionalString(formData, "note"), MAX_TEXT);
 
   await prisma.$transaction(async (tx) => {
     await tx.hrAttendanceRecord.upsert({
@@ -372,7 +444,12 @@ export async function recordAttendance(formData: FormData) {
         action: "RECORD_ATTENDANCE",
         changedById: currentUser.id,
         organizationId: currentUser.organizationId,
-        newValue: auditJson({ workDate: workDate.toISOString(), workedHours }),
+        newValue: auditJson({
+          workDate: workDate.toISOString(),
+          checkIn: checkIn?.toISOString() ?? null,
+          checkOut: checkOut?.toISOString() ?? null,
+          workedHours,
+        }),
       },
     });
   });
