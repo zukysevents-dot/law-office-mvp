@@ -12,6 +12,7 @@ import {
 } from "@/generated/prisma/enums";
 import { auditJson } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
+import { ensureEmployeeCard } from "@/lib/hr/employee-card";
 import {
   checkboxValue,
   enumValue,
@@ -81,7 +82,7 @@ export async function createUser(formData: FormData) {
           microsoftId: optionalString(formData, "microsoftId"),
           passwordHash,
           // Accounts provisioned by an authenticated firm administrator are a
-          // trusted flow; public self-registration verifies by e-mail instead.
+          // trusted flow.
           emailVerifiedAt: new Date(),
           active: checkboxValue(formData, "active"),
         },
@@ -94,6 +95,13 @@ export async function createUser(formData: FormData) {
           role,
           status: OrganizationMemberStatus.ACTIVE,
         },
+      });
+
+      await ensureEmployeeCard(tx, {
+        organizationId,
+        userId: user.id,
+        name: user.name,
+        createdById: currentUser.id,
       });
 
       return user;

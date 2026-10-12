@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import {
   importAttendance,
   punchAttendance,
@@ -145,7 +147,19 @@ export default async function HrAttendancePage() {
         </Section>
       ) : null}
 
-      {data.canManage ? (
+      {data.canManage && data.employees.length === 0 ? (
+        <Section title="Zapsat docházku">
+          <EmptyState>
+            Kancelář zatím nemá žádné zaměstnance. Založte je v sekci{" "}
+            <Link href="/hr/employees" className="font-medium underline">
+              Zaměstnanci
+            </Link>
+            .
+          </EmptyState>
+        </Section>
+      ) : null}
+
+      {data.canManage && data.employees.length > 0 ? (
         <Section title="Zapsat docházku">
           <form action={recordAttendance} className="grid gap-4 sm:max-w-2xl">
             <div className="grid gap-4 sm:grid-cols-2">
@@ -168,10 +182,10 @@ export default async function HrAttendancePage() {
                 <TextInput name="checkOut" type="datetime-local" />
               </Field>
               <Field label="Odpracováno (h)">
-                <TextInput name="workedHours" type="number" defaultValue="8" />
+                <TextInput name="workedHours" type="number" min="0" max="24" step="any" defaultValue="8" />
               </Field>
               <Field label="Přestávka (h)">
-                <TextInput name="breakHours" type="number" defaultValue="0" />
+                <TextInput name="breakHours" type="number" min="0" max="24" step="any" defaultValue="0" />
               </Field>
             </div>
             <p className="text-xs text-stone-600">

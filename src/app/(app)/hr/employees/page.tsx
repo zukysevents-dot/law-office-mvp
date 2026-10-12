@@ -224,10 +224,10 @@ export default async function HrEmployeesPage() {
                   </SelectInput>
                 </Field>
                 <Field label="Fond h/týden">
-                  <TextInput name="weeklyHours" type="number" defaultValue="40" required />
+                  <TextInput name="weeklyHours" type="number" min="0" max="168" step="any" defaultValue="40" required />
                 </Field>
                 <Field label="Fond h/den">
-                  <TextInput name="dailyHours" type="number" defaultValue="8" required />
+                  <TextInput name="dailyHours" type="number" min="0" max="24" step="any" defaultValue="8" required />
                 </Field>
                 <Field label="Nástup (volitelné)">
                   <TextInput name="startDate" type="date" />
@@ -275,10 +275,10 @@ export default async function HrEmployeesPage() {
                 <TextInput name="year" type="number" defaultValue={data.year} required />
               </Field>
               <Field label="Nárok (h)">
-                <TextInput name="entitlementHours" type="number" defaultValue="160" required />
+                <TextInput name="entitlementHours" type="number" min="0" step="any" defaultValue="160" required />
               </Field>
               <Field label="Převod (h)">
-                <TextInput name="carryoverHours" type="number" defaultValue="0" />
+                <TextInput name="carryoverHours" type="number" step="any" defaultValue="0" />
               </Field>
               <Button type="submit" variant="secondary">
                 Uložit nárok
