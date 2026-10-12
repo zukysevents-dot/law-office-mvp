@@ -16,6 +16,7 @@ import {
   dependentsBlockingDisable,
   MODULE_DEPENDENCIES,
   resolveEnabledModules,
+  SELLABLE_MODULE_KEYS,
 } from "@/lib/entitlements";
 import {
   enumValue,
@@ -195,7 +196,8 @@ export type CreateOwnOrganizationState = {
 };
 
 // The founder becomes the firm's ADMIN and gets a first join code to hand out.
-// Returns state instead of redirecting so the one-time code can be shown.
+// All modules start enabled (testing phase). Returns state instead of
+// redirecting so the one-time code can be shown.
 export async function createOwnOrganization(
   _prev: CreateOwnOrganizationState,
   formData: FormData,
@@ -278,6 +280,15 @@ export async function createOwnOrganization(
         },
       });
 
+      await tx.organizationModule.createMany({
+        data: SELLABLE_MODULE_KEYS.map((moduleKey) => ({
+          organizationId: org.id,
+          moduleKey,
+          status: ModuleStatus.ENABLED,
+          enabledAt: now,
+        })),
+      });
+
       await tx.auditLog.createMany({
         data: [
           {
@@ -304,6 +315,15 @@ export async function createOwnOrganization(
             changedById: user.id,
             newValue: { label: SELF_SERVICE_INVITE_LABEL, maxUses: null },
           },
+          ...SELLABLE_MODULE_KEYS.map((moduleKey) => ({
+            organizationId: org.id,
+            entityType: "OrganizationModule",
+            entityId: org.id,
+            action: "MODULE_CHANGE",
+            changedById: user.id,
+            oldValue: { moduleKey, status: ModuleStatus.DISABLED, trialEndsAt: null },
+            newValue: { moduleKey, status: ModuleStatus.ENABLED, trialEndsAt: null },
+          })),
         ],
       });
 
