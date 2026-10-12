@@ -35,7 +35,8 @@ export default async function RegisterPage({
         Vytvoření účtu
       </h1>
       <p className="mb-6 mt-1 text-center text-sm text-[var(--iv-muted)]">
-        Po registraci se připojíte ke kanceláři pomocí registračního kódu.
+        Po registraci založíte vlastní kancelář, nebo se připojíte ke stávající
+        pomocí registračního kódu.
       </p>
 
       {message ? (
