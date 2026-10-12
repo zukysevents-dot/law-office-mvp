@@ -41,3 +41,53 @@ export function officeWorkDate(now: Date, timeZone = OFFICE_TIME_ZONE): Date {
     Number(parts.find((entry) => entry.type === type)?.value);
   return new Date(Date.UTC(part("year"), part("month") - 1, part("day")));
 }
+
+// Offset of `timeZone` from UTC at `instant`, in ms (Prague: +1 h / +2 h in DST).
+function timeZoneOffsetMs(instant: Date, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(instant);
+  const part = (type: string) =>
+    Number(parts.find((entry) => entry.type === type)?.value);
+  const asUtc = Date.UTC(
+    part("year"),
+    part("month") - 1,
+    part("day"),
+    part("hour"),
+    part("minute"),
+    part("second"),
+  );
+  return asUtc - Math.floor(instant.getTime() / 1000) * 1000;
+}
+
+/**
+ * Wall-clock time on a calendar day IN the office time zone → the real instant.
+ * `workDate` is the UTC-midnight day key (see officeWorkDate). Manual entries and
+ * CSV imports must go through this so they match punches, which store `now`.
+ */
+export function officeWallClockToInstant(
+  workDate: Date,
+  hour: number,
+  minute: number,
+  second = 0,
+  timeZone = OFFICE_TIME_ZONE,
+): Date {
+  const naive = Date.UTC(
+    workDate.getUTCFullYear(),
+    workDate.getUTCMonth(),
+    workDate.getUTCDate(),
+    hour,
+    minute,
+    second,
+  );
+  // Two passes settle the offset across a DST switch.
+  const firstGuess = naive - timeZoneOffsetMs(new Date(naive), timeZone);
+  return new Date(naive - timeZoneOffsetMs(new Date(firstGuess), timeZone));
+}

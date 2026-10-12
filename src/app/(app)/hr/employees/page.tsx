@@ -7,7 +7,7 @@ import { Field, SelectInput, TextInput } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
 import type { Prisma } from "@/generated/prisma/client";
@@ -161,16 +161,24 @@ export default async function HrEmployeesPage() {
                       ) : null}
                       {data.canManage ? (
                         <td>
-                          <form action={archiveEmployee}>
-                            <input
-                              type="hidden"
-                              name="employeeId"
-                              value={employee.id}
-                            />
-                            <Button type="submit" variant="ghost">
-                              Archivovat
-                            </Button>
-                          </form>
+                          <div className="flex flex-wrap gap-2">
+                            <ButtonLink
+                              href={`/hr/employees/${employee.id}`}
+                              variant="secondary"
+                            >
+                              Upravit
+                            </ButtonLink>
+                            <form action={archiveEmployee}>
+                              <input
+                                type="hidden"
+                                name="employeeId"
+                                value={employee.id}
+                              />
+                              <Button type="submit" variant="ghost">
+                                Archivovat
+                              </Button>
+                            </form>
+                          </div>
                         </td>
                       ) : null}
                     </tr>

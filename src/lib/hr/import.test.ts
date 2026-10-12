@@ -69,8 +69,9 @@ test("parseAttendanceCsv: parses terminal punches and computes net hours", () =>
     "osobniCislo;datum;prichod;odchod;prestavka\n1001;2026-07-21;08:01;16:31;0,5",
   );
   assert.equal(rows.length, 1);
-  assert.equal(rows[0].checkIn?.toISOString(), "2026-07-21T08:01:00.000Z");
-  assert.equal(rows[0].checkOut?.toISOString(), "2026-07-21T16:31:00.000Z");
+  // Časy z terminálu jsou pražské (v červenci UTC+2).
+  assert.equal(rows[0].checkIn?.toISOString(), "2026-07-21T06:01:00.000Z");
+  assert.equal(rows[0].checkOut?.toISOString(), "2026-07-21T14:31:00.000Z");
   assert.equal(rows[0].workedHours, 8);
   assert.equal(rows[0].breakHours, 0.5);
 });
@@ -85,7 +86,7 @@ test("parseAttendanceCsv: supports English headers in arbitrary order", () => {
 
 test("parseAttendanceCsv: supports a night shift ending the next day", () => {
   const rows = parseAttendanceCsv("1001;2026-07-21;22:00;06:30;0,5");
-  assert.equal(rows[0].checkOut?.toISOString(), "2026-07-22T06:30:00.000Z");
+  assert.equal(rows[0].checkOut?.toISOString(), "2026-07-22T04:30:00.000Z");
   assert.equal(rows[0].workedHours, 8);
 });
 
