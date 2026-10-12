@@ -123,7 +123,7 @@ export async function joinOrganization(formData: FormData) {
       }
 
       const activeCount = await countActiveMembers(tx, org.id);
-      if (activeCount >= org.seatLimit) {
+      if (org.seatLimit !== null && activeCount >= org.seatLimit) {
         throw new JoinError("FULL");
       }
 
@@ -184,7 +184,6 @@ export async function joinOrganization(formData: FormData) {
 
 // --- Self-service firm creation (run by a freshly registered user) -----------
 
-const SELF_SERVICE_SEAT_LIMIT = 25;
 const SELF_SERVICE_INVITE_LABEL = "Pozvánka pro kolegy";
 
 export type CreateOwnOrganizationState = {
@@ -248,7 +247,8 @@ export async function createOwnOrganization(
         data: {
           name,
           slug,
-          seatLimit: SELF_SERVICE_SEAT_LIMIT,
+          // Self-founded firms have no seat cap.
+          seatLimit: null,
           status: OrganizationStatus.ACTIVE,
         },
       });
@@ -520,7 +520,9 @@ export async function createOrganization(formData: FormData) {
     data: {
       name,
       slug,
-      seatLimit: seatLimit && seatLimit > 0 ? Math.floor(seatLimit) : 0,
+      // Empty = bez limitu.
+      seatLimit:
+        seatLimit !== null && seatLimit >= 0 ? Math.floor(seatLimit) : null,
       status: OrganizationStatus.ACTIVE,
     },
   });
@@ -560,8 +562,9 @@ export async function updateOrganization(formData: FormData) {
   const updated = await prisma.organization.update({
     where: { id: organizationId },
     data: {
+      // Empty = bez limitu (the form is prefilled with the current value).
       seatLimit:
-        seatLimit !== null && seatLimit >= 0 ? Math.floor(seatLimit) : old.seatLimit,
+        seatLimit !== null && seatLimit >= 0 ? Math.floor(seatLimit) : null,
       status,
       archivedAt: status === OrganizationStatus.ARCHIVED ? new Date() : null,
     },

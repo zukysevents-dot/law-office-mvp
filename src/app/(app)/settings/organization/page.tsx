@@ -77,10 +77,12 @@ export default async function OrganizationSettingsPage() {
             <p className="text-lg font-semibold text-[#0e1822]">
               {data.organization.name}
             </p>
-            <p className="text-sm text-stone-600">
-              Limit účtů spravuje správce platformy. Pro navýšení počtu míst
-              kontaktujte podporu.
-            </p>
+            {data.organization.seatLimit !== null ? (
+              <p className="text-sm text-stone-600">
+                Limit účtů spravuje správce platformy. Pro navýšení počtu míst
+                kontaktujte podporu.
+              </p>
+            ) : null}
             <form
               action={updateBillingTimeIncrement}
               className="mt-4 flex flex-wrap items-end gap-3"

@@ -1074,7 +1074,8 @@ model Organization {
   id                          String             @id @default(cuid())
   name                        String
   slug                        String             @unique
-  seatLimit                   Int                @default(0)
+  // null = bez limitu účtů (kancelář založená uživatelem po registraci).
+  seatLimit                   Int?               @default(0)
   status                      OrganizationStatus @default(ACTIVE)
   // Optional, unused this phase — email domain is NOT a join restriction.
   allowedEmailDomains         Json?

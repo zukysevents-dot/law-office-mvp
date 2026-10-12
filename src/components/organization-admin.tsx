@@ -59,22 +59,27 @@ export function OrganizationAdminPanel({
   currentUserId,
 }: {
   organizationId: string;
-  seatLimit: number;
+  seatLimit: number | null;
   activeMembers: number;
   members: MemberWithUser[];
   joinCodes: OrganizationJoinCode[];
   currentUserId: string | null;
 }) {
-  const freeSeats = Math.max(0, seatLimit - activeMembers);
+  const freeSeats =
+    seatLimit === null ? null : Math.max(0, seatLimit - activeMembers);
 
   return (
     <>
       <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard label="Limit účtů" value={seatLimit} icon={Building2} />
+        <StatCard
+          label="Limit účtů"
+          value={seatLimit ?? "Bez limitu"}
+          icon={Building2}
+        />
         <StatCard label="Obsazená místa" value={activeMembers} icon={Users} />
         <StatCard
           label="Volná místa"
-          value={freeSeats}
+          value={freeSeats ?? "Neomezeně"}
           icon={Users}
           tone={freeSeats === 0 ? "danger" : "mint"}
         />
