@@ -6,7 +6,7 @@ import { isLandingOnlyHost } from "@/lib/landing-mode";
 // Paths that are public on normal hosts: the auth pages and the client portal
 // (it has its own magic-link auth). Everything else the matcher lets through
 // requires a session.
-const PUBLIC_PATHS = /^\/(login|register|verify-email|portal)(\/|$)/;
+const PUBLIC_PATHS = /^\/(login|register|portal)(\/|$)/;
 
 // Front door for the whole app (Next 16 "proxy" convention, formerly
 // middleware).

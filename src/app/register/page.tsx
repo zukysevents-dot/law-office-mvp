@@ -15,6 +15,9 @@ const errorMessages: Record<string, string> = {
   name: "Zadejte prosím své jméno.",
   email: "Zadejte platnou e-mailovou adresu.",
   password: "Heslo musí mít alespoň 8 znaků.",
+  exists: "Účet s tímto e-mailem už existuje. Přihlaste se.",
+  rate: "Příliš mnoho pokusů o registraci. Zkuste to prosím později.",
+  disabled: "Registrace je momentálně vypnutá. Kontaktujte administrátora.",
 };
 
 export default async function RegisterPage({
@@ -25,7 +28,6 @@ export default async function RegisterPage({
   const params = await searchParams;
   const error = typeof params.error === "string" ? params.error : undefined;
   const message = error ? errorMessages[error] : undefined;
-  const sent = params.sent === "1";
 
   return (
     <AuthShell>
@@ -36,15 +38,7 @@ export default async function RegisterPage({
         Po registraci se připojíte ke kanceláři pomocí registračního kódu.
       </p>
 
-      {sent ? (
-        <p
-          role="status"
-          className="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-900"
-        >
-          Pokud lze registraci pro tento e-mail dokončit, poslali jsme na něj
-          potvrzovací odkaz. Zkontrolujte také spam.
-        </p>
-      ) : message ? (
+      {message ? (
         <p
           role="alert"
           className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-800"
@@ -75,7 +69,7 @@ export default async function RegisterPage({
           />
         </Field>
         <Button type="submit" className="mt-2 w-full">
-          Odeslat potvrzovací odkaz
+          Vytvořit účet
         </Button>
       </form>
 
