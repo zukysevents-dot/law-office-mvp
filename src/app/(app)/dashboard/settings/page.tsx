@@ -166,6 +166,7 @@ export default async function DashboardSettingsPage() {
             label="Resetovat dashboard"
             message="Opravdu chcete resetovat dashboard do výchozího nastavení?"
             variant="danger"
+            pendingLabel="Resetuji…"
           />
         </div>
       </Section>

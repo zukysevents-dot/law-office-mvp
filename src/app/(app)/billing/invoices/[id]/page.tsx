@@ -256,7 +256,10 @@ export default async function InvoiceDetailPage({
               </form>
               <form action={deleteDraftInvoice} className="mt-4">
                 <input type="hidden" name="invoiceId" value={invoice.id} />
-                <ConfirmSubmitButton message="Opravdu chcete tuto rozpracovanou fakturu trvale smazat?">
+                <ConfirmSubmitButton
+                  message="Opravdu chcete tuto rozpracovanou fakturu trvale smazat?"
+                  pendingLabel="Mažu…"
+                >
                   Smazat rozpracovanou fakturu
                 </ConfirmSubmitButton>
               </form>
@@ -434,7 +437,10 @@ export default async function InvoiceDetailPage({
                   <TextArea name="cancelReason" />
                 </Field>
                 <div>
-                  <ConfirmSubmitButton message="Opravdu chcete tuto vystavenou fakturu stornovat? Tuto akci nelze vzít zpět.">
+                  <ConfirmSubmitButton
+                    message="Opravdu chcete tuto vystavenou fakturu stornovat? Tuto akci nelze vzít zpět."
+                    pendingLabel="Stornuji…"
+                  >
                     Stornovat fakturu
                   </ConfirmSubmitButton>
                 </div>

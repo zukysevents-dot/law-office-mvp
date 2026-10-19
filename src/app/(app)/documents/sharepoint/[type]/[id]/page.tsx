@@ -292,6 +292,7 @@ export default async function SharepointBrowserPage({
                                       value={item.name}
                                     />
                                     <ConfirmSubmitButton
+                                      pendingLabel="Mažu…"
                                       message={`Opravdu smazat „${item.name}" ze SharePointu? Akci nelze vrátit.`}
                                     >
                                       Smazat

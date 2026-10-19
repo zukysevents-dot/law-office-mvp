@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -32,7 +32,6 @@ import {
   Settings,
   ShieldAlert,
   ShieldCheck,
-  X,
 } from "lucide-react";
 
 import { logoutAction } from "@/app/actions/auth";
@@ -41,6 +40,8 @@ import {
   IuriverseLogo,
   OrbitMark,
 } from "@/components/landing/iuriverse-logo";
+import { Dialog } from "@/components/ui/dialog";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { ModuleKey } from "@/generated/prisma/enums";
 import { cn } from "@/lib/utils";
 
@@ -175,69 +176,21 @@ export function AppSidebar({
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const menuButtonRef = useRef<HTMLButtonElement>(null);
-  const mobileNavRef = useRef<HTMLElement>(null);
 
+  // The drawer is a phone/tablet affordance: growing past the lg breakpoint
+  // (rotate, resize) closes it. Esc, ×, click outside, focus trap, focus
+  // return and scroll lock come from the shared Dialog primitive.
   useEffect(() => {
     if (!open) {
       return;
     }
-
-    const nav = mobileNavRef.current;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    const focusableSelector =
-      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
-    const focusFirstItem = window.requestAnimationFrame(() => {
-      nav?.querySelector<HTMLElement>(focusableSelector)?.focus();
-    });
-
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        setOpen(false);
-        menuButtonRef.current?.focus();
-        return;
-      }
-
-      if (event.key !== "Tab" || !nav) {
-        return;
-      }
-
-      const focusableItems = Array.from(
-        nav.querySelectorAll<HTMLElement>(focusableSelector),
-      );
-      if (focusableItems.length === 0) {
-        event.preventDefault();
-        return;
-      }
-
-      const firstItem = focusableItems[0];
-      const lastItem = focusableItems[focusableItems.length - 1];
-      if (event.shiftKey && document.activeElement === firstItem) {
-        event.preventDefault();
-        lastItem.focus();
-      } else if (!event.shiftKey && document.activeElement === lastItem) {
-        event.preventDefault();
-        firstItem.focus();
-      }
-    }
-
     function onResize() {
       if (window.innerWidth >= 1024) {
         setOpen(false);
       }
     }
-
-    document.addEventListener("keydown", onKeyDown);
     window.addEventListener("resize", onResize, { passive: true });
-    return () => {
-      window.cancelAnimationFrame(focusFirstItem);
-      document.body.style.overflow = previousOverflow;
-      document.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("resize", onResize);
-    };
+    return () => window.removeEventListener("resize", onResize);
   }, [open]);
   // Two independent gates:
   // - showAuditLog === canViewAllLegalData (ADMIN/PARTNER); same gate covers the
@@ -268,8 +221,7 @@ export function AppSidebar({
         <p className="truncate text-xs text-[#aebecb]">{userRole}</p>
       </div>
       <form action={logoutAction}>
-        <button
-          type="submit"
+        <SubmitButton
           title="Odhlásit se"
           className="flex h-11 w-full min-w-0 items-center gap-3 rounded-md px-3 text-sm font-medium text-[#dbe7ec] transition hover:bg-[#17A2A2]/15 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#17A2A2] lg:h-10 lg:w-11 lg:justify-center lg:px-0 xl:w-auto xl:justify-start xl:px-3"
         >
@@ -277,7 +229,7 @@ export function AppSidebar({
           <span className="min-w-0 truncate lg:sr-only xl:not-sr-only">
             Odhlásit se
           </span>
-        </button>
+        </SubmitButton>
       </form>
     </div>
   );
@@ -387,37 +339,52 @@ export function AppSidebar({
           <Search className="h-6 w-6" aria-hidden="true" />
         </button>
         <button
-          ref={menuButtonRef}
           type="button"
-          onClick={() => setOpen((value) => !value)}
+          onClick={() => setOpen(true)}
           aria-expanded={open}
           aria-controls="mobile-nav"
-          aria-label={open ? "Zavřít menu" : "Otevřít menu"}
+          aria-haspopup="dialog"
+          aria-label="Otevřít menu"
           className="inline-flex h-11 w-11 items-center justify-center rounded-md text-[#dbe7ec] transition hover:bg-[#17A2A2]/15 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#17A2A2]"
         >
-          {open ? (
-            <X className="h-6 w-6" aria-hidden="true" />
-          ) : (
-            <Menu className="h-6 w-6" aria-hidden="true" />
-          )}
+          <Menu className="h-6 w-6" aria-hidden="true" />
         </button>
         </div>
       </div>
       {/* Spacer so page content clears the fixed mobile bar. */}
       <div className="h-16 lg:hidden" aria-hidden="true" />
-      {/* Mobile drawer — full-height panel below the bar, only when open. */}
-      {open ? (
+      {/* Mobile drawer — a full-screen modal Dialog with its own header (logo +
+          × at the toggle's position). While open the page behind, including
+          the top bar, is inert: a stray tap can't activate anything there. */}
+      <Dialog
+        open={open}
+        onOpenChange={setOpen}
+        title="Menu"
+        size="full"
+        closeLabel="Zavřít menu"
+        panelId="mobile-nav"
+        tone="dark"
+        className="lg:hidden"
+        header={
+          <Link
+            href="/dashboard"
+            onClick={() => setOpen(false)}
+            className="flex h-12 min-w-0 items-center overflow-hidden rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--iv-teal-bright)]"
+            aria-label="IURIVERSE"
+          >
+            <IuriverseLogo tone="light" className="gap-2" markClassName="h-8 w-8" />
+          </Link>
+        }
+      >
         <nav
-          ref={mobileNavRef}
-          id="mobile-nav"
           aria-label="Hlavní navigace"
-          className="fixed inset-x-0 top-16 bottom-0 z-40 flex flex-col gap-1 overflow-y-auto bg-[var(--iv-deep)] p-3 lg:hidden"
+          className="flex min-h-full flex-col gap-1 border-t border-white/10 p-3"
         >
           {searchTrigger}
           {navContent}
           {accountFooter}
         </nav>
-      ) : null}
+      </Dialog>
 
       {/* Desktop rail — unchanged from lg up. */}
       <div className="hidden lg:fixed lg:top-0 lg:flex lg:h-screen lg:w-20 lg:flex-col xl:w-72">

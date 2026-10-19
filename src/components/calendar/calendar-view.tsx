@@ -17,6 +17,7 @@ import type { BadgeTone } from "@/components/ui/badge";
 import { fetchCalendarEvents } from "@/app/actions/calendar";
 import type { SerializedCalendarEvent } from "@/lib/calendar-events";
 import type { CalendarDefaultView } from "@/lib/calendar-view";
+import { useDismissOnOutside } from "@/lib/use-dismiss-on-outside";
 
 // Load FullCalendar client-only: it touches the DOM, so this avoids SSR/
 // hydration mismatches without a setState-in-effect mount gate.
@@ -76,6 +77,21 @@ export function CalendarView({
 } = {}) {
   const router = useRouter();
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  // FullCalendar's "+N další" popover closes itself on an outside mousedown,
+  // but the click then went through to whatever was underneath (e.g. an event
+  // → navigation). Swallow that click and close the popover; Escape closes too.
+  useDismissOnOutside({
+    active: true,
+    // FullCalendar may mount the popover outside the calendar root, so look
+    // it up document-wide (there is one calendar per page).
+    getPanels: () => Array.from(document.querySelectorAll(".fc-popover")),
+    onDismiss: () => {
+      document
+        .querySelector<HTMLElement>(".fc-popover .fc-popover-close")
+        ?.click();
+    },
+  });
 
   const loadEvents = useCallback(
     (
@@ -168,6 +184,8 @@ export function CalendarView({
           events={loadEvents}
           eventClick={handleEventClick}
           dayMaxEvents
+          closeHint="Zavřít"
+          moreLinkHint={(count: number) => `Zobrazit další události (${count})`}
           nowIndicator
           stickyHeaderDates
           expandRows
