@@ -182,7 +182,7 @@ export function CaseDeadlinesSection({
               <TextArea name="note" />
             </Field>
             <div>
-              <Button type="submit">Přidat lhůtu</Button>
+              <Button type="submit" pendingLabel="Přidávám…">Přidat lhůtu</Button>
             </div>
           </form>
         ) : null}
@@ -266,7 +266,7 @@ export function CaseDeadlinesSection({
               <TextArea name="note" />
             </Field>
             <div>
-              <Button type="submit">Přidat jednání</Button>
+              <Button type="submit" pendingLabel="Přidávám…">Přidat jednání</Button>
             </div>
           </form>
         ) : null}

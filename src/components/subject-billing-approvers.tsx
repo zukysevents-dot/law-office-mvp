@@ -7,6 +7,7 @@ import { Section } from "@/components/section";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { SubmitButton } from "@/components/ui/submit-button";
 
 type Person = { id: string; name: string };
 type Approver = { id: string; user: Person };
@@ -36,13 +37,14 @@ export function SubjectBillingApprovers({
               <input type="hidden" name="id" value={approver.id} />
               <Badge tone="mint">
                 {approver.user.name}
-                <button
-                  type="submit"
-                  className="ml-2 rounded px-1 hover:bg-black/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#072924]"
+                <SubmitButton
+                  replaceChildrenWhilePending
+                  spinnerClassName="h-3 w-3"
+                  className="ml-2 inline-flex items-center rounded px-1 hover:bg-black/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#072924]"
                   aria-label={`Odebrat schvalovatele ${approver.user.name}`}
                 >
                   ×
-                </button>
+                </SubmitButton>
               </Badge>
             </form>
           ))}
@@ -69,7 +71,7 @@ export function SubjectBillingApprovers({
               ))}
             </SelectInput>
           </Field>
-          <Button type="submit">Přidat</Button>
+          <Button type="submit" pendingLabel="Přidávám…">Přidat</Button>
         </form>
       ) : null}
     </Section>

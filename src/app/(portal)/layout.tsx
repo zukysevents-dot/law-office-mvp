@@ -1,3 +1,8 @@
+import { Suspense } from "react";
+
+import { NavigationProgress } from "@/components/navigation-progress";
+
+// No route-level loading.tsx here on purpose — see src/app/loading-boundaries.test.ts.
 export default function PortalLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
@@ -7,6 +12,9 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       >
         Přeskočit na obsah
       </a>
+      <Suspense fallback={null}>
+        <NavigationProgress />
+      </Suspense>
       {children}
     </>
   );

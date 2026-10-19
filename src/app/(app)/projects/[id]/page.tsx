@@ -370,7 +370,7 @@ export default async function ProjectDetailPage({
                   <TextArea name="note" />
                 </Field>
                 <div>
-                  <Button type="submit">Přidat vazbu</Button>
+                  <Button type="submit" pendingLabel="Přidávám…">Přidat vazbu</Button>
                 </div>
               </form>
             </Section>

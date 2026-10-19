@@ -339,7 +339,7 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
             <TextArea name="note" />
           </Field>
           <div>
-            <Button type="submit">Vytvořit případ</Button>
+            <Button type="submit" pendingLabel="Vytvářím…">Vytvořit případ</Button>
           </div>
         </form>
       </Section>

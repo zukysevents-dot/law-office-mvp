@@ -796,7 +796,7 @@ export default async function TasksPage({ searchParams }: TasksProps) {
             <TextInput name="sharepointUrl" type="url" />
           </Field>
           <div>
-            <Button type="submit">Vytvořit úkol</Button>
+            <Button type="submit" pendingLabel="Vytvářím…">Vytvořit úkol</Button>
           </div>
         </form>
       </Section>

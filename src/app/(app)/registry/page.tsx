@@ -133,7 +133,7 @@ export default async function RegistryPage() {
                 ))}
               </SelectInput>
             </Field>
-            <Button type="submit">Přidat sledování</Button>
+            <Button type="submit" pendingLabel="Přidávám…">Přidat sledování</Button>
           </form>
         ) : null}
         {data.watched.length > 0 ? (

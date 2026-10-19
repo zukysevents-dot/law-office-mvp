@@ -227,7 +227,7 @@ export default async function NewInvoicePage({ searchParams }: NewInvoiceProps) 
                 </table>
               </div>
               <div>
-                <Button type="submit">Vytvořit rozpracovanou fakturu</Button>
+                <Button type="submit" pendingLabel="Vytvářím…">Vytvořit rozpracovanou fakturu</Button>
               </div>
             </form>
           ) : (

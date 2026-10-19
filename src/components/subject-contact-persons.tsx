@@ -137,7 +137,7 @@ export function SubjectContactPersons({
             <TextArea name="note" />
           </Field>
           <div>
-            <Button type="submit">Přidat kontaktní osobu</Button>
+            <Button type="submit" pendingLabel="Přidávám…">Přidat kontaktní osobu</Button>
           </div>
         </form>
       ) : null}

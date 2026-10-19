@@ -241,7 +241,7 @@ export default async function DocumentDetailPage({
                     <TextInput name="note" />
                   </Field>
                   <div>
-                    <Button type="submit">Přidat verzi</Button>
+                    <Button type="submit" pendingLabel="Přidávám…">Přidat verzi</Button>
                   </div>
                 </form>
               </Section>
@@ -270,7 +270,7 @@ export default async function DocumentDetailPage({
                     />
                   </Field>
                   <div>
-                    <Button type="submit">Uložit metadata</Button>
+                    <Button type="submit" pendingLabel="Ukládám…">Uložit metadata</Button>
                   </div>
                 </form>
               </Section>

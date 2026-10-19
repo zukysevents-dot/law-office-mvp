@@ -439,6 +439,32 @@ html:has(.landing-root) {
 }
 
 
+/* --- Navigation progress bar (src/components/navigation-progress.tsx) ------ */
+@keyframes iv-nav-progress {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(260%);
+  }
+}
+
+.iv-nav-progress-bar {
+  animation: iv-nav-progress 1.1s ease-in-out infinite;
+}
+
+/* --- Modal dialogs (src/components/ui/dialog.tsx) -------------------------- */
+/* Scroll lock while any modal <dialog> is open; the page behind is inert. */
+html:has(dialog[open]:modal) {
+  overflow: hidden;
+  scrollbar-gutter: stable;
+}
+
+dialog.iv-dialog::backdrop {
+  background: rgb(14 24 34 / 0.45);
+}
+
+
 @media (prefers-reduced-motion: reduce) {
   html:has(.landing-root) {
     scroll-behavior: auto;
@@ -455,6 +481,11 @@ html:has(.landing-root) {
   /* IURIVERSE decorative motion off; keep elements in their resting state. */
   .iv-orbit-spin,
   .iv-glow-pulse {
+    animation: none !important;
+  }
+  .iv-nav-progress-bar {
+    width: 100% !important;
+    transform: none !important;
     animation: none !important;
   }
   .app-shell .animate-spin,

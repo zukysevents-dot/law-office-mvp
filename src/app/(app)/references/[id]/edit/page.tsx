@@ -212,7 +212,7 @@ export default async function ReferenceEditPage({ params }: ReferenceEditProps) 
               <TextArea name="description" defaultValue={reference.description ?? ""} />
             </Field>
             <div className="flex flex-wrap gap-2">
-              <Button type="submit">Uložit referenci</Button>
+              <Button type="submit" pendingLabel="Ukládám…">Uložit referenci</Button>
               <ButtonLink href="/references" variant="ghost">
                 Zrušit
               </ButtonLink>

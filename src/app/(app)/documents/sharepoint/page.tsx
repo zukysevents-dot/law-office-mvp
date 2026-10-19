@@ -4,6 +4,7 @@ import Link from "next/link";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
 import { ButtonLink } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ModuleKey } from "@/generated/prisma/enums";
@@ -165,12 +166,9 @@ export default async function SharepointIndexPage({ searchParams }: PageProps) {
           <ButtonLink href="/documents/sharepoint" variant="ghost">
             Zrušit filtr
           </ButtonLink>
-          <button
-            type="submit"
-            className="h-10 rounded-md bg-emerald-950 px-4 text-sm font-medium text-white"
-          >
+          <SubmitButton className="inline-flex h-10 items-center gap-2 rounded-md bg-emerald-950 px-4 text-sm font-medium text-white">
             Hledat
-          </button>
+          </SubmitButton>
         </form>
       </Section>
 

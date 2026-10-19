@@ -242,7 +242,7 @@ export default async function DataMessageDetailPage({
                 </SelectInput>
               </Field>
               <div>
-                <Button type="submit">Uložit přiřazení</Button>
+                <Button type="submit" pendingLabel="Ukládám…">Uložit přiřazení</Button>
               </div>
             </form>
           </Section>
@@ -292,7 +292,7 @@ export default async function DataMessageDetailPage({
                     <TextArea name="note" />
                   </Field>
                   <div>
-                    <Button type="submit">Založit lhůtu</Button>
+                    <Button type="submit" pendingLabel="Vytvářím…">Založit lhůtu</Button>
                   </div>
                 </form>
               ) : (

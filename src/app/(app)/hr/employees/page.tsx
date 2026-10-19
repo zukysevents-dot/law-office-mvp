@@ -255,7 +255,7 @@ export default async function HrEmployeesPage() {
                 </Field>
               </div>
               <div>
-                <Button type="submit">Přidat zaměstnance</Button>
+                <Button type="submit" pendingLabel="Přidávám…">Přidat zaměstnance</Button>
               </div>
             </form>
           </Section>

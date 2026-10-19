@@ -4,6 +4,7 @@ import { Field, SelectInput } from "@/components/form-field";
 import { Section } from "@/components/section";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { SubmitButton } from "@/components/ui/submit-button";
 
 type Assignee = { id: string; user: { id: string; name: string } };
 type Candidate = { id: string; name: string };
@@ -55,13 +56,13 @@ export function AssigneeSection({
               {canEdit ? (
                 <form action={removeAction}>
                   <input type="hidden" name="id" value={assignee.id} />
-                  <button
-                    type="submit"
+                  <SubmitButton
+                    replaceChildrenWhilePending
                     aria-label={`Odebrat řešitele ${assignee.user.name}`}
                     className="inline-flex h-8 w-8 items-center justify-center rounded-md text-stone-600 transition-colors hover:bg-red-50 hover:text-red-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0e1822]"
                   >
                     <X className="h-4 w-4" aria-hidden="true" />
-                  </button>
+                  </SubmitButton>
                 </form>
               ) : null}
             </li>

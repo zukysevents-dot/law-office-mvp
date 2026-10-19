@@ -291,7 +291,7 @@ export default async function WorkLogEditPage({ params }: WorkLogEditProps) {
               <TextArea name="description" defaultValue={workLog.description ?? ""} />
             </Field>
             <div className="flex flex-wrap gap-2">
-              <Button type="submit">Uložit výkaz</Button>
+              <Button type="submit" pendingLabel="Ukládám…">Uložit výkaz</Button>
               <ButtonLink href="/work-logs" variant="ghost">
                 Zrušit
               </ButtonLink>

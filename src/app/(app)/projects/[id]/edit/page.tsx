@@ -162,7 +162,7 @@ export default async function ProjectEditPage({ params }: ProjectEditProps) {
               <TextArea name="note" defaultValue={project.note ?? ""} />
             </Field>
             <div className="flex flex-wrap gap-2">
-              <Button type="submit">Uložit projekt</Button>
+              <Button type="submit" pendingLabel="Ukládám…">Uložit projekt</Button>
               <ButtonLink href={`/projects/${project.id}`} variant="ghost">
                 Zrušit
               </ButtonLink>

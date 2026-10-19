@@ -1,8 +1,11 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 
 import { logoutAction } from "@/app/actions/auth";
 import { IuriverseLogo } from "@/components/landing/iuriverse-logo";
+import { NavigationProgress } from "@/components/navigation-progress";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { getAuthUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +34,9 @@ export default async function AdminLayout({
       >
         Přeskočit na obsah
       </a>
+      <Suspense fallback={null}>
+        <NavigationProgress />
+      </Suspense>
       <header className="flex items-center justify-between gap-3 border-b border-[#16242f] bg-[#0e1822] px-4 py-3 sm:px-6">
         <Link href="/admin" className="flex items-center gap-2 text-white">
           <IuriverseLogo
@@ -47,12 +53,12 @@ export default async function AdminLayout({
             {user.name}
           </span>
           <form action={logoutAction}>
-            <button
-              type="submit"
-              className="inline-flex min-h-10 items-center rounded-md px-3 text-sm font-medium text-[#dbe7ec] transition hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+            <SubmitButton
+              pendingLabel="Odhlašuji…"
+              className="inline-flex min-h-10 items-center gap-2 rounded-md px-3 text-sm font-medium text-[#dbe7ec] transition hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
             >
               Odhlásit se
-            </button>
+            </SubmitButton>
           </form>
         </div>
       </header>

@@ -248,7 +248,7 @@ export default async function DeadlinesPage() {
               <TextArea name="note" />
             </Field>
             <div>
-              <Button type="submit">Vytvořit lhůtu</Button>
+              <Button type="submit" pendingLabel="Vytvářím…">Vytvořit lhůtu</Button>
             </div>
           </form>
         </Section>

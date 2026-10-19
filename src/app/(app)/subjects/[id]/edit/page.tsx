@@ -151,7 +151,7 @@ export default async function SubjectEditPage({
               <TextArea name="feeNote" defaultValue={subject.feeNote ?? ""} />
             </Field>
             <div className="flex flex-wrap gap-2">
-              <Button type="submit">Uložit subjekt</Button>
+              <Button type="submit" pendingLabel="Ukládám…">Uložit subjekt</Button>
               <ButtonLink href={`/subjects/${subject.id}`} variant="ghost">
                 Zrušit
               </ButtonLink>

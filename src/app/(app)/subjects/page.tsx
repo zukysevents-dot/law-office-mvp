@@ -322,7 +322,7 @@ export default async function SubjectsPage({ searchParams }: SubjectsPageProps) 
               <TextArea name="feeNote" />
             </Field>
             <div>
-              <Button type="submit">Vytvořit subjekt</Button>
+              <Button type="submit" pendingLabel="Vytvářím…">Vytvořit subjekt</Button>
             </div>
           </form>
         </Section>
