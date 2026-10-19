@@ -78,6 +78,14 @@ Pomocné funkce jsou v `tests/e2e/support/helpers.ts`.
   `createWorkLog`, sloupce tabulek, `createSubject` …) se teď projeví hned a
   testy už žádný reload nepotřebují (`responsiveness.spec.ts`). Potřebuje-li
   stránka streamování, použijte lokální `<Suspense>`, nikdy `loading.tsx`.
+- **Progress bar a transition routeru.** `onRouterTransitionStart`
+  (`src/instrumentation-client.ts`) běží uvnitř `startTransition` routeru;
+  běžný `setState` odtud by se vykreslil až spolu s novou stránkou, tedy nikdy.
+  `NavigationProgress` proto drží stav v externím store
+  (`useSyncExternalStore`), jehož změny React vykreslí hned. Testy se
+  zpomaleným RSC (`responsiveness.spec.ts`) otevírají stránku s
+  `waitUntil: "networkidle"` – klik před hydratací by byl tvrdý přechod bez
+  klientského routeru.
 - **Registrace se v testech nedokončuje** — vyžadovala by SMTP. Ověřuje se jen
   dostupnost a přístupnost formuláře.
 - **Bez pokrytí:** ARES/ISIR lookup, ISDS (datové zprávy), SharePoint/Graph,

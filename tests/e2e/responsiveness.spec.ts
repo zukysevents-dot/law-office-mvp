@@ -102,3 +102,73 @@ test("navigace mezi moduly doběhne bez čekání na obnovení", async ({ page }
     expect(Date.now() - started).toBeLessThan(2_000);
   }
 });
+
+// Audit UAT r1: při pomalém spojení musí být klik vidět HNED – tenký progress
+// bar nahoře se ukáže u každé navigace delší než ~150 ms, i u programové
+// navigace (klik na řádek tabulky, výsledek rychlého hledání). Dřív se stav
+// baru nastavoval uvnitř navigační transition, takže se vykreslil až s novou
+// stránkou – tedy nikdy.
+test.describe("progress bar při pomalé navigaci", () => {
+  const RSC_DELAY_MS = 1_500;
+
+  // Stránky se otevírají s waitUntil "networkidle": klik před hydratací by
+  // byl obyčejný (tvrdý) přechod bez klientského routeru, a tedy bez baru.
+  async function slowDownRsc(page: Page) {
+    await page.route("**/*", async (route) => {
+      const request = route.request();
+      if (request.method() === "GET" && request.headers()["rsc"] === "1") {
+        await new Promise((resolve) => setTimeout(resolve, RSC_DELAY_MS));
+      }
+      await route.continue();
+    });
+  }
+
+  function progressBar(page: Page) {
+    return page.getByRole("progressbar", { name: "Načítání stránky" });
+  }
+
+  test("odkaz v menu", async ({ page }) => {
+    await page.goto("/dashboard", { waitUntil: "networkidle" });
+    await slowDownRsc(page);
+    await page
+      .getByRole("navigation", { name: "Hlavní navigace" })
+      .getByRole("link", { name: "Úkoly", exact: true })
+      .click();
+    await expect(progressBar(page)).toBeVisible({ timeout: 1_000 });
+    await expect(page.getByRole("heading", { name: "Úkoly", level: 1 })).toBeVisible();
+    await expect(progressBar(page)).toHaveCount(0);
+  });
+
+  test("klik na řádek tabulky", async ({ page }) => {
+    await page.goto("/subjects", { waitUntil: "networkidle" });
+    const row = page.locator("tbody tr[data-href]").first();
+    await expect(row).toBeVisible();
+    await slowDownRsc(page);
+    // Poslední buňka není odkaz – navigaci spouští RowClickNav (router.push).
+    await row.locator("td").last().click();
+    await expect(progressBar(page)).toBeVisible({ timeout: 1_000 });
+    await expect(page).toHaveURL(/\/subjects\/[a-z0-9]+$/);
+    await expect(progressBar(page)).toHaveCount(0);
+  });
+
+  test("výsledek rychlého hledání", async ({ page }) => {
+    await page.goto("/dashboard", { waitUntil: "networkidle" });
+    const dialog = page.getByRole("dialog", { name: "Rychlé hledání" });
+    const trigger = page
+      .getByRole("navigation", { name: "Hlavní navigace" })
+      .getByRole("button", { name: "Hledat v celé aplikaci" });
+    await expect(async () => {
+      await trigger.click();
+      await expect(dialog).toBeVisible({ timeout: 1_000 });
+    }).toPass({ timeout: 15_000 });
+    await dialog.getByRole("searchbox").fill("XYZ");
+    const hit = dialog.getByRole("button", { name: /XYZ s\.r\.o\./ }).first();
+    await expect(hit).toBeVisible();
+    await slowDownRsc(page);
+    await hit.click();
+    await expect(dialog).toBeHidden();
+    await expect(progressBar(page)).toBeVisible({ timeout: 1_000 });
+    await expect(page).toHaveURL(/\/subjects\/[a-z0-9]+$/);
+    await expect(progressBar(page)).toHaveCount(0);
+  });
+});
