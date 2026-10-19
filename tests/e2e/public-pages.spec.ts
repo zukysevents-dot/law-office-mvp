@@ -14,7 +14,8 @@ test.describe("veřejné stránky", () => {
 
     await expect(
       page.getByRole("heading", {
-        name: "Celá advokátní kancelář na jedné oběžné dráze.",
+        // Copy z redakčního průchodu landingu (commit 220d5bb, hero.tsx).
+        name: /Celá advokátní kancelář\s+v jednom systému\./,
         level: 1,
       }),
     ).toBeVisible();
@@ -85,15 +86,16 @@ test.describe("veřejné stránky", () => {
     await expect(page).toHaveURL(/\/login$/);
   });
 
-  test("neexistující veřejná cesta zobrazí použitelnou 404", async ({ page }) => {
-    const response = await page.goto("/tato-stranka-neexistuje");
+  // Záměrné chování (src/proxy.ts): mimo veřejné cesty je všechno za
+  // přihlášením, takže anonymní návštěvník neexistující cestu nerozliší od
+  // existující – dostane přesměrování na přihlášení. Použitelnou 404 vidí
+  // přihlášený uživatel (navigation.spec.ts).
+  test("neznámá cesta bez přihlášení přesměruje na přihlášení", async ({ page }) => {
+    await page.goto("/tato-stranka-neexistuje");
 
-    expect(response?.status()).toBe(404);
+    await expect(page).toHaveURL(/\/login\?from=%2Ftato-stranka-neexistuje$/);
     await expect(
-      page.getByRole("heading", { name: "Tuto stránku jsme nenašli", level: 1 }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("link", { name: "Zpět na dashboard" }),
+      page.getByRole("heading", { name: "Přihlášení", level: 1 }),
     ).toBeVisible();
   });
 

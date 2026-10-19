@@ -49,7 +49,7 @@ export const tableViewConfigs = {
       { id: "hours", label: "Hodiny", defaultVisible: true },
       { id: "hourlyRate", label: "Sazba", defaultVisible: true },
       { id: "amount", label: "Částka", defaultVisible: true },
-      { id: "description", label: "Popis", defaultVisible: false },
+      { id: "description", label: "Popis", defaultVisible: true },
       { id: "legalArea", label: "Právní oblast", defaultVisible: true },
       { id: "billingStatus", label: "Billing status", defaultVisible: true },
       { id: "approvalStatus", label: "Approval status", defaultVisible: true },

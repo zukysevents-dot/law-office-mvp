@@ -693,7 +693,9 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
                       <td>{formatMoney(log.amountCzk as never)}</td>
                     ) : null}
                     {visibleColumnSet.has("description") ? (
-                      <td className="max-w-md">{log.description ?? "—"}</td>
+                      <td className="min-w-48 max-w-md whitespace-pre-line break-words">
+                        {log.description ?? "—"}
+                      </td>
                     ) : null}
                     {visibleColumnSet.has("legalArea") ? (
                       <td>
@@ -828,7 +830,7 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
             <TextArea name="description" />
           </Field>
           <div className="flex flex-wrap gap-2">
-            <Button type="submit">Vytvořit výkaz</Button>
+            <Button type="submit" pendingLabel="Vytvářím…">Vytvořit výkaz</Button>
           </div>
         </form>
       </WorkLogCreateDialog>
