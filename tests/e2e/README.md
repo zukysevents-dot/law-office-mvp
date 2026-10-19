@@ -51,7 +51,7 @@ s heslem `demo1234` (viz `SEED_USER_PASSWORD`).
 
 | Soubor | Co ověřuje |
 | --- | --- |
-| `public-pages.spec.ts` | landing, login, registrace, 404, mobilní viewport |
+| `public-pages.spec.ts` | landing, login, registrace, neznámá cesta → přihlášení, mobilní viewport |
 | `auth.spec.ts` | redirecty na `/login`, návrat na původní stránku, chybné přihlášení, odhlášení, ochrana `from` |
 | `navigation.spec.ts` | shell, levé menu, `aria-current`, skip-link, ⌘K paleta, mobilní menu |
 | `modules.spec.ts` | každý modul: URL + `h1` + klíčová sekce; detaily nad seedovanými ID |
@@ -59,21 +59,30 @@ s heslem `demo1234` (viz `SEED_USER_PASSWORD`).
 | `subjects-flow.spec.ts` | hledání, filtry, vytvoření, validace, diakritika, duplicitní IČO, 404 |
 | `tasks-and-worklogs.spec.ts` | úkoly, změna statusu, komentáře, výkazy práce, reporty |
 | `responsive-and-accessibility.spec.ts` | 3 viewporty, jediný `h1`, popisky, klávesnice, hlavičky tabulek, screenshoty |
+| `overlays.spec.ts` | pop-upy (paleta, výkaz, sloupce, potvrzení, mobilní menu, landing): ×, Esc, klik mimo bez prokliknutí |
+| `responsiveness.spec.ts` | akce se projeví bez reloadu, pending stav tlačítek, rychlá navigace |
+| `users-invitations.spec.ts` | založení uživatele, pozvánka (SMTP vypnuté), znovuodeslání, `/set-password` |
 
 Pomocné funkce jsou v `tests/e2e/support/helpers.ts`.
 
 ## Známá omezení
 
-- **Server action bez redirectu neobnoví stránku.** V Next 16.2.9 se u
-  `force-dynamic` stránek po server action, která volá jen `revalidatePath()`,
-  klientský router nepřekreslí — uživatel změnu uvidí až po ručním obnovení.
-  `refresh()` z `next/cache` pomáhá jen na statických cestách (proto je použitý
-  v `updateTableViewPreference`); na dynamické cestě `/tasks/[id]` nefunguje a
-  `redirect()` na stejnou URL je no-op. Týká se to `updateTaskStatus`,
-  `addTaskComment` a `createWorkLog`. Testy proto po odeslání explicitně
-  načtou stránku znovu a ověří uložený a vykreslený výsledek.
+- **Žádný route-level `loading.tsx`.** V Next 16.2.9 způsoboval
+  `src/app/(app)/loading.tsx` (a stejné soubory v `(portal)` a `admin`), že se
+  po server action s `revalidatePath()` / `redirect()` i po `router.refresh()`
+  stránka s bohatším obsahem nepřekreslila – tlačítko zůstalo „busy“ a změna
+  byla vidět až po ručním obnovení; každá navigace navíc čekala ~700 ms na
+  skeleton. Boundary jsou odstraněné (hlídá to `src/app/loading-boundaries.test.ts`),
+  zpětnou vazbu dává horní progress bar (`NavigationProgress`) a pending stav
+  odesílacích tlačítek. Všechny akce (`updateTaskStatus`, `addTaskComment`,
+  `createWorkLog`, sloupce tabulek, `createSubject` …) se teď projeví hned a
+  testy už žádný reload nepotřebují (`responsiveness.spec.ts`). Potřebuje-li
+  stránka streamování, použijte lokální `<Suspense>`, nikdy `loading.tsx`.
 - **Registrace se v testech nedokončuje** — vyžadovala by SMTP. Ověřuje se jen
   dostupnost a přístupnost formuláře.
 - **Bez pokrytí:** ARES/ISIR lookup, ISDS (datové zprávy), SharePoint/Graph,
-  odesílání e-mailů a notifikační cron, klientský portál (magic link přes
-  e-mail), platební/Pohoda exporty. Všechno vyžaduje externí integraci.
+  samotné doručení e-mailů přes SMTP a notifikační cron, klientský portál
+  (magic link přes e-mail), platební/Pohoda exporty. Všechno vyžaduje externí
+  integraci. Pozvánky nových uživatelů jsou pokryté až po odeslání: hláška
+  adminovi při vypnutém SMTP, „Znovu poslat pozvánku“ a celý průchod odkazem
+  `/set-password` (`users-invitations.spec.ts`, token se vkládá přímo do DB).

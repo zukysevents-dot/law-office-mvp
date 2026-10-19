@@ -11,7 +11,11 @@ import {
   reserveLoginAttempt,
 } from "@/lib/login-rate-limit";
 import { hasAuthHardeningSchema } from "@/lib/auth-hardening-schema";
-import { hashPassword, verifyPassword } from "@/lib/password";
+import {
+  hashPassword,
+  MIN_PASSWORD_LENGTH,
+  verifyPassword,
+} from "@/lib/password";
 import { getRequestIp } from "@/lib/portal/portal-rate-limit";
 import { getPrisma } from "@/lib/prisma";
 import { reserveRegistrationAttempt } from "@/lib/registration-rate-limit";
@@ -108,7 +112,7 @@ export async function registerAction(formData: FormData) {
   if (!email || !email.includes("@")) {
     redirect("/register?error=email");
   }
-  if (password.length < 8) {
+  if (password.length < MIN_PASSWORD_LENGTH) {
     redirect("/register?error=password");
   }
 

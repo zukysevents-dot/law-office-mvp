@@ -2,15 +2,16 @@ import Link from "next/link";
 
 import {
   changeOwnPassword,
-  createUser,
   setUserCapabilities,
   setUserPassword,
   updateCalendarPreference,
   updateNotificationPreference,
   updateUserHoursPlan,
 } from "@/app/actions/users";
+import { CreateUserForm } from "@/components/create-user-form";
 import { Field, SelectInput, TextInput } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
+import { ResendInvitationButton } from "@/components/resend-invitation-button";
 import { Section } from "@/components/section";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,12 +20,15 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Capability, UserRole } from "@/generated/prisma/enums";
 import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatDateTime } from "@/lib/format";
+import {
+  mailConfigStatus,
+  mailDisabledReasonLabel,
+} from "@/lib/mail/mailer";
 import {
   capabilityDescriptions,
   capabilityLabels,
   capabilityOptions,
-  options,
   userRoleLabels,
 } from "@/lib/labels";
 import { getNotificationPreference } from "@/lib/notifications/notification-service";
@@ -45,8 +49,15 @@ type NotificationPreferenceData = Awaited<
   ReturnType<typeof getNotificationPreference>
 >;
 
+type InvitationSummary = {
+  createdAt: Date;
+  sentAt: Date | null;
+  usedAt: Date | null;
+} | null;
+
 type SettingsData = {
   currentUserName: string;
+  currentUserId: string;
   notificationPreference: NotificationPreferenceData | null;
   users: Array<{
     id: string;
@@ -61,6 +72,7 @@ type SettingsData = {
       monthlyHoursTarget: number | null;
     } | null;
     capabilities: Capability[];
+    invitation: InvitationSummary;
   }>;
   auditLogCount: number;
   allowed: boolean;
@@ -130,10 +142,24 @@ function PreferenceCheckbox({
   );
 }
 
+function invitationLabel(invitation: InvitationSummary) {
+  if (!invitation) {
+    return "—";
+  }
+  if (invitation.usedAt) {
+    return `Heslo nastaveno ${formatDate(invitation.usedAt)}`;
+  }
+  if (invitation.sentAt) {
+    return `Odesláno ${formatDateTime(invitation.sentAt)}`;
+  }
+  return "Neodesláno";
+}
+
 export default async function SettingsPage() {
   const result = await safeQuery<SettingsData>(
     {
       currentUserName: "",
+      currentUserId: "",
       notificationPreference: null,
       users: [],
       auditLogCount: 0,
@@ -169,6 +195,12 @@ export default async function SettingsPage() {
                   },
                 },
                 capabilityGrants: { select: { capability: true } },
+                // Latest welcome invitation (column "Pozvánka").
+                invitationTokens: {
+                  orderBy: { createdAt: "desc" },
+                  take: 1,
+                  select: { createdAt: true, sentAt: true, usedAt: true },
+                },
               },
             })
           : Promise.resolve([]),
@@ -189,9 +221,11 @@ export default async function SettingsPage() {
 
       return {
         currentUserName: currentUser.name,
+        currentUserId: currentUser.id,
         notificationPreference,
-        users: users.map((user) => ({
+        users: users.map(({ invitationTokens, ...user }) => ({
           ...user,
+          invitation: invitationTokens[0] ?? null,
           hoursPlan: user.hoursPlan
             ? {
                 weeklyHoursTarget:
@@ -215,6 +249,7 @@ export default async function SettingsPage() {
     },
   );
   const preference = result.data.notificationPreference;
+  const mailStatus = mailConfigStatus();
 
   return (
     <>
@@ -244,7 +279,7 @@ export default async function SettingsPage() {
                 ))}
               </SelectInput>
             </Field>
-            <Button type="submit">Uložit kalendář</Button>
+            <Button type="submit" pendingLabel="Ukládám…">Uložit kalendář</Button>
           </form>
         </Section>
       ) : null}
@@ -333,7 +368,7 @@ export default async function SettingsPage() {
               </Field>
             </div>
             <div>
-              <Button type="submit">Uložit notifikace</Button>
+              <Button type="submit" pendingLabel="Ukládám…">Uložit notifikace</Button>
             </div>
           </form>
         </Section>
@@ -423,6 +458,21 @@ export default async function SettingsPage() {
                   Nastavit připojení →
                 </Link>
               </div>
+              <div className="rounded-lg border border-stone-200 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="font-semibold text-stone-950">E-mail (SMTP)</h3>
+                  <Badge tone={mailStatus.enabled ? "green" : "amber"}>
+                    {mailStatus.enabled
+                      ? "Odesílání zapnuto"
+                      : "Nenakonfigurováno"}
+                  </Badge>
+                </div>
+                <p className="mt-2 text-sm text-stone-600">
+                  {mailStatus.enabled
+                    ? "Pozvánky nových uživatelů a notifikace se odesílají e-mailem."
+                    : `Bez SMTP aplikace neodešle pozvánky ani notifikace. Důvod: ${mailDisabledReasonLabel(mailStatus.reason)}.`}
+                </p>
+              </div>
             </div>
           </Section>
           <div className="grid gap-4 lg:grid-cols-[1fr_24rem]">
@@ -438,6 +488,10 @@ export default async function SettingsPage() {
                         <th>Microsoft ID</th>
                         <th>Stav</th>
                         <th>Vytvořeno</th>
+                        <th>Pozvánka</th>
+                        <th>
+                          <span className="sr-only">Akce</span>
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
@@ -457,6 +511,24 @@ export default async function SettingsPage() {
                             </Badge>
                           </td>
                           <td>{formatDate(user.createdAt)}</td>
+                          <td className="text-sm">
+                            {invitationLabel(user.invitation)}
+                          </td>
+                          <td>
+                            <ResendInvitationButton
+                              userId={user.id}
+                              userName={user.name}
+                              disabled={
+                                !user.active ||
+                                user.id === result.data.currentUserId
+                              }
+                              disabledReason={
+                                user.id === result.data.currentUserId
+                                  ? "Sám sobě pozvánku neposíláte."
+                                  : "Neaktivnímu uživateli se pozvánka neposílá."
+                              }
+                            />
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -467,45 +539,7 @@ export default async function SettingsPage() {
               )}
             </Section>
             <Section title="Nový uživatel">
-              <form action={createUser} className="grid gap-4">
-                <Field label="Jméno">
-                  <TextInput name="name" required />
-                </Field>
-                <Field label="E-mail">
-                  <TextInput name="email" type="email" required />
-                </Field>
-                <Field label="Počáteční heslo (min. 8 znaků)">
-                  <TextInput
-                    name="password"
-                    type="password"
-                    autoComplete="new-password"
-                    minLength={8}
-                    required
-                  />
-                </Field>
-                <Field label="Role">
-                  <SelectInput name="role" defaultValue="LAWYER">
-                    {options.userRoles.map((role) => (
-                      <option key={role} value={role}>
-                        {userRoleLabels[role]}
-                      </option>
-                    ))}
-                  </SelectInput>
-                </Field>
-                <Field label="Microsoft ID">
-                  <TextInput name="microsoftId" />
-                </Field>
-                <label className="flex items-center gap-2 text-sm font-medium text-stone-700">
-                  <input
-                    type="checkbox"
-                    name="active"
-                    defaultChecked
-                    className="h-4 w-4 rounded border-stone-300 text-emerald-950"
-                  />
-                  Aktivní
-                </label>
-                <Button type="submit">Vytvořit uživatele</Button>
-              </form>
+              <CreateUserForm />
             </Section>
           </div>
           {result.data.users.length > 0 ? (

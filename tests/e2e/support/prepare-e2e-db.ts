@@ -127,6 +127,22 @@ async function main() {
       await prisma.subject.deleteMany({ where: { id: { in: staleSubjectIds } } });
     }
 
+    // Users created by users-invitations.spec.ts (e-mail `e2e-…`). Their
+    // memberships, invitation tokens and personal prefs cascade; audit rows
+    // about them are dropped explicitly (rows they authored are SetNull).
+    const staleUserIds = (
+      await prisma.user.findMany({
+        where: { email: { startsWith: E2E_PREFIX } },
+        select: { id: true },
+      })
+    ).map((user) => user.id);
+    if (staleUserIds.length > 0) {
+      await prisma.auditLog.deleteMany({
+        where: { entityType: "User", entityId: { in: staleUserIds } },
+      });
+      await prisma.user.deleteMany({ where: { id: { in: staleUserIds } } });
+    }
+
     // Login throttling is per-IP (30 attempts / 15 min) and every run signs six
     // users in. Start from a clean ledger so a rerun is never rate-limited.
     await prisma.loginAttempt.deleteMany({});

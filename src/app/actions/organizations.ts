@@ -33,6 +33,7 @@ import {
   assertPlatformAdmin,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { notifyOrgAdminsAboutNewMember } from "@/lib/user-invitations";
 
 const TRIAL_DEFAULT_DAYS = 30;
 
@@ -89,8 +90,9 @@ export async function joinOrganization(formData: FormData) {
     redirect("/dashboard");
   }
 
+  let joined: { organizationId: string; joinCodeLabel: string | null };
   try {
-    await prisma.$transaction(async (tx) => {
+    joined = await prisma.$transaction(async (tx) => {
       const code = await tx.organizationJoinCode.findUnique({ where: { codeHash } });
       const now = new Date();
       const codeValid =
@@ -172,6 +174,8 @@ export async function joinOrganization(formData: FormData) {
           newValue: { organizationId: org.id, role: UserRole.LAWYER },
         },
       });
+
+      return { organizationId: org.id, joinCodeLabel: code.label };
     });
   } catch (error) {
     if (error instanceof JoinError) {
@@ -179,6 +183,14 @@ export async function joinOrganization(formData: FormData) {
     }
     throw error;
   }
+
+  // Tell the office's admins/partners right away (best effort, never throws,
+  // never blocks the join; SMTP off → only an audit row).
+  await notifyOrgAdminsAboutNewMember({
+    organizationId: joined.organizationId,
+    userId: user.id,
+    joinCodeLabel: joined.joinCodeLabel,
+  });
 
   redirect("/dashboard");
 }

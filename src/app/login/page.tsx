@@ -19,6 +19,7 @@ export default async function LoginPage({
   const params = await searchParams;
   const error = typeof params.error === "string" ? params.error : undefined;
   const from = typeof params.from === "string" ? params.from : "/dashboard";
+  const passwordSet = params.passwordSet === "1";
 
   return (
     <AuthShell>
@@ -28,6 +29,15 @@ export default async function LoginPage({
       <p className="mb-6 mt-1 text-center text-sm text-[var(--iv-muted)]">
         Pracovní prostředí pro vaši advokátní kancelář
       </p>
+
+      {passwordSet && !error ? (
+        <p
+          role="status"
+          className="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-900"
+        >
+          Heslo je nastavené. Přihlaste se novým heslem.
+        </p>
+      ) : null}
 
       {error ? (
         <p
@@ -58,7 +68,7 @@ export default async function LoginPage({
             required
           />
         </Field>
-        <Button type="submit" className="mt-2 w-full">
+        <Button type="submit" className="mt-2 w-full" pendingLabel="Přihlašuji…">
           Přihlásit se
         </Button>
       </form>
