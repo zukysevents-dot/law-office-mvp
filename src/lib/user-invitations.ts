@@ -14,7 +14,7 @@ import {
   setPasswordUrl,
 } from "@/lib/invitation-token";
 import { userRoleLabels } from "@/lib/labels";
-import { appUrl, sendMail } from "@/lib/mail/mailer";
+import { appUrl, mailConfigStatus, sendMail } from "@/lib/mail/mailer";
 import {
   buildMemberJoinedEmail,
   buildUserInvitationEmail,
@@ -29,7 +29,8 @@ type Actor = { id: string; name: string };
 /**
  * Issues a fresh one-time "set your own password" link for a member of
  * `organizationId` and e-mails the welcome invitation right away (not via the
- * hourly notification cron). Older unused links of that user are revoked.
+ * hourly notification cron). Older unused links of that user are revoked
+ * only once the new one was actually sent; an undelivered link is revoked.
  * Never throws for mail problems — the result says SENT / DISABLED (SMTP not
  * configured) / FAILED, so the admin can be told to hand over credentials.
  * Every outcome is audit-logged.
@@ -83,21 +84,18 @@ export async function issueAndSendUserInvitation({
   const now = new Date();
   const expiresAt = invitationExpiry(now);
 
-  const tokenRow = await prisma.$transaction(async (tx) => {
-    await tx.userInvitationToken.updateMany({
-      where: { userId, usedAt: null, revokedAt: null },
-      data: { revokedAt: now },
-    });
-    return tx.userInvitationToken.create({
-      data: {
-        userId,
-        organizationId,
-        createdById: actor.id,
-        tokenHash: hashInvitationToken(token),
-        expiresAt,
-      },
-      select: { id: true },
-    });
+  // Older links stay valid until the new one has actually been delivered —
+  // a resend while SMTP is off or failing must not kill a link the user
+  // already has in the inbox.
+  const tokenRow = await prisma.userInvitationToken.create({
+    data: {
+      userId,
+      organizationId,
+      createdById: actor.id,
+      tokenHash: hashInvitationToken(token),
+      expiresAt,
+    },
+    select: { id: true },
   });
 
   const content = buildUserInvitationEmail({
@@ -112,10 +110,22 @@ export async function issueAndSendUserInvitation({
   const sent = await sendMail({ to: user.email, ...content });
 
   if (sent.status === "SENT") {
-    await prisma.userInvitationToken.update({
-      where: { id: tokenRow.id },
-      data: { sentAt: new Date() },
-    });
+    await prisma.$transaction([
+      prisma.userInvitationToken.update({
+        where: { id: tokenRow.id },
+        data: { sentAt: new Date() },
+      }),
+      // The new link is in the inbox now → older unused links are superseded.
+      prisma.userInvitationToken.updateMany({
+        where: {
+          userId,
+          id: { not: tokenRow.id },
+          usedAt: null,
+          revokedAt: null,
+        },
+        data: { revokedAt: now },
+      }),
+    ]);
     await writeAuditLog({
       organizationId,
       entityType: "User",
@@ -130,6 +140,13 @@ export async function issueAndSendUserInvitation({
     });
     return { status: "SENT", expiresAt };
   }
+
+  // Never delivered → the link must not be usable. The row stays as the
+  // record of the attempt (column "Pozvánka" → "Neodesláno").
+  await prisma.userInvitationToken.update({
+    where: { id: tokenRow.id },
+    data: { revokedAt: new Date() },
+  });
 
   await writeAuditLog({
     organizationId,
@@ -214,17 +231,23 @@ export async function notifyOrgAdminsAboutNewMember({
     let sentCount = 0;
     let failedCount = 0;
     let reason: string | undefined;
-    for (const to of recipients) {
-      const result = await sendMail({ to, ...content });
-      if (result.status === "SENT") {
-        sentCount += 1;
-      } else {
-        failedCount += 1;
-        reason = result.status === "DISABLED" ? result.reason : result.error;
-        // SMTP off → no point trying the remaining recipients.
-        if (result.status === "DISABLED") {
-          failedCount = recipients.length - sentCount;
-          break;
+    const config = mailConfigStatus();
+    if (!config.enabled) {
+      // SMTP off → no point trying any recipient.
+      failedCount = recipients.length;
+      reason = config.reason;
+    } else {
+      // In parallel: with a dead SMTP host every attempt waits for the
+      // timeouts, and the joining user must not wait that long per admin.
+      const results = await Promise.all(
+        recipients.map((to) => sendMail({ to, ...content })),
+      );
+      for (const result of results) {
+        if (result.status === "SENT") {
+          sentCount += 1;
+        } else {
+          failedCount += 1;
+          reason = result.status === "DISABLED" ? result.reason : result.error;
         }
       }
     }

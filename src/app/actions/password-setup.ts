@@ -3,7 +3,11 @@
 import { redirect } from "next/navigation";
 
 import { writeAuditLog } from "@/lib/audit";
-import { reservePasswordSetupAttempt } from "@/lib/login-rate-limit";
+import {
+  clearAccountLoginFailures,
+  hashLoginIdentifier,
+  reservePasswordSetupAttempt,
+} from "@/lib/login-rate-limit";
 import { hashPassword, MIN_PASSWORD_LENGTH } from "@/lib/password";
 import { getRequestIp } from "@/lib/portal/portal-rate-limit";
 import { getPrisma } from "@/lib/prisma";
@@ -117,6 +121,14 @@ export async function setPasswordWithInvitation(
       return { invalid: true, error: INVALID_INVITATION_MESSAGE, submittedAt };
     }
     throw error;
+  }
+
+  // A fresh password owned by the user: earlier failed logins (e.g. guessing
+  // before the invitation arrived) must not keep the account throttled.
+  try {
+    await clearAccountLoginFailures(hashLoginIdentifier(invitation.user.email));
+  } catch (error) {
+    console.error("login failures could not be cleared after password setup", error);
   }
 
   if (invitation.organizationId) {

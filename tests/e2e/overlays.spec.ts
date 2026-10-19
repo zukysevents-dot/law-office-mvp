@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { storageStatePath } from "./support/e2e-env";
+import { e2eName } from "./support/helpers";
 
 // Audit „pop-up okna“: každé vyskakovací okno se zavře klikem mimo (na ztmavené
 // pozadí), klávesou Esc i viditelným křížkem „Zavřít“ – a klik mimo okno
@@ -242,5 +243,34 @@ test.describe("mobilní menu landingu", () => {
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
     await page.keyboard.press("Escape");
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  });
+});
+
+test.describe("zrušení registračního kódu", () => {
+  test("je nevratné, proto se nejdřív potvrzuje", async ({ page }) => {
+    const label = e2eName("kod");
+    await page.goto("/settings/organization");
+    const form = page.locator("form").filter({
+      has: page.getByRole("button", { name: "Vytvořit registrační kód" }),
+    });
+    await form.getByLabel("Název kódu").fill(label);
+    await form.getByRole("button", { name: "Vytvořit registrační kód" }).click();
+
+    const row = page.getByRole("row").filter({ hasText: label });
+    await expect(row).toContainText("Aktivní");
+    const dialog = page.getByRole("dialog", { name: "Zrušit registrační kód" });
+
+    // Klik mimo dialog nic neodešle a kód zůstane aktivní.
+    await row.getByRole("button", { name: "Zrušit" }).click();
+    await expect(dialog).toBeVisible();
+    const posts = await postsDuring(page, () => page.mouse.click(8, 8));
+    await expect(dialog).toBeHidden();
+    expect(posts).toEqual([]);
+    await expect(row).toContainText("Aktivní");
+
+    // Potvrzení kód zruší.
+    await row.getByRole("button", { name: "Zrušit" }).click();
+    await dialog.getByRole("button", { name: "Ano, zrušit kód" }).click();
+    await expect(row).toContainText("Zrušený");
   });
 });

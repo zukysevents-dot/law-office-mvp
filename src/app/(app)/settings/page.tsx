@@ -197,6 +197,7 @@ export default async function SettingsPage() {
                 capabilityGrants: { select: { capability: true } },
                 // Latest welcome invitation (column "Pozvánka").
                 invitationTokens: {
+                  where: { organizationId: currentUser.organizationId },
                   orderBy: { createdAt: "desc" },
                   take: 1,
                   select: { createdAt: true, sentAt: true, usedAt: true },
