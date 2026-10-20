@@ -22,6 +22,8 @@ import {
   subjectVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +43,12 @@ const EMPTY: Data = { configured: false, canConfigure: false, groups: [] };
 type PageProps = { searchParams: Promise<{ q?: string }> };
 
 export default async function SharepointIndexPage({ searchParams }: PageProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.documents");
+  if (accessDenied) {
+    return <AccessDenied title="SharePoint" message={accessDenied} />;
+  }
+
   const { q } = await searchParams;
   const query = q?.trim() ?? "";
 

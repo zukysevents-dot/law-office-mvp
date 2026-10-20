@@ -154,7 +154,7 @@ export default async function SharepointSettingsPage({
       {result.databaseReady && !data.allowed ? (
         <Section title="Přístup odepřen">
           <p className="text-sm text-stone-600">
-            Připojení SharePointu nastavuje pouze partner nebo administrátor.
+            Připojení SharePointu nastavují jen uživatelé s oprávněním „Spravuje nastavení kanceláře“.
           </p>
         </Section>
       ) : null}

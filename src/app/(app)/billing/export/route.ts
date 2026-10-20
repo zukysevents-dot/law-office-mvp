@@ -20,6 +20,7 @@ import {
   assertCanManageInvoices,
   workLogVisibilityWhere,
 } from "@/lib/permissions";
+import { canAccessModule } from "@/lib/module-access.server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -127,6 +128,11 @@ export async function GET(request: NextRequest) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
   await assertModuleEnabled(currentUser, ModuleKey.BILLING);
+  if (
+    !(await canAccessModule(currentUser, "module.billing"))
+  ) {
+    return new Response("Přístup odepřen.", { status: 403 });
+  }
   assertCanManageInvoices(currentUser);
   const searchParams = request.nextUrl.searchParams;
   const format = searchParams.get("format") === "csv" ? "csv" : "xlsx";

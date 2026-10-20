@@ -33,6 +33,8 @@ import {
 import { formatRelativePath, parseRelativePath } from "@/lib/microsoft/sharepoint";
 import { canEditRecord, canManageDocuments } from "@/lib/permissions";
 import { isSafeHttpUrl } from "@/lib/utils";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -66,6 +68,12 @@ export default async function SharepointBrowserPage({
   params,
   searchParams,
 }: PageProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.documents");
+  if (accessDenied) {
+    return <AccessDenied title="SharePoint" message={accessDenied} />;
+  }
+
   const { type: rawType, id } = await params;
   const { path: rawPath } = await searchParams;
 

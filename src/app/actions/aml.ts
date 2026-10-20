@@ -2,13 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 
-import { AmlRiskLevel, ModuleKey } from "@/generated/prisma/enums";
+import { AmlRiskLevel } from "@/generated/prisma/enums";
 import { deriveRiskFlag, maskDocumentNumber } from "@/lib/aml";
 import { normalizeScanFields } from "@/lib/aml-scan";
 import { auditJson } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
 import { encryptSecret, isEncryptionConfigured } from "@/lib/crypto";
-import { assertModuleEnabled } from "@/lib/entitlements";
 import {
   checkboxValue,
   enumValue,
@@ -18,6 +17,7 @@ import {
 } from "@/lib/form";
 import { assertCanManageAml } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { assertCanAccessModule } from "@/lib/module-access.server";
 
 // Sken dokladu = odkaz (http/https) do externího úložiště, ne soubor v DB.
 // Vrací validovaná pole; prázdný/neplatný odkaz odmítne. Čistá validace +
@@ -48,7 +48,7 @@ async function loadOrgSubject(
 export async function recordIdentification(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  await assertModuleEnabled(currentUser, ModuleKey.AML);
+  await assertCanAccessModule(currentUser, "module.aml");
   assertCanManageAml(currentUser);
 
   if (!isEncryptionConfigured()) {
@@ -136,7 +136,7 @@ export async function recordIdentification(formData: FormData) {
 export async function updateIdentificationScan(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  await assertModuleEnabled(currentUser, ModuleKey.AML);
+  await assertCanAccessModule(currentUser, "module.aml");
   assertCanManageAml(currentUser);
 
   const organizationId = currentUser.organizationId;
@@ -186,7 +186,7 @@ export async function updateIdentificationScan(formData: FormData) {
 export async function assessRisk(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  await assertModuleEnabled(currentUser, ModuleKey.AML);
+  await assertCanAccessModule(currentUser, "module.aml");
   assertCanManageAml(currentUser);
 
   const organizationId = currentUser.organizationId;

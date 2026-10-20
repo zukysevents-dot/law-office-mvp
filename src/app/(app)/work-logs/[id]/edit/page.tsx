@@ -36,6 +36,8 @@ import {
   taskVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -117,6 +119,12 @@ const emptyWorkLogEdit: WorkLogEditData = {
 };
 
 export default async function WorkLogEditPage({ params }: WorkLogEditProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.workLogs");
+  if (accessDenied) {
+    return <AccessDenied title="Výkazy práce" message={accessDenied} />;
+  }
+
   const { id } = await params;
   const result = await safeQuery<WorkLogEditData>(
     emptyWorkLogEdit,

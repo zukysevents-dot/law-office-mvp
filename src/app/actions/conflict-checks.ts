@@ -6,6 +6,7 @@ import { SubjectRole } from "@/generated/prisma/enums";
 import { getCurrentUser } from "@/lib/auth";
 import { optionalString, requiredString } from "@/lib/form";
 import { getPrisma } from "@/lib/prisma";
+import { assertCanAccessModule } from "@/lib/module-access.server";
 import { redactBirthNumberQuery } from "@/lib/subjects/birth-number";
 
 export type ConflictCheckSaveState = {
@@ -19,6 +20,7 @@ export async function saveConflictCheck(
 ): Promise<ConflictCheckSaveState> {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
+  await assertCanAccessModule(currentUser, "module.conflictCheck");
   // The conflict check finds subjects by exact RČ — a saved check (shown on
   // the org-wide dashboard, subject history and in the audit log + export)
   // keeps such a query only masked.

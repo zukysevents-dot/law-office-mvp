@@ -13,6 +13,8 @@ import { safeQuery } from "@/lib/db-safe";
 import { numberInputValue } from "@/lib/form-values";
 import { andWhere, canEditRecord, projectVisibilityWhere } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -66,6 +68,12 @@ const emptyCaseEdit: CaseEditData = {
 };
 
 export default async function CaseEditPage({ params }: CaseEditProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.cases");
+  if (accessDenied) {
+    return <AccessDenied title="Případy" message={accessDenied} />;
+  }
+
   const { id } = await params;
   const result = await safeQuery<CaseEditData>(
     emptyCaseEdit,

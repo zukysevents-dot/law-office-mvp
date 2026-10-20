@@ -16,6 +16,11 @@ import { DatabaseNotice } from "@/components/ui/database-notice";
 import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import { canViewTeamReports } from "@/lib/permissions";
+import { AccessDenied } from "@/components/access-denied";
+import {
+  canAccessModule,
+  moduleAccessDenial,
+} from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -98,13 +103,29 @@ const exports: ReportEntry[] = [
 ];
 
 export default async function ReportsPage() {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.reports");
+  if (accessDenied) {
+    return <AccessDenied title="Reporty a exporty" message={accessDenied} />;
+  }
+
   const result = await safeQuery(
-    { canViewPersonReports: false, canViewBillabilityKpi: false },
+    {
+      canViewPersonReports: false,
+      canViewBillabilityKpi: false,
+      canExportReferences: false,
+      canExportTasks: false,
+    },
     async () => {
       const currentUser = await getCurrentUser();
       return {
         canViewPersonReports: canViewTeamReports(currentUser),
         canViewBillabilityKpi: canViewTeamReports(currentUser),
+        canExportReferences: await canAccessModule(
+          currentUser,
+          "module.references",
+        ),
+        canExportTasks: await canAccessModule(currentUser, "module.tasks"),
       };
     },
   );
@@ -121,6 +142,12 @@ export default async function ReportsPage() {
     }
     if (entry.href.startsWith("/reports/wip")) {
       return result.data.canViewPersonReports;
+    }
+    if (entry.href.startsWith("/reports/references/export")) {
+      return result.data.canExportReferences;
+    }
+    if (entry.href.startsWith("/reports/tasks/export")) {
+      return result.data.canExportTasks;
     }
     return true;
   };
@@ -166,7 +193,7 @@ export default async function ReportsPage() {
       </Section>
       <Section title="Exporty">
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {exports.map((entry) => {
+          {exports.filter(allowed).map((entry) => {
             const Icon = entry.icon;
             return (
               <div

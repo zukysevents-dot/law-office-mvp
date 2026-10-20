@@ -21,6 +21,7 @@ import {
   projectVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { assertCanAccessModule } from "@/lib/module-access.server";
 
 // Map the per-project unique fileNumber violation (@@unique([projectId,
 // fileNumber])) to a readable Czech message instead of a raw Prisma stack
@@ -38,6 +39,7 @@ function rethrowDuplicateFileNumber(error: unknown): never {
 export async function createCase(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
+  await assertCanAccessModule(currentUser, "module.cases");
   const status = enumValue(CaseStatus, formData.get("status"), CaseStatus.ACTIVE);
   const projectId = requiredString(formData, "projectId");
   const responsibleUserId = optionalString(formData, "responsibleUserId");
@@ -106,6 +108,7 @@ export async function createCase(formData: FormData) {
 export async function updateCase(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
+  await assertCanAccessModule(currentUser, "module.cases");
   const caseId = requiredString(formData, "id");
   const status = enumValue(CaseStatus, formData.get("status"), CaseStatus.ACTIVE);
 

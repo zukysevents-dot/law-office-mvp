@@ -5,11 +5,9 @@ import { revalidatePath } from "next/cache";
 import {
   ApprovalStatus,
   BillingStatus,
-  ModuleKey,
 } from "@/generated/prisma/enums";
 import { auditJson } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
-import { assertModuleEnabled } from "@/lib/entitlements";
 import {
   optionalNumber,
   optionalString,
@@ -19,6 +17,7 @@ import {
 import { assertUserInOrg } from "@/lib/org-users";
 import { canApproveWorkLogs } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { assertCanAccessModule } from "@/lib/module-access.server";
 
 type Disposition = "APPROVE" | "REJECT" | "HIDDEN_WRITE_OFF" | "VISIBLE_WRITE_OFF";
 
@@ -38,7 +37,7 @@ const DISPOSITIONS: Disposition[] = [
 export async function decideWorkLog(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  await assertModuleEnabled(currentUser, ModuleKey.BILLING);
+  await assertCanAccessModule(currentUser, "module.billing");
 
   const workLogId = requiredString(formData, "id");
   const disposition = requiredString(formData, "disposition") as Disposition;

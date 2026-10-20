@@ -61,3 +61,20 @@ export async function getAccessibleModules(
     return entitlement === "CORE" || Boolean(enabled?.has(entitlement));
   });
 }
+
+// Message for the "Přístup odepřen" page when the module can't be opened, or
+// null when it can. Distinguishes an inactive office module from a missing
+// personal permission so the user knows whom to ask.
+export async function moduleAccessDenial(
+  user: ModuleUser,
+  key: ModulePermissionKey,
+): Promise<string | null> {
+  const def = getModulePermissionDef(key);
+  if (!(await isModuleEnabled(orgIdOf(user), def.entitlement))) {
+    return `Modul „${def.label}“ není pro vaši kancelář aktivní. Aktivaci zajistí administrátor kanceláře.`;
+  }
+  if (!hasPermission(user, key)) {
+    return `K modulu „${def.label}“ nemáte oprávnění. O přístup požádejte administrátora kanceláře (Nastavení → Oprávnění).`;
+  }
+  return null;
+}

@@ -25,10 +25,12 @@ import { resolveVisibleMatterSelection } from "@/lib/matter-integrity.server";
 import { assertUserInOrg } from "@/lib/org-users";
 import { assertCanEditRecord } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { assertCanAccessModule } from "@/lib/module-access.server";
 
 export async function createTask(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
+  await assertCanAccessModule(currentUser, "module.tasks");
   const assignedToId = optionalString(formData, "assignedToId");
   const responsibleUserId = optionalString(formData, "responsibleUserId");
   const matter = await resolveVisibleMatterSelection(prisma, currentUser, {
@@ -101,6 +103,7 @@ export async function createTask(formData: FormData) {
 export async function updateTask(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
+  await assertCanAccessModule(currentUser, "module.tasks");
   const taskId = requiredString(formData, "id");
   const newStatus = enumValue(
     TaskStatus,
@@ -222,6 +225,7 @@ export async function updateTask(formData: FormData) {
 export async function updateTaskStatus(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
+  await assertCanAccessModule(currentUser, "module.tasks");
   const taskId = requiredString(formData, "taskId");
   const newStatus = enumValue(
     TaskStatus,
@@ -329,6 +333,7 @@ export async function restoreTask(formData: FormData) {
 export async function addTaskComment(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
+  await assertCanAccessModule(currentUser, "module.tasks");
   const taskId = requiredString(formData, "taskId");
   const comment = requiredString(formData, "comment");
   const task = await prisma.task.findUniqueOrThrow({

@@ -2,10 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 
-import { ModuleKey } from "@/generated/prisma/enums";
 import { auditJson } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
-import { assertModuleEnabled } from "@/lib/entitlements";
 import { requiredString, optionalString } from "@/lib/form";
 import { assertCanManageAml } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
@@ -16,6 +14,7 @@ import {
 } from "@/lib/sanctions/config";
 import { selectCandidates } from "@/lib/sanctions/matching";
 import { normalizeName } from "@/lib/sanctions/normalize";
+import { assertCanAccessModule } from "@/lib/module-access.server";
 import { screeningName } from "@/lib/subjects/person-name";
 
 // AML-5+: run a sanctions screening for a subject. The screening only SUGGESTS
@@ -24,7 +23,7 @@ import { screeningName } from "@/lib/subjects/person-name";
 export async function runSanctionsScreening(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  await assertModuleEnabled(currentUser, ModuleKey.AML);
+  await assertCanAccessModule(currentUser, "module.aml");
   assertCanManageAml(currentUser);
 
   const organizationId = currentUser.organizationId;
@@ -120,7 +119,7 @@ export async function runSanctionsScreening(formData: FormData) {
 export async function decideSanctionsMatch(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  await assertModuleEnabled(currentUser, ModuleKey.AML);
+  await assertCanAccessModule(currentUser, "module.aml");
   assertCanManageAml(currentUser);
 
   const organizationId = currentUser.organizationId;

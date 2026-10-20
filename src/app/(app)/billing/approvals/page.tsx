@@ -27,6 +27,8 @@ import {
   canApproveWorkLogs,
 } from "@/lib/permissions";
 import { approvalStatusTone, billingStatusTone } from "@/lib/status-tones";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +40,12 @@ type ApprovalsPageData = {
 };
 
 export default async function BillingApprovalsPage() {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.billing");
+  if (accessDenied) {
+    return <AccessDenied title="Fakturace" message={accessDenied} />;
+  }
+
   const result = await safeQuery<ApprovalsPageData>(
     { rows: [], users: [], capped: false, canApprove: false },
     async () => {

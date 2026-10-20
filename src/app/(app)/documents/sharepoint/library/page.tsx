@@ -42,6 +42,8 @@ import {
 import { formatRelativePath, parseRelativePath } from "@/lib/microsoft/sharepoint";
 import { canManageOrganization } from "@/lib/permissions";
 import { cn, isSafeHttpUrl } from "@/lib/utils";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -136,6 +138,12 @@ function FileIcon({ name, isFolder }: { name: string; isFolder: boolean }) {
 }
 
 export default async function SharepointLibraryPage({ searchParams }: PageProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.documents");
+  if (accessDenied) {
+    return <AccessDenied title="SharePoint" message={accessDenied} />;
+  }
+
   const params = await searchParams;
   const rawPath = Array.isArray(params.path) ? params.path[0] : params.path;
   // Cesta z URL projde stejným filtrem jako v prohlížeči spisů (žádné "..").

@@ -1,6 +1,7 @@
 "use server";
 
 import { getCurrentUser } from "@/lib/auth";
+import { getAccessibleModules } from "@/lib/module-access.server";
 import {
   andWhere,
   caseVisibilityWhere,
@@ -41,9 +42,13 @@ export async function globalSearch(query: string): Promise<SearchHit[]> {
   const user = await getCurrentUser();
   const prisma = getPrisma();
   const like = { contains: q, mode: "insensitive" as const };
+  // Only search sections the user may open (permission matrix, CORE modules):
+  // a hit would otherwise link to a "Přístup odepřen" page.
+  const modules = new Set(await getAccessibleModules(user));
+  const none = Promise.resolve([]);
 
   const [subjects, projects, cases, tasks] = await Promise.all([
-    prisma.subject.findMany({
+    !modules.has("module.subjects") ? none : prisma.subject.findMany({
       where: andWhere(
         subjectVisibilityWhere(user),
         { archivedAt: null },
@@ -63,7 +68,7 @@ export async function globalSearch(query: string): Promise<SearchHit[]> {
       orderBy: { name: "asc" },
       take: 5,
     }),
-    prisma.project.findMany({
+    !modules.has("module.projects") ? none : prisma.project.findMany({
       where: andWhere(projectVisibilityWhere(user), {
         archivedAt: null,
         name: like,
@@ -71,7 +76,7 @@ export async function globalSearch(query: string): Promise<SearchHit[]> {
       select: { id: true, name: true },
       take: 5,
     }),
-    prisma.case.findMany({
+    !modules.has("module.cases") ? none : prisma.case.findMany({
       where: andWhere(caseVisibilityWhere(user), {
         archivedAt: null,
         OR: [{ name: like }, { fileNumber: like }],
@@ -79,7 +84,7 @@ export async function globalSearch(query: string): Promise<SearchHit[]> {
       select: { id: true, name: true, fileNumber: true },
       take: 5,
     }),
-    prisma.task.findMany({
+    !modules.has("module.tasks") ? none : prisma.task.findMany({
       where: andWhere(taskVisibilityWhere(user), {
         archivedAt: null,
         title: like,

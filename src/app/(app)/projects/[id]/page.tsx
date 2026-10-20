@@ -43,6 +43,8 @@ import {
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { subjectRoleTone } from "@/lib/status-tones";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -172,6 +174,12 @@ export default async function ProjectDetailPage({
   params,
   searchParams,
 }: ProjectDetailProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.projects");
+  if (accessDenied) {
+    return <AccessDenied title="Projekty" message={accessDenied} />;
+  }
+
   const { id } = await params;
   const { sharepoint } = await searchParams;
   const result = await safeQuery<ProjectDetailData>(

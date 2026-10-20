@@ -10,9 +10,11 @@ import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import {
   andWhere,
+  canViewRates,
   canViewTeamReports,
   workLogVisibilityWhere,
 } from "@/lib/permissions";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 import { getPrisma } from "@/lib/prisma";
 import {
   REPORT_ROW_LIMIT,
@@ -42,6 +44,8 @@ const EMPTY_OPTIONS: ReportFilterOptions = {
 
 type ReportViewData = {
   allowed: boolean;
+  deniedMessage?: string;
+  showAmounts: boolean;
   rows: ReportSummaryRow[];
   capped: boolean;
   options: ReportFilterOptions;
@@ -80,13 +84,30 @@ export async function ReportView({
   );
 
   const result = await safeQuery<ReportViewData>(
-    { allowed: false, rows: [], capped: false, options: EMPTY_OPTIONS },
+    {
+      allowed: false,
+      showAmounts: false,
+      rows: [],
+      capped: false,
+      options: EMPTY_OPTIONS,
+    },
     async () => {
       const prisma = getPrisma();
       const currentUser = await getCurrentUser();
+      const denied = {
+        allowed: false,
+        showAmounts: false,
+        rows: [],
+        capped: false,
+        options: EMPTY_OPTIONS,
+      };
 
+      const moduleDenial = await moduleAccessDenial(currentUser, "module.reports");
+      if (moduleDenial) {
+        return { ...denied, deniedMessage: moduleDenial };
+      }
       if (canView && !canView(currentUser)) {
-        return { allowed: false, rows: [], capped: false, options: EMPTY_OPTIONS };
+        return denied;
       }
 
       const [workLogs, options] = await Promise.all([
@@ -105,6 +126,8 @@ export async function ReportView({
 
       return {
         allowed: true,
+        // Amounts come from rates — hidden without "Vidí sazby a částky".
+        showAmounts: canViewRates(currentUser),
         rows: aggregate(workLogs),
         capped: workLogs.length >= REPORT_ROW_LIMIT,
         options,
@@ -131,7 +154,9 @@ export async function ReportView({
       {result.databaseReady && !allowed ? (
         <Section title="Přístup odepřen">
           <p className="text-sm text-stone-600">
-            {deniedMessage ?? "Nemáte oprávnění zobrazit tento report."}
+            {result.data.deniedMessage ??
+              deniedMessage ??
+              "Nemáte oprávnění zobrazit tento report."}
           </p>
         </Section>
       ) : null}
@@ -155,7 +180,11 @@ export async function ReportView({
                 Zužte filtr, nebo použijte export pro kompletní data.
               </p>
             ) : null}
-            <ReportSummaryTable labelHeader={labelHeader} rows={result.data.rows} />
+            <ReportSummaryTable
+              labelHeader={labelHeader}
+              rows={result.data.rows}
+              showAmounts={result.data.showAmounts}
+            />
           </Section>
         </>
       ) : null}

@@ -38,6 +38,7 @@ import {
   dashboardTableColumns,
   dashboardWidgetHref,
   ensureDefaultDashboardWidgets,
+  filterAllowedWidgets,
   getVisibleDashboardColumns,
 } from "@/lib/dashboard-widgets";
 import { formatDate, formatDateUtc, formatHours, formatMoney } from "@/lib/format";
@@ -59,6 +60,7 @@ import {
 } from "@/lib/labels";
 import { safeQuery } from "@/lib/db-safe";
 import { getCurrentUser } from "@/lib/auth";
+import { getAccessibleModules } from "@/lib/module-access.server";
 import {
   andWhere,
   canApproveWorkLogs,
@@ -838,6 +840,12 @@ function renderWidget(widget: DashboardWidgetView, data: DashboardData) {
   }
 }
 
+// Runs the query only when its widget's module is accessible; otherwise the
+// widget is not rendered and its data is never loaded.
+function when<T>(ok: boolean, query: () => Promise<T>, fallback: T): Promise<T> {
+  return ok ? query() : Promise.resolve(fallback);
+}
+
 export default async function DashboardPage() {
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -853,6 +861,11 @@ export default async function DashboardPage() {
     const currentUser = await getCurrentUser();
 
     await ensureDefaultDashboardWidgets(currentUser.id);
+
+    // Widgets (and their data) only for modules the user may open.
+    const allowedModules = await getAccessibleModules(currentUser);
+    const allowedSet = new Set<string>(allowedModules);
+    const can = (key: string) => allowedSet.has(key);
 
     const taskAccessWhere = taskVisibilityWhere(currentUser);
     const activeTaskWhere = andWhere(
@@ -901,198 +914,258 @@ export default async function DashboardPage() {
       }),
       // One grouped scan instead of four separate COUNT queries; the active
       // total and each per-status card are derived from this result below.
-      prisma.task.groupBy({
-        by: ["status"],
-        where: andWhere({ archivedAt: null }, taskAccessWhere),
-        _count: { _all: true },
-      }),
-      prisma.task.count({
-        where: andWhere(activeTaskWhere, { deadline: { lt: now } }),
-      }),
-      prisma.workLog.aggregate({
-        where: andWhere(activeWorkLogWhere, {
-          workDate: {
-            gte: monthStart,
-            lt: nextMonthStart,
-          },
-        }),
-        _sum: { hours: true },
-      }),
-      prisma.task.findMany({
-        where: {
-          organizationId: currentUser.organizationId,
-          archivedAt: null,
-          status: { not: TaskStatus.COMPLETED },
-          OR: [
-            { assignedToId: currentUser.id },
-            { responsibleUserId: currentUser.id },
-            { createdById: currentUser.id },
-          ],
-        },
-        orderBy: [{ deadline: "asc" }, { createdAt: "desc" }],
-        take: 8,
-        select: {
-          id: true,
-          title: true,
-          status: true,
-          priority: true,
-          deadline: true,
-          assignedTo: { select: { name: true } },
-          responsibleUser: { select: { name: true } },
-          project: {
+      when(
+        can("module.tasks"),
+        () =>
+          prisma.task.groupBy({
+            by: ["status"],
+            where: andWhere({ archivedAt: null }, taskAccessWhere),
+            _count: { _all: true },
+          }),
+        [],
+      ),
+      when(
+        can("module.tasks"),
+        () =>
+          prisma.task.count({
+            where: andWhere(activeTaskWhere, { deadline: { lt: now } }),
+          }),
+        0,
+      ),
+      when(
+        can("module.workLogs"),
+        () =>
+          prisma.workLog.aggregate({
+            where: andWhere(activeWorkLogWhere, {
+              workDate: {
+                gte: monthStart,
+                lt: nextMonthStart,
+              },
+            }),
+            _sum: { hours: true },
+          }),
+        { _sum: { hours: null } },
+      ),
+      when(
+        can("module.tasks"),
+        () =>
+          prisma.task.findMany({
+            where: {
+              organizationId: currentUser.organizationId,
+              archivedAt: null,
+              status: { not: TaskStatus.COMPLETED },
+              OR: [
+                { assignedToId: currentUser.id },
+                { responsibleUserId: currentUser.id },
+                { createdById: currentUser.id },
+              ],
+            },
+            orderBy: [{ deadline: "asc" }, { createdAt: "desc" }],
+            take: 8,
+            select: {
+              id: true,
+              title: true,
+              status: true,
+              priority: true,
+              deadline: true,
+              assignedTo: { select: { name: true } },
+              responsibleUser: { select: { name: true } },
+              project: {
+                select: {
+                  id: true,
+                  name: true,
+                  mainSubject: { select: { id: true, name: true } },
+                },
+              },
+              case: {
+                select: {
+                  id: true,
+                  name: true,
+                  fileNumber: true,
+                  project: {
+                    select: {
+                      mainSubject: { select: { id: true, name: true } },
+                    },
+                  },
+                },
+              },
+            },
+          }),
+        [],
+      ),
+      when(
+        can("module.workLogs"),
+        () =>
+          prisma.workLog.findMany({
+            where: activeWorkLogWhere,
+            orderBy: [{ workDate: "desc" }, { createdAt: "desc" }],
+            take: 8,
+            select: {
+              id: true,
+              workDate: true,
+              hours: true,
+              hourlyRate: true,
+              amountCzk: true,
+              description: true,
+              billingStatus: true,
+              approvalStatus: true,
+              legalArea: true,
+              subject: { select: { name: true } },
+              project: { select: { name: true } },
+              case: { select: { name: true, fileNumber: true } },
+              task: { select: { title: true } },
+              user: { select: { name: true } },
+            },
+          }),
+        [],
+      ),
+      when(
+        can("module.subjects"),
+        () =>
+          prisma.subject.findMany({
+            where: andWhere(
+              { archivedAt: null },
+              subjectVisibilityWhere(currentUser),
+            ),
+            orderBy: { createdAt: "desc" },
+            take: 8,
             select: {
               id: true,
               name: true,
-              mainSubject: { select: { id: true, name: true } },
+              type: true,
+              ico: true,
+              riskFlag: true,
+              status: true,
+              createdAt: true,
             },
-          },
-          case: {
+          }),
+        [],
+      ),
+      when(
+        can("module.projects"),
+        () =>
+          prisma.project.findMany({
+            where: andWhere(
+              { archivedAt: null },
+              projectVisibilityWhere(currentUser),
+            ),
+            orderBy: { createdAt: "desc" },
+            take: 8,
+            select: {
+              id: true,
+              name: true,
+              status: true,
+              createdAt: true,
+              mainSubject: { select: { id: true, name: true } },
+              responsibleUser: { select: { name: true } },
+            },
+          }),
+        [],
+      ),
+      when(
+        can("module.cases"),
+        () =>
+          prisma.case.findMany({
+            where: andWhere(
+              { archivedAt: null },
+              caseVisibilityWhere(currentUser),
+            ),
+            orderBy: { createdAt: "desc" },
+            take: 8,
             select: {
               id: true,
               name: true,
               fileNumber: true,
-              project: {
-                select: {
-                  mainSubject: { select: { id: true, name: true } },
-                },
-              },
+              status: true,
+              createdAt: true,
+              project: { select: { id: true, name: true } },
+              responsibleUser: { select: { name: true } },
             },
-          },
-        },
-      }),
-      prisma.workLog.findMany({
-        where: activeWorkLogWhere,
-        orderBy: [{ workDate: "desc" }, { createdAt: "desc" }],
-        take: 8,
-        select: {
-          id: true,
-          workDate: true,
-          hours: true,
-          hourlyRate: true,
-          amountCzk: true,
-          description: true,
-          billingStatus: true,
-          approvalStatus: true,
-          legalArea: true,
-          subject: { select: { name: true } },
-          project: { select: { name: true } },
-          case: { select: { name: true, fileNumber: true } },
-          task: { select: { title: true } },
-          user: { select: { name: true } },
-        },
-      }),
-      prisma.subject.findMany({
-        where: andWhere(
-          { archivedAt: null },
-          subjectVisibilityWhere(currentUser),
-        ),
-        orderBy: { createdAt: "desc" },
-        take: 8,
-        select: {
-          id: true,
-          name: true,
-          type: true,
-          ico: true,
-          riskFlag: true,
-          status: true,
-          createdAt: true,
-        },
-      }),
-      prisma.project.findMany({
-        where: andWhere(
-          { archivedAt: null },
-          projectVisibilityWhere(currentUser),
-        ),
-        orderBy: { createdAt: "desc" },
-        take: 8,
-        select: {
-          id: true,
-          name: true,
-          status: true,
-          createdAt: true,
-          mainSubject: { select: { id: true, name: true } },
-          responsibleUser: { select: { name: true } },
-        },
-      }),
-      prisma.case.findMany({
-        where: andWhere(
-          { archivedAt: null },
-          caseVisibilityWhere(currentUser),
-        ),
-        orderBy: { createdAt: "desc" },
-        take: 8,
-        select: {
-          id: true,
-          name: true,
-          fileNumber: true,
-          status: true,
-          createdAt: true,
-          project: { select: { id: true, name: true } },
-          responsibleUser: { select: { name: true } },
-        },
-      }),
-      prisma.reference.findMany({
-        where: andWhere(
-          { archivedAt: null },
-          referenceVisibilityWhere(currentUser),
-        ),
-        orderBy: [{ endDate: "asc" }, { createdAt: "desc" }],
-        take: 8,
-        select: {
-          id: true,
-          title: true,
-          legalArea: true,
-          valueCzk: true,
-          startDate: true,
-          endDate: true,
-          description: true,
-          subject: { select: { id: true, name: true } },
-          project: { select: { id: true, name: true } },
-          case: { select: { id: true, name: true, fileNumber: true } },
-        },
-      }),
-      prisma.conflictCheck.findMany({
-        where: { organizationId: currentUser.organizationId },
-        orderBy: { createdAt: "desc" },
-        take: 8,
-        select: {
-          id: true,
-          searchedQuery: true,
-          resultStatus: true,
-          createdAt: true,
-          subject: { select: { id: true, name: true } },
-        },
-      }),
-      prisma.deadline.findMany({
-        where: andWhere(
-          {
-            archivedAt: null,
-            status: "OPEN",
-            dueDate: { gte: now },
-          },
-          deadlineVisibilityWhere(currentUser),
-        ),
-        orderBy: { dueDate: "asc" },
-        take: 8,
-        select: {
-          id: true,
-          title: true,
-          dueDate: true,
-          type: true,
-          case: { select: { id: true, name: true } },
-          responsibleUser: { select: { name: true } },
-        },
-      }),
+          }),
+        [],
+      ),
+      when(
+        can("module.references"),
+        () =>
+          prisma.reference.findMany({
+            where: andWhere(
+              { archivedAt: null },
+              referenceVisibilityWhere(currentUser),
+            ),
+            orderBy: [{ endDate: "asc" }, { createdAt: "desc" }],
+            take: 8,
+            select: {
+              id: true,
+              title: true,
+              legalArea: true,
+              valueCzk: true,
+              startDate: true,
+              endDate: true,
+              description: true,
+              subject: { select: { id: true, name: true } },
+              project: { select: { id: true, name: true } },
+              case: { select: { id: true, name: true, fileNumber: true } },
+            },
+          }),
+        [],
+      ),
+      when(
+        can("module.conflictCheck"),
+        () =>
+          prisma.conflictCheck.findMany({
+            where: { organizationId: currentUser.organizationId },
+            orderBy: { createdAt: "desc" },
+            take: 8,
+            select: {
+              id: true,
+              searchedQuery: true,
+              resultStatus: true,
+              createdAt: true,
+              subject: { select: { id: true, name: true } },
+            },
+          }),
+        [],
+      ),
+      when(
+        can("module.deadlines"),
+        () =>
+          prisma.deadline.findMany({
+            where: andWhere(
+              {
+                archivedAt: null,
+                status: "OPEN",
+                dueDate: { gte: now },
+              },
+              deadlineVisibilityWhere(currentUser),
+            ),
+            orderBy: { dueDate: "asc" },
+            take: 8,
+            select: {
+              id: true,
+              title: true,
+              dueDate: true,
+              type: true,
+              case: { select: { id: true, name: true } },
+              responsibleUser: { select: { name: true } },
+            },
+          }),
+        [],
+      ),
       // Vlastní výkazy přihlášeného uživatele za aktuální týden pro graf.
-      prisma.workLog.groupBy({
-        by: ["workDate"],
-        where: {
-          userId: currentUser.id,
-          archivedAt: null,
-          workDate: { gte: weekStartDate, lt: weekEndDate },
-        },
-        _sum: { hours: true },
-      }),
+      when(
+        can("module.workLogs"),
+        () =>
+          prisma.workLog.groupBy({
+            by: ["workDate"],
+            where: {
+              userId: currentUser.id,
+              archivedAt: null,
+              workDate: { gte: weekStartDate, lt: weekEndDate },
+            },
+            _sum: { hours: true },
+          }),
+        [],
+      ),
       prisma.userHoursPlan.findUnique({
         where: { userId: currentUser.id },
         select: { weeklyHoursTarget: true },
@@ -1110,7 +1183,7 @@ export default async function DashboardPage() {
     ]);
 
     return {
-      widgets,
+      widgets: filterAllowedWidgets(widgets, allowedModules),
       counts: {
         activeTasks: activeTaskCount(taskStatusGroups),
         overdueTasks,

@@ -23,6 +23,8 @@ import { mergeLegacyEmail } from "@/lib/subjects/contacts";
 import { personPartOfTradeName, splitPersonName } from "@/lib/subjects/person-name";
 import { mergeLegacyStatutory } from "@/lib/subjects/statutory";
 import { subjectFormErrorMessage } from "@/lib/subjects/subject-input";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -76,6 +78,12 @@ export default async function SubjectEditPage({
   params,
   searchParams,
 }: SubjectEditProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.subjects");
+  if (accessDenied) {
+    return <AccessDenied title="Subjekty" message={accessDenied} />;
+  }
+
   const { id } = await params;
   const { error } = await searchParams;
   const result = await safeQuery(null, () => loadSubject(id));

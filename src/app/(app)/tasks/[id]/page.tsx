@@ -38,6 +38,8 @@ import {
   taskDeadlineTypeTone,
   taskStatusTone,
 } from "@/lib/status-tones";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -118,6 +120,12 @@ const emptyTaskDetail: TaskDetailData = {
 };
 
 export default async function TaskDetailPage({ params }: TaskDetailProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.tasks");
+  if (accessDenied) {
+    return <AccessDenied title="Úkoly" message={accessDenied} />;
+  }
+
   const { id } = await params;
   const result = await safeQuery<TaskDetailData>(emptyTaskDetail, () => loadTask(id));
 

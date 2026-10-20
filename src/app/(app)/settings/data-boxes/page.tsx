@@ -76,8 +76,8 @@ export default async function DataBoxSettingsPage() {
       {result.databaseReady && !data.allowed ? (
         <Section title="Přístup odepřen">
           <p className="text-sm text-stone-600">
-            Přístup k datové schránce konfiguruje pouze partner nebo
-            administrátor.
+            Přístup k datové schránce konfigurují jen uživatelé s oprávněním
+            „Spravuje nastavení kanceláře“.
           </p>
         </Section>
       ) : null}

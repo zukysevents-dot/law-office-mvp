@@ -39,6 +39,8 @@ import {
   referenceVisibilityWhere,
   subjectVisibilityWhere,
 } from "@/lib/permissions";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -104,6 +106,12 @@ function referenceStatus(reference: ReferenceRow): {
 }
 
 export default async function ReferencesPage({ searchParams }: ReferencesProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.references");
+  if (accessDenied) {
+    return <AccessDenied title="Reference" message={accessDenied} />;
+  }
+
   const params = await searchParams;
   const query = params.q?.trim() ?? "";
   const legalArea = params.legalArea ?? "";

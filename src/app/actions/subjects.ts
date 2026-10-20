@@ -17,6 +17,7 @@ import { diffChildRows, rowChanged } from "@/lib/subjects/child-rows";
 import type { ContactRow } from "@/lib/subjects/contacts";
 import type { StatutoryRow } from "@/lib/subjects/statutory";
 import { parseSubjectForm } from "@/lib/subjects/subject-input";
+import { assertCanAccessModule } from "@/lib/module-access.server";
 
 // The per-org unique IČO violation is an EXPECTED user mistake, not a crash:
 // swallow it so the caller can redirect back to the form with an inline notice.
@@ -118,6 +119,7 @@ async function sanitizeLinkedSubjects(
 export async function createSubject(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
+  await assertCanAccessModule(currentUser, "module.subjects");
   assertCanManageSubjects(currentUser);
   const organizationId = currentUser.organizationId;
 
@@ -182,6 +184,7 @@ export async function createSubject(formData: FormData) {
 export async function updateSubject(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
+  await assertCanAccessModule(currentUser, "module.subjects");
   const subjectId = requiredString(formData, "id");
 
   const old = await prisma.subject.findUniqueOrThrow({

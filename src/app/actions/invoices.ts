@@ -6,14 +6,12 @@ import { redirect } from "next/navigation";
 import { Prisma } from "@/generated/prisma/client";
 import {
   InvoiceStatus,
-  ModuleKey,
   SubjectContactType,
   VatMode,
 } from "@/generated/prisma/enums";
 import { auditJson } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
 import { computeInvoiceTotals, computeLine, round2 } from "@/lib/billing-calc";
-import { assertModuleEnabled } from "@/lib/entitlements";
 import { buildIsdocXml } from "@/lib/export/isdoc";
 import {
   IsdocExportError,
@@ -40,6 +38,7 @@ import {
   workLogVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { assertCanAccessModule } from "@/lib/module-access.server";
 import { pickInvoiceRecipient, subjectEmails } from "@/lib/subjects/contacts";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -55,7 +54,7 @@ function toNum(value: unknown): number {
 export async function createInvoiceFromWorkLogs(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  await assertModuleEnabled(currentUser, ModuleKey.BILLING);
+  await assertCanAccessModule(currentUser, "module.billing");
   assertCanManageInvoices(currentUser);
 
   const organizationId = currentUser.organizationId;
@@ -215,7 +214,7 @@ export async function createInvoiceFromWorkLogs(formData: FormData) {
 export async function issueInvoice(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  await assertModuleEnabled(currentUser, ModuleKey.BILLING);
+  await assertCanAccessModule(currentUser, "module.billing");
   assertCanManageInvoices(currentUser);
 
   const organizationId = currentUser.organizationId;
@@ -467,7 +466,7 @@ export async function issueInvoice(formData: FormData) {
 export async function cancelInvoice(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  await assertModuleEnabled(currentUser, ModuleKey.BILLING);
+  await assertCanAccessModule(currentUser, "module.billing");
   assertCanManageInvoices(currentUser);
 
   const invoiceId = requiredString(formData, "invoiceId");
@@ -576,7 +575,7 @@ function supplierFromSnapshot(snapshot: unknown) {
 export async function emailInvoice(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  await assertModuleEnabled(currentUser, ModuleKey.BILLING);
+  await assertCanAccessModule(currentUser, "module.billing");
   assertCanManageInvoices(currentUser);
 
   const invoiceId = requiredString(formData, "invoiceId");
@@ -752,7 +751,7 @@ export async function emailInvoice(formData: FormData) {
 export async function deleteDraftInvoice(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  await assertModuleEnabled(currentUser, ModuleKey.BILLING);
+  await assertCanAccessModule(currentUser, "module.billing");
   assertCanManageInvoices(currentUser);
 
   const invoiceId = requiredString(formData, "invoiceId");

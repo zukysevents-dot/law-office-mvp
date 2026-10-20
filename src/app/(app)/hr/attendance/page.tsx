@@ -25,6 +25,8 @@ import {
   hrEmployeeVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +54,12 @@ const emptyData: Data = {
 };
 
 export default async function HrAttendancePage() {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.hr");
+  if (accessDenied) {
+    return <AccessDenied title="Docházka" message={accessDenied} />;
+  }
+
   const result = await safeQuery<Data>(emptyData, async () => {
     const currentUser = await getCurrentUser();
     await assertModuleEnabled(currentUser, ModuleKey.HR_ATTENDANCE);

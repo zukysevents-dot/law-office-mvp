@@ -12,12 +12,13 @@ import {
   getOrganizationEntitlements,
   getLegalTeamAdminData,
 } from "@/lib/organization";
-import { canManageOrganization } from "@/lib/permissions";
+import { canManageOrganization, isAdmin } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
 type OrgSettingsData = Awaited<ReturnType<typeof getOrganizationAdminData>> & {
   allowed: boolean;
+  canAssignAdmin: boolean;
   currentUserId: string;
   entitlements: Awaited<ReturnType<typeof getOrganizationEntitlements>> | null;
   legalTeams: Awaited<ReturnType<typeof getLegalTeamAdminData>> | null;
@@ -29,6 +30,7 @@ export default async function OrganizationSettingsPage() {
     if (!canManageOrganization(currentUser)) {
       return {
         allowed: false,
+        canAssignAdmin: false,
         currentUserId: currentUser.id,
         organization: null,
         members: [],
@@ -47,6 +49,7 @@ export default async function OrganizationSettingsPage() {
     return {
       ...adminData,
       allowed: true,
+      canAssignAdmin: isAdmin(currentUser),
       currentUserId: currentUser.id,
       entitlements,
       legalTeams,
@@ -66,7 +69,7 @@ export default async function OrganizationSettingsPage() {
       {result.databaseReady && data && !data.allowed ? (
         <Section title="Přístup odepřen">
           <p className="text-sm text-stone-600">
-            Správa kanceláře je dostupná pouze partnerům a administrátorům.
+            Správa kanceláře je dostupná uživatelům s oprávněním „Spravuje nastavení kanceláře“.
           </p>
         </Section>
       ) : null}
@@ -115,6 +118,7 @@ export default async function OrganizationSettingsPage() {
             members={data.members}
             joinCodes={data.joinCodes}
             currentUserId={data.currentUserId}
+            canAssignAdmin={data.canAssignAdmin}
           />
           {data.legalTeams ? (
             <LegalTeamAdmin

@@ -2,6 +2,7 @@ import {
   DashboardWidgetSize,
   DashboardWidgetType,
 } from "@/generated/prisma/enums";
+import type { ModulePermissionKey } from "@/lib/permission-catalog";
 import { getPrisma } from "@/lib/prisma";
 
 export const dashboardWidgetTypes = [
@@ -21,6 +22,44 @@ export const dashboardWidgetTypes = [
   DashboardWidgetType.WEEKLY_HOURS_CHART,
   DashboardWidgetType.DEADLINES_PREVIEW,
 ] as const;
+
+// Module (permission-matrix row) each widget belongs to. A widget whose
+// module the user can't open is neither offered, rendered nor loaded.
+export const dashboardWidgetModule: Record<DashboardWidgetType, ModulePermissionKey> = {
+  [DashboardWidgetType.ACTIVE_TASKS]: "module.tasks",
+  [DashboardWidgetType.OVERDUE_TASKS]: "module.tasks",
+  [DashboardWidgetType.FOR_REVIEW_TASKS]: "module.tasks",
+  [DashboardWidgetType.WAITING_FOR_CLIENT_TASKS]: "module.tasks",
+  [DashboardWidgetType.WAITING_FOR_COUNTERPARTY_TASKS]: "module.tasks",
+  [DashboardWidgetType.MY_TASKS_TABLE]: "module.tasks",
+  [DashboardWidgetType.WORK_LOGS_SUMMARY]: "module.workLogs",
+  [DashboardWidgetType.WORK_LOGS_TABLE]: "module.workLogs",
+  [DashboardWidgetType.WEEKLY_HOURS_CHART]: "module.workLogs",
+  [DashboardWidgetType.SUBJECTS_TABLE]: "module.subjects",
+  [DashboardWidgetType.PROJECTS_TABLE]: "module.projects",
+  [DashboardWidgetType.CASES_TABLE]: "module.cases",
+  [DashboardWidgetType.REFERENCES_TABLE]: "module.references",
+  [DashboardWidgetType.RECENT_CONFLICT_CHECKS]: "module.conflictCheck",
+  [DashboardWidgetType.CALENDAR_PREVIEW]: "module.calendar",
+  [DashboardWidgetType.DEADLINES_PREVIEW]: "module.deadlines",
+};
+
+export function isDashboardWidgetAllowed(
+  type: DashboardWidgetType,
+  allowedModules: Iterable<string>,
+): boolean {
+  const allowed = new Set(allowedModules);
+  return allowed.has(dashboardWidgetModule[type]);
+}
+
+// Keeps only widgets whose module is among the user's accessible modules.
+export function filterAllowedWidgets<T extends { type: DashboardWidgetType }>(
+  widgets: readonly T[],
+  allowedModules: Iterable<string>,
+): T[] {
+  const allowed = new Set(allowedModules);
+  return widgets.filter((widget) => allowed.has(dashboardWidgetModule[widget.type]));
+}
 
 export const dashboardWidgetSizes = [
   DashboardWidgetSize.SMALL,

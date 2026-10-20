@@ -13,6 +13,7 @@ import {
   invoiceVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { canAccessModule } from "@/lib/module-access.server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,6 +30,11 @@ export async function GET(
   const { id } = await params;
   const currentUser = await getCurrentUser();
   await assertModuleEnabled(currentUser, ModuleKey.BILLING);
+  if (
+    !(await canAccessModule(currentUser, "module.billing"))
+  ) {
+    return new Response("Přístup odepřen.", { status: 403 });
+  }
   assertCanManageInvoices(currentUser);
 
   const prisma = getPrisma();

@@ -21,6 +21,8 @@ import { assertModuleEnabled } from "@/lib/entitlements";
 import { formatDate, formatHours, formatMoney } from "@/lib/format";
 import { canManageInvoices } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +35,12 @@ type RetainersData = {
 };
 
 export default async function RetainersPage() {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.billing");
+  if (accessDenied) {
+    return <AccessDenied title="Paušály" message={accessDenied} />;
+  }
+
   const result = await safeQuery<RetainersData>(
     { allowed: false, retainers: [], subjects: [] },
     async () => {

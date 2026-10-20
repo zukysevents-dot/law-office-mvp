@@ -20,10 +20,12 @@ import {
   subjectVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { assertCanAccessModule } from "@/lib/module-access.server";
 
 export async function createProject(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
+  await assertCanAccessModule(currentUser, "module.projects");
   const status = enumValue(
     ProjectStatus,
     formData.get("status"),
@@ -93,6 +95,7 @@ export async function createProject(formData: FormData) {
 export async function updateProject(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
+  await assertCanAccessModule(currentUser, "module.projects");
   const projectId = requiredString(formData, "id");
   const status = enumValue(
     ProjectStatus,

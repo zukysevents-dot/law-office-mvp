@@ -19,6 +19,8 @@ import { formatDateTime } from "@/lib/format";
 import { andWhere, canViewAuditLog } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { firstParam } from "@/lib/search-params";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -67,6 +69,12 @@ function filterQuery(filters: AuditFilters, page?: number) {
 }
 
 export default async function AuditLogPage({ searchParams }: AuditLogPageProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.auditLog");
+  if (accessDenied) {
+    return <AccessDenied title="Audit log" message={accessDenied} />;
+  }
+
   const params = await searchParams;
   const filters = readAuditFilters((key) => firstParam(params, key));
   const page = Math.max(1, Number(firstParam(params, "page")) || 1);

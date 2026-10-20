@@ -27,8 +27,9 @@ export function SubjectBillingApprovers({
   return (
     <Section title="Osoby odpovědné za fakturaci">
       <p className="mb-4 text-sm text-[#5f756e]">
-        Tito uživatelé mohou schvalovat výkazy tohoto klienta. ADMIN a PARTNER
-        mohou schvalovat vždy, i bez výslovného přiřazení.
+        Tito uživatelé mohou schvalovat výkazy tohoto klienta. Uživatelé
+        s oprávněním „Schvaluje výkazy celé kanceláře“ mohou schvalovat vždy,
+        i bez výslovného přiřazení.
       </p>
       {approvers.length > 0 ? (
         <div className="mb-4 flex flex-wrap gap-2">
@@ -52,7 +53,8 @@ export function SubjectBillingApprovers({
       ) : (
         <div className="mb-4">
           <EmptyState>
-            Nejsou přidáni další schvalovatelé; platí oprávnění ADMIN/PARTNER.
+            Nejsou přidáni další schvalovatelé; schvalují uživatelé
+            s oprávněním „Schvaluje výkazy celé kanceláře“.
           </EmptyState>
         </div>
       )}

@@ -7,7 +7,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import { formatHours, formatMoney } from "@/lib/format";
-import { canViewTeamReports } from "@/lib/permissions";
+import { canAccessModule } from "@/lib/module-access.server";
+import { canViewRates, canViewTeamReports } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +24,7 @@ type TeamRow = {
 
 type ReportData = {
   allowed: boolean;
+  showAmounts: boolean;
   rows: Array<{
     id: string;
     name: string;
@@ -51,11 +53,14 @@ export default async function TeamReportPage({
   const dateTo = params.dateTo ?? now.toISOString().slice(0, 10);
 
   const result = await safeQuery<ReportData>(
-    { allowed: false, rows: [] },
+    { allowed: false, showAmounts: false, rows: [] },
     async () => {
       const currentUser = await getCurrentUser();
-      if (!canViewTeamReports(currentUser)) {
-        return { allowed: false, rows: [] };
+      if (
+        !canViewTeamReports(currentUser) ||
+        !(await canAccessModule(currentUser, "module.reports"))
+      ) {
+        return { allowed: false, showAmounts: false, rows: [] };
       }
       const prisma = getPrisma();
       const [teams, memberships, logs] = await Promise.all([
@@ -125,6 +130,7 @@ export default async function TeamReportPage({
 
       return {
         allowed: true,
+        showAmounts: canViewRates(currentUser),
         rows: [...rows.values()]
           .filter((row) => row.id !== "unassigned" || row.hours > 0)
           .map((row) => ({
@@ -151,7 +157,7 @@ export default async function TeamReportPage({
       />
       <DatabaseNotice databaseReady={result.databaseReady} error={result.error} />
       {!result.data.allowed && result.databaseReady ? (
-        <Section><EmptyState>Report je dostupný pouze vedení kanceláře.</EmptyState></Section>
+        <Section><EmptyState>Report je dostupný jen uživatelům s oprávněním „Vidí reporty za celou kancelář“.</EmptyState></Section>
       ) : (
         <>
           <Section title="Období">
@@ -174,7 +180,7 @@ export default async function TeamReportPage({
                       <th>Tým</th>
                       <th>Aktivní lidé</th>
                       <th>Hodiny</th>
-                      <th>Částka</th>
+                      {result.data.showAmounts ? <th>Částka</th> : null}
                       <th>Právní oblasti</th>
                     </tr>
                   </thead>
@@ -184,7 +190,9 @@ export default async function TeamReportPage({
                         <td className="font-medium text-[#072924]">{row.name}</td>
                         <td>{row.people}</td>
                         <td>{formatHours(row.hours)}</td>
-                        <td>{formatMoney(row.amount)}</td>
+                        {result.data.showAmounts ? (
+                          <td>{formatMoney(row.amount)}</td>
+                        ) : null}
                         <td className="max-w-xl whitespace-normal">{row.legalAreas || "—"}</td>
                       </tr>
                     ))}

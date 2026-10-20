@@ -11,8 +11,8 @@ type PageProps = {
 
 // WIP ("rozpracovanost") — billable work already logged and approved but not yet
 // on any invoice, grouped by client. Reuses the shared billing basis so it can
-// never diverge from what /billing considers invoiceable. Gated to ADMIN/PARTNER
-// like the other financial reports.
+// never diverge from what /billing considers invoiceable. Gated by "Vidí reporty
+// za celou kancelář" like the other office-wide reports.
 export default function WipReportPage({ searchParams }: PageProps) {
   return (
     <ReportView
@@ -22,7 +22,7 @@ export default function WipReportPage({ searchParams }: PageProps) {
       aggregate={bySubject}
       searchParams={searchParams}
       canView={canViewTeamReports}
-      deniedMessage="Přehled rozpracovanosti mohou zobrazit jen ADMIN a PARTNER."
+      deniedMessage="Přehled rozpracovanosti mohou zobrazit jen uživatelé s oprávněním „Vidí reporty za celou kancelář“."
       extraWhere={invoiceableWorkLogWhere}
     />
   );

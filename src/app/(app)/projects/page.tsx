@@ -34,6 +34,8 @@ import {
   restrictTableView,
 } from "@/lib/table-view-preference-service";
 import type { TableViewState } from "@/lib/table-view-preferences";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -61,6 +63,12 @@ type ProjectPageData = {
 };
 
 export default async function ProjectsPage({ searchParams }: ProjectsPageProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.projects");
+  if (accessDenied) {
+    return <AccessDenied title="Projekty" message={accessDenied} />;
+  }
+
   const params = await searchParams;
   const archive = archiveFilterValue(params.archive);
   const subjectId = params.subjectId ?? "";

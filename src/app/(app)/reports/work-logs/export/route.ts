@@ -9,6 +9,7 @@ import { andWhere, workLogVisibilityWhere } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { readReportFilters, workLogReportWhere } from "@/lib/reporting/filters";
 import { writeAuditLog } from "@/lib/audit";
+import { canAccessModule } from "@/lib/module-access.server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -60,6 +61,11 @@ function toNumber(value: unknown) {
 
 export async function GET(request: NextRequest) {
   const currentUser = await getCurrentUser();
+  if (
+    !(await canAccessModule(currentUser, "module.reports"))
+  ) {
+    return new Response("Přístup odepřen.", { status: 403 });
+  }
   const searchParams = request.nextUrl.searchParams;
   const format = searchParams.get("format") === "csv" ? "csv" : "xlsx";
   const filters = readReportFilters((key) => searchParams.get(key) ?? "");

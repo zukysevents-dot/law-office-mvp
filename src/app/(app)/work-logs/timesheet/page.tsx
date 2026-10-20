@@ -30,6 +30,8 @@ import {
   type TimesheetScope,
   type TimesheetTotals,
 } from "@/lib/timesheet";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -75,6 +77,12 @@ type Props = {
 };
 
 export default async function ClientTimesheetPage({ searchParams }: Props) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.workLogs");
+  if (accessDenied) {
+    return <AccessDenied title="Výkazy práce" message={accessDenied} />;
+  }
+
   const params = await searchParams;
   const subjectId = firstParam(params, "subjectId");
   const projectId = firstParam(params, "projectId");

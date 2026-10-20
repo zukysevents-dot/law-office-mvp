@@ -27,6 +27,8 @@ import {
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { firstParam } from "@/lib/search-params";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +46,12 @@ type NewInvoiceProps = {
 };
 
 export default async function NewInvoicePage({ searchParams }: NewInvoiceProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.billing");
+  if (accessDenied) {
+    return <AccessDenied title="Nová faktura" message={accessDenied} />;
+  }
+
   const params = await searchParams;
   const selectedSubjectId = firstParam(params, "subjectId") ?? "";
 

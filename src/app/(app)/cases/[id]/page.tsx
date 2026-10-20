@@ -54,6 +54,8 @@ import {
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { subjectRoleTone } from "@/lib/status-tones";
+import { AccessDenied } from "@/components/access-denied";
+import { canAccessModule, moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -157,7 +159,7 @@ async function loadCase(id: string) {
 
   const deadlinesEnabled =
     legalCase != null &&
-    (await isModuleEnabled(currentUser.organizationId, ModuleKey.DEADLINES));
+    (await canAccessModule(currentUser, "module.deadlines"));
 
   const [deadlines, hearings, memberRows] = deadlinesEnabled
     ? await Promise.all([
@@ -205,7 +207,7 @@ async function loadCase(id: string) {
 
   const documentsEnabled =
     legalCase != null &&
-    (await isModuleEnabled(currentUser.organizationId, ModuleKey.DOCUMENTS));
+    (await canAccessModule(currentUser, "module.documents"));
 
   const [documents, templates] = documentsEnabled
     ? await Promise.all([
@@ -296,6 +298,12 @@ export default async function CaseDetailPage({
   params,
   searchParams,
 }: CaseDetailProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.cases");
+  if (accessDenied) {
+    return <AccessDenied title="Případy" message={accessDenied} />;
+  }
+
   const { id } = await params;
   const { sharepoint } = await searchParams;
   const result = await safeQuery<CaseDetailData>(

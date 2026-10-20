@@ -12,6 +12,7 @@ import {
 import { andWhere, taskVisibilityWhere } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { writeAuditLog } from "@/lib/audit";
+import { canAccessModule } from "@/lib/module-access.server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -88,6 +89,11 @@ function dateCell(value: Date | null) {
 
 export async function GET(request: NextRequest) {
   const currentUser = await getCurrentUser();
+  if (
+    !(await canAccessModule(currentUser, "module.reports"))
+  ) {
+    return new Response("Přístup odepřen.", { status: 403 });
+  }
   const format = request.nextUrl.searchParams.get("format") === "csv"
     ? "csv"
     : "xlsx";

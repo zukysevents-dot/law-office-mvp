@@ -10,6 +10,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { formatDateTime } from "@/lib/format";
 import { andWhere, canViewAuditLog } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { canAccessModule } from "@/lib/module-access.server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -74,6 +75,11 @@ function buildCsv(rows: AuditLogRow[]) {
 
 export async function GET(request: NextRequest) {
   const currentUser = await getCurrentUser();
+  if (
+    !(await canAccessModule(currentUser, "module.auditLog"))
+  ) {
+    return new Response("Přístup odepřen.", { status: 403 });
+  }
 
   if (!canViewAuditLog(currentUser)) {
     return new Response("Přístup odepřen", { status: 403 });

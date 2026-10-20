@@ -64,6 +64,8 @@ import {
   taskVisibilityWhere,
   workLogVisibilityWhere,
 } from "@/lib/permissions";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -138,6 +140,12 @@ function numberParam(value: string) {
 }
 
 export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.workLogs");
+  if (accessDenied) {
+    return <AccessDenied title="Výkazy práce" message={accessDenied} />;
+  }
+
   const params = await searchParams;
   const subjectId = firstParam(params, "subjectId");
   const projectId = firstParam(params, "projectId");

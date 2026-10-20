@@ -1,13 +1,12 @@
 "use server";
 
-import { ModuleKey } from "@/generated/prisma/enums";
 import { getCurrentUser } from "@/lib/auth";
-import { assertModuleEnabled } from "@/lib/entitlements";
 import {
   getCalendarEvents,
   serializeCalendarEvent,
   type SerializedCalendarEvent,
 } from "@/lib/calendar-events";
+import { assertCanAccessModule } from "@/lib/module-access.server";
 
 /**
  * Fetch calendar events for a date range, scoped to the current user's
@@ -30,7 +29,7 @@ export async function fetchCalendarEvents(
   }
 
   const currentUser = await getCurrentUser();
-  await assertModuleEnabled(currentUser, ModuleKey.DEADLINES);
+  await assertCanAccessModule(currentUser, "module.calendar");
 
   try {
     const events = await getCalendarEvents(currentUser, { start, end });

@@ -81,7 +81,7 @@ export default async function BillingSettingsPage() {
       {result.databaseReady && data && !data.allowed ? (
         <Section title="Přístup odepřen">
           <p className="text-sm text-stone-600">
-            Fakturační údaje může spravovat pouze partner nebo administrátor.
+            Fakturační údaje spravují jen uživatelé s oprávněním „Spravuje nastavení kanceláře“.
           </p>
         </Section>
       ) : null}

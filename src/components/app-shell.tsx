@@ -59,9 +59,11 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
           {children}
         </div>
       </main>
-      <FloatingTimer
-        incrementMinutes={organization?.billingTimeIncrementMinutes ?? 15}
-      />
+      {allowedModules.includes("module.workLogs") ? (
+        <FloatingTimer
+          incrementMinutes={organization?.billingTimeIncrementMinutes ?? 15}
+        />
+      ) : null}
       <CommandPalette />
     </div>
   );

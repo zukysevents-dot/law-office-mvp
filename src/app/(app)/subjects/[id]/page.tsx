@@ -50,7 +50,6 @@ import {
   projectVisibilityWhere,
   subjectVisibilityWhere,
 } from "@/lib/permissions";
-import { canAccessModule } from "@/lib/module-access.server";
 import { getPrisma } from "@/lib/prisma";
 import { getOrgUserOptions } from "@/lib/org-users";
 import { subjectRoleTone } from "@/lib/status-tones";
@@ -59,6 +58,8 @@ import { mergeLegacyEmail } from "@/lib/subjects/contacts";
 import { composePersonName } from "@/lib/subjects/person-name";
 import { mergeLegacyStatutory } from "@/lib/subjects/statutory";
 import { isSafeHttpUrl } from "@/lib/utils";
+import { AccessDenied } from "@/components/access-denied";
+import { canAccessModule, moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -267,7 +268,7 @@ async function loadSubject(id: string) {
 
   const documentsEnabled =
     subject != null &&
-    (await isModuleEnabled(currentUser.organizationId, ModuleKey.DOCUMENTS));
+    (await canAccessModule(currentUser, "module.documents"));
   const [documents, documentTemplates] = documentsEnabled
     ? await Promise.all([
         prisma.document.findMany({
@@ -370,6 +371,12 @@ export default async function SubjectDetailPage({
   params,
   searchParams,
 }: SubjectDetailProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.subjects");
+  if (accessDenied) {
+    return <AccessDenied title="Subjekty" message={accessDenied} />;
+  }
+
   const { id } = await params;
   const { sharepoint, ares } = await searchParams;
   const result = await safeQuery<SubjectDetailData>(

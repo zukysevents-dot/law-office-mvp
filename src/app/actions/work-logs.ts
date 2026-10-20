@@ -23,6 +23,7 @@ import {
 import { resolveVisibleMatterSelection } from "@/lib/matter-integrity.server";
 import { getPrisma } from "@/lib/prisma";
 import { roundHoursToIncrement } from "@/lib/work-logs/time-rounding";
+import { assertCanAccessModule } from "@/lib/module-access.server";
 
 // Internal (non-billable) hours carry an internal category instead of a legal
 // area; the form only renders one of the two, so the unused one isn't submitted
@@ -61,6 +62,7 @@ function resolveHourlyRate({ caseRate, projectRate, subjectRate }: RateInput) {
 export async function createWorkLog(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
+  await assertCanAccessModule(currentUser, "module.workLogs");
   const rawHours = requiredNumber(formData, "hours");
   const organization = await prisma.organization.findUniqueOrThrow({
     where: { id: currentUser.organizationId },
@@ -169,6 +171,7 @@ function sameNumber(
 export async function updateWorkLog(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
+  await assertCanAccessModule(currentUser, "module.workLogs");
   const workLogId = requiredString(formData, "id");
   const rawHours = requiredNumber(formData, "hours");
   const organization = await prisma.organization.findUniqueOrThrow({
