@@ -9,6 +9,11 @@ import {
   taskVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import {
+  subjectMatchReasons,
+  subjectSearchInclude,
+  subjectSearchWhere,
+} from "@/lib/subjects/search";
 
 export type SearchHit = {
   type: "subject" | "project" | "case" | "task";
@@ -39,11 +44,23 @@ export async function globalSearch(query: string): Promise<SearchHit[]> {
 
   const [subjects, projects, cases, tasks] = await Promise.all([
     prisma.subject.findMany({
-      where: andWhere(subjectVisibilityWhere(user), {
-        archivedAt: null,
-        OR: [{ name: like }, { ico: like }],
-      }),
-      select: { id: true, name: true, ico: true },
+      where: andWhere(
+        subjectVisibilityWhere(user),
+        { archivedAt: null },
+        subjectSearchWhere(q),
+      ),
+      select: {
+        id: true,
+        name: true,
+        ico: true,
+        firstName: true,
+        lastName: true,
+        tradeName: true,
+        email: true,
+        birthNumber: true,
+        ...subjectSearchInclude,
+      },
+      orderBy: { name: "asc" },
       take: 5,
     }),
     prisma.project.findMany({
@@ -73,13 +90,19 @@ export async function globalSearch(query: string): Promise<SearchHit[]> {
   ]);
 
   return [
-    ...subjects.map((s) => ({
-      type: "subject" as const,
-      id: s.id,
-      label: s.name,
-      sub: s.ico ? `IČO ${s.ico}` : LABELS.subject,
-      href: `/subjects/${s.id}`,
-    })),
+    ...subjects.map((s) => {
+      // The match reason never carries the full birth number (masked) and the
+      // RČ itself is not part of the returned hit.
+      const reasons = subjectMatchReasons(s, q);
+      const base = s.ico ? `IČO ${s.ico}` : LABELS.subject;
+      return {
+        type: "subject" as const,
+        id: s.id,
+        label: s.name,
+        sub: reasons.length > 0 ? `${base} · Shoda: ${reasons[0]}` : base,
+        href: `/subjects/${s.id}`,
+      };
+    }),
     ...projects.map((p) => ({
       type: "project" as const,
       id: p.id,

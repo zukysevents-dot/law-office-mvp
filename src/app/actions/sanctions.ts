@@ -16,6 +16,7 @@ import {
 } from "@/lib/sanctions/config";
 import { selectCandidates } from "@/lib/sanctions/matching";
 import { normalizeName } from "@/lib/sanctions/normalize";
+import { screeningName } from "@/lib/subjects/person-name";
 
 // AML-5+: run a sanctions screening for a subject. The screening only SUGGESTS
 // candidates for the lawyer to review — it never sets AmlAssessment.hasSanctions
@@ -34,12 +35,14 @@ export async function runSanctionsScreening(formData: FormData) {
 
   const subject = await prisma.subject.findFirst({
     where: { id: subjectId, organizationId },
-    select: { id: true, name: true },
+    select: { id: true, name: true, type: true, firstName: true, lastName: true },
   });
   if (!subject) {
     throw new Error("Klient nenalezen.");
   }
-  const queryNormalized = normalizeName(subject.name);
+  // Persons are screened by their name without academic titles.
+  const queryName = screeningName(subject);
+  const queryNormalized = normalizeName(queryName);
   if (!queryNormalized) {
     throw new Error("Subjekt nemá jméno, screening nelze spustit.");
   }
@@ -70,7 +73,7 @@ export async function runSanctionsScreening(formData: FormData) {
       data: {
         organizationId,
         subjectId,
-        queryName: subject.name,
+        queryName,
         queryNormalized,
         source: SANCTIONS_SOURCE,
         candidateCount: candidates.length,
