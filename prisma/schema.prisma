@@ -417,6 +417,9 @@ model User {
   decidedSanctionsMatches     SanctionsScreeningMatch[] @relation("SanctionsMatchDecidedBy")
   invitationTokens            UserInvitationToken[]     @relation("UserInvitationTokenUser")
   createdInvitationTokens     UserInvitationToken[]     @relation("UserInvitationTokenCreatedBy")
+  permissionOverrides         UserPermissionOverride[]  @relation("UserPermissionOverrideUser")
+  updatedUserPermissions      UserPermissionOverride[]  @relation("UserPermissionOverrideUpdatedBy")
+  updatedRolePermissions      RolePermissionOverride[]  @relation("RolePermissionOverrideUpdatedBy")
 
   @@map("users")
 }
@@ -1078,16 +1081,17 @@ model UserHoursPlan {
   @@map("userHoursPlans")
 }
 
-// Udělitelné schopnosti nad rámec role (per-user granty). Přidání hodnoty =
-// ALTER TYPE migrace + úprava příslušného can*/assert* helperu, aby grant četl
-// (role-default fallback). MVP: 2 hodnoty.
+// @deprecated – nahrazeno UserPermissionOverride (matice oprávnění). Enum ani
+// tabulku nemažeme (expand-only migrace); granty se dál zapisují souběžně
+// (dual-write) a resolver je čte jako fallback ALLOW.
+// Udělitelné schopnosti nad rámec role (per-user granty). MVP: 2 hodnoty.
 enum Capability {
   MANAGE_INVOICES // přístup k fakturaci nad rámec ADMIN/PARTNER (revize ř.77)
   VIEW_RATES // zobrazení hodinových sazeb a částek (revize ř.35/62)
 }
 
-// Per-user × capability grant. Přítomnost řádku = grant udělen. Role dává
-// baseline, grant ho ADITIVNĚ rozšiřuje (allow-only). Org-scoped pro izolaci.
+// @deprecated – nahrazeno UserPermissionOverride; dual-write, čte se jako
+// fallback. Per-user × capability grant. Přítomnost řádku = grant udělen.
 model UserCapabilityGrant {
   id             String     @id @default(cuid())
   organizationId String
@@ -1104,6 +1108,51 @@ model UserCapabilityGrant {
   @@index([organizationId])
   @@index([userId])
   @@map("userCapabilityGrants")
+}
+
+// Výjimka z výchozí matice oprávnění pro roli v kanceláři. Výchozí hodnoty žijí
+// v kódu (src/lib/permission-catalog.ts) — absence řádku = výchozí hodnota, takže
+// tabulka obsahuje jen buňky, které kancelář změnila. ADMIN se neukládá (má
+// vždy vše). `permission` je klíč z katalogu, `value` je ALLOW | DENY pro
+// moduly a funkce, ALL | ASSIGNED | OWN pro rozsah dat.
+model RolePermissionOverride {
+  id             String   @id @default(cuid())
+  organizationId String
+  role           UserRole
+  permission     String
+  value          String
+  updatedById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  updatedBy    User?        @relation("RolePermissionOverrideUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, role, permission])
+  @@index([organizationId])
+  @@map("rolePermissionOverrides")
+}
+
+// Výjimka pro konkrétního uživatele v kanceláři — má přednost před nastavením
+// role. Absence řádku = „Podle role“. Hodnoty jako u RolePermissionOverride.
+model UserPermissionOverride {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  permission     String
+  value          String
+  updatedById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation("UserPermissionOverrideUser", fields: [userId], references: [id], onDelete: Cascade)
+  updatedBy    User?        @relation("UserPermissionOverrideUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, userId, permission])
+  @@index([organizationId])
+  @@index([userId])
+  @@map("userPermissionOverrides")
 }
 
 // Doplňkoví řešitelé projektu (vedle jediného responsibleUser). Přiřazení
@@ -1251,6 +1300,8 @@ model Organization {
   subjectBillingApprovers   SubjectBillingApprover[]
   retainerInvoicePeriods    RetainerInvoicePeriod[]
   userInvitationTokens      UserInvitationToken[]
+  rolePermissionOverrides   RolePermissionOverride[]
+  userPermissionOverrides   UserPermissionOverride[]
 
   @@index([status])
   @@map("organizations")
