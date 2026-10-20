@@ -4,16 +4,25 @@ import { updateSubject } from "@/app/actions/subjects";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
-import { SubjectAresFields } from "@/components/subject-ares-fields";
+import {
+  SubjectContactsEditor,
+  type ContactDefault,
+} from "@/components/subject-form/subject-contacts-editor";
+import { SubjectFormFields } from "@/components/subject-form/subject-form-fields";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
+import { SubjectContactType, SubjectType } from "@/generated/prisma/enums";
 import { getCurrentUser } from "@/lib/auth";
 import { numberInputValue } from "@/lib/form-values";
 import { feeTypeLabels, options } from "@/lib/labels";
 import { safeQuery } from "@/lib/db-safe";
 import { canEditRecord } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { mergeLegacyEmail } from "@/lib/subjects/contacts";
+import { personPartOfTradeName, splitPersonName } from "@/lib/subjects/person-name";
+import { mergeLegacyStatutory } from "@/lib/subjects/statutory";
+import { subjectFormErrorMessage } from "@/lib/subjects/subject-input";
 
 export const dynamic = "force-dynamic";
 
@@ -22,14 +31,38 @@ type SubjectEditProps = {
   searchParams: Promise<{ error?: string }>;
 };
 
+const day = (value: Date | string | null | undefined) =>
+  value ? new Date(value).toISOString().slice(0, 10) : "";
+
 async function loadSubject(id: string) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  const subject = await prisma.subject.findUnique({ where: { id } });
+  const subject = await prisma.subject.findUnique({
+    where: { id },
+    include: {
+      contacts: { orderBy: { position: "asc" } },
+      statutoryBodies: { orderBy: { position: "asc" } },
+    },
+  });
 
-  return subject && canEditRecord(currentUser, "Subject", subject)
-    ? subject
-    : null;
+  if (!subject || !canEditRecord(currentUser, "Subject", subject)) {
+    return null;
+  }
+
+  // Candidates for "Propojený subjekt" of a statutory body: active subjects of
+  // the same office, never the subject itself.
+  const linkOptions = await prisma.subject.findMany({
+    where: {
+      organizationId: subject.organizationId,
+      archivedAt: null,
+      id: { not: subject.id },
+    },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true, ico: true },
+    take: 1000,
+  });
+
+  return { subject, linkOptions };
 }
 
 export default async function SubjectEditPage({
@@ -44,13 +77,54 @@ export default async function SubjectEditPage({
     notFound();
   }
 
-  const subject = result.data;
+  const subject = result.data?.subject ?? null;
+  const linkOptions = result.data?.linkOptions ?? [];
+  const errorMessage = subjectFormErrorMessage(error);
+
+  // Older persons have only the free-text name: pre-fill the parts once.
+  const isNatural =
+    subject?.type === SubjectType.PERSON || subject?.type === SubjectType.ENTREPRENEUR;
+  const needsSplit = Boolean(
+    subject && isNatural && !subject.firstName && !subject.lastName,
+  );
+  const split = needsSplit
+    ? splitPersonName(personPartOfTradeName(subject?.tradeName || subject?.name || ""))
+    : null;
+  // A legacy sole trader's free-text name may be a trade name ("Petr Dvořák –
+  // Truhlářství"): keep it as the trade name so the display name is unchanged.
+  const legacyTradeName =
+    needsSplit && subject?.type === SubjectType.ENTREPRENEUR && !subject.tradeName
+      ? subject.name
+      : undefined;
+
+  const contacts: ContactDefault[] = subject
+    ? mergeLegacyEmail(subject.contacts, subject.email).map((contact) => ({
+        id: contact.id ?? null,
+        type: contact.type as SubjectContactType,
+        value: contact.value,
+        label: contact.label ?? null,
+        isPrimary: contact.isPrimary,
+      }))
+    : [];
+  const statutory = subject
+    ? mergeLegacyStatutory(subject.statutoryBodies, subject.statutoryBody).map(
+        (row) => ({
+          id: "id" in row ? (row.id ?? null) : null,
+          name: row.name,
+          function: row.function ?? "",
+          actingMethod: "actingMethod" in row ? (row.actingMethod ?? "") : "",
+          validFrom: day(row.validFrom),
+          validTo: day(row.validTo),
+          linkedSubjectId: "linkedSubjectId" in row ? (row.linkedSubjectId ?? "") : "",
+        }),
+      )
+    : [];
 
   return (
     <>
       <PageHeader
         title="Upravit subjekt"
-        description="Úprava základních, rizikových a smluvních údajů subjektu."
+        description="Úprava základních, kontaktních, rizikových a smluvních údajů subjektu."
         action={
           <ButtonLink href={`/subjects/${id}`} variant="secondary">
             Zpět na detail
@@ -63,17 +137,17 @@ export default async function SubjectEditPage({
       />
       {subject ? (
         <Section>
-          {error === "ico" ? (
+          {errorMessage ? (
             <p
               role="alert"
               className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-800"
             >
-              Subjekt s tímto IČO už ve vaší kanceláři existuje.
+              {errorMessage}
             </p>
           ) : null}
           <form action={updateSubject} className="grid gap-4">
             <input type="hidden" name="id" value={subject.id} />
-            <SubjectAresFields
+            <SubjectFormFields
               defaults={{
                 type: subject.type,
                 name: subject.name,
@@ -81,28 +155,31 @@ export default async function SubjectEditPage({
                 dic: subject.dic ?? undefined,
                 legalForm: subject.legalForm ?? undefined,
                 address: subject.address ?? undefined,
-                statutoryBody: subject.statutoryBody ?? undefined,
+                deliveryAddress: subject.deliveryAddress ?? undefined,
+                titleBefore: split?.titleBefore ?? subject.titleBefore ?? undefined,
+                firstName: split?.firstName ?? subject.firstName ?? undefined,
+                lastName: split?.lastName ?? subject.lastName ?? undefined,
+                titleAfter: split?.titleAfter ?? subject.titleAfter ?? undefined,
+                birthDate: day(subject.birthDate) || undefined,
+                birthNumber: subject.birthNumber ?? undefined,
+                nationality: subject.nationality ?? undefined,
+                tradeName: subject.tradeName ?? legacyTradeName,
                 status: subject.status,
                 insolvencyStatus: subject.insolvencyStatus ?? undefined,
                 riskFlag: subject.riskFlag,
               }}
+              statutory={statutory}
+              linkOptions={linkOptions}
+              nameSplitNotice={needsSplit}
+              contactsSlot={<SubjectContactsEditor defaults={contacts} />}
             />
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field label="E-mail">
-                <TextInput
-                  name="email"
-                  type="email"
-                  defaultValue={subject.email ?? ""}
-                />
-              </Field>
-              <Field label="SharePoint URL">
-                <TextInput
-                  name="sharepointUrl"
-                  type="url"
-                  defaultValue={subject.sharepointUrl ?? ""}
-                />
-              </Field>
-            </div>
+            <Field label="SharePoint URL">
+              <TextInput
+                name="sharepointUrl"
+                type="url"
+                defaultValue={subject.sharepointUrl ?? ""}
+              />
+            </Field>
             <Field label="Interní poznámka">
               <TextArea
                 name="internalNote"

@@ -15,6 +15,8 @@ import { SharepointFolderField } from "@/components/sharepoint-folder-field";
 import { SharepointNotice } from "@/components/sharepoint-notice";
 import { SubjectAmlSection } from "@/components/subject-aml-section";
 import { SubjectContactPersons } from "@/components/subject-contact-persons";
+import { SubjectContactsList } from "@/components/subject-contacts-list";
+import { SubjectStatutoryBodies } from "@/components/subject-statutory-bodies";
 import { SubjectDocumentsSection } from "@/components/subject-documents-section";
 import { SubjectBillingApprovers } from "@/components/subject-billing-approvers";
 import type { ScreeningWithMatches } from "@/components/sanctions-screening-panel";
@@ -24,10 +26,10 @@ import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
-import { ModuleKey } from "@/generated/prisma/enums";
+import { ModuleKey, SubjectType } from "@/generated/prisma/enums";
 import { getCurrentUser } from "@/lib/auth";
 import { isModuleEnabled } from "@/lib/entitlements";
-import { formatDate, formatMoney } from "@/lib/format";
+import { formatDate, formatDateUtc, formatMoney } from "@/lib/format";
 import {
   feeTypeLabels,
   projectStatusLabels,
@@ -50,6 +52,8 @@ import {
 import { getPrisma } from "@/lib/prisma";
 import { getOrgUserOptions } from "@/lib/org-users";
 import { subjectRoleTone } from "@/lib/status-tones";
+import { mergeLegacyEmail } from "@/lib/subjects/contacts";
+import { mergeLegacyStatutory } from "@/lib/subjects/statutory";
 import { isSafeHttpUrl } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -139,8 +143,43 @@ async function loadSubject(id: string) {
         take: 10,
         include: { acknowledgedBy: { select: { name: true } } },
       },
+      contacts: { orderBy: { position: "asc" } },
+      statutoryBodies: { orderBy: { position: "asc" } },
+      // Back-links: where this subject acts as a statutory body — only of
+      // subjects the user may see.
+      statutoryRoles: {
+        where: {
+          subject: andWhere(
+            { archivedAt: null },
+            subjectVisibilityWhere(currentUser),
+          ),
+        },
+        orderBy: { createdAt: "asc" },
+        select: {
+          id: true,
+          function: true,
+          validFrom: true,
+          validTo: true,
+          subject: { select: { id: true, name: true } },
+        },
+      },
     },
   });
+
+  // Statutory bodies link to another subject only when the user may see it.
+  const linkedIds = Array.from(
+    new Set(
+      (subject?.statutoryBodies ?? [])
+        .map((body) => body.linkedSubjectId)
+        .filter((value): value is string => Boolean(value)),
+    ),
+  );
+  const visibleLinked = linkedIds.length
+    ? await prisma.subject.findMany({
+        where: andWhere({ id: { in: linkedIds } }, subjectVisibilityWhere(currentUser)),
+        select: { id: true, name: true },
+      })
+    : [];
 
   // Matters of this client, for the optional project/case binding when adding a
   // contact person (validated again in the action).
@@ -274,6 +313,7 @@ async function loadSubject(id: string) {
 
   return {
     subject,
+    visibleLinked,
     canArchive: canViewAllLegalData(currentUser),
     canEdit: subject ? canEditRecord(currentUser, "Subject", subject) : false,
     canAml,
@@ -332,6 +372,7 @@ export default async function SubjectDetailPage({
   const result = await safeQuery<SubjectDetailData>(
     {
       subject: null,
+      visibleLinked: [],
       canArchive: false,
       canEdit: false,
       canAml: false,
@@ -355,6 +396,7 @@ export default async function SubjectDetailPage({
 
   const {
     subject,
+    visibleLinked,
     canArchive,
     canEdit,
     canAml,
@@ -376,6 +418,39 @@ export default async function SubjectDetailPage({
   const contractUrl = isSafeHttpUrl(subject?.legalServicesContractUrl)
     ? subject.legalServicesContractUrl
     : null;
+  const isPerson = subject?.type === SubjectType.PERSON;
+  const isEntrepreneur = subject?.type === SubjectType.ENTREPRENEUR;
+  const contactItems = subject
+    ? mergeLegacyEmail(subject.contacts, subject.email).map((contact) => ({
+        id: contact.id ?? null,
+        type: contact.type,
+        value: contact.value,
+        label: contact.label ?? null,
+        isPrimary: contact.isPrimary,
+      }))
+    : [];
+  const linkedById = new Map(visibleLinked.map((item) => [item.id, item]));
+  const statutoryItems = subject
+    ? mergeLegacyStatutory(subject.statutoryBodies, subject.statutoryBody).map(
+        (body) => {
+          const linkedId = "linkedSubjectId" in body ? body.linkedSubjectId : null;
+          return {
+            id: "id" in body ? (body.id ?? null) : null,
+            name: body.name,
+            function: body.function ?? null,
+            actingMethod: "actingMethod" in body ? (body.actingMethod ?? null) : null,
+            validFrom: body.validFrom ? new Date(body.validFrom) : null,
+            validTo: body.validTo ? new Date(body.validTo) : null,
+            linkedSubject: linkedId ? (linkedById.get(linkedId) ?? null) : null,
+          };
+        },
+      )
+    : [];
+  const personName = subject
+    ? [subject.titleBefore, subject.firstName, subject.lastName, subject.titleAfter]
+        .filter(Boolean)
+        .join(" ")
+    : "";
 
   return (
     <>
@@ -420,14 +495,78 @@ export default async function SubjectDetailPage({
       ) : null}
       {subject ? (
         <>
-          <Section>
+          <Section title="Základní údaje">
             <div className="grid gap-4 md:grid-cols-3">
+              <div>
+                <p className="text-xs font-semibold uppercase text-stone-500">Typ</p>
+                <p>{subjectTypeLabels[subject.type]}</p>
+              </div>
+              {isPerson || isEntrepreneur ? (
+                <div>
+                  <p className="text-xs font-semibold uppercase text-stone-500">
+                    Jméno a příjmení
+                  </p>
+                  <p>{personName || subject.name}</p>
+                </div>
+              ) : null}
+              {isEntrepreneur ? (
+                <div>
+                  <p className="text-xs font-semibold uppercase text-stone-500">
+                    Obchodní firma
+                  </p>
+                  <p>{subject.tradeName ?? "—"}</p>
+                </div>
+              ) : null}
+              {isPerson || (isEntrepreneur && subject.birthDate) ? (
+                <div>
+                  <p className="text-xs font-semibold uppercase text-stone-500">
+                    Datum narození
+                  </p>
+                  <p>{subject.birthDate ? formatDateUtc(subject.birthDate) : "—"}</p>
+                </div>
+              ) : null}
+              {isPerson ? (
+                <>
+                  <div>
+                    <p className="text-xs font-semibold uppercase text-stone-500">
+                      Rodné číslo
+                    </p>
+                    <p className="font-mono">{subject.birthNumber ?? "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase text-stone-500">
+                      Státní příslušnost
+                    </p>
+                    <p>{subject.nationality ?? "—"}</p>
+                  </div>
+                </>
+              ) : null}
               <div className="md:col-span-3">
                 <p className="text-xs font-semibold uppercase text-stone-500">
-                  Sídlo
+                  {isPerson
+                    ? "Trvalé bydliště"
+                    : isEntrepreneur
+                      ? "Místo podnikání"
+                      : "Sídlo"}
                 </p>
                 <p>{subject.address ?? "—"}</p>
               </div>
+              {subject.deliveryAddress || isPerson ? (
+                <div className="md:col-span-3">
+                  <p className="text-xs font-semibold uppercase text-stone-500">
+                    Doručovací adresa
+                  </p>
+                  <p>{subject.deliveryAddress ?? "—"}</p>
+                </div>
+              ) : null}
+              {isPerson && (subject.ico || subject.dic) ? (
+                <p className="text-sm text-amber-900 md:col-span-3">
+                  U fyzické osoby jsou evidované starší údaje IČO/DIČ – pokud
+                  osoba podniká, změňte typ na Fyzická osoba podnikatel.
+                </p>
+              ) : null}
+              {!isPerson || subject.ico || subject.dic ? (
+              <>
               <div>
                 <p className="text-xs font-semibold uppercase text-stone-500">IČO</p>
                 {subject.ico && links ? (
@@ -483,25 +622,16 @@ export default async function SubjectDetailPage({
                 <p className="text-xs font-semibold uppercase text-stone-500">DIČ</p>
                 <p className="font-mono">{subject.dic ?? "—"}</p>
               </div>
-              <div>
-                <p className="text-xs font-semibold uppercase text-stone-500">Typ</p>
-                <p>{subjectTypeLabels[subject.type]}</p>
-              </div>
-              <div>
-                <p className="text-xs font-semibold uppercase text-stone-500">
-                  E-mail
-                </p>
-                {subject.email ? (
-                  <a
-                    href={`mailto:${encodeURIComponent(subject.email)}`}
-                    className="break-all font-medium text-emerald-950 hover:underline"
-                  >
-                    {subject.email}
-                  </a>
-                ) : (
-                  <p>—</p>
-                )}
-              </div>
+              </>
+              ) : null}
+              {!isPerson ? (
+                <div>
+                  <p className="text-xs font-semibold uppercase text-stone-500">
+                    Právní forma
+                  </p>
+                  <p>{subject.legalForm ?? "—"}</p>
+                </div>
+              ) : null}
               <div>
                 <p className="text-xs font-semibold uppercase text-stone-500">Stav</p>
                 <p>{subject.status}</p>
@@ -536,14 +666,28 @@ export default async function SubjectDetailPage({
               </div>
             </div>
           </Section>
-          <SubjectRegistrySection
+          <SubjectContactsList
             subjectId={subject.id}
-            watchEnabled={subject.registryWatchEnabled}
-            checkedAt={subject.registryCheckedAt}
-            hasIco={Boolean(subject.ico)}
-            events={subject.registryChangeEvents}
+            contacts={contactItems}
             canEdit={canEdit}
           />
+          <SubjectStatutoryBodies
+            subjectId={subject.id}
+            bodies={statutoryItems}
+            roles={subject.statutoryRoles}
+            canEdit={canEdit}
+            showEmpty={!isPerson && !isEntrepreneur}
+          />
+          {isPerson && !subject.ico ? null : (
+            <SubjectRegistrySection
+              subjectId={subject.id}
+              watchEnabled={subject.registryWatchEnabled}
+              checkedAt={subject.registryCheckedAt}
+              hasIco={Boolean(subject.ico)}
+              events={subject.registryChangeEvents}
+              canEdit={canEdit}
+            />
+          )}
           <SubjectContactPersons
             subjectId={subject.id}
             contacts={subject.contactPersons}
@@ -722,6 +866,7 @@ export default async function SubjectDetailPage({
               subjectId={subject.id}
               access={portal?.access ?? null}
               shares={portal?.shares ?? []}
+              defaultEmail={subject.email}
             />
           ) : null}
         </>

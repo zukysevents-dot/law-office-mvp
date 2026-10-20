@@ -7,7 +7,8 @@ import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field
 import { PageHeader } from "@/components/page-header";
 import { RowClickNav } from "@/components/row-click-nav";
 import { Section } from "@/components/section";
-import { SubjectAresFields } from "@/components/subject-ares-fields";
+import { SubjectContactsEditor } from "@/components/subject-form/subject-contacts-editor";
+import { SubjectFormFields } from "@/components/subject-form/subject-form-fields";
 import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
@@ -17,6 +18,7 @@ import {
   archivedWhere,
   archiveFilterValue,
 } from "@/lib/archive-filter";
+import { SubjectContactType } from "@/generated/prisma/enums";
 import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import { formatDate, formatMoney } from "@/lib/format";
@@ -28,6 +30,9 @@ import {
   subjectVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { contactHref } from "@/lib/subjects/contacts";
+import { subjectSearchWhere } from "@/lib/subjects/search";
+import { subjectFormErrorMessage } from "@/lib/subjects/subject-input";
 import {
   getCurrentTableView,
   getDefaultTableView,
@@ -47,6 +52,8 @@ type SubjectRow = {
   type: keyof typeof subjectTypeLabels;
   ico: string | null;
   dic: string | null;
+  email: string | null;
+  contacts: Array<{ type: SubjectContactType; value: string; isPrimary: boolean }>;
   address: string | null;
   legalForm: string | null;
   statutoryBody: string | null;
@@ -62,6 +69,7 @@ type SubjectRow = {
 
 type SubjectsPageData = {
   subjects: SubjectRow[];
+  linkOptions: Array<{ id: string; name: string; ico: string | null }>;
   tableView: TableViewState;
   canManage: boolean;
   canViewRates: boolean;
@@ -75,6 +83,7 @@ export default async function SubjectsPage({ searchParams }: SubjectsPageProps) 
   const result = await safeQuery<SubjectsPageData>(
     {
       subjects: [],
+      linkOptions: [],
       tableView: getDefaultTableView("subjects"),
       canManage: false,
       canViewRates: false,
@@ -83,28 +92,43 @@ export default async function SubjectsPage({ searchParams }: SubjectsPageProps) 
       const prisma = getPrisma();
       const currentUser = await getCurrentUser();
       const tableView = await getCurrentTableView("subjects");
-      const subjects = await prisma.subject.findMany({
-        where: andWhere(
-          archivedWhere(archive),
-          subjectVisibilityWhere(currentUser),
-          {
-            ...(query
-              ? {
-                  OR: [
-                    { name: { contains: query, mode: "insensitive" } },
-                    { ico: { contains: query, mode: "insensitive" } },
-                  ],
-                }
-              : {}),
+      const canManage = canManageSubjects(currentUser);
+      const [subjects, linkOptions] = await Promise.all([
+        prisma.subject.findMany({
+          where: andWhere(
+            archivedWhere(archive),
+            subjectVisibilityWhere(currentUser),
+            subjectSearchWhere(query),
+          ),
+          // The birth number never leaves the detail / edit page.
+          omit: { birthNumber: true },
+          include: {
+            contacts: {
+              where: {
+                type: { in: [SubjectContactType.EMAIL, SubjectContactType.PHONE] },
+              },
+              orderBy: { position: "asc" },
+              select: { type: true, value: true, isPrimary: true },
+            },
           },
-        ),
-        orderBy: { name: "asc" },
-      });
+          orderBy: { name: "asc" },
+        }),
+        // "Propojený subjekt" options of the new-subject form's statutory rows.
+        canManage
+          ? prisma.subject.findMany({
+              where: { organizationId: currentUser.organizationId, archivedAt: null },
+              orderBy: { name: "asc" },
+              select: { id: true, name: true, ico: true },
+              take: 1000,
+            })
+          : Promise.resolve([]),
+      ]);
 
       return {
         subjects,
+        linkOptions,
         tableView,
-        canManage: canManageSubjects(currentUser),
+        canManage,
         canViewRates: canViewRates(currentUser),
       };
     },
@@ -141,7 +165,7 @@ export default async function SubjectsPage({ searchParams }: SubjectsPageProps) 
               <TextInput
                 name="q"
                 defaultValue={query}
-                placeholder="Název nebo IČO"
+                placeholder="Název, jméno, IČO, e-mail nebo telefon"
                 className="pl-9"
               />
             </div>
@@ -213,6 +237,22 @@ export default async function SubjectsPage({ searchParams }: SubjectsPageProps) 
                     {visibleColumnSet.has("dic") ? (
                       <td className="font-mono text-sm">{subject.dic ?? "—"}</td>
                     ) : null}
+                    {visibleColumnSet.has("email") ? (
+                      <td className="max-w-xs break-all">
+                        <PrimaryContact
+                          subject={subject}
+                          type={SubjectContactType.EMAIL}
+                        />
+                      </td>
+                    ) : null}
+                    {visibleColumnSet.has("phone") ? (
+                      <td className="whitespace-nowrap">
+                        <PrimaryContact
+                          subject={subject}
+                          type={SubjectContactType.PHONE}
+                        />
+                      </td>
+                    ) : null}
                     {visibleColumnSet.has("address") ? (
                       <td className="max-w-sm">{subject.address ?? "—"}</td>
                     ) : null}
@@ -275,24 +315,41 @@ export default async function SubjectsPage({ searchParams }: SubjectsPageProps) 
       </Section>
       {result.data.canManage ? (
         <Section title="Nový subjekt" className="scroll-mt-6" id="new-subject">
-          {params.error === "ico" ? (
+          {subjectFormErrorMessage(params.error) ? (
             <p
               role="alert"
               className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-800"
             >
-              Subjekt s tímto IČO už ve vaší kanceláři existuje.
+              {subjectFormErrorMessage(params.error)}
             </p>
           ) : null}
           <form action={createSubject} className="grid gap-4">
-            <SubjectAresFields />
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field label="E-mail">
-                <TextInput name="email" type="email" />
-              </Field>
-              <Field label="SharePoint URL">
-                <TextInput name="sharepointUrl" type="url" />
-              </Field>
-            </div>
+            <SubjectFormFields
+              linkOptions={result.data.linkOptions}
+              contactsSlot={
+                <SubjectContactsEditor
+                  defaults={[
+                    {
+                      id: null,
+                      type: SubjectContactType.EMAIL,
+                      value: "",
+                      label: null,
+                      isPrimary: true,
+                    },
+                    {
+                      id: null,
+                      type: SubjectContactType.PHONE,
+                      value: "",
+                      label: null,
+                      isPrimary: true,
+                    },
+                  ]}
+                />
+              }
+            />
+            <Field label="SharePoint URL">
+              <TextInput name="sharepointUrl" type="url" />
+            </Field>
             <Field label="Interní poznámka">
               <TextArea name="internalNote" />
             </Field>
@@ -328,5 +385,29 @@ export default async function SubjectsPage({ searchParams }: SubjectsPageProps) 
         </Section>
       ) : null}
     </>
+  );
+}
+
+function PrimaryContact({
+  subject,
+  type,
+}: {
+  subject: Pick<SubjectRow, "contacts" | "email">;
+  type: SubjectContactType;
+}) {
+  const rows = subject.contacts.filter((contact) => contact.type === type);
+  const value =
+    (rows.find((contact) => contact.isPrimary) ?? rows[0])?.value ??
+    (type === SubjectContactType.EMAIL ? subject.email : null);
+  if (!value) {
+    return <>—</>;
+  }
+  const href = contactHref(type, value);
+  return href ? (
+    <a href={href} className="text-emerald-950 hover:underline">
+      {value}
+    </a>
+  ) : (
+    <>{value}</>
   );
 }
