@@ -14,6 +14,13 @@ export type RegistryRiskSignal = { type: RegistryRiskSignalType; label: string }
 
 export type AresSubjectFields = {
   name: string;
+  /** Obchodní jméno as registered — for a sole trader its trade name. */
+  tradeName: string;
+  /**
+   * Legal form 100–109 = natural person (fyzická osoba podnikatel); the form
+   * switches the subject type to ENTREPRENEUR, other forms to COMPANY.
+   */
+  isNaturalPerson: boolean;
   dic: string | null;
   address: string | null;
   legalForm: string | null;
@@ -55,8 +62,14 @@ export function mapAresToSubjectFields(raw: AresRawSubject): AresSubjectFields {
     riskSignals.push({ type: "LIQUIDATION", label: "V likvidaci" });
   }
 
+  const formCode = Number(raw.pravniForma);
+  const isNaturalPerson =
+    Number.isInteger(formCode) && formCode >= 100 && formCode <= 109;
+
   return {
     name,
+    tradeName: name,
+    isNaturalPerson,
     dic,
     address,
     legalForm,

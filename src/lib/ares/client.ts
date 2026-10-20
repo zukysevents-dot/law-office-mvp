@@ -79,3 +79,70 @@ export async function fetchAresSubject(ico: string): Promise<AresFetchResult> {
 
   return { status: "ok", data };
 }
+
+/** Minimal shape of the public-register (VR) record we read — all optional. */
+export type AresVrRaw = {
+  icoId?: string;
+  zaznamy?: AresVrRecord[];
+};
+
+export type AresVrRecord = {
+  primarniZaznam?: boolean;
+  statutarniOrgany?: AresVrOrgan[] | null;
+};
+
+export type AresVrOrgan = {
+  nazevOrganu?: string | null;
+  datumZapisu?: string | null;
+  datumVymazu?: string | null;
+  zpusobJednani?: Array<{
+    hodnota?: string | null;
+    datumZapisu?: string | null;
+    datumVymazu?: string | null;
+  }> | null;
+  clenoveOrganu?: AresVrMember[] | null;
+};
+
+export type AresVrMember = {
+  datumZapisu?: string | null;
+  datumVymazu?: string | null;
+  nazevAngazma?: string | null;
+  clenstvi?: {
+    clenstvi?: { vznikClenstvi?: string | null; zanikClenstvi?: string | null } | null;
+    funkce?: {
+      nazev?: string | null;
+      vznikFunkce?: string | null;
+      zanikFunkce?: string | null;
+    } | null;
+  } | null;
+  fyzickaOsoba?: {
+    titulPredJmenem?: string | null;
+    jmeno?: string | null;
+    prijmeni?: string | null;
+    titulZaJmenem?: string | null;
+  } | null;
+  pravnickaOsoba?: { obchodniJmeno?: string | null; ico?: string | null } | null;
+};
+
+/**
+ * Fetch the public-register (obchodní rejstřík) record, which — unlike the
+ * basic record — lists the statutory bodies. Best effort: any failure returns
+ * null so the basic ARES lookup never fails because of it.
+ */
+export async function fetchAresVr(ico: string): Promise<AresVrRaw | null> {
+  const url = `${getAresBaseUrl()}/ekonomicke-subjekty-vr/${encodeURIComponent(ico)}`;
+  try {
+    const res = await fetch(url, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      return null;
+    }
+    const data = (await res.json()) as AresVrRaw;
+    return data && Array.isArray(data.zaznamy) ? data : null;
+  } catch {
+    return null;
+  }
+}

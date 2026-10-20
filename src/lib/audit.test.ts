@@ -41,3 +41,19 @@ test("auditJson: converts Date and Decimal-like values to JSON-safe data", () =>
     amount: "1250.50",
   });
 });
+
+test("auditJson: masks the birth number at any depth", () => {
+  const data = auditJson({
+    name: "Jan Novák",
+    birthNumber: "800101/0006",
+    nested: { birthNumber: "855115/0003" },
+    empty: { birthNumber: null },
+  });
+
+  assert.deepEqual(data, {
+    name: "Jan Novák",
+    birthNumber: "••••••/••06",
+    nested: { birthNumber: "••••••/••03" },
+    empty: { birthNumber: null },
+  });
+});

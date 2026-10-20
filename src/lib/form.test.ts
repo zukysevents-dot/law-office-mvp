@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  indexedRows,
   optionalDateTime,
   requiredDateTime,
   safeInternalRedirectPath,
@@ -137,4 +138,52 @@ test("safeInternalRedirectPath: rejects backslash origin confusion", () => {
 test("safeInternalRedirectPath: falls back for absent or non-string values", () => {
   assert.equal(safeInternalRedirectPath(null, "/references"), "/references");
   assert.equal(safeInternalRedirectPath(42, "/references"), "/references");
+});
+
+// --- indexedRows: repeated `prefix.<key>.<field>` rows --------------------
+
+test("indexedRows: groups by row key in DOM order and trims values", () => {
+  const formData = new FormData();
+  formData.append("contact.b.type", "EMAIL");
+  formData.append("contact.b.value", "  b@example.cz ");
+  formData.append("contact.a.type", "PHONE");
+  formData.append("contact.a.value", "777 123 456");
+  formData.append("contact.a.primary", "on");
+  formData.append("name", "ignored");
+
+  const rows = indexedRows(formData, "contact", ["type", "value", "primary"]);
+  assert.deepEqual(rows, [
+    { key: "b", values: { type: "EMAIL", value: "b@example.cz", primary: "" } },
+    { key: "a", values: { type: "PHONE", value: "777 123 456", primary: "on" } },
+  ]);
+});
+
+test("indexedRows: ignores unknown fields, foreign prefixes and bad keys", () => {
+  const formData = new FormData();
+  formData.append("contact.x.evil", "1");
+  formData.append("contactx.y.value", "1");
+  formData.append("contact.bad key.value", "1");
+  formData.append("contact..value", "1");
+  formData.append("contact.ok.value", "v");
+
+  assert.deepEqual(indexedRows(formData, "contact", ["value"]), [
+    { key: "ok", values: { value: "v" } },
+  ]);
+});
+
+test("indexedRows: caps the number of rows", () => {
+  const formData = new FormData();
+  for (let i = 0; i < 150; i += 1) {
+    formData.append(`row.k${i}.value`, String(i));
+  }
+  const rows = indexedRows(formData, "row", ["value"]);
+  assert.equal(rows.length, 100);
+  assert.equal(rows[99].values.value, "99");
+});
+
+test("indexedRows: a duplicated control does not override the first value", () => {
+  const formData = new FormData();
+  formData.append("row.a.value", "first");
+  formData.append("row.a.value", "second");
+  assert.equal(indexedRows(formData, "row", ["value"])[0].values.value, "first");
 });

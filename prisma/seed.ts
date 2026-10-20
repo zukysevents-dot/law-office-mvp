@@ -5,6 +5,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { hashCode } from "../src/lib/join-code";
 import { hashPassword } from "../src/lib/password";
+import { statutorySummary } from "../src/lib/subjects/statutory";
 import { defaultTableViewPreferenceData } from "../src/lib/table-view-preferences";
 import {
   BillingStatus,
@@ -18,6 +19,7 @@ import {
   OrganizationMemberStatus,
   PlanInterval,
   ProjectStatus,
+  SubjectContactType,
   SubjectRole,
   SubjectType,
   SubscriptionStatus,
@@ -560,7 +562,99 @@ async function main() {
       },
     }));
 
-  void janNovak;
+  // Subjekty — fyzická osoba, FOP, více kontaktů a statutární orgány (balíček
+  // 02). Idempotentní: doplňuje chybějící, nic nemaže ani nepřepisuje ručně
+  // upravené řádky; odvozené sloupce (email, statutoryBody) dopočítá z řádků.
+  await prisma.subject.update({
+    where: { id: janNovak.id },
+    data: {
+      titleBefore: null,
+      firstName: "Jan",
+      lastName: "Novák",
+      birthDate: new Date("1980-01-01T00:00:00.000Z"),
+      birthNumber: "800101/0006",
+      nationality: "Česká republika",
+      address: "Dlouhá 12, 110 00 Praha 1",
+    },
+  });
+
+  const abcContacts = [
+    { type: SubjectContactType.EMAIL, value: "info@abc.example", label: null, isPrimary: true },
+    { type: SubjectContactType.EMAIL, value: "fakturace@abc.example", label: "fakturace", isPrimary: false },
+    { type: SubjectContactType.PHONE, value: "+420 777 123 456", label: null, isPrimary: true },
+  ];
+  for (const [position, contact] of abcContacts.entries()) {
+    const valueNormalized =
+      contact.type === SubjectContactType.PHONE
+        ? contact.value.replace(/\D/g, "")
+        : contact.value.toLowerCase();
+    const existing = await prisma.subjectContact.findFirst({
+      where: { subjectId: abc.id, type: contact.type, valueNormalized },
+      select: { id: true },
+    });
+    if (!existing) {
+      await prisma.subjectContact.create({
+        data: {
+          organizationId: demoOrg.id,
+          subjectId: abc.id,
+          ...contact,
+          valueNormalized,
+          position,
+        },
+      });
+    }
+  }
+  const hasAbcStatutory = await prisma.subjectStatutoryBody.findFirst({
+    where: { subjectId: abc.id },
+    select: { id: true },
+  });
+  if (!hasAbcStatutory) {
+    await prisma.subjectStatutoryBody.create({
+      data: {
+        organizationId: demoOrg.id,
+        subjectId: abc.id,
+        name: "Jan Novák",
+        function: "jednatel",
+        actingMethod: "Jednatel jedná za společnost samostatně.",
+        validFrom: new Date("2015-03-01T00:00:00.000Z"),
+        linkedSubjectId: janNovak.id,
+        position: 0,
+      },
+    });
+  }
+  const abcRows = await prisma.subject.findUniqueOrThrow({
+    where: { id: abc.id },
+    include: {
+      contacts: { orderBy: { position: "asc" } },
+      statutoryBodies: { orderBy: { position: "asc" } },
+    },
+  });
+  const abcEmails = abcRows.contacts.filter((c) => c.type === SubjectContactType.EMAIL);
+  await prisma.subject.update({
+    where: { id: abc.id },
+    data: {
+      email: (abcEmails.find((c) => c.isPrimary) ?? abcEmails[0])?.value ?? null,
+      statutoryBody: statutorySummary(abcRows.statutoryBodies),
+    },
+  });
+
+  await prisma.subject.upsert({
+    where: { organizationId_ico: { organizationId: demoOrg.id, ico: "76543218" } },
+    update: {},
+    create: {
+      organizationId: demoOrg.id,
+      type: SubjectType.ENTREPRENEUR,
+      name: "Petr Dvořák – Truhlářství",
+      firstName: "Petr",
+      lastName: "Dvořák",
+      tradeName: "Petr Dvořák – Truhlářství",
+      ico: "76543218",
+      address: "Řemeslná 5, 602 00 Brno",
+      legalForm: "Fyzická osoba podnikající dle živnostenského zákona",
+      status: "ACTIVE",
+    },
+  });
+
   void lawyer;
   void intern;
 

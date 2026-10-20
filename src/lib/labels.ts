@@ -25,6 +25,7 @@ import {
   RegistryChangeType,
   ReminderLevel,
   SalaryTaxMode,
+  SubjectContactType,
   SubjectRole,
   SubjectType,
   SubscriptionStatus,
@@ -200,11 +201,59 @@ export const userRoleLabels: Record<UserRole, string> = {
 };
 
 export const subjectTypeLabels: Record<SubjectType, string> = {
-  COMPANY: "Společnost",
+  COMPANY: "Právnická osoba",
   PERSON: "Fyzická osoba",
-  ENTREPRENEUR: "Podnikatel",
+  ENTREPRENEUR: "Fyzická osoba podnikatel",
   OTHER: "Jiný subjekt",
 };
+
+export const subjectContactTypeLabels: Record<SubjectContactType, string> = {
+  EMAIL: "E-mail",
+  PHONE: "Telefon",
+  DATA_BOX: "Datová schránka",
+  WEB: "Web",
+  OTHER: "Jiný",
+};
+
+// Label of the value input of one contact row, by contact type.
+export const subjectContactValueLabels: Record<SubjectContactType, string> = {
+  EMAIL: "E-mail",
+  PHONE: "Telefon",
+  DATA_BOX: "ID datové schránky",
+  WEB: "Webová adresa",
+  OTHER: "Kontakt",
+};
+
+// Datalist suggestions — free text is always allowed.
+export const subjectContactLabelSuggestions = [
+  "fakturace",
+  "pracovní",
+  "osobní",
+  "sekretariát",
+];
+
+export const statutoryFunctionSuggestions = [
+  "jednatel",
+  "předseda představenstva",
+  "místopředseda představenstva",
+  "člen představenstva",
+  "statutární ředitel",
+  "člen správní rady",
+  "předseda spolku",
+  "likvidátor",
+];
+
+export const nationalitySuggestions = [
+  "Česká republika",
+  "Slovenská republika",
+  "Německo",
+  "Rakousko",
+  "Polsko",
+  "Ukrajina",
+  "Vietnam",
+  "Spojené království",
+  "Spojené státy americké",
+];
 
 export const subjectRoleLabels: Record<SubjectRole, string> = {
   CLIENT: "Klient",
@@ -329,6 +378,7 @@ export const options = {
   userRoles: Object.values(UserRole),
   organizationStatuses: Object.values(OrganizationStatus),
   subjectTypes: Object.values(SubjectType),
+  subjectContactTypes: Object.values(SubjectContactType),
   subjectRoles: Object.values(SubjectRole),
   feeTypes: Object.values(FeeType),
   taskStatuses: Object.values(TaskStatus),
