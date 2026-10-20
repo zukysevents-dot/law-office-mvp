@@ -124,6 +124,28 @@ async function main() {
       await prisma.auditLog.deleteMany({
         where: { entityType: "Subject", entityId: { in: staleSubjectIds } },
       });
+      // Contacts / statutory bodies cascade with the subject; their audit rows
+      // are keyed by the child id, so drop them explicitly first.
+      const staleContactIds = (
+        await prisma.subjectContact.findMany({
+          where: { subjectId: { in: staleSubjectIds } },
+          select: { id: true },
+        })
+      ).map((row) => row.id);
+      const staleStatutoryIds = (
+        await prisma.subjectStatutoryBody.findMany({
+          where: { subjectId: { in: staleSubjectIds } },
+          select: { id: true },
+        })
+      ).map((row) => row.id);
+      await prisma.auditLog.deleteMany({
+        where: {
+          OR: [
+            { entityType: "SubjectContact", entityId: { in: staleContactIds } },
+            { entityType: "SubjectStatutoryBody", entityId: { in: staleStatutoryIds } },
+          ],
+        },
+      });
       await prisma.subject.deleteMany({ where: { id: { in: staleSubjectIds } } });
     }
 
