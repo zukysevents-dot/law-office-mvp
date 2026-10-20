@@ -11,12 +11,13 @@ import { requiredString } from "@/lib/form";
 import {
   assertCanEditRecord,
   assertCanManageSubjects,
+  canViewRates,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { diffChildRows, rowChanged } from "@/lib/subjects/child-rows";
 import type { ContactRow } from "@/lib/subjects/contacts";
 import type { StatutoryRow } from "@/lib/subjects/statutory";
-import { parseSubjectForm } from "@/lib/subjects/subject-input";
+import { parseSubjectForm, subjectWriteData } from "@/lib/subjects/subject-input";
 import { assertCanAccessModule } from "@/lib/module-access.server";
 
 // The per-org unique IČO violation is an EXPECTED user mistake, not a crash:
@@ -128,11 +129,13 @@ export async function createSubject(formData: FormData) {
     redirect(`/subjects?error=${parsed.error}#new-subject`);
   }
   const statutory = await sanitizeLinkedSubjects(organizationId, parsed.statutory, null);
+  // Rates only from users who may see them: a new subject gets none.
+  const subjectData = subjectWriteData(parsed.subject, canViewRates(currentUser));
 
   const subject = await prisma
     .$transaction(async (tx) => {
       const created = await tx.subject.create({
-        data: { organizationId, ...parsed.subject },
+        data: { organizationId, ...subjectData },
       });
       const contacts = parsed.contacts.length
         ? await tx.subjectContact.createManyAndReturn({
@@ -209,12 +212,14 @@ export async function updateSubject(formData: FormData) {
   );
 
   const { contacts: oldContacts, statutoryBodies: oldBodies, ...oldSubject } = old;
+  // Rates only from users who may see them: otherwise the stored values stay.
+  const subjectData = subjectWriteData(parsed.subject, canViewRates(currentUser));
 
   const subject = await prisma
     .$transaction(async (tx) => {
       const updated = await tx.subject.update({
         where: { id: subjectId },
-        data: parsed.subject,
+        data: subjectData,
       });
 
       const audits: Prisma.AuditLogCreateManyInput[] = [];

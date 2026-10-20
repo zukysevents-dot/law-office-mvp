@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { parseSubjectForm } from "./subject-input";
+import { parseSubjectForm, subjectWriteData } from "./subject-input";
 
 const NOW = new Date("2026-10-20T12:00:00.000Z");
 
@@ -174,4 +174,28 @@ test("contract URL must be http(s)", () => {
   );
   assert.ok(result.ok);
   assert.equal(result.subject.legalServicesContractUrl, null);
+});
+
+test("subjectWriteData: rates only for users who may see them", () => {
+  const result = parseSubjectForm(
+    form([
+      ["type", "COMPANY"],
+      ["name", "Sazby s.r.o."],
+      ["hourlyRate", "2500"],
+      ["flatFee", "10000"],
+      ["feeNote", "Poznámka"],
+    ]),
+    NOW,
+  );
+  assert.ok(result.ok);
+
+  const allowed = subjectWriteData(result.subject, true);
+  assert.equal(allowed.hourlyRate, 2500);
+  assert.equal(allowed.flatFee, 10000);
+
+  const denied = subjectWriteData(result.subject, false);
+  assert.equal("hourlyRate" in denied, false);
+  assert.equal("flatFee" in denied, false);
+  assert.equal(denied.name, "Sazby s.r.o.");
+  assert.equal(denied.feeNote, "Poznámka");
 });

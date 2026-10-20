@@ -16,9 +16,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 export async function GET(request: Request) {
   const currentUser = await getCurrentUser();
   await assertModuleEnabled(currentUser, ModuleKey.HR_ATTENDANCE);
-  if (
-    !(await canAccessModule(currentUser, "module.hr"))
-  ) {
+  if (!(await canAccessModule(currentUser, "module.hr"))) {
     return new Response("Přístup odepřen.", { status: 403 });
   }
   assertCanManageHr(currentUser);

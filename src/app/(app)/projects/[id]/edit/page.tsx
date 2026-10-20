@@ -14,6 +14,7 @@ import { safeQuery } from "@/lib/db-safe";
 import {
   andWhere,
   canEditRecord,
+  canViewRates,
   subjectVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
@@ -75,6 +76,7 @@ export default async function ProjectEditPage({ params }: ProjectEditProps) {
   if (accessDenied) {
     return <AccessDenied title="Projekty" message={accessDenied} />;
   }
+  const showRates = canViewRates(accessUser);
 
   const { id } = await params;
   const result = await safeQuery<ProjectEditData>(
@@ -150,15 +152,17 @@ export default async function ProjectEditPage({ params }: ProjectEditProps) {
                 </SelectInput>
               </Field>
             </div>
-            <Field label="Hodinová sazba">
-              <TextInput
-                name="hourlyRate"
-                type="number"
-                min="0"
-                step="0.01"
-                defaultValue={numberInputValue(project.hourlyRate)}
-              />
-            </Field>
+            {showRates ? (
+              <Field label="Hodinová sazba">
+                <TextInput
+                  name="hourlyRate"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  defaultValue={numberInputValue(project.hourlyRate)}
+                />
+              </Field>
+            ) : null}
             <Field label="SharePoint URL">
               <TextInput
                 name="sharepointUrl"

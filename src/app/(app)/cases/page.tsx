@@ -24,6 +24,7 @@ import { getOrgUserOptions } from "@/lib/org-users";
 import { caseStatusLabels, options } from "@/lib/labels";
 import {
   andWhere,
+  canViewRates,
   caseVisibilityWhere,
   projectVisibilityWhere,
   subjectVisibilityWhere,
@@ -76,6 +77,7 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
   if (accessDenied) {
     return <AccessDenied title="Případy" message={accessDenied} />;
   }
+  const showRates = canViewRates(accessUser);
 
   const params = await searchParams;
   const archive = archiveFilterValue(params.archive);
@@ -337,9 +339,11 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
               </SelectInput>
             </Field>
           </div>
-          <Field label="Hodinová sazba">
-            <TextInput name="hourlyRate" type="number" min="0" step="0.01" />
-          </Field>
+          {showRates ? (
+            <Field label="Hodinová sazba">
+              <TextInput name="hourlyRate" type="number" min="0" step="0.01" />
+            </Field>
+          ) : null}
           <Field label="SharePoint URL">
             <TextInput name="sharepointUrl" type="url" />
           </Field>

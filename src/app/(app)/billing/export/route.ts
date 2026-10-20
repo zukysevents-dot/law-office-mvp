@@ -128,9 +128,7 @@ export async function GET(request: NextRequest) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
   await assertModuleEnabled(currentUser, ModuleKey.BILLING);
-  if (
-    !(await canAccessModule(currentUser, "module.billing"))
-  ) {
+  if (!(await canAccessModule(currentUser, "module.billing"))) {
     return new Response("Přístup odepřen.", { status: 403 });
   }
   assertCanManageInvoices(currentUser);

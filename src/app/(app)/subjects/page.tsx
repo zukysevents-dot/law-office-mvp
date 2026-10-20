@@ -83,6 +83,7 @@ export default async function SubjectsPage({ searchParams }: SubjectsPageProps) 
   if (accessDenied) {
     return <AccessDenied title="Subjekty" message={accessDenied} />;
   }
+  const showRates = canViewRates(accessUser);
 
   const params = await searchParams;
   const query = params.q?.trim() ?? "";
@@ -375,14 +376,16 @@ export default async function SubjectsPage({ searchParams }: SubjectsPageProps) 
                 </SelectInput>
               </Field>
             </div>
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Hodinová sazba">
-                <TextInput name="hourlyRate" type="number" min="0" step="0.01" />
-              </Field>
-              <Field label="Paušální odměna">
-                <TextInput name="flatFee" type="number" min="0" step="0.01" />
-              </Field>
-            </div>
+            {showRates ? (
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Hodinová sazba">
+                  <TextInput name="hourlyRate" type="number" min="0" step="0.01" />
+                </Field>
+                <Field label="Paušální odměna">
+                  <TextInput name="flatFee" type="number" min="0" step="0.01" />
+                </Field>
+              </div>
+            ) : null}
             <Field label="Poznámka k odměně">
               <TextArea name="feeNote" />
             </Field>

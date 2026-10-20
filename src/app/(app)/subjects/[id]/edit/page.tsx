@@ -17,7 +17,10 @@ import { getCurrentUser } from "@/lib/auth";
 import { numberInputValue } from "@/lib/form-values";
 import { feeTypeLabels, options } from "@/lib/labels";
 import { safeQuery } from "@/lib/db-safe";
-import { canEditRecord } from "@/lib/permissions";
+import {
+  canEditRecord,
+  canViewRates,
+} from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { mergeLegacyEmail } from "@/lib/subjects/contacts";
 import { personPartOfTradeName, splitPersonName } from "@/lib/subjects/person-name";
@@ -83,6 +86,7 @@ export default async function SubjectEditPage({
   if (accessDenied) {
     return <AccessDenied title="Subjekty" message={accessDenied} />;
   }
+  const showRates = canViewRates(accessUser);
 
   const { id } = await params;
   const { error } = await searchParams;
@@ -219,26 +223,28 @@ export default async function SubjectEditPage({
                 </SelectInput>
               </Field>
             </div>
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Hodinová sazba">
-                <TextInput
-                  name="hourlyRate"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  defaultValue={numberInputValue(subject.hourlyRate)}
-                />
-              </Field>
-              <Field label="Paušální odměna">
-                <TextInput
-                  name="flatFee"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  defaultValue={numberInputValue(subject.flatFee)}
-                />
-              </Field>
-            </div>
+            {showRates ? (
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Hodinová sazba">
+                  <TextInput
+                    name="hourlyRate"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    defaultValue={numberInputValue(subject.hourlyRate)}
+                  />
+                </Field>
+                <Field label="Paušální odměna">
+                  <TextInput
+                    name="flatFee"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    defaultValue={numberInputValue(subject.flatFee)}
+                  />
+                </Field>
+              </div>
+            ) : null}
             <Field label="Poznámka k odměně">
               <TextArea name="feeNote" defaultValue={subject.feeNote ?? ""} />
             </Field>

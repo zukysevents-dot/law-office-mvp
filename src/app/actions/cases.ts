@@ -18,6 +18,7 @@ import { assertUserInOrg } from "@/lib/org-users";
 import {
   andWhere,
   assertCanEditRecord,
+  canViewRates,
   projectVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
@@ -64,7 +65,11 @@ export async function createCase(formData: FormData) {
           fileNumber: optionalString(formData, "fileNumber"),
           responsibleUserId,
           status,
-          hourlyRate: optionalNumber(formData, "hourlyRate"),
+          // Rate only from users who may see rates; otherwise create leaves it
+          // empty and update keeps the stored value.
+          ...(canViewRates(currentUser)
+            ? { hourlyRate: optionalNumber(formData, "hourlyRate") }
+            : {}),
           sharepointUrl: optionalString(formData, "sharepointUrl"),
           note: optionalString(formData, "note"),
         },
@@ -141,7 +146,11 @@ export async function updateCase(formData: FormData) {
         fileNumber: optionalString(formData, "fileNumber"),
         responsibleUserId,
         status,
-        hourlyRate: optionalNumber(formData, "hourlyRate"),
+        // Rate only from users who may see rates; otherwise create leaves it
+        // empty and update keeps the stored value.
+        ...(canViewRates(currentUser)
+          ? { hourlyRate: optionalNumber(formData, "hourlyRate") }
+          : {}),
         sharepointUrl: optionalString(formData, "sharepointUrl"),
         note: optionalString(formData, "note"),
       },

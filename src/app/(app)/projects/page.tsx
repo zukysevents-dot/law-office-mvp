@@ -68,6 +68,7 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
   if (accessDenied) {
     return <AccessDenied title="Projekty" message={accessDenied} />;
   }
+  const showRates = canViewRates(accessUser);
 
   const params = await searchParams;
   const archive = archiveFilterValue(params.archive);
@@ -325,9 +326,11 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
               </SelectInput>
             </Field>
           </div>
-          <Field label="Hodinová sazba projektu">
-            <TextInput name="hourlyRate" type="number" min="0" step="0.01" />
-          </Field>
+          {showRates ? (
+            <Field label="Hodinová sazba projektu">
+              <TextInput name="hourlyRate" type="number" min="0" step="0.01" />
+            </Field>
+          ) : null}
           <Field label="SharePoint URL">
             <TextInput name="sharepointUrl" type="url" />
           </Field>

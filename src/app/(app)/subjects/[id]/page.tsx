@@ -39,11 +39,12 @@ import {
 import { safeQuery } from "@/lib/db-safe";
 import {
   andWhere,
+  canArchiveRecords,
   canEditRecord,
   canManageDocuments,
-  canManageSubjects,
   canManagePortal,
-  canArchiveRecords,
+  canManageSubjects,
+  canViewRates,
   caseVisibilityWhere,
   documentTemplateVisibilityWhere,
   documentVisibilityWhere,
@@ -376,6 +377,7 @@ export default async function SubjectDetailPage({
   if (accessDenied) {
     return <AccessDenied title="Subjekty" message={accessDenied} />;
   }
+  const showRates = canViewRates(accessUser);
 
   const { id } = await params;
   const { sharepoint, ares } = await searchParams;
@@ -728,18 +730,22 @@ export default async function SubjectDetailPage({
                 </p>
                 <p>{subject.feeType ? feeTypeLabels[subject.feeType] : "—"}</p>
               </div>
-              <div>
-                <p className="text-xs font-semibold uppercase text-stone-500">
-                  Hodinová sazba
-                </p>
-                <p>{formatMoney(subject.hourlyRate)}</p>
-              </div>
-              <div>
-                <p className="text-xs font-semibold uppercase text-stone-500">
-                  Paušální odměna
-                </p>
-                <p>{formatMoney(subject.flatFee)}</p>
-              </div>
+              {showRates ? (
+                <>
+                  <div>
+                    <p className="text-xs font-semibold uppercase text-stone-500">
+                      Hodinová sazba
+                    </p>
+                    <p>{formatMoney(subject.hourlyRate)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase text-stone-500">
+                      Paušální odměna
+                    </p>
+                    <p>{formatMoney(subject.flatFee)}</p>
+                  </div>
+                </>
+              ) : null}
               <div className="md:col-span-3">
                 <p className="text-xs font-semibold uppercase text-stone-500">
                   Poznámka k odměně

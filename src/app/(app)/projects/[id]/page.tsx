@@ -31,9 +31,10 @@ import {
 import { safeQuery } from "@/lib/db-safe";
 import {
   andWhere,
-  canManageReferences,
   canArchiveRecords,
   canEditRecord,
+  canManageReferences,
+  canViewRates,
   caseVisibilityWhere,
   projectVisibilityWhere,
   referenceVisibilityWhere,
@@ -179,6 +180,7 @@ export default async function ProjectDetailPage({
   if (accessDenied) {
     return <AccessDenied title="Projekty" message={accessDenied} />;
   }
+  const showRates = canViewRates(accessUser);
 
   const { id } = await params;
   const { sharepoint } = await searchParams;
@@ -267,12 +269,14 @@ export default async function ProjectDetailPage({
                 </p>
                 <p>{project.responsibleUser?.name ?? "—"}</p>
               </div>
-              <div>
-                <p className="text-xs font-semibold uppercase text-stone-500">
-                  Hodinová sazba projektu
-                </p>
-                <p>{formatMoney(project.hourlyRate)}</p>
-              </div>
+              {showRates ? (
+                <div>
+                  <p className="text-xs font-semibold uppercase text-stone-500">
+                    Hodinová sazba projektu
+                  </p>
+                  <p>{formatMoney(project.hourlyRate)}</p>
+                </div>
+              ) : null}
               <SharepointFolderField
                 entityType="Project"
                 id={project.id}

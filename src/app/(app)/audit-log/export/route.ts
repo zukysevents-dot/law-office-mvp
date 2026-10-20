@@ -75,9 +75,7 @@ function buildCsv(rows: AuditLogRow[]) {
 
 export async function GET(request: NextRequest) {
   const currentUser = await getCurrentUser();
-  if (
-    !(await canAccessModule(currentUser, "module.auditLog"))
-  ) {
+  if (!(await canAccessModule(currentUser, "module.auditLog"))) {
     return new Response("Přístup odepřen.", { status: 403 });
   }
 

@@ -6,7 +6,12 @@ import { DatabaseNotice } from "@/components/ui/database-notice";
 import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import { formatHours, formatMoney } from "@/lib/format";
-import { andWhere, canViewTeamReports, workLogVisibilityWhere } from "@/lib/permissions";
+import {
+  andWhere,
+  canViewRates,
+  canViewTeamReports,
+  workLogVisibilityWhere,
+} from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import {
   REPORT_ROW_LIMIT,
@@ -197,10 +202,12 @@ export default async function BillabilityReportPage({ searchParams }: PageProps)
                 value={formatHours(kpi.totalHours)}
                 hint={`${kpi.totalCount} položek`}
               />
-              <KpiCard
-                label="Fakturovatelná částka"
-                value={formatMoney(kpi.billableAmount)}
-              />
+              {canViewRates(accessUser) ? (
+                <KpiCard
+                  label="Fakturovatelná částka"
+                  value={formatMoney(kpi.billableAmount)}
+                />
+              ) : null}
             </div>
           </Section>
         </>

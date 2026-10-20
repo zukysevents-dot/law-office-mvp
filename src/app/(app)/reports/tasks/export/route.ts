@@ -89,9 +89,7 @@ function dateCell(value: Date | null) {
 
 export async function GET(request: NextRequest) {
   const currentUser = await getCurrentUser();
-  if (
-    !(await canAccessModule(currentUser, "module.reports"))
-  ) {
+  if (!(await canAccessModule(currentUser, "module.reports"))) {
     return new Response("Přístup odepřen.", { status: 403 });
   }
   const format = request.nextUrl.searchParams.get("format") === "csv"

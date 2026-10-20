@@ -11,7 +11,12 @@ import { getCurrentUser } from "@/lib/auth";
 import { caseStatusLabels, options } from "@/lib/labels";
 import { safeQuery } from "@/lib/db-safe";
 import { numberInputValue } from "@/lib/form-values";
-import { andWhere, canEditRecord, projectVisibilityWhere } from "@/lib/permissions";
+import {
+  andWhere,
+  canEditRecord,
+  canViewRates,
+  projectVisibilityWhere,
+} from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { AccessDenied } from "@/components/access-denied";
 import { moduleAccessDenial } from "@/lib/module-access.server";
@@ -73,6 +78,7 @@ export default async function CaseEditPage({ params }: CaseEditProps) {
   if (accessDenied) {
     return <AccessDenied title="Případy" message={accessDenied} />;
   }
+  const showRates = canViewRates(accessUser);
 
   const { id } = await params;
   const result = await safeQuery<CaseEditData>(
@@ -153,15 +159,17 @@ export default async function CaseEditPage({ params }: CaseEditProps) {
                 </SelectInput>
               </Field>
             </div>
-            <Field label="Hodinová sazba">
-              <TextInput
-                name="hourlyRate"
-                type="number"
-                min="0"
-                step="0.01"
-                defaultValue={numberInputValue(legalCase.hourlyRate)}
-              />
-            </Field>
+            {showRates ? (
+              <Field label="Hodinová sazba">
+                <TextInput
+                  name="hourlyRate"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  defaultValue={numberInputValue(legalCase.hourlyRate)}
+                />
+              </Field>
+            ) : null}
             <Field label="SharePoint URL">
               <TextInput
                 name="sharepointUrl"
