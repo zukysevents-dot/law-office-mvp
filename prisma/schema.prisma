@@ -22,6 +22,15 @@ enum SubjectType {
   OTHER
 }
 
+// Druh kontaktního údaje subjektu (SubjectContact).
+enum SubjectContactType {
+  EMAIL
+  PHONE
+  DATA_BOX
+  WEB
+  OTHER
+}
+
 enum SubjectRole {
   CLIENT
   COUNTERPARTY
@@ -472,10 +481,28 @@ model Subject {
   name                     String
   ico                      String?
   dic                      String?
+  /// Deprecated: synchronizováno s hlavním e-mailem (SubjectContact typu EMAIL
+  /// s isPrimary). Čtou ho fakturace, portál, notifikace a exporty.
   email                    String?
+  // Sídlo (právnická osoba), místo podnikání (FOP), trvalé bydliště (FO).
   address                  String?
   legalForm                String?
+  /// Deprecated: synchronizováno se souhrnem aktuálních SubjectStatutoryBody.
   statutoryBody            String?
+  // Fyzická osoba / FOP. `name` zůstává vyplněné (složené jméno, resp.
+  // obchodní firma) kvůli hledání, řazení a zpětné kompatibilitě.
+  titleBefore              String?
+  firstName                String?
+  lastName                 String?
+  titleAfter               String?
+  birthDate                DateTime?
+  // Rodné číslo normalizované na „YYMMDD/XXXX“. Citlivý osobní údaj: plně jen
+  // na detailu a v editaci, jinde maskované (src/lib/subjects/birth-number.ts).
+  birthNumber              String?
+  nationality              String?
+  // Obchodní firma FOP (pokud se liší od jména).
+  tradeName                String?
+  deliveryAddress          String?
   status                   String      @default("ACTIVE")
   insolvencyStatus         String?
   riskFlag                 Boolean     @default(false)
@@ -516,6 +543,9 @@ model Subject {
   contactPersons       ContactPerson[]
   registryChangeEvents RegistryChangeEvent[]
   billingApprovers     SubjectBillingApprover[]
+  contacts             SubjectContact[]
+  statutoryBodies      SubjectStatutoryBody[]   @relation("StatutoryBodySubject")
+  statutoryRoles       SubjectStatutoryBody[]   @relation("StatutoryBodyLinkedSubject")
 
   // IČO is unique PER organization, not globally — the same company can be a
   // subject of more than one law office (multi-tenant). NULL ico is allowed
@@ -527,7 +557,62 @@ model Subject {
   @@index([riskFlag])
   // Runner selects watch-enabled subjects ordered by oldest check first.
   @@index([registryWatchEnabled, registryCheckedAt])
+  @@index([organizationId, birthNumber])
+  @@index([organizationId, lastName])
   @@map("subjects")
+}
+
+// Kontaktní údaj subjektu (více e-mailů, telefonů, datových schránek…).
+// Hlavní e-mail se zrcadlí do Subject.email. Kontaktní osoby (lidé, se kterými
+// kancelář komunikuje) jsou samostatně v ContactPerson.
+model SubjectContact {
+  id              String             @id @default(cuid())
+  organizationId  String
+  subjectId       String
+  type            SubjectContactType
+  value           String
+  // E-mail/datovka/web malými písmeny, telefon jen číslice — pro hledání.
+  valueNormalized String
+  label           String?
+  isPrimary       Boolean            @default(false)
+  position        Int                @default(0)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  subject      Subject      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([subjectId, position])
+  @@index([organizationId, valueNormalized])
+  @@map("subjectContacts")
+}
+
+// Statutární orgán / člen statutárního orgánu subjektu (jednatel, člen
+// představenstva…). Volitelně propojený na jiný Subject téže kanceláře.
+// Souhrn aktuálních orgánů se zrcadlí do Subject.statutoryBody.
+model SubjectStatutoryBody {
+  id              String    @id @default(cuid())
+  organizationId  String
+  subjectId       String
+  name            String
+  function        String?
+  actingMethod    String?
+  validFrom       DateTime?
+  validTo         DateTime?
+  linkedSubjectId String?
+  position        Int       @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  organization  Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  subject       Subject      @relation("StatutoryBodySubject", fields: [subjectId], references: [id], onDelete: Cascade)
+  linkedSubject Subject?     @relation("StatutoryBodyLinkedSubject", fields: [linkedSubjectId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([subjectId, position])
+  @@index([linkedSubjectId])
+  @@map("subjectStatutoryBodies")
 }
 
 // Hlídání rejstříků: typ zjištěné změny v registru (ISIR/OR přes ARES).
@@ -1155,6 +1240,8 @@ model Organization {
   sanctionsScreenings       SanctionsScreening[]
   sanctionsScreeningMatches SanctionsScreeningMatch[]
   contactPersons            ContactPerson[]
+  subjectContacts           SubjectContact[]
+  subjectStatutoryBodies    SubjectStatutoryBody[]
   userHoursPlans            UserHoursPlan[]
   projectAssignees          ProjectAssignee[]
   caseAssignees             CaseAssignee[]
