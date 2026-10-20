@@ -268,6 +268,12 @@ test.describe("zrušení registračního kódu", () => {
     expect(posts).toEqual([]);
     await expect(row).toContainText("Aktivní");
 
+    // „Ponechat kód“ dialog jen zavře.
+    await row.getByRole("button", { name: "Zrušit" }).click();
+    await dialog.getByRole("button", { name: "Ponechat kód" }).click();
+    await expect(dialog).toBeHidden();
+    await expect(row).toContainText("Aktivní");
+
     // Potvrzení kód zruší.
     await row.getByRole("button", { name: "Zrušit" }).click();
     await dialog.getByRole("button", { name: "Ano, zrušit kód" }).click();

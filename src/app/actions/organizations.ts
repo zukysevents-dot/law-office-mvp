@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 
 import {
   ModuleKey,
@@ -184,13 +185,17 @@ export async function joinOrganization(formData: FormData) {
     throw error;
   }
 
-  // Tell the office's admins/partners right away (best effort, never throws,
-  // never blocks the join; SMTP off → only an audit row).
-  await notifyOrgAdminsAboutNewMember({
-    organizationId: joined.organizationId,
-    userId: user.id,
-    joinCodeLabel: joined.joinCodeLabel,
-  });
+  // Tell the office's admins/partners (best effort, never throws; SMTP off →
+  // only an audit row). Runs after the response via after(), so a slow or
+  // dead SMTP host never delays the joining user's redirect.
+  const joinedUserId = user.id;
+  after(() =>
+    notifyOrgAdminsAboutNewMember({
+      organizationId: joined.organizationId,
+      userId: joinedUserId,
+      joinCodeLabel: joined.joinCodeLabel,
+    }),
+  );
 
   redirect("/dashboard");
 }

@@ -274,6 +274,7 @@ export async function notifyOrgAdminsAboutNewMember({
  * Resolves a plaintext link token to a still-usable invitation (not expired,
  * used or revoked; user active). Returns null otherwise — the caller shows one
  * generic "invalid or expired" message so nothing about the reason leaks.
+ * The user must still be an ACTIVE member of the office that issued the link.
  */
 export async function findUsableInvitation(token: unknown) {
   if (!isWellFormedInvitationToken(token)) {
@@ -293,6 +294,23 @@ export async function findUsableInvitation(token: unknown) {
     },
   });
   if (!row || !row.user.active || !isInvitationUsable(row)) {
+    return null;
+  }
+  // The link was issued on behalf of one office: once the person is no longer
+  // an active member there (removed/suspended within the 72 h), it is dead.
+  if (!row.organizationId) {
+    return null;
+  }
+  const membership = await getPrisma().organizationMember.findUnique({
+    where: {
+      organizationId_userId: {
+        organizationId: row.organizationId,
+        userId: row.userId,
+      },
+    },
+    select: { status: true },
+  });
+  if (membership?.status !== OrganizationMemberStatus.ACTIVE) {
     return null;
   }
   return row;

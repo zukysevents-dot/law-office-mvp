@@ -1,4 +1,3 @@
-
 import {
   DeadlineStatus,
   NotificationStatus,
@@ -60,7 +59,6 @@ export type NotificationRunResult = {
   failed: number;
   skipped: number;
 };
-
 
 const defaultPreference: NotificationPreferenceShape = {
   emailEnabled: true,

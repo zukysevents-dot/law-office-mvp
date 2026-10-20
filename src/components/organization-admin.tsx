@@ -229,6 +229,7 @@ export function OrganizationAdminPanel({
                               title="Zrušit registrační kód"
                               message="Opravdu zrušit tento registrační kód? Kdo ho ještě nepoužil, se přes něj do kanceláře už nepřipojí. Zrušení nelze vrátit."
                               confirmLabel="Ano, zrušit kód"
+                              cancelLabel="Ponechat kód"
                               pendingLabel="Ruším…"
                               variant="danger"
                               className="h-9 px-3"

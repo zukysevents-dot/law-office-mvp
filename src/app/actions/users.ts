@@ -222,6 +222,15 @@ export async function resendUserInvitation(
     };
   }
   const userId = requiredString(formData, "userId");
+  if (userId === currentUser.id) {
+    // UI tlačítko u vlastního řádku zakazuje; tady totéž hlídá server.
+    return {
+      ok: false,
+      submittedAt: Date.now(),
+      tone: "error",
+      message: "Pozvánku nelze poslat sám sobě.",
+    };
+  }
   // userId přichází z FormData — bez tohoto guardu by šlo poslat pozvánku
   // uživateli z cizí kanceláře.
   await assertUserInOrg(userId, currentUser.organizationId);

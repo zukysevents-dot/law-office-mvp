@@ -10,17 +10,18 @@ type Variant = "primary" | "secondary" | "ghost" | "danger";
 
 /**
  * In-app replacement for window.confirm(): a trigger button that opens a
- * small modal with "Zrušit" and the confirming submit button. MUST be
+ * small modal with a cancel button ("Zrušit" by default) and the confirming submit button. MUST be
  * rendered inside the <form> it confirms — the dialog is a DOM descendant of
  * that form, so its confirm button submits the form (server action) and the
  * button shows the form's pending state. Backdrop click, Escape, "×" and
- * "Zrušit" only close the dialog; nothing is submitted.
+ * the cancel button only close the dialog; nothing is submitted.
  */
 export function ConfirmDialogButton({
   label,
   message,
   title = "Potvrzení",
   confirmLabel,
+  cancelLabel = "Zrušit",
   pendingLabel,
   variant = "danger",
   className,
@@ -30,6 +31,8 @@ export function ConfirmDialogButton({
   title?: string;
   /** Text of the confirming button; defaults to the trigger label. */
   confirmLabel?: ReactNode;
+  /** Text of the closing button; override when "Zrušit" would be ambiguous. */
+  cancelLabel?: string;
   pendingLabel?: string;
   variant?: Variant;
   className?: string;
@@ -52,7 +55,7 @@ export function ConfirmDialogButton({
           <p className="text-sm leading-6 text-[#2c3a45]">{message}</p>
           <div className="flex flex-wrap justify-end gap-2">
             <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
-              Zrušit
+              {cancelLabel}
             </Button>
             <Button type="submit" variant={variant} pendingLabel={pendingLabel}>
               {confirmLabel ?? label}
