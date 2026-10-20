@@ -153,3 +153,68 @@ export async function clearAccountLoginFailures(
 ): Promise<void> {
   await getPrisma().loginAttempt.deleteMany({ where: { identifierHash } });
 }
+
+// --- Password setup via invitation link ------------------------------------
+// Reuses the loginAttempts ledger with its own buckets: the IP column is
+// namespaced ("setup:<ip>") and the identifier is an HMAC of the token hash,
+// so set-password attempts never eat into the staff-login budget (and vice
+// versa). 5 tries per link, 30 per IP, per 15 minutes.
+export const PASSWORD_SETUP_RATE_LIMIT_MAX_PER_TOKEN = 5;
+export const PASSWORD_SETUP_RATE_LIMIT_MAX_PER_IP = 30;
+export const PASSWORD_SETUP_LOCK_SCOPE = "password-setup";
+
+export function passwordSetupLedgerKeys(ipAddress: string, tokenHash: string) {
+  return {
+    ipAddress: `setup:${ipAddress}`,
+    identifierHash: hashLoginIdentifier(`setup:${tokenHash}`),
+  };
+}
+
+export async function reservePasswordSetupAttempt(
+  ipAddress: string,
+  tokenHash: string,
+): Promise<boolean> {
+  const prisma = getPrisma();
+  const windowStart = new Date(Date.now() - LOGIN_RATE_LIMIT_WINDOW_MS);
+  const keys = passwordSetupLedgerKeys(ipAddress, tokenHash);
+
+  return prisma.$transaction(async (tx) => {
+    for (const lockKey of orderedThrottleLockKeys(
+      PASSWORD_SETUP_LOCK_SCOPE,
+      keys.ipAddress,
+      keys.identifierHash,
+    )) {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`;
+    }
+
+    return (
+      await decideAndRecordThrottleAttempt(
+        {
+          countForIp: () =>
+            tx.loginAttempt.count({
+              where: {
+                ipAddress: keys.ipAddress,
+                createdAt: { gt: windowStart },
+              },
+            }),
+          countForIdentifier: () =>
+            tx.loginAttempt.count({
+              where: {
+                identifierHash: keys.identifierHash,
+                createdAt: { gt: windowStart },
+              },
+            }),
+          createAttempt: async () =>
+            (
+              await tx.loginAttempt.create({
+                data: keys,
+                select: { id: true },
+              })
+            ).id,
+        },
+        PASSWORD_SETUP_RATE_LIMIT_MAX_PER_IP,
+        PASSWORD_SETUP_RATE_LIMIT_MAX_PER_TOKEN,
+      )
+    ).allowed;
+  });
+}

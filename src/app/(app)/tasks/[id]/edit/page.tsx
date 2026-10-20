@@ -227,7 +227,7 @@ export default async function TaskEditPage({ params }: TaskEditProps) {
               />
             </Field>
             <div className="flex flex-wrap gap-2">
-              <Button type="submit">Uložit úkol</Button>
+              <Button type="submit" pendingLabel="Ukládám…">Uložit úkol</Button>
               <ButtonLink href={`/tasks/${task.id}`} variant="ghost">
                 Zrušit
               </ButtonLink>

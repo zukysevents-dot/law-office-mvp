@@ -6,6 +6,22 @@ import {
   submitAndAwaitAction,
 } from "./support/helpers";
 
+/** Zapne sloupec „Popis“ ve výkazech práce, pokud je skrytý (dialog Sloupce). */
+async function ensureWorkLogDescriptionColumn(page: Page) {
+  if ((await page.getByRole("columnheader", { name: "Popis" }).count()) > 0) {
+    return;
+  }
+  await page
+    .getByTestId("column-visibility-panel")
+    .getByRole("button", { name: /Sloupce/ })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Zobrazené sloupce" });
+  await dialog.getByRole("checkbox", { name: "Popis", exact: true }).check();
+  await dialog.getByRole("button", { name: "Uložit sloupce" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByRole("columnheader", { name: "Popis" })).toBeVisible();
+}
+
 /** Založí úkol přes formulář „Nový úkol“; akce přesměruje na jeho detail. */
 async function createTask(page: Page, title: string) {
   await page.goto("/tasks");
@@ -48,13 +64,11 @@ test.describe("úkoly", () => {
     expect(valid).toBe(false);
   });
 
-  // POZOR: updateTaskStatus stránku sám neobnoví (viz tests/e2e/README.md,
-  // sekce Známá omezení), proto je v testu explicitní reload. Aserce
-  // tím neslábne — ověřuje se uložený stav i vykreslená historie změn.
-  test("změna statusu úkolu se uloží a je vidět v historii", async ({ page }) => {
+  // Bez reloadu: server action s revalidatePath() musí stránku překreslit hned
+  // (dřív to blokoval route-level loading.tsx, viz tests/e2e/README.md).
+  test("změna statusu úkolu se uloží a je hned vidět v historii", async ({ page }) => {
     const title = e2eName("status");
     await createTask(page, title);
-    const detailUrl = page.url();
 
     await page.getByLabel("Nový status").selectOption("IN_PROGRESS");
     await page.getByLabel("Komentář ke změně").fill("e2e-prechod-do-prace");
@@ -64,7 +78,6 @@ test.describe("úkoly", () => {
     );
     await expectNoErrorPage(page);
 
-    await page.goto(detailUrl);
     // Řádek historie nese původní i nový status a komentář ke změně.
     const historyRow = page
       .getByRole("row")
@@ -92,8 +105,13 @@ test.describe("úkoly", () => {
     await expect(page.getByRole("link", { name: title })).toBeVisible();
   });
 
-  test("filtr na status bez shody vrátí prázdný seznam", async ({ page }) => {
-    await page.goto("/tasks?status=DONE");
+  // Dřív test používal ?status=DONE – taková hodnota v TaskStatus neexistuje,
+  // filtr se tiše ignoroval a výsledek závisel jen na stránkování seznamu.
+  test("filtr na status vyřadí úkoly v jiném stavu", async ({ page }) => {
+    await page.goto("/tasks?status=COMPLETED");
+    await expect(
+      page.getByRole("combobox", { name: "Status", exact: true }),
+    ).toHaveValue("COMPLETED");
 
     await expect(
       page.getByRole("link", { name: "Připravit vyjádření k žalobě" }),
@@ -101,11 +119,9 @@ test.describe("úkoly", () => {
     await expectNoErrorPage(page);
   });
 
-  // Stejné omezení jako u změny statusu — proto reload před asercí.
-  test("komentář k úkolu se uloží a zobrazí na detailu", async ({ page }) => {
+  test("komentář k úkolu se uloží a hned zobrazí na detailu", async ({ page }) => {
     const title = e2eName("komentar");
     await createTask(page, title);
-    const detailUrl = page.url();
 
     const comment = `${title}-komentar`;
     await page.getByLabel("Nový komentář").fill(comment);
@@ -115,8 +131,8 @@ test.describe("úkoly", () => {
     );
     await expectNoErrorPage(page);
 
-    await page.goto(detailUrl);
     await expect(page.getByText(comment)).toBeVisible();
+    await expect(page.getByLabel("Nový komentář")).toHaveValue("");
   });
 
   test("detail neexistujícího úkolu vrátí 404", async ({ page }) => {
@@ -129,17 +145,13 @@ test.describe("úkoly", () => {
 });
 
 test.describe("výkazy práce", () => {
-  test("nový výkaz práce se uloží a objeví v seznamu", async ({ page }) => {
+  test("nový výkaz práce se uloží a hned objeví v seznamu", async ({ page }) => {
     const description = e2eName("vykaz");
     await page.goto("/work-logs");
 
-    // Sloupec „Popis“ je defaultně skrytý — bez jeho zapnutí by uložený text
-    // nebyl v seznamu vidět.
-    const columns = page.getByTestId("column-visibility-panel");
-    await columns.getByText("Sloupce", { exact: true }).click(); // <details> je potřeba rozbalit
-    await columns.getByRole("checkbox", { name: "Popis", exact: true }).check();
-    await columns.getByRole("button", { name: "Uložit sloupce" }).click();
-    await expect(page.getByRole("columnheader", { name: "Popis" })).toBeVisible();
+    // Sloupec „Popis“ je dnes výchozí, ale uživatel ho mohl skrýt – test na
+    // stavu z předchozích běhů nezávisí: zapne ho jen tehdy, když chybí.
+    await ensureWorkLogDescriptionColumn(page);
 
     await page.getByRole("link", { name: "Nový výkaz" }).click();
     const form = page.getByRole("dialog", { name: "Nový výkaz práce" });
@@ -151,12 +163,11 @@ test.describe("výkazy práce", () => {
       page,
       form.getByRole("button", { name: "Vytvořit výkaz" }),
     );
-    await expect(page).toHaveURL(/\/work-logs/);
+    await expect(page).toHaveURL(/\/work-logs$/);
+    await expect(form).toBeHidden();
     await expectNoErrorPage(page);
 
-    // createWorkLog přesměruje na /work-logs, tedy na stejnou URL — Next takový
-    // redirect zahodí a seznam se sám neobnoví (tests/e2e/README.md).
-    await page.reload();
+    // Bez reloadu: nový řádek je vidět hned po uložení.
     await expect(
       page.getByRole("row").filter({ hasText: description }),
     ).toHaveCount(1);

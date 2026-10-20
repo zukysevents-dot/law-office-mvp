@@ -165,7 +165,7 @@ export default async function CaseEditPage({ params }: CaseEditProps) {
               <TextArea name="note" defaultValue={legalCase.note ?? ""} />
             </Field>
             <div className="flex flex-wrap gap-2">
-              <Button type="submit">Uložit případ</Button>
+              <Button type="submit" pendingLabel="Ukládám…">Uložit případ</Button>
               <ButtonLink href={`/cases/${legalCase.id}`} variant="ghost">
                 Zrušit
               </ButtonLink>

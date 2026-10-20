@@ -500,7 +500,7 @@ export default async function CaseDetailPage({
                   <TextArea name="note" />
                 </Field>
                 <div>
-                  <Button type="submit">Přidat vazbu</Button>
+                  <Button type="submit" pendingLabel="Přidávám…">Přidat vazbu</Button>
                 </div>
               </form>
             </Section>

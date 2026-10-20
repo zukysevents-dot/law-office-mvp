@@ -327,7 +327,7 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
             <TextArea name="note" />
           </Field>
           <div>
-            <Button type="submit">Vytvořit projekt</Button>
+            <Button type="submit" pendingLabel="Vytvářím…">Vytvořit projekt</Button>
           </div>
         </form>
       </Section>

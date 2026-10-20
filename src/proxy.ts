@@ -2,11 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { SESSION_COOKIE, verifySession } from "@/lib/session";
 import { isLandingOnlyHost } from "@/lib/landing-mode";
-
-// Paths that are public on normal hosts: the auth pages and the client portal
-// (it has its own magic-link auth). Everything else the matcher lets through
-// requires a session.
-const PUBLIC_PATHS = /^\/(login|register|portal)(\/|$)/;
+import { isPublicPath } from "@/lib/public-paths";
 
 // Front door for the whole app (Next 16 "proxy" convention, formerly
 // middleware).
@@ -16,7 +12,8 @@ const PUBLIC_PATHS = /^\/(login|register|portal)(\/|$)/;
 //    to "/". The internal app stays reachable on hosts not listed there.
 //    /api/internal is intentionally exempt (own Bearer auth; cron needs it).
 //    See src/lib/landing-mode.ts.
-// 2) Session gate: everything matched except PUBLIC_PATHS requires a valid
+// 2) Session gate: everything matched except the public paths (login,
+//    register, set-password, portal — src/lib/public-paths.ts) requires a valid
 //    session cookie; without one the request is redirected to /login.
 //    /join-organization and /admin require a session but NOT an org
 //    membership (checked at the page level).
@@ -37,7 +34,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL("/", request.url), 303);
   }
 
-  if (PUBLIC_PATHS.test(pathname)) {
+  if (isPublicPath(pathname)) {
     return NextResponse.next();
   }
 

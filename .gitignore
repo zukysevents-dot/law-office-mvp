@@ -30,6 +30,8 @@ next-env.d.ts
 .playwright-mcp/
 # Playwright E2E: build dir, stored sessions, artefakty a report.
 /.next-e2e/
+# Dev server pro ruční/UX testy vedle běžícího buildu (NEXT_DIST_DIR=.next-ux).
+/.next-ux/
 /tests/e2e/.auth/
 /tests/e2e/.output/
 /tests/e2e/.report/

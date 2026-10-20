@@ -119,7 +119,7 @@ export default async function DocumentTemplatesPage() {
                         <span>Aktivní</span>
                       </label>
                       <div>
-                        <Button type="submit">Uložit šablonu</Button>
+                        <Button type="submit" pendingLabel="Ukládám…">Uložit šablonu</Button>
                       </div>
                     </form>
                     <form action={archiveDocumentTemplate}>
@@ -171,7 +171,7 @@ export default async function DocumentTemplatesPage() {
               />
             </Field>
             <div>
-              <Button type="submit">Vytvořit šablonu</Button>
+              <Button type="submit" pendingLabel="Vytvářím…">Vytvořit šablonu</Button>
             </div>
           </form>
           <div className="mt-4 text-xs text-stone-500">

@@ -161,7 +161,7 @@ export default async function BillingSettingsPage() {
               />
             </Field>
             <div>
-              <Button type="submit">Uložit fakturační údaje</Button>
+              <Button type="submit" pendingLabel="Ukládám…">Uložit fakturační údaje</Button>
             </div>
           </form>
         </Section>
@@ -249,7 +249,7 @@ export default async function BillingSettingsPage() {
               <span>Subjekt je plátce DPH</span>
             </label>
             <div>
-              <Button type="submit">Přidat fakturující subjekt</Button>
+              <Button type="submit" pendingLabel="Přidávám…">Přidat fakturující subjekt</Button>
             </div>
           </form>
         </Section>

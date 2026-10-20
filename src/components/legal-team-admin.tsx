@@ -34,7 +34,7 @@ export function LegalTeamAdmin({
           <Field label="Nový tým">
             <TextInput name="name" placeholder="Např. Korporátní právo" required />
           </Field>
-          <Button type="submit">Vytvořit tým</Button>
+          <Button type="submit" pendingLabel="Vytvářím…">Vytvořit tým</Button>
         </form>
         {teams.length > 0 && users.length > 0 ? (
           <form action={assignLegalTeamMember} className="flex flex-wrap items-end gap-3">

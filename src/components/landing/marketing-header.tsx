@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Menu, X } from "lucide-react";
 
+import { useDismissOnOutside } from "@/lib/use-dismiss-on-outside";
 import { cn } from "@/lib/utils";
 import { CtaLink } from "@/components/landing/landing-primitives";
 import { IuriverseLogo } from "@/components/landing/iuriverse-logo";
@@ -19,6 +20,7 @@ export function MarketingHeader({ showLogin = true }: { showLogin?: boolean }) {
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const mobileMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     function onScroll() {
@@ -29,18 +31,19 @@ export function MarketingHeader({ showLogin = true }: { showLogin?: boolean }) {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setOpen(false);
+  // Light dismiss: Escape or a tap outside the open menu closes it, and that
+  // outside tap is swallowed so it doesn't also follow a link underneath.
+  useDismissOnOutside({
+    active: open,
+    getPanels: () => [mobileMenuRef.current],
+    getIgnored: () => [menuButtonRef.current],
+    onDismiss: (reason) => {
+      setOpen(false);
+      if (reason === "escape") {
         menuButtonRef.current?.focus();
       }
-    }
-    if (open) {
-      document.addEventListener("keydown", onKey);
-      return () => document.removeEventListener("keydown", onKey);
-    }
-  }, [open]);
+    },
+  });
 
   // At the very top the header floats over the dark cinematic hero (light text);
   // once scrolled it becomes a solid light bar (dark text). Opening the mobile
@@ -133,6 +136,7 @@ export function MarketingHeader({ showLogin = true }: { showLogin?: boolean }) {
       </div>
 
       <div
+        ref={mobileMenuRef}
         id="mobile-menu"
         aria-hidden={!open}
         className={cn(

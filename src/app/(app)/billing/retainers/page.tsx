@@ -226,7 +226,7 @@ export default async function RetainersPage() {
                   <TextArea name="note" />
                 </Field>
                 <div>
-                  <Button type="submit">Vytvořit paušál</Button>
+                  <Button type="submit" pendingLabel="Vytvářím…">Vytvořit paušál</Button>
                 </div>
               </form>
             ) : (

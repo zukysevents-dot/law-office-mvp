@@ -182,7 +182,7 @@ export default async function HrAttendancePage() {
               <TextInput name="note" />
             </Field>
             <div>
-              <Button type="submit">Uložit docházku</Button>
+              <Button type="submit" pendingLabel="Ukládám…">Uložit docházku</Button>
             </div>
           </form>
         </Section>

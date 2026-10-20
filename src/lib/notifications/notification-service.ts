@@ -1,5 +1,3 @@
-import nodemailer, { type Transporter } from "nodemailer";
-
 import {
   DeadlineStatus,
   NotificationStatus,
@@ -7,6 +5,12 @@ import {
   TaskStatus,
 } from "@/generated/prisma/enums";
 import { taskStatusLabels } from "@/lib/labels";
+import {
+  appUrl,
+  emailHtml,
+  getSmtpTransporter,
+  mailConfigStatus,
+} from "@/lib/mail/mailer";
 import { getPrisma } from "@/lib/prisma";
 
 const MAX_ATTEMPTS = 3;
@@ -55,8 +59,6 @@ export type NotificationRunResult = {
   failed: number;
   skipped: number;
 };
-
-let smtpTransporter: Transporter | null = null;
 
 const defaultPreference: NotificationPreferenceShape = {
   emailEnabled: true,
@@ -160,72 +162,13 @@ export function notificationOutcome(
   return { queued: 0, skipped: 0 };
 }
 
-function envFlag(value: string | undefined) {
-  return value?.trim().toLowerCase() === "true";
-}
-
-function envNumber(value: string | undefined, fallback: number) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function appUrl(path: string) {
-  const baseUrl = process.env.APP_BASE_URL?.trim() || "http://127.0.0.1:3001";
-  return `${baseUrl.replace(/\/$/, "")}${path}`;
-}
-
-function emailHtml(body: string) {
-  return body
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("\n", "<br />");
-}
-
-// Exported so the client-portal mailer (F6) reuses the same SMTP configuration
-// and transporter cache — one source of truth for e-mail delivery.
-export function getSmtpTransporter() {
-  if (!envFlag(process.env.EMAIL_NOTIFICATIONS_ENABLED)) {
-    return null;
-  }
-
-  const host = process.env.SMTP_HOST?.trim();
-  const from = process.env.SMTP_FROM?.trim();
-
-  if (!host || !from) {
-    return null;
-  }
-
-  if (!smtpTransporter) {
-    const user = process.env.SMTP_USER?.trim();
-    const pass = process.env.SMTP_PASSWORD?.trim();
-
-    smtpTransporter = nodemailer.createTransport({
-      host,
-      port: envNumber(process.env.SMTP_PORT, 587),
-      secure: envFlag(process.env.SMTP_SECURE),
-      auth: user && pass ? { user, pass } : undefined,
-    });
-  }
-
-  return smtpTransporter;
-}
+// Re-exported for existing callers (invoices, client portal): the transport
+// itself lives in src/lib/mail/mailer.ts — one source of truth for SMTP.
+export { getSmtpTransporter };
 
 function disabledReason() {
-  if (!envFlag(process.env.EMAIL_NOTIFICATIONS_ENABLED)) {
-    return "EMAIL_NOTIFICATIONS_DISABLED";
-  }
-
-  if (!process.env.SMTP_HOST?.trim()) {
-    return "SMTP_HOST_NOT_CONFIGURED";
-  }
-
-  if (!process.env.SMTP_FROM?.trim()) {
-    return "SMTP_FROM_NOT_CONFIGURED";
-  }
-
-  return "SMTP_NOT_CONFIGURED";
+  const config = mailConfigStatus();
+  return config.enabled ? "SMTP_NOT_CONFIGURED" : config.reason;
 }
 
 function formatTaskNotificationBody({

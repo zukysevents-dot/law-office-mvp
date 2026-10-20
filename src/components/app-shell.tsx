@@ -4,6 +4,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { CommandPalette } from "@/components/command-palette";
 import { FloatingTimer } from "@/components/floating-timer";
 import { NavigationCursor } from "@/components/navigation-cursor";
+import { NavigationProgress } from "@/components/navigation-progress";
 import { getCurrentUser } from "@/lib/auth";
 import { getEnabledModules } from "@/lib/entitlements";
 import { userRoleLabels } from "@/lib/labels";
@@ -37,6 +38,7 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
       </a>
       <Suspense fallback={null}>
         <NavigationCursor />
+        <NavigationProgress />
       </Suspense>
       <AppSidebar
         showAuditLog={showAuditLog}

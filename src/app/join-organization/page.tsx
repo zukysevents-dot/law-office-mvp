@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { logoutAction } from "@/app/actions/auth";
 import { AuthShell } from "@/components/auth-shell";
 import { OrganizationOnboarding } from "@/components/organization-onboarding";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { OrganizationMemberStatus, OrganizationStatus } from "@/generated/prisma/enums";
 import { getAuthUser } from "@/lib/auth";
 import { getPrisma } from "@/lib/prisma";
@@ -53,12 +54,12 @@ export default async function JoinOrganizationPage({
       <OrganizationOnboarding joinError={message} />
 
       <form action={logoutAction} className="mt-6 text-center">
-        <button
-          type="submit"
-          className="inline-flex min-h-10 items-center rounded-md px-3 text-sm text-[var(--iv-muted)] underline-offset-2 hover:bg-[var(--iv-bg)] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--iv-teal-ink)]"
+        <SubmitButton
+          pendingLabel="Odhlašuji…"
+          className="inline-flex min-h-10 items-center gap-2 rounded-md px-3 text-sm text-[var(--iv-muted)] underline-offset-2 hover:bg-[var(--iv-bg)] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--iv-teal-ink)]"
         >
           Odhlásit se
-        </button>
+        </SubmitButton>
       </form>
     </AuthShell>
   );

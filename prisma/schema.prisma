@@ -406,8 +406,33 @@ model User {
   runSanctionsScreenings      SanctionsScreening[]      @relation("SanctionsScreeningRunBy")
   reviewedSanctionsScreenings SanctionsScreening[]      @relation("SanctionsScreeningReviewedBy")
   decidedSanctionsMatches     SanctionsScreeningMatch[] @relation("SanctionsMatchDecidedBy")
+  invitationTokens            UserInvitationToken[]     @relation("UserInvitationTokenUser")
+  createdInvitationTokens     UserInvitationToken[]     @relation("UserInvitationTokenCreatedBy")
 
   @@map("users")
+}
+
+// One-time link for setting one's own password (welcome invitation / resend).
+// Only the HMAC hash is stored; the plaintext token lives only in the e-mail.
+model UserInvitationToken {
+  id             String    @id @default(cuid())
+  userId         String
+  organizationId String?
+  createdById    String?
+  tokenHash      String    @unique // HMAC-SHA256(SESSION_SECRET, "invite:" + token)
+  expiresAt      DateTime
+  sentAt         DateTime? // set only when SMTP accepted the message
+  usedAt         DateTime?
+  revokedAt      DateTime? // superseded by a newer invitation / password set
+  createdAt      DateTime  @default(now())
+
+  user         User          @relation("UserInvitationTokenUser", fields: [userId], references: [id], onDelete: Cascade)
+  createdBy    User?         @relation("UserInvitationTokenCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+  @@map("userInvitationTokens")
 }
 
 // Failed staff-login ledger. Rows are recorded only for failed/blocked
@@ -1138,6 +1163,7 @@ model Organization {
   legalTeamMembers          LegalTeamMember[]
   subjectBillingApprovers   SubjectBillingApprover[]
   retainerInvoicePeriods    RetainerInvoicePeriod[]
+  userInvitationTokens      UserInvitationToken[]
 
   @@index([status])
   @@map("organizations")

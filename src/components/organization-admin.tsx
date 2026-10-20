@@ -9,6 +9,7 @@ import { Section } from "@/components/section";
 import { StatCard } from "@/components/stat-card";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialogButton } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import type {
   OrganizationJoinCode,
@@ -222,13 +223,17 @@ export function OrganizationAdminPanel({
                               value={organizationId}
                             />
                             <input type="hidden" name="codeId" value={code.id} />
-                            <Button
-                              type="submit"
-                              variant="ghost"
+                            {/* Irreversible → confirm first (audit UAT r1). */}
+                            <ConfirmDialogButton
+                              label="Zrušit"
+                              title="Zrušit registrační kód"
+                              message="Opravdu zrušit tento registrační kód? Kdo ho ještě nepoužil, se přes něj do kanceláře už nepřipojí. Zrušení nelze vrátit."
+                              confirmLabel="Ano, zrušit kód"
+                              cancelLabel="Ponechat kód"
+                              pendingLabel="Ruším…"
+                              variant="danger"
                               className="h-9 px-3"
-                            >
-                              Zrušit
-                            </Button>
+                            />
                           </form>
                         ) : (
                           "—"

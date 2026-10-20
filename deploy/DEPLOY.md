@@ -146,6 +146,49 @@ docker compose exec cron /usr/local/bin/run.sh registry
 
 ---
 
+## E-mail (SMTP) – pozvánky a notifikace
+
+Aplikace posílá e-maily přes SMTP (nodemailer):
+
+- **uvítací pozvánku** hned po založení uživatele v *Nastavení → Nový uživatel*
+  (kancelář, kdo účet založil, přihlašovací e-mail, odkaz na `/login` a
+  jednorázový odkaz *Nastavit si vlastní heslo* na `/set-password`, platný
+  72 hodin; heslo v e-mailu nikdy není). U řádku uživatele je tlačítko
+  **Znovu poslat pozvánku** (nejvýš jednou za minutu),
+- **upozornění adminům/partnerům**, když se někdo připojí registračním kódem,
+- notifikace k úkolům a lhůtám (cron), faktury a odkazy klientského portálu.
+
+Do `.env` na serveru doplň:
+
+```bash
+EMAIL_NOTIFICATIONS_ENABLED=true
+SMTP_HOST=smtp.example.cz
+SMTP_PORT=587
+SMTP_SECURE=false          # true jen pro port 465 (implicitní TLS)
+SMTP_USER=no-reply@example.cz
+SMTP_PASSWORD=...
+SMTP_FROM="IURIVERSE <no-reply@example.cz>"
+APP_BASE_URL=https://<doména aplikace>   # odkazy v e-mailech
+```
+
+Microsoft 365: `SMTP_HOST=smtp.office365.com`, `SMTP_PORT=587`,
+`SMTP_SECURE=false`, `SMTP_USER`/`SMTP_FROM` = poštovní schránka s povoleným
+*Authenticated SMTP* (v M365 admin centru u schránky), `SMTP_PASSWORD` = heslo
+nebo heslo aplikace. Po změně `docker compose up -d`.
+
+**Ověření:** v *Nastavení → Stav integrací* musí karta **E-mail (SMTP)** ukazovat
+„Odesílání zapnuto“. Pak založ testovacího uživatele – zelená hláška „…jsme
+poslali uvítací e-mail…“ znamená, že SMTP server zprávu přijal. Jantarová hláška
+uvádí důvod (vypnuté odesílání / chybí `SMTP_HOST` / chybí `SMTP_FROM` / chyba
+SMTP serveru). Uživatel se založí vždy; bez e-mailu mu admin předá přihlašovací
+údaje osobně. Každá pozvánka (i neodeslaná) je v audit logu.
+
+Odesílání má timeouty (spojení 10 s, pozdrav 10 s, socket 20 s), takže
+nedostupný SMTP server tlačítko „Vytvořit uživatele“ nezablokuje natrvalo.
+Změna `SESSION_SECRET` zneplatní všechny ještě nepoužité odkazy z pozvánek.
+
+---
+
 ## Managed DB (Supabase) místo Postgresu na VPS
 
 V `.env` nastav `COMPOSE_PROFILES=` (prázdné), `DATABASE_URL` = pooled URL
@@ -164,6 +207,7 @@ V `.env` nastav `COMPOSE_PROFILES=` (prázdné), `DATABASE_URL` = pooled URL
 | Formuláře hlásí chybu „origin" / Server Action | nginx musí posílat `Host` a `X-Forwarded-Host` (je v dodané konfiguraci). |
 | Změna `.env` se neprojevila | `docker compose up -d` (kontejnery se přetvoří s novým env). |
 | Odkazy v e-mailech vedou jinam | `APP_BASE_URL` v `.env` musí být `https://<doména>`. |
+| Pozvánka nedorazila | Karta *E-mail (SMTP)* v Nastavení a hláška po založení uvádí důvod; `docker compose logs app \| grep -i invitation`; ověř `SMTP_*`, spam a SPF/DKIM domény odesílatele. Poslat znovu: *Znovu poslat pozvánku* u uživatele. |
 | SharePoint: „Připojení selhalo" | Adresa webu, admin consent v Azure, platnost client secretu. |
 
 ## Bezpečnost
