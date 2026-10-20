@@ -26,7 +26,7 @@ import { safeQuery } from "@/lib/db-safe";
 import { BillingStatus } from "@/generated/prisma/enums";
 import {
   andWhere,
-  canViewAllLegalData,
+  canArchiveRecords,
   canEditRecord,
   canSetBillableStatus,
   canViewRates,
@@ -95,7 +95,7 @@ async function loadWorkLogEdit(id: string) {
     projects,
     cases,
     tasks,
-    canArchive: canViewAllLegalData(currentUser),
+    canArchive: canArchiveRecords(currentUser),
     canViewRates: canViewRates(currentUser),
     canSetBillable: canSetBillableStatus(currentUser),
     timeIncrementMinutes: organization?.billingTimeIncrementMinutes ?? 15,

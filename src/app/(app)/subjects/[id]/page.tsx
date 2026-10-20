@@ -41,14 +41,16 @@ import {
   andWhere,
   canEditRecord,
   canManageDocuments,
+  canManageSubjects,
   canManagePortal,
-  canViewAllLegalData,
+  canArchiveRecords,
   caseVisibilityWhere,
   documentTemplateVisibilityWhere,
   documentVisibilityWhere,
   projectVisibilityWhere,
   subjectVisibilityWhere,
 } from "@/lib/permissions";
+import { canAccessModule } from "@/lib/module-access.server";
 import { getPrisma } from "@/lib/prisma";
 import { getOrgUserOptions } from "@/lib/org-users";
 import { subjectRoleTone } from "@/lib/status-tones";
@@ -77,10 +79,6 @@ type SubjectDetailData = Awaited<ReturnType<typeof loadSubject>>;
 function subjectRelationVisibilityWhere(
   user: Awaited<ReturnType<typeof getCurrentUser>>,
 ): Prisma.SubjectRelationWhereInput {
-  if (canViewAllLegalData(user)) {
-    return {};
-  }
-
   const projectWhere = projectVisibilityWhere(user);
   const caseWhere = caseVisibilityWhere(user);
 
@@ -206,9 +204,9 @@ async function loadSubject(id: string) {
       }
     : { projects: [], cases: [] };
 
-  // AML/KYC data is compliance-sensitive — load it only for ADMIN/PARTNER, and
-  // never include it in the main subject query a LAWYER can run.
-  const canAml = canViewAllLegalData(currentUser);
+  // AML/KYC data is compliance-sensitive — load it only for users with the AML
+  // module (permission + office entitlement), never in the main subject query.
+  const canAml = await canAccessModule(currentUser, "module.aml");
   let aml: {
     identifications: Awaited<
       ReturnType<typeof prisma.amlIdentification.findMany>
@@ -299,7 +297,9 @@ async function loadSubject(id: string) {
       ])
     : [[], []];
 
-  const [billingApprovers, billingApproverMembers] = canAml && subject
+  const canManageBillingApprovers = canManageSubjects(currentUser);
+  const [billingApprovers, billingApproverMembers] =
+    canManageBillingApprovers && subject
     ? await Promise.all([
         prisma.subjectBillingApprover.findMany({
           where: { subjectId: subject.id },
@@ -316,7 +316,7 @@ async function loadSubject(id: string) {
   return {
     subject,
     visibleLinked,
-    canArchive: canViewAllLegalData(currentUser),
+    canArchive: canArchiveRecords(currentUser),
     canEdit: subject ? canEditRecord(currentUser, "Subject", subject) : false,
     canAml,
     aml,
@@ -327,6 +327,7 @@ async function loadSubject(id: string) {
     documents,
     documentTemplates,
     canManageDocuments: canManageDocuments(currentUser),
+    canManageBillingApprovers,
     billingApprovers,
     billingApproverMembers,
   };
@@ -386,6 +387,7 @@ export default async function SubjectDetailPage({
       documents: [],
       documentTemplates: [],
       canManageDocuments: false,
+      canManageBillingApprovers: false,
       billingApprovers: [],
       billingApproverMembers: [],
     },
@@ -410,6 +412,7 @@ export default async function SubjectDetailPage({
     documents,
     documentTemplates,
     canManageDocuments: canManageDocumentsFlag,
+    canManageBillingApprovers,
     billingApprovers,
     billingApproverMembers,
   } = result.data;
@@ -740,7 +743,7 @@ export default async function SubjectDetailPage({
               </div>
             </div>
           </Section>
-          {canAml ? (
+          {canManageBillingApprovers ? (
             <SubjectBillingApprovers
               subjectId={subject.id}
               members={billingApproverMembers}

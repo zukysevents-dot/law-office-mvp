@@ -53,7 +53,8 @@ import { BillingStatus } from "@/generated/prisma/enums";
 import {
   andWhere,
   billingApproverWorkLogWhere,
-  canViewAllLegalData,
+  canApproveWorkLogs,
+  canArchiveRecords,
   canEditRecord,
   canSetBillableStatus,
   canViewRates,
@@ -180,7 +181,7 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
       const prisma = getPrisma();
       const currentUser = await getCurrentUser();
       const tableView = await getCurrentTableView("workLogs");
-      const canApproveAll = canViewAllLegalData(currentUser);
+      const canApproveAll = canApproveWorkLogs(currentUser);
       const approvalAssignmentCount = canApproveAll
         ? 0
         : await prisma.subjectBillingApprover.count({
@@ -386,7 +387,7 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
         tasks,
         users,
         tableView,
-        canArchive: canViewAllLegalData(currentUser),
+        canArchive: canArchiveRecords(currentUser),
         canViewRates: canViewRates(currentUser),
         canSetBillable: canSetBillableStatus(currentUser),
         canApprove,

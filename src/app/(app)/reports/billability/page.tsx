@@ -6,7 +6,7 @@ import { DatabaseNotice } from "@/components/ui/database-notice";
 import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import { formatHours, formatMoney } from "@/lib/format";
-import { andWhere, canViewAllLegalData, workLogVisibilityWhere } from "@/lib/permissions";
+import { andWhere, canViewTeamReports, workLogVisibilityWhere } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import {
   REPORT_ROW_LIMIT,
@@ -90,7 +90,7 @@ export default async function BillabilityReportPage({ searchParams }: PageProps)
       const prisma = getPrisma();
       const currentUser = await getCurrentUser();
 
-      if (!canViewAllLegalData(currentUser)) {
+      if (!canViewTeamReports(currentUser)) {
         return {
           allowed: false,
           kpi: EMPTY_KPI,

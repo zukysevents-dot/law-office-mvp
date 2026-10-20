@@ -28,7 +28,7 @@ import {
 import { safeQuery } from "@/lib/db-safe";
 import {
   andWhere,
-  canViewAllLegalData,
+  canArchiveRecords,
   canEditRecord,
   taskVisibilityWhere,
   workLogVisibilityWhere,
@@ -104,7 +104,7 @@ async function loadTask(id: string) {
 
   return {
     task,
-    canArchive: canViewAllLegalData(currentUser),
+    canArchive: canArchiveRecords(currentUser),
     canEdit: task ? canEditRecord(currentUser, "Task", task) : false,
   };
 }

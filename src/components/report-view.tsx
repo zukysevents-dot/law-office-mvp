@@ -10,7 +10,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import {
   andWhere,
-  canViewAllLegalData,
+  canViewTeamReports,
   workLogVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
@@ -31,7 +31,7 @@ import {
 } from "@/lib/reporting/options";
 import { filterQuery, firstParam } from "@/lib/search-params";
 
-type GateUser = Parameters<typeof canViewAllLegalData>[0];
+type GateUser = Parameters<typeof canViewTeamReports>[0];
 
 const EMPTY_OPTIONS: ReportFilterOptions = {
   subjects: [],

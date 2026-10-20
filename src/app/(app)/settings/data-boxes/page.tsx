@@ -12,7 +12,7 @@ import { isEncryptionConfigured } from "@/lib/crypto";
 import { safeQuery } from "@/lib/db-safe";
 import { assertModuleEnabled } from "@/lib/entitlements";
 import { formatDate } from "@/lib/format";
-import { canViewAllLegalData } from "@/lib/permissions";
+import { canManageOrganization } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -37,7 +37,7 @@ export default async function DataBoxSettingsPage() {
     async () => {
       const currentUser = await getCurrentUser();
       await assertModuleEnabled(currentUser, ModuleKey.DATA_BOXES);
-      if (!canViewAllLegalData(currentUser)) {
+      if (!canManageOrganization(currentUser)) {
         return { allowed: false, encryptionReady: false, accounts: [] };
       }
       const accounts = await getPrisma().dataBoxAccount.findMany({

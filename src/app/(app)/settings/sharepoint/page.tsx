@@ -17,7 +17,7 @@ import {
   getGraphConfigForOrg,
   getSharepointUrlConfig,
 } from "@/lib/microsoft/config";
-import { canViewAllLegalData } from "@/lib/permissions";
+import { canManageOrganization } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -97,7 +97,7 @@ export default async function SharepointSettingsPage({
   const result = await safeQuery<Data>(EMPTY, async () => {
     const currentUser = await getCurrentUser();
     await assertModuleEnabled(currentUser, ModuleKey.DOCUMENTS);
-    if (!canViewAllLegalData(currentUser)) {
+    if (!canManageOrganization(currentUser)) {
       return EMPTY;
     }
     const organizationId = currentUser.organizationId;

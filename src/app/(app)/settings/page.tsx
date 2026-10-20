@@ -32,7 +32,7 @@ import {
   userRoleLabels,
 } from "@/lib/labels";
 import { getNotificationPreference } from "@/lib/notifications/notification-service";
-import { canViewAllLegalData } from "@/lib/permissions";
+import { canManageUsers } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { calendarViewOptions, normalizeCalendarView } from "@/lib/calendar-view";
 import { getAresBaseUrl, isAresLookupEnabled } from "@/lib/ares/config";
@@ -169,7 +169,7 @@ export default async function SettingsPage() {
     async () => {
       const prisma = getPrisma();
       const currentUser = await getCurrentUser();
-      const allowed = canViewAllLegalData(currentUser);
+      const allowed = canManageUsers(currentUser);
       const [notificationPreference, users, auditLogCount] = await Promise.all([
         getNotificationPreference(currentUser.id),
         allowed

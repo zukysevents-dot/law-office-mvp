@@ -1,6 +1,6 @@
 import { ReportView } from "@/components/report-view";
 import { invoiceableWorkLogWhere } from "@/lib/billing";
-import { canViewAllLegalData } from "@/lib/permissions";
+import { canViewTeamReports } from "@/lib/permissions";
 import { bySubject } from "@/lib/reporting/aggregations";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +21,7 @@ export default function WipReportPage({ searchParams }: PageProps) {
       labelHeader="Klient"
       aggregate={bySubject}
       searchParams={searchParams}
-      canView={canViewAllLegalData}
+      canView={canViewTeamReports}
       deniedMessage="Přehled rozpracovanosti mohou zobrazit jen ADMIN a PARTNER."
       extraWhere={invoiceableWorkLogWhere}
     />

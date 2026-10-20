@@ -12,7 +12,7 @@ import {
   getOrganizationEntitlements,
   getLegalTeamAdminData,
 } from "@/lib/organization";
-import { canViewAllLegalData } from "@/lib/permissions";
+import { canManageOrganization } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +26,7 @@ type OrgSettingsData = Awaited<ReturnType<typeof getOrganizationAdminData>> & {
 export default async function OrganizationSettingsPage() {
   const result = await safeQuery<OrgSettingsData | null>(null, async () => {
     const currentUser = await getCurrentUser();
-    if (!canViewAllLegalData(currentUser)) {
+    if (!canManageOrganization(currentUser)) {
       return {
         allowed: false,
         currentUserId: currentUser.id,

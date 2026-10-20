@@ -40,7 +40,7 @@ import {
   listSharepointChildren,
 } from "@/lib/microsoft/graph-drive";
 import { formatRelativePath, parseRelativePath } from "@/lib/microsoft/sharepoint";
-import { canViewAllLegalData } from "@/lib/permissions";
+import { canManageOrganization } from "@/lib/permissions";
 import { cn, isSafeHttpUrl } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -151,7 +151,7 @@ export default async function SharepointLibraryPage({ searchParams }: PageProps)
     // Graph běží s aplikačním oprávněním a vidí CELOU knihovnu, ne jen spisy
     // uživatele — proto celou knihovnu smí procházet jen ten, kdo vidí všechna
     // právní data. Ostatní procházejí složky svých spisů.
-    if (!canViewAllLegalData(currentUser)) {
+    if (!canManageOrganization(currentUser)) {
       return EMPTY;
     }
     const organizationId = currentUser.organizationId;

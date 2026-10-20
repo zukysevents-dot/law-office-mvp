@@ -16,7 +16,7 @@ import { matterBrowsePath } from "@/lib/microsoft/matter-folder";
 import type { SharepointEntityType } from "@/lib/microsoft/sharepoint";
 import {
   andWhere,
-  canViewAllLegalData,
+  canManageOrganization,
   caseVisibilityWhere,
   projectVisibilityWhere,
   subjectVisibilityWhere,
@@ -82,7 +82,7 @@ export default async function SharepointIndexPage({ searchParams }: PageProps) {
 
     return {
       configured: await isSharepointUrlConfigured(currentUser.organizationId),
-      canConfigure: canViewAllLegalData(currentUser),
+      canConfigure: canManageOrganization(currentUser),
       groups: [
         {
           heading: "Subjekty",

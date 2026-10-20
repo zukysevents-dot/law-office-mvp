@@ -15,7 +15,7 @@ import { ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
-import { canViewAllLegalData } from "@/lib/permissions";
+import { canViewTeamReports } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -103,8 +103,8 @@ export default async function ReportsPage() {
     async () => {
       const currentUser = await getCurrentUser();
       return {
-        canViewPersonReports: canViewAllLegalData(currentUser),
-        canViewBillabilityKpi: canViewAllLegalData(currentUser),
+        canViewPersonReports: canViewTeamReports(currentUser),
+        canViewBillabilityKpi: canViewTeamReports(currentUser),
       };
     },
   );

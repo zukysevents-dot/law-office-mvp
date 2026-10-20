@@ -33,7 +33,7 @@ import type { TableViewState } from "@/lib/table-view-preferences";
 import {
   andWhere,
   canManageReferences,
-  canViewAllLegalData,
+  canArchiveRecords,
   caseVisibilityWhere,
   projectVisibilityWhere,
   referenceVisibilityWhere,
@@ -214,7 +214,7 @@ export default async function ReferencesPage({ searchParams }: ReferencesProps) 
         cases,
         subjects,
         tableView,
-        canArchive: canViewAllLegalData(currentUser),
+        canArchive: canArchiveRecords(currentUser),
         canManage: canManageReferences(currentUser),
       };
     },

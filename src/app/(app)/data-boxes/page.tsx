@@ -18,7 +18,7 @@ import {
 } from "@/lib/labels";
 import {
   andWhere,
-  canViewAllLegalData,
+  canManageOrganization,
   dataMessageVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
@@ -52,7 +52,7 @@ export default async function DataBoxesPage() {
         orderBy: [{ deliveredAt: "desc" }, { createdAt: "desc" }],
         take: 500,
       });
-      return { messages, canConfigure: canViewAllLegalData(currentUser) };
+      return { messages, canConfigure: canManageOrganization(currentUser) };
     },
   );
 

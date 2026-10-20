@@ -17,7 +17,7 @@ import {
   requiredString,
 } from "@/lib/form";
 import { assertUserInOrg } from "@/lib/org-users";
-import { canViewAllLegalData } from "@/lib/permissions";
+import { canApproveWorkLogs } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 type Disposition = "APPROVE" | "REJECT" | "HIDDEN_WRITE_OFF" | "VISIBLE_WRITE_OFF";
@@ -82,7 +82,7 @@ export async function decideWorkLog(formData: FormData) {
     if (!oldWorkLog) {
       throw new Error("Nemáte oprávnění k tomuto výkazu práce.");
     }
-    if (!canViewAllLegalData(currentUser)) {
+    if (!canApproveWorkLogs(currentUser)) {
       const billingSubjectId =
         oldWorkLog.subjectId ??
         oldWorkLog.project?.mainSubjectId ??

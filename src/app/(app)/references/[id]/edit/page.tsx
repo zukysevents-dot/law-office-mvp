@@ -19,7 +19,7 @@ import { legalAreaOptions } from "@/lib/labels";
 import { safeQuery } from "@/lib/db-safe";
 import {
   andWhere,
-  canViewAllLegalData,
+  canArchiveRecords,
   canEditRecord,
   caseVisibilityWhere,
   projectVisibilityWhere,
@@ -72,7 +72,7 @@ async function loadReferenceEdit(id: string) {
     projects,
     cases,
     subjects,
-    canArchive: canViewAllLegalData(currentUser),
+    canArchive: canArchiveRecords(currentUser),
   };
 }
 

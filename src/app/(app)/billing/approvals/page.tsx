@@ -24,7 +24,7 @@ import { getPrisma } from "@/lib/prisma";
 import {
   andWhere,
   billingApproverWorkLogWhere,
-  canViewAllLegalData,
+  canApproveWorkLogs,
 } from "@/lib/permissions";
 import { approvalStatusTone, billingStatusTone } from "@/lib/status-tones";
 
@@ -44,7 +44,7 @@ export default async function BillingApprovalsPage() {
       const prisma = getPrisma();
       const currentUser = await getCurrentUser();
       await assertModuleEnabled(currentUser, ModuleKey.BILLING);
-      const canApproveAll = canViewAllLegalData(currentUser);
+      const canApproveAll = canApproveWorkLogs(currentUser);
       const approvalAssignmentCount = canApproveAll
         ? 0
         : await prisma.subjectBillingApprover.count({

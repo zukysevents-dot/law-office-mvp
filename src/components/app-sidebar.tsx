@@ -18,6 +18,7 @@ import {
   FileText,
   FolderOpen,
   Inbox,
+  KeyRound,
   Users,
   LayoutDashboard,
   LibraryBig,
@@ -42,25 +43,31 @@ import {
 } from "@/components/landing/iuriverse-logo";
 import { Dialog } from "@/components/ui/dialog";
 import { SubmitButton } from "@/components/ui/submit-button";
-import { ModuleKey } from "@/generated/prisma/enums";
+import type { ModulePermissionKey } from "@/lib/permission-catalog";
 import { cn } from "@/lib/utils";
+
+// Function-level gates for nav items whose page needs more than the module
+// (e.g. invoices need "Spravuje fakturaci"). UX only — pages/actions enforce.
+export type NavFunctionGate =
+  | "manageInvoices"
+  | "manageOrganization"
+  | "managePermissions"
+  | "manageHr";
 
 type NavItem = {
   href: string;
   label: string;
   icon: typeof LayoutDashboard;
-  adminOnly?: boolean;
-  // Gate this item behind a bought module (UX only). Items without `module`
-  // are always visible (CORE).
-  module?: ModuleKey;
-  // Skryj, pokud uživatel nemá oprávnění spravovat faktury (ADMIN/PARTNER nebo
-  // grant MANAGE_INVOICES). UX-only; akce/stránka gatují server-side.
-  requiresInvoiceAccess?: boolean;
+  // Module permission (matrix row "Moduly a sekce"). The server passes the
+  // modules the user may open (permission ∧ office entitlement); items without
+  // `permission` are always visible (dashboard, settings).
+  permission?: ModulePermissionKey;
+  requires?: NavFunctionGate;
 };
 
 // Grouped navigation. Sections give the (now 20+) items a hierarchy instead of
-// one flat scroll. A section whose items are all hidden (module not bought /
-// not admin) is dropped entirely, so the rail never shows an empty header.
+// one flat scroll. A section whose items are all hidden (module not accessible)
+// is dropped entirely, so the rail never shows an empty header.
 type NavSection = {
   title: string;
   items: NavItem[];
@@ -75,73 +82,99 @@ const navSections: NavSection[] = [
         href: "/documents",
         label: "Spisovna",
         icon: FolderOpen,
-        module: ModuleKey.DOCUMENTS,
+        permission: "module.documents",
       },
     ],
   },
   {
     title: "Spisy",
     items: [
-      { href: "/subjects", label: "Subjekty", icon: Building2 },
-      { href: "/conflict-check", label: "Conflict check", icon: ShieldCheck },
-      { href: "/registry", label: "Hlídání rejstříků", icon: Radar },
+      { href: "/subjects", label: "Subjekty", icon: Building2, permission: "module.subjects" },
       {
-        href: "/aml",
-        label: "AML / KYC",
-        icon: ShieldAlert,
-        adminOnly: true,
-        module: ModuleKey.AML,
+        href: "/conflict-check",
+        label: "Conflict check",
+        icon: ShieldCheck,
+        permission: "module.conflictCheck",
       },
-      { href: "/projects", label: "Projekty", icon: BriefcaseBusiness },
-      { href: "/cases", label: "Případy", icon: FileText },
+      { href: "/registry", label: "Hlídání rejstříků", icon: Radar, permission: "module.registry" },
+      { href: "/aml", label: "AML / KYC", icon: ShieldAlert, permission: "module.aml" },
+      {
+        href: "/projects",
+        label: "Projekty",
+        icon: BriefcaseBusiness,
+        permission: "module.projects",
+      },
+      { href: "/cases", label: "Případy", icon: FileText, permission: "module.cases" },
       {
         href: "/data-boxes",
         label: "Datové schránky",
         icon: Inbox,
-        module: ModuleKey.DATA_BOXES,
+        permission: "module.dataBoxes",
       },
     ],
   },
   {
     title: "Práce",
     items: [
-      { href: "/tasks", label: "Úkoly", icon: ListTodo },
-      { href: "/tasks/my", label: "Moje úkoly", icon: ListChecks },
-      { href: "/tasks/archive", label: "Archiv úkolů", icon: Archive },
-      { href: "/work-logs", label: "Výkazy práce", icon: Clock3 },
+      { href: "/tasks", label: "Úkoly", icon: ListTodo, permission: "module.tasks" },
+      { href: "/tasks/my", label: "Moje úkoly", icon: ListChecks, permission: "module.tasks" },
+      { href: "/tasks/archive", label: "Archiv úkolů", icon: Archive, permission: "module.tasks" },
+      { href: "/work-logs", label: "Výkazy práce", icon: Clock3, permission: "module.workLogs" },
       {
         href: "/billing",
         label: "Fakturace",
         icon: Receipt,
-        module: ModuleKey.BILLING,
-        requiresInvoiceAccess: true,
+        permission: "module.billing",
+        requires: "manageInvoices",
       },
-      { href: "/reports", label: "Reporty", icon: BarChart3 },
-      { href: "/references", label: "Reference", icon: LibraryBig },
+      { href: "/reports", label: "Reporty", icon: BarChart3, permission: "module.reports" },
+      { href: "/references", label: "Reference", icon: LibraryBig, permission: "module.references" },
     ],
   },
   {
     title: "Lhůty & dokumenty",
     items: [
-      { href: "/deadlines", label: "Lhůtník", icon: AlarmClock, module: ModuleKey.DEADLINES },
-      { href: "/calendar", label: "Kalendář", icon: CalendarDays, module: ModuleKey.DEADLINES },
-      { href: "/documents/sharepoint", label: "SharePoint", icon: FolderOpen, module: ModuleKey.DOCUMENTS },
+      { href: "/deadlines", label: "Lhůtník", icon: AlarmClock, permission: "module.deadlines" },
+      { href: "/calendar", label: "Kalendář", icon: CalendarDays, permission: "module.calendar" },
+      {
+        href: "/documents/sharepoint",
+        label: "SharePoint",
+        icon: FolderOpen,
+        permission: "module.documents",
+      },
     ],
   },
   {
     title: "HR",
     items: [
-      { href: "/hr/employees", label: "Zaměstnanci", icon: Users, module: ModuleKey.HR_ATTENDANCE },
-      { href: "/hr/attendance", label: "Docházka", icon: CalendarClock, module: ModuleKey.HR_ATTENDANCE },
-      { href: "/hr/absences", label: "Absence", icon: CalendarOff, module: ModuleKey.HR_ATTENDANCE },
-      { href: "/hr/exports", label: "Mzdový export", icon: FileSpreadsheet, module: ModuleKey.HR_ATTENDANCE },
+      { href: "/hr/employees", label: "Zaměstnanci", icon: Users, permission: "module.hr" },
+      { href: "/hr/attendance", label: "Docházka", icon: CalendarClock, permission: "module.hr" },
+      { href: "/hr/absences", label: "Absence", icon: CalendarOff, permission: "module.hr" },
+      {
+        href: "/hr/exports",
+        label: "Mzdový export",
+        icon: FileSpreadsheet,
+        permission: "module.hr",
+        requires: "manageHr",
+      },
     ],
   },
   {
     title: "Správa",
     items: [
-      { href: "/audit-log", label: "Audit log", icon: ScrollText, adminOnly: true },
-      { href: "/settings/organization", label: "Kancelář", icon: Briefcase, adminOnly: true },
+      { href: "/audit-log", label: "Audit log", icon: ScrollText, permission: "module.auditLog" },
+      {
+        href: "/settings/organization",
+        label: "Kancelář",
+        icon: Briefcase,
+        requires: "manageOrganization",
+      },
+      {
+        href: "/settings/permissions",
+        label: "Oprávnění",
+        icon: KeyRound,
+        requires: "managePermissions",
+      },
       { href: "/settings", label: "Nastavení", icon: Settings },
     ],
   },
@@ -162,17 +195,16 @@ function getActiveHref(pathname: string, items: NavItem[]) {
 }
 
 export function AppSidebar({
-  showAuditLog,
-  canManageInvoices,
+  allowedModules,
+  functions,
   userName,
   userRole,
-  enabledModules,
 }: {
-  showAuditLog?: boolean;
-  canManageInvoices?: boolean;
+  // Module permission keys the user may open (permission ∧ entitlement).
+  allowedModules?: string[];
+  functions?: Partial<Record<NavFunctionGate, boolean>>;
   userName?: string;
   userRole?: string;
-  enabledModules?: string[];
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -192,19 +224,15 @@ export function AppSidebar({
     window.addEventListener("resize", onResize, { passive: true });
     return () => window.removeEventListener("resize", onResize);
   }, [open]);
-  // Two independent gates:
-  // - showAuditLog === canViewAllLegalData (ADMIN/PARTNER); same gate covers the
-  //   org-management link, so adminOnly items hide for everyone else.
-  // - enabledModules hides nav items for modules the org hasn't bought. Missing
-  //   prop → empty list → module-gated items hidden (fail-closed UX).
-  const enabled = enabledModules ?? [];
+  // Missing props → empty lists → gated items hidden (fail-closed UX). The
+  // authoritative checks are canAccessModule / assert* on pages and actions.
+  const allowed = allowedModules ?? [];
   const visibleSections = navSections
     .map((section) => ({
       ...section,
       items: section.items.filter((item) => {
-        if (item.adminOnly && !showAuditLog) return false;
-        if (item.module && !enabled.includes(item.module)) return false;
-        if (item.requiresInvoiceAccess && !canManageInvoices) return false;
+        if (item.permission && !allowed.includes(item.permission)) return false;
+        if (item.requires && !functions?.[item.requires]) return false;
         return true;
       }),
     }))

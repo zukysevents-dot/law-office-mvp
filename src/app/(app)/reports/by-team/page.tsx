@@ -7,7 +7,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import { formatHours, formatMoney } from "@/lib/format";
-import { canViewAllLegalData } from "@/lib/permissions";
+import { canViewTeamReports } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -54,7 +54,7 @@ export default async function TeamReportPage({
     { allowed: false, rows: [] },
     async () => {
       const currentUser = await getCurrentUser();
-      if (!canViewAllLegalData(currentUser)) {
+      if (!canViewTeamReports(currentUser)) {
         return { allowed: false, rows: [] };
       }
       const prisma = getPrisma();

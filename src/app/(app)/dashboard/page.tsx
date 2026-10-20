@@ -61,7 +61,7 @@ import { safeQuery } from "@/lib/db-safe";
 import { getCurrentUser } from "@/lib/auth";
 import {
   andWhere,
-  canViewAllLegalData,
+  canApproveWorkLogs,
   canViewRates,
   caseVisibilityWhere,
   projectVisibilityWhere,
@@ -1146,7 +1146,7 @@ export default async function DashboardPage() {
           : null,
       canViewRates: canViewRates(currentUser),
       canApprove:
-        canViewAllLegalData(currentUser) || approvalAssignmentCount > 0,
+        canApproveWorkLogs(currentUser) || approvalAssignmentCount > 0,
       calendarDefaultView: normalizeCalendarView(
         notificationPreference?.calendarDefaultView,
       ),

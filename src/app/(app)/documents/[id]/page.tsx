@@ -29,7 +29,7 @@ import {
   andWhere,
   canManageDocuments,
   canManagePortal,
-  canViewAllLegalData,
+  canArchiveRecords,
   documentVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
@@ -102,7 +102,7 @@ export default async function DocumentDetailPage({
     return {
       document,
       canManage: canManageDocuments(currentUser),
-      canArchive: canViewAllLegalData(currentUser),
+      canArchive: canArchiveRecords(currentUser),
       portalTargets,
     };
   });
