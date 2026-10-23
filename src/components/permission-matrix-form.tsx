@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useActionState, useState } from "react";
+import { useActionState, useState } from "react";
 import { Lock } from "lucide-react";
 
 import {
@@ -66,36 +66,30 @@ function StatusMessage({ state }: { state: PermissionFormState }) {
   return null;
 }
 
-// The editable role × permission table. Inputs live in the table but belong
-// to the save form through the `form` attribute, so each column header can
-// hold its own "Obnovit výchozí" form without nesting forms.
+type MatrixValues = Record<string, PermissionValue>;
+
+// The editable role × permission table. Its controls are plain controlled
+// inputs NOT associated with any form: the save form submits hidden inputs
+// derived from the same state (see MatrixEditor). React 19 resets a <form
+// action> after every submit, and controls tied to it only through the `form`
+// attribute would snap back to their initial DOM defaults (a select to its
+// first option) while React state keeps the saved value. Each column header
+// holds its own "Obnovit výchozí" form, so forms are never nested.
 function MatrixTable({
-  roleValues,
+  values,
+  setValue,
   inactiveEntitlements,
   actorIsAdmin,
   resetAction,
 }: {
-  roleValues: RoleValues;
+  values: MatrixValues;
+  setValue: (id: string, value: PermissionValue) => void;
   inactiveEntitlements: string[];
   actorIsAdmin: boolean;
   resetAction: (formData: FormData) => void;
 }) {
   const defs = editablePermissionDefs();
-  const [values, setValues] = useState<Record<string, PermissionValue>>(() => {
-    const initial: Record<string, PermissionValue> = {};
-    for (const role of EDITABLE_ROLES) {
-      for (const def of defs) {
-        initial[`${role}:${def.key}`] = roleValues[role]?.[def.key] ?? def.defaults[role];
-      }
-    }
-    return initial;
-  });
-
   const groups: Array<PermissionDef["kind"]> = ["module", "scope", "function"];
-
-  function setValue(id: string, value: PermissionValue) {
-    setValues((previous) => ({ ...previous, [id]: value }));
-  }
 
   return (
     <div className="table-scroll rounded-lg border border-[#dce4e8]">
@@ -109,7 +103,11 @@ function MatrixTable({
               Oprávnění
             </th>
             {PERMISSION_ROLES.map((role) => (
-              <th key={role} scope="col" className="min-w-[9.5rem] text-center align-top">
+              <th
+                key={role}
+                scope="col"
+                className="min-w-[9.5rem] text-center align-top"
+              >
                 <div className="flex flex-col items-center gap-2">
                   <span className="inline-flex items-center gap-1">
                     {role === UserRole.ADMIN ? (
@@ -187,7 +185,11 @@ function MatrixTable({
                       const label = `${def.label} – ${permissionRoleLabels[role]}`;
                       if (role === UserRole.ADMIN) {
                         return (
-                          <td key={role} className="text-center align-middle" title={ADMIN_LOCK_TITLE}>
+                          <td
+                            key={role}
+                            className="text-center align-middle"
+                            title={ADMIN_LOCK_TITLE}
+                          >
                             {def.kind === "scope" ? (
                               <span className="inline-flex items-center gap-1 text-xs text-[#566673]">
                                 <Lock className="h-3 w-3" aria-hidden="true" />
@@ -228,12 +230,13 @@ function MatrixTable({
                           <td key={role} className="text-center align-middle">
                             <span className="inline-flex items-center">
                               <select
-                                form={FORM_ID}
-                                name={id}
-                                aria-label={label}
+                                aria-label={`Rozsah dat ${label}`}
                                 value={value as PermissionScope}
                                 onChange={(event) =>
-                                  setValue(id, event.target.value as PermissionScope)
+                                  setValue(
+                                    id,
+                                    event.target.value as PermissionScope,
+                                  )
                                 }
                                 className="h-9 rounded-md border border-[#c9d5db] bg-white px-2 text-sm text-[#0e1822] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#17A2A2]"
                               >
@@ -258,23 +261,17 @@ function MatrixTable({
                           <span className="inline-flex items-center">
                             <input
                               type="checkbox"
-                              form={FORM_ID}
-                              name={lockedForActor ? undefined : id}
-                              value="ALLOW"
                               aria-label={label}
                               checked={value === true}
                               disabled={lockedForActor}
-                              onChange={(event) => setValue(id, event.target.checked)}
+                              onChange={(event) =>
+                                setValue(id, event.target.checked)
+                              }
                               className={cn(
                                 "h-4 w-4 rounded border-stone-300 text-emerald-950",
                                 lockedForActor && "cursor-not-allowed",
                               )}
                             />
-                            {/* A disabled checkbox isn't submitted — carry the
-                                unchanged value so the save sees no change. */}
-                            {lockedForActor && value === true ? (
-                              <input type="hidden" form={FORM_ID} name={id} value="ALLOW" />
-                            ) : null}
                             {marker}
                           </span>
                         </td>
@@ -291,6 +288,77 @@ function MatrixTable({
   );
 }
 
+// Owns the edited values. Re-mounted (key) whenever the saved matrix changes,
+// so after a save or reset the table shows what the server stored; a failed
+// save keeps the unsaved edits.
+function MatrixEditor({
+  roleValues,
+  inactiveEntitlements,
+  actorIsAdmin,
+  saveAction,
+  resetAction,
+}: {
+  roleValues: RoleValues;
+  inactiveEntitlements: string[];
+  actorIsAdmin: boolean;
+  saveAction: (formData: FormData) => void;
+  resetAction: (formData: FormData) => void;
+}) {
+  const defs = editablePermissionDefs();
+  const [values, setValues] = useState<MatrixValues>(() => {
+    const initial: MatrixValues = {};
+    for (const role of EDITABLE_ROLES) {
+      for (const def of defs) {
+        initial[`${role}:${def.key}`] =
+          roleValues[role]?.[def.key] ?? def.defaults[role];
+      }
+    }
+    return initial;
+  });
+
+  function setValue(id: string, value: PermissionValue) {
+    setValues((previous) => ({ ...previous, [id]: value }));
+  }
+
+  return (
+    <>
+      <MatrixTable
+        values={values}
+        setValue={setValue}
+        inactiveEntitlements={inactiveEntitlements}
+        actorIsAdmin={actorIsAdmin}
+        resetAction={resetAction}
+      />
+      <form
+        id={FORM_ID}
+        action={saveAction}
+        className="flex flex-wrap items-center gap-3"
+      >
+        {defs.map((def) => (
+          <input key={def.key} type="hidden" name="keys" value={def.key} />
+        ))}
+        {/* Checkbox semantics: present = ALLOW, absent = not allowed. */}
+        {Object.entries(values).map(([id, value]) =>
+          value === false ? null : (
+            <input
+              key={id}
+              type="hidden"
+              name={id}
+              value={value === true ? "ALLOW" : value}
+            />
+          ),
+        )}
+        <Button type="submit" pendingLabel="Ukládám…">
+          Uložit oprávnění
+        </Button>
+        <span className="text-xs text-[#566673]">
+          Změny platí pro všechny uživatele dané role hned po uložení.
+        </span>
+      </form>
+    </>
+  );
+}
+
 export function PermissionMatrixForm({
   roleValues,
   inactiveEntitlements,
@@ -300,10 +368,16 @@ export function PermissionMatrixForm({
   inactiveEntitlements: string[];
   actorIsAdmin: boolean;
 }) {
-  const [saveState, saveAction] = useActionState(saveRolePermissions, initialState);
-  const [resetState, resetAction] = useActionState(resetRolePermissions, initialState);
-  const latest = resetState.version > saveState.version ? resetState : saveState;
-  const defs = editablePermissionDefs();
+  const [saveState, saveAction] = useActionState(
+    saveRolePermissions,
+    initialState,
+  );
+  const [resetState, resetAction] = useActionState(
+    resetRolePermissions,
+    initialState,
+  );
+  const latest =
+    resetState.version > saveState.version ? resetState : saveState;
 
   return (
     <div className="grid gap-4">
@@ -320,27 +394,14 @@ export function PermissionMatrixForm({
           Administrátor má vždy všechna oprávnění
         </span>
       </p>
-      {/* Re-mount when the saved matrix changes (after a save or reset) so the
-          inputs reflect the server; a failed save keeps the unsaved edits. */}
-      <Fragment key={JSON.stringify(roleValues)}>
-        <MatrixTable
-          roleValues={roleValues}
-          inactiveEntitlements={inactiveEntitlements}
-          actorIsAdmin={actorIsAdmin}
-          resetAction={resetAction}
-        />
-      </Fragment>
-      <form id={FORM_ID} action={saveAction} className="flex flex-wrap items-center gap-3">
-        {defs.map((def) => (
-          <input key={def.key} type="hidden" name="keys" value={def.key} />
-        ))}
-        <Button type="submit" pendingLabel="Ukládám…">
-          Uložit oprávnění
-        </Button>
-        <span className="text-xs text-[#566673]">
-          Změny platí pro všechny uživatele dané role hned po uložení.
-        </span>
-      </form>
+      <MatrixEditor
+        key={JSON.stringify(roleValues)}
+        roleValues={roleValues}
+        inactiveEntitlements={inactiveEntitlements}
+        actorIsAdmin={actorIsAdmin}
+        saveAction={saveAction}
+        resetAction={resetAction}
+      />
     </div>
   );
 }
