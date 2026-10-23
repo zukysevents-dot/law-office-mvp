@@ -16,6 +16,8 @@ import {
 import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import { formatDateTime } from "@/lib/format";
+import { formatPermissionAudit } from "@/lib/permission-audit";
+import { permissionRoleLabels } from "@/lib/permission-catalog";
 import { andWhere, canViewAuditLog } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { firstParam } from "@/lib/search-params";
@@ -53,6 +55,25 @@ function auditDetail(value: unknown) {
 
   const text = JSON.stringify(value);
   return text.length > 180 ? `${text.slice(0, 180)}...` : text;
+}
+
+// Změny matice oprávnění česky („Role Praktikant: Projekty: Ano → Ne“).
+function permissionDetail(log: AuditLogData["logs"][number]) {
+  return formatPermissionAudit(log);
+}
+
+// Role / uživatel místo technického ID u záznamů matice oprávnění.
+function entityIdLabel(
+  log: AuditLogData["logs"][number],
+  userNames: Map<string, string>,
+) {
+  if (log.entityType === "RolePermission" && log.entityId in permissionRoleLabels) {
+    return permissionRoleLabels[log.entityId as keyof typeof permissionRoleLabels];
+  }
+  if (log.entityType === "UserPermission") {
+    return userNames.get(log.entityId) ?? log.entityId;
+  }
+  return log.entityId;
 }
 
 // Build a querystring of the currently active (non-empty) filters, optionally
@@ -119,6 +140,7 @@ export default async function AuditLogPage({ searchParams }: AuditLogPageProps) 
   );
 
   const { allowed, logs, total, users } = result.data;
+  const userNames = new Map(users.map((user) => [user.id, user.name]));
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const hasFilters = Boolean(
     filters.entityType ||
@@ -239,10 +261,18 @@ export default async function AuditLogPage({ searchParams }: AuditLogPageProps) 
                           </td>
                           <td>{auditActionLabel(log.action)}</td>
                           <td>{auditEntityTypeLabel(log.entityType)}</td>
-                          <td className="font-mono text-xs">{log.entityId}</td>
-                          <td className="max-w-xl break-words font-mono text-xs">
-                            {auditDetail(log.newValue ?? log.oldValue)}
+                          <td className="font-mono text-xs">
+                            {entityIdLabel(log, userNames)}
                           </td>
+                          {permissionDetail(log) ? (
+                            <td className="max-w-xl break-words text-xs">
+                              {permissionDetail(log)}
+                            </td>
+                          ) : (
+                            <td className="max-w-xl break-words font-mono text-xs">
+                              {auditDetail(log.newValue ?? log.oldValue)}
+                            </td>
+                          )}
                         </tr>
                       ))}
                     </tbody>

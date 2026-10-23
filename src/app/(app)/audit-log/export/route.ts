@@ -8,6 +8,7 @@ import {
 } from "@/lib/audit-filters";
 import { getCurrentUser } from "@/lib/auth";
 import { formatDateTime } from "@/lib/format";
+import { formatPermissionAudit } from "@/lib/permission-audit";
 import { andWhere, canViewAuditLog } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { canAccessModule } from "@/lib/module-access.server";
@@ -63,7 +64,7 @@ function buildCsv(rows: AuditLogRow[]) {
         auditActionLabel(row.action),
         auditEntityTypeLabel(row.entityType),
         row.entityId,
-        auditDetail(row.newValue ?? row.oldValue),
+        formatPermissionAudit(row) ?? auditDetail(row.newValue ?? row.oldValue),
       ]
         .map((cell) => csvCell(String(cell)))
         .join(";"),

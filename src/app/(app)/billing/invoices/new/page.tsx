@@ -134,7 +134,7 @@ export default async function NewInvoicePage({ searchParams }: NewInvoiceProps) 
         />
         <Section title="Přístup odepřen">
           <p className="text-sm text-stone-600">
-            Faktury mohou spravovat partneři a administrátoři.
+            Faktury spravují jen uživatelé s oprávněním „Spravuje fakturaci“. O přístup požádejte administrátora kanceláře (Nastavení → Oprávnění).
           </p>
         </Section>
       </>

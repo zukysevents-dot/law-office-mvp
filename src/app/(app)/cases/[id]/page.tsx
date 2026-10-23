@@ -42,6 +42,7 @@ import {
   canManageReferences,
   canArchiveRecords,
   canEditRecord,
+  canViewRates,
   caseVisibilityWhere,
   courtHearingVisibilityWhere,
   deadlineVisibilityWhere,
@@ -303,6 +304,7 @@ export default async function CaseDetailPage({
   if (accessDenied) {
     return <AccessDenied title="Případy" message={accessDenied} />;
   }
+  const showRates = canViewRates(accessUser);
 
   const { id } = await params;
   const { sharepoint } = await searchParams;
@@ -639,7 +641,7 @@ export default async function CaseDetailPage({
                     <tr>
                       <th>Název</th>
                       <th>Právní odvětví</th>
-                      <th>Hodnota</th>
+                      {showRates ? <th>Hodnota</th> : null}
                       <th>Období</th>
                       <th>Subjekt</th>
                       <th>Popis</th>
@@ -652,7 +654,9 @@ export default async function CaseDetailPage({
                           {reference.title}
                         </td>
                         <td>{reference.legalArea ?? "—"}</td>
-                        <td>{formatMoney(reference.valueCzk)}</td>
+                        {showRates ? (
+                          <td>{formatMoney(reference.valueCzk)}</td>
+                        ) : null}
                         <td>
                           {formatDateUtc(reference.startDate)} –{" "}
                           {reference.endDate

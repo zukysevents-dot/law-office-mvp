@@ -20,6 +20,10 @@ import type { PermissionValue } from "@/lib/permission-resolver";
 import { permissionOverrideLabels } from "@/lib/labels";
 import { cn } from "@/lib/utils";
 
+// Globální `th { text-transform: uppercase }` je mimo cascade layers, takže
+// ho Tailwind utilita `normal-case` nepřebije — popisy oprávnění proto přes style.
+const NO_UPPERCASE = { textTransform: "none" } as const;
+
 const initialState: PermissionFormState = { ok: false, version: 0 };
 const INHERIT = "INHERIT";
 const ADMIN_ONLY_TITLE = "Toto oprávnění může měnit jen administrátor.";
@@ -120,7 +124,8 @@ function OverrideRows({
                 <th
                   scope="colgroup"
                   colSpan={3}
-                  className="bg-[#eef3f5] text-left"
+                  className="bg-[#eef3f5] text-left text-sm"
+                  style={NO_UPPERCASE}
                 >
                   {permissionGroupLabels[group]}
                 </th>
@@ -143,7 +148,8 @@ function OverrideRows({
                     <tr key={def.key}>
                       <th
                         scope="row"
-                        className="min-w-[14rem] max-w-[22rem] bg-white text-left align-top font-normal"
+                        className="min-w-[10rem] max-w-[12rem] bg-white text-left align-top font-normal sm:min-w-[14rem] sm:max-w-[22rem]"
+                        style={NO_UPPERCASE}
                       >
                         <span className="block text-sm font-semibold text-[#0e1822]">
                           {def.label}
@@ -172,7 +178,7 @@ function OverrideRows({
                           </select>
                         ) : (
                           <fieldset
-                            className="flex flex-wrap gap-x-4 gap-y-1"
+                            className="flex flex-col gap-1 sm:flex-row sm:flex-wrap sm:gap-x-4"
                             disabled={locked}
                           >
                             <legend className="sr-only">{def.label}</legend>

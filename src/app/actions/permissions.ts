@@ -458,16 +458,28 @@ export async function saveUserPermissionOverrides(
         const capability = legacyCapabilityForPermission(change.key);
         if (capability) {
           if (change.to === "ALLOW") {
-            await tx.userCapabilityGrant.upsert({
+            // Unikátní klíč (userId, capability) není po kancelářích: grant
+            // jiné kanceláře téhož uživatele nepřesouváme — v této kanceláři
+            // platí výjimka uložená výše, starý grant je jen záložní kopie.
+            const existing = await tx.userCapabilityGrant.findUnique({
               where: { userId_capability: { userId, capability } },
-              update: { organizationId, grantedById: currentUser.id },
-              create: {
-                organizationId,
-                userId,
-                capability,
-                grantedById: currentUser.id,
-              },
+              select: { id: true, organizationId: true },
             });
+            if (!existing) {
+              await tx.userCapabilityGrant.create({
+                data: {
+                  organizationId,
+                  userId,
+                  capability,
+                  grantedById: currentUser.id,
+                },
+              });
+            } else if (existing.organizationId === organizationId) {
+              await tx.userCapabilityGrant.update({
+                where: { id: existing.id },
+                data: { grantedById: currentUser.id },
+              });
+            }
           } else if (legacy.includes(capability)) {
             await tx.userCapabilityGrant.deleteMany({
               where: { userId, capability, organizationId },

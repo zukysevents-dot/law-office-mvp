@@ -436,6 +436,196 @@ test.describe("praktikant a matice oprávnění", () => {
     ).toHaveCount(0);
     await intern.context().close();
   });
+  test("praktikant se „Spravuje uživatele“ nezaloží administrátora ani nezmění jeho heslo", async ({
+    page,
+    browser,
+  }) => {
+    const intern = await pageAs(browser, "intern");
+
+    // ID administrátora z jeho vlastního formuláře resetu hesla.
+    await page.goto("/settings");
+    const adminId = await page
+      .locator("section")
+      .filter({ has: page.getByRole("heading", { name: "Reset hesla uživatele" }) })
+      .getByRole("combobox", { name: "Uživatel", exact: true })
+      .locator("option", { hasText: "Admin Demo" })
+      .getAttribute("value");
+    expect(adminId).toBeTruthy();
+
+    await page.goto("/settings/permissions");
+    await page
+      .getByRole("link", { name: "Upravit výjimky – Praktikant Demo" })
+      .click();
+    await expect(
+      page.getByRole("heading", { name: "Oprávnění: Praktikant Demo", level: 1 }),
+    ).toBeVisible();
+
+    try {
+      await page
+        .getByRole("group", { name: "Spravuje uživatele" })
+        .getByLabel("Povolit")
+        .check();
+      await submitAndAwaitAction(
+        page,
+        page.getByRole("button", { name: "Uložit výjimky" }),
+      );
+      await expect(
+        page.getByRole("status").filter({ hasText: "Výjimky uloženy." }),
+      ).toBeVisible();
+
+      await intern.goto("/settings");
+      const createSection = intern
+        .locator("section")
+        .filter({ has: intern.getByRole("heading", { name: "Nový uživatel", level: 2 }) });
+      const roleSelect = createSection.getByRole("combobox", { name: "Role", exact: true });
+      await expect(roleSelect).toBeVisible();
+      // Formulář nenabízí role, které by praktikantovi daly víc práv.
+      await expect(roleSelect.locator('option[value="ADMIN"]')).toHaveCount(0);
+      await expect(roleSelect.locator('option[value="PARTNER"]')).toHaveCount(0);
+      await expect(roleSelect.locator('option[value="LAWYER"]')).toHaveCount(1);
+
+      // Podvržená hodnota ADMIN: server založení odmítne.
+      await roleSelect.evaluate((select: HTMLSelectElement) => {
+        const option = document.createElement("option");
+        option.value = "ADMIN";
+        option.textContent = "Admin";
+        select.appendChild(option);
+        select.value = "ADMIN";
+      });
+      const forgedName = e2eName("admin-pokus");
+      await createSection.getByLabel("Jméno", { exact: true }).fill(forgedName);
+      await createSection.getByLabel("E-mail", { exact: true }).fill(`${forgedName}@example.local`);
+      await createSection.getByLabel(/Počáteční heslo/).fill("heslo-pokus-123");
+      await submitAndAwaitAction(
+        intern,
+        createSection.getByRole("button", { name: "Vytvořit uživatele" }),
+      );
+      await expect(createSection.getByRole("alert")).toHaveText(
+        "Roli Administrátor může přidělit nebo odebrat jen administrátor.",
+      );
+      await expect(intern.getByRole("cell", { name: forgedName })).toHaveCount(0);
+
+      // Reset hesla: administrátor ani partner v nabídce nejsou…
+      const resetSection = intern
+        .locator("section")
+        .filter({ has: intern.getByRole("heading", { name: "Reset hesla uživatele" }) });
+      const target = resetSection.getByRole("combobox", { name: "Uživatel", exact: true });
+      await expect(target.locator("option", { hasText: "Admin Demo" })).toHaveCount(0);
+      await expect(target.locator("option", { hasText: "Partner Demo" })).toHaveCount(0);
+      await expect(target.locator("option", { hasText: "Advokát Demo" })).toHaveCount(1);
+      // …a podvržené ID administrátora server odmítne (heslo zůstane stejné).
+      await target.evaluate((select: HTMLSelectElement, id) => {
+        const option = document.createElement("option");
+        option.value = id;
+        option.textContent = "Admin Demo";
+        select.appendChild(option);
+        select.value = id;
+      }, adminId as string);
+      await resetSection.getByLabel(/Nové heslo/).fill("demo1234");
+      await resetSection.getByRole("button", { name: "Nastavit heslo" }).click();
+      await expect(
+        intern.getByRole("heading", { name: "Něco se pokazilo" }),
+      ).toBeVisible();
+      // Relace administrátora platí dál (reset by zvýšil sessionVersion).
+      await page.goto("/settings");
+      await expect(page).toHaveURL(/\/settings$/);
+    } finally {
+      await page.goto("/settings/permissions");
+      await page
+        .getByRole("link", { name: "Upravit výjimky – Praktikant Demo" })
+        .click();
+      await page
+        .getByRole("button", { name: "Zrušit všechny výjimky" })
+        .click();
+      const dialog = page.getByRole("dialog", { name: "Zrušit všechny výjimky" });
+      await submitAndAwaitAction(
+        page,
+        dialog.getByRole("button", { name: "Zrušit výjimky" }),
+      );
+      await expect(dialog).toBeHidden();
+    }
+    await intern.context().close();
+  });
+
+  test("praktikant jako schvalovatel u klienta schválí výkaz i bez sekce Fakturace", async ({
+    page,
+    browser,
+  }) => {
+    const intern = await pageAs(browser, "intern");
+    const description = e2eName("schvalovatel-vykaz");
+
+    // Praktikant zapíše fakturovatelný výkaz (čeká na schválení).
+    await intern.goto("/work-logs");
+    await intern.getByRole("link", { name: "Nový výkaz" }).click();
+    const form = intern.getByRole("dialog", { name: "Nový výkaz práce" });
+    await form
+      .getByRole("combobox", { name: "Subjekt", exact: true })
+      .selectOption({ label: "ABC s.r.o., IČO 12345678" });
+    await form
+      .getByRole("combobox", { name: "Projekt", exact: true })
+      .selectOption({ label: "Soudní spor ABC" });
+    await form.getByLabel("Hodiny").fill("0.5");
+    await form.getByLabel("Popis práce").fill(description);
+    await submitAndAwaitAction(
+      intern,
+      form.getByRole("button", { name: "Vytvořit výkaz" }),
+    );
+    await expect(form).toBeHidden();
+
+    // Administrátor ho určí schvalovatelem klienta ABC s.r.o.
+    await page.goto("/subjects");
+    await page.getByRole("link", { name: "ABC s.r.o." }).first().click();
+    await expect(page).toHaveURL(/\/subjects\/[a-z0-9]+$/);
+    const subjectUrl = page.url();
+    const removeApprover = page.getByRole("button", {
+      name: "Odebrat schvalovatele Praktikant Demo",
+    });
+    if ((await removeApprover.count()) === 0) {
+      await page
+        .getByRole("combobox", { name: "Přidat schvalovatele", exact: true })
+        .selectOption({ label: "Praktikant Demo" });
+      await submitAndAwaitAction(
+        page,
+        page.getByRole("button", { name: "Přidat", exact: true }),
+      );
+    }
+    await expect(removeApprover).toBeVisible();
+
+    try {
+      // Sekce Fakturace v menu zůstává skrytá…
+      await intern.goto("/dashboard");
+      await expect(
+        intern
+          .getByRole("navigation", { name: "Hlavní navigace" })
+          .getByRole("link", { name: "Fakturace" }),
+      ).toHaveCount(0);
+      // …ale schvalování výkazů klienta funguje.
+      await intern.goto("/billing/approvals");
+      await expect(
+        intern.getByRole("heading", { name: "Položky ke schválení", level: 1 }),
+      ).toBeVisible();
+      await expect(intern.getByText("Přístup odepřen")).toHaveCount(0);
+      const card = intern
+        .locator("form")
+        .filter({ has: intern.locator(`input[name="description"][value="${description}"]`) });
+      await expect(card).toHaveCount(1);
+      // Bez „Vidí sazby a částky“ schvalovatel sazbu nevidí.
+      await expect(card.getByLabel("Sazba")).toHaveCount(0);
+      await submitAndAwaitAction(
+        intern,
+        card.getByRole("button", { name: "Schválit" }),
+      );
+      await expect(
+        intern.locator(`input[name="description"][value="${description}"]`),
+      ).toHaveCount(0);
+      await expectNoErrorPage(intern);
+    } finally {
+      await page.goto(subjectUrl);
+      await submitAndAwaitAction(page, removeApprover);
+      await expect(removeApprover).toHaveCount(0);
+    }
+    await intern.context().close();
+  });
 });
 
 test.describe("organizační kontext", () => {

@@ -235,7 +235,7 @@ export const PERMISSION_CATALOG: readonly PermissionDef[] = [
     key: "module.billing",
     label: "Fakturace",
     description:
-      "Fakturační podklady a schvalování. Vystavování faktur řídí funkce „Spravuje fakturaci“.",
+      "Sekce Fakturace v menu. Podklady, faktury a paušály se v ní zobrazí jen spolu s funkcí „Spravuje fakturaci“; schvalovat výkazy lze i bez této sekce (funkce „Schvaluje výkazy celé kanceláře“ nebo schvalovatel u klienta).",
     entitlement: ModuleKey.BILLING,
     defaults: WITH_LAWYER,
   },

@@ -26,6 +26,10 @@ import {
 import type { PermissionValue } from "@/lib/permission-resolver";
 import { cn } from "@/lib/utils";
 
+// Globální `th { text-transform: uppercase }` je mimo cascade layers, takže
+// ho Tailwind utilita `normal-case` nepřebije — popisy oprávnění proto přes style.
+const NO_UPPERCASE = { textTransform: "none" } as const;
+
 const FORM_ID = "permission-matrix";
 const ADMIN_LOCK_TITLE =
   "Administrátor má vždy všechna oprávnění – nelze ho omezit, aby se nikdo nemohl zamknout.";
@@ -98,7 +102,7 @@ function MatrixTable({
           <tr>
             <th
               scope="col"
-              className="sticky left-0 z-20 min-w-[16rem] max-w-[22rem] bg-[var(--iv-bg)] text-left"
+              className="sticky left-0 z-20 min-w-[10rem] max-w-[11rem] bg-[var(--iv-bg)] text-left sm:min-w-[14rem] sm:max-w-[20rem]"
             >
               Oprávnění
             </th>
@@ -106,14 +110,15 @@ function MatrixTable({
               <th
                 key={role}
                 scope="col"
-                className="min-w-[9.5rem] text-center align-top"
+                className="min-w-[8rem] text-center align-top"
+                style={NO_UPPERCASE}
               >
                 <div className="flex flex-col items-center gap-2">
                   <span className="inline-flex items-center gap-1">
                     {role === UserRole.ADMIN ? (
                       <Lock className="h-3.5 w-3.5" aria-hidden="true" />
                     ) : null}
-                    {permissionRoleLabels[role]}
+                    <span className="uppercase">{permissionRoleLabels[role]}</span>
                   </span>
                   {role === UserRole.ADMIN ? (
                     <span className="text-[11px] font-normal text-[#566673]">
@@ -147,13 +152,18 @@ function MatrixTable({
                   scope="colgroup"
                   colSpan={PERMISSION_ROLES.length + 1}
                   className="bg-[#eef3f5] text-left"
+                  style={NO_UPPERCASE}
                 >
-                  <span className="block text-sm font-semibold text-[#0e1822]">
-                    {permissionGroupLabels[group]}
-                  </span>
-                  <span className="mt-0.5 block max-w-3xl text-xs font-normal leading-5 text-[#566673]">
-                    {permissionGroupDescriptions[group]}
-                  </span>
+                  {/* Sticky obsah: při vodorovném posunu tabulky zůstane
+                      nadpis skupiny vidět vlevo, nezajede pod první sloupec. */}
+                  <div className="sticky left-3 z-10 w-max max-w-[min(48rem,calc(100vw-4rem))]">
+                    <span className="block text-sm font-semibold text-[#0e1822]">
+                      {permissionGroupLabels[group]}
+                    </span>
+                    <span className="mt-0.5 block whitespace-normal text-xs font-normal leading-5 text-[#566673]">
+                      {permissionGroupDescriptions[group]}
+                    </span>
+                  </div>
                 </th>
               </tr>
               {groupDefs.map((def) => {
@@ -166,7 +176,8 @@ function MatrixTable({
                   <tr key={def.key}>
                     <th
                       scope="row"
-                      className="sticky left-0 z-10 min-w-[16rem] max-w-[22rem] bg-white text-left align-top font-normal"
+                      className="sticky left-0 z-10 min-w-[10rem] max-w-[11rem] bg-white text-left align-top font-normal sm:min-w-[14rem] sm:max-w-[20rem]"
+                      style={NO_UPPERCASE}
                     >
                       <span className="block text-sm font-semibold text-[#0e1822]">
                         {def.label}

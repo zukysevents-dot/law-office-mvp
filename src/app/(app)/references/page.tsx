@@ -28,12 +28,14 @@ import { getPrisma } from "@/lib/prisma";
 import {
   getCurrentTableView,
   getDefaultTableView,
+  restrictTableView,
 } from "@/lib/table-view-preference-service";
 import type { TableViewState } from "@/lib/table-view-preferences";
 import {
   andWhere,
   canManageReferences,
   canArchiveRecords,
+  canViewRates,
   caseVisibilityWhere,
   projectVisibilityWhere,
   referenceVisibilityWhere,
@@ -221,7 +223,10 @@ export default async function ReferencesPage({ searchParams }: ReferencesProps) 
         projects,
         cases,
         subjects,
-        tableView,
+        // Hodnota reference je částka — jen s „Vidí sazby a částky“.
+        tableView: canViewRates(currentUser)
+          ? tableView
+          : restrictTableView(tableView, ["valueCzk"]),
         canArchive: canArchiveRecords(currentUser),
         canManage: canManageReferences(currentUser),
       };

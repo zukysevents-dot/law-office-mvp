@@ -88,7 +88,7 @@ export default async function RetainersPage() {
       {result.databaseReady && !data.allowed ? (
         <Section title="Přístup odepřen">
           <p className="text-sm text-stone-600">
-            Paušály mohou spravovat advokáti, partneři a administrátoři.
+            Paušály spravují jen uživatelé s oprávněním „Spravuje fakturaci“. O přístup požádejte administrátora kanceláře (Nastavení → Oprávnění).
           </p>
         </Section>
       ) : null}

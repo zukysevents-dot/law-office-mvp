@@ -179,7 +179,7 @@ export default async function BillingPage({ searchParams }: BillingProps) {
         />
         <Section title="Přístup odepřen">
           <p className="text-sm text-stone-600">
-            Fakturaci mohou spravovat partneři a administrátoři.
+            Fakturační podklady vidí jen uživatelé s oprávněním „Spravuje fakturaci“. O přístup požádejte administrátora kanceláře (Nastavení → Oprávnění).
           </p>
         </Section>
       </>

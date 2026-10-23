@@ -480,7 +480,11 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
     <>
       <PageHeader
         title="Výkazy práce"
-        description="Evidence vykázané práce se sazbou a částkou jako příprava pro budoucí fakturaci."
+        description={
+          result.data.canViewRates
+            ? "Evidence vykázané práce se sazbou a částkou jako příprava pro budoucí fakturaci."
+            : "Evidence vykázané práce a odpracovaného času."
+        }
         action={
           <div className="flex gap-2">
             <ButtonLink href={timesheetHref} variant="secondary">
