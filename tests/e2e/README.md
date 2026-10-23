@@ -55,7 +55,7 @@ s heslem `demo1234` (viz `SEED_USER_PASSWORD`).
 | `auth.spec.ts` | redirecty na `/login`, návrat na původní stránku, chybné přihlášení, odhlášení, ochrana `from` |
 | `navigation.spec.ts` | shell, levé menu, `aria-current`, skip-link, ⌘K paleta, mobilní menu |
 | `modules.spec.ts` | každý modul: URL + `h1` + klíčová sekce; detaily nad seedovanými ID |
-| `roles-and-permissions.spec.ts` | viditelnost v menu, přímé URL na chráněné stránky, sazby, organizační kontext |
+| `roles-and-permissions.spec.ts` | viditelnost v menu, přímé URL na chráněné stránky, sazby, výchozí viditelnost pro všechny role, matice oprávnění (utažení role, výjimka uživatele, audit), organizační kontext |
 | `subjects-flow.spec.ts` | hledání, filtry, vytvoření, validace, diakritika, duplicitní IČO, 404 |
 | `subjects-types-contacts.spec.ts` | fyzická osoba (RČ, datum narození), FOP, více e-mailů/telefonů, statutární orgány, conflict check a hledání podle kontaktů a RČ (maskované), oprávnění, audit, mobil |
 | `tasks-and-worklogs.spec.ts` | úkoly, změna statusu, komentáře, výkazy práce, reporty |
@@ -67,6 +67,13 @@ s heslem `demo1234` (viz `SEED_USER_PASSWORD`).
 Pomocné funkce jsou v `tests/e2e/support/helpers.ts`.
 
 ## Známá omezení
+
+- **Matice oprávnění a paralelní běh.** Testy, které roli Praktikant v matici
+  utahují nebo jí dávají výjimku, běží v sériovém bloku
+  (`roles-and-permissions.spec.ts`, „praktikant a matice oprávnění“) a vždy
+  vrací výchozí stav (`finally`). Žádný jiný spec se praktikantem nepřihlašuje.
+  `prepare-e2e-db.ts` na začátku běhu smaže všechny řádky
+  `rolePermissionOverrides` / `userPermissionOverrides` (jen E2E databáze).
 
 - **Žádný route-level `loading.tsx`.** V Next 16.2.9 způsoboval
   `src/app/(app)/loading.tsx` (a stejné soubory v `(portal)` a `admin`), že se

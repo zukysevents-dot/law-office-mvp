@@ -63,6 +63,11 @@ const modules: Array<{
   { route: "/audit-log", heading: "Audit log", section: "Auditní záznamy" },
   { route: "/settings", heading: "Nastavení", section: "Uživatelé" },
   {
+    route: "/settings/permissions",
+    heading: "Oprávnění",
+    section: "Výjimky pro jednotlivé uživatele",
+  },
+  {
     route: "/settings/organization",
     heading: "Nastavení kanceláře",
     section: "Členové kanceláře",

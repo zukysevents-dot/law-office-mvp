@@ -80,6 +80,12 @@ async function main() {
       }
     }
 
+    // Permission matrix: a run interrupted mid-test could leave a role
+    // tightened or a user exception behind. This is the disposable E2E
+    // database only — start every suite from the default matrix.
+    await prisma.rolePermissionOverride.deleteMany({});
+    await prisma.userPermissionOverride.deleteMany({});
+
     // Drop leftovers from previous runs. Only `e2e-` prefixed rows, never seed
     // or developer data.
     const staleTaskIds = (
