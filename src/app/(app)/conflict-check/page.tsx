@@ -13,6 +13,11 @@ import { formatDate } from "@/lib/format";
 import { subjectRoleLabels, subjectTypeLabels } from "@/lib/labels";
 import { safeQuery } from "@/lib/db-safe";
 import { getPrisma } from "@/lib/prisma";
+import {
+  subjectMatchReasons,
+  subjectSearchInclude,
+  subjectSearchWhere,
+} from "@/lib/subjects/search";
 import { subjectRoleTone } from "@/lib/status-tones";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +32,8 @@ type ConflictSubject = {
   ico: string | null;
   type: keyof typeof subjectTypeLabels;
   riskFlag: boolean;
+  /** Why the subject matched (e-mail, phone, statutory body, masked RČ…). */
+  reasons: string[];
   relations: Array<{
     id: string;
     relationType: string;
@@ -69,14 +76,13 @@ export default async function ConflictCheckPage({
         // Conflict check is firm-wide by design — scope to the org (tenant
         // isolation), not to personal visibility.
         where: {
-          organizationId: currentUser.organizationId,
-          archivedAt: null,
-          OR: [
-            { name: { contains: query, mode: "insensitive" } },
-            { ico: { contains: query, mode: "insensitive" } },
+          AND: [
+            { organizationId: currentUser.organizationId, archivedAt: null },
+            subjectSearchWhere(query),
           ],
         },
         include: {
+          ...subjectSearchInclude,
           relations: {
             orderBy: { createdAt: "desc" },
             include: {
@@ -88,7 +94,19 @@ export default async function ConflictCheckPage({
         orderBy: { name: "asc" },
       });
 
-      return { subjects };
+      // The birth number is used only to explain an exact match (masked) and
+      // never reaches the page.
+      return {
+        subjects: subjects.map(
+          ({ birthNumber: _birthNumber, contacts, statutoryBodies, ...subject }) => ({
+            ...subject,
+            reasons: subjectMatchReasons(
+              { ...subject, birthNumber: _birthNumber, contacts, statutoryBodies },
+              query,
+            ),
+          }),
+        ),
+      };
     },
   );
 
@@ -113,7 +131,7 @@ export default async function ConflictCheckPage({
               <TextInput
                 name="q"
                 defaultValue={query}
-                placeholder="Název subjektu nebo IČO"
+                placeholder="Název, jméno, IČO, RČ, e-mail, telefon nebo statutární orgán"
                 className="pl-9"
               />
             </div>
@@ -125,7 +143,10 @@ export default async function ConflictCheckPage({
       </Section>
       <Section title="Výsledek prověření">
         {!query ? (
-          <EmptyState>Zadejte název subjektu nebo IČO.</EmptyState>
+          <EmptyState>
+            Zadejte název, jméno, IČO, rodné číslo, e-mail, telefon nebo jméno
+            statutárního orgánu.
+          </EmptyState>
         ) : result.data.subjects.length > 0 ? (
           <div className="grid gap-4">
             {result.data.subjects.map((subject) => {
@@ -161,6 +182,11 @@ export default async function ConflictCheckPage({
                         )}
                       </div>
                       <div className="mt-2 grid gap-1 text-sm">
+                        {subject.reasons.length > 0 ? (
+                          <p className="text-stone-700">
+                            Důvod shody: {subject.reasons.join(", ")}
+                          </p>
+                        ) : null}
                         {wasCounterparty ? (
                           <p className="font-medium text-red-900">
                             Subjekt byl v minulosti veden jako protistrana.

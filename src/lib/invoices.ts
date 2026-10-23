@@ -3,6 +3,7 @@ import {
   ApprovalStatus,
   BillingStatus,
   InvoiceStatus,
+  SubjectContactType,
   VatMode,
 } from "@/generated/prisma/enums";
 
@@ -23,6 +24,13 @@ export const invoiceDetailInclude = {
       address: true,
       email: true,
       vatPayer: true,
+      // All e-mails of the client: default recipient (an address labelled
+      // "fakturace" wins) and suggestions in the send form.
+      contacts: {
+        where: { type: SubjectContactType.EMAIL },
+        orderBy: { position: "asc" },
+        select: { type: true, value: true, label: true, isPrimary: true },
+      },
     },
   },
   project: { select: { id: true, name: true } },

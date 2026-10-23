@@ -9,6 +9,7 @@ import { recordPayment } from "@/app/actions/payments";
 import { markInvoiceSent, sendReminder } from "@/app/actions/reminders";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
 import { InvoiceEmailForm } from "@/components/invoice-email-form";
+import { pickInvoiceRecipient, subjectEmails } from "@/lib/subjects/contacts";
 import { PageHeader } from "@/components/page-header";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import { Section } from "@/components/section";
@@ -271,7 +272,14 @@ export default async function InvoiceDetailPage({
               <Section title="Odeslání klientovi">
                 <InvoiceEmailForm
                   invoiceId={invoice.id}
-                  defaultRecipient={invoice.subject.email ?? ""}
+                  defaultRecipient={pickInvoiceRecipient(
+                    invoice.subject.contacts,
+                    invoice.subject.email,
+                  )}
+                  suggestions={subjectEmails(
+                    invoice.subject.contacts,
+                    invoice.subject.email,
+                  )}
                 />
                 {invoice.status === "ISSUED" ? (
                   <form action={markInvoiceSent} className="mt-4">

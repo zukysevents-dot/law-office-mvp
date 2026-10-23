@@ -108,7 +108,7 @@ export function SubjectContactPersons({
               <TextInput name="phone" />
             </Field>
             <Field label="Role">
-              <TextInput name="role" placeholder="zaměstnanec, jednatel…" />
+              <TextInput name="role" placeholder="zaměstnanec, asistentka, účetní…" />
             </Field>
           </div>
           <div className="grid gap-4 md:grid-cols-2">

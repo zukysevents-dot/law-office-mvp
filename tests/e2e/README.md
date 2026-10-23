@@ -57,6 +57,7 @@ s heslem `demo1234` (viz `SEED_USER_PASSWORD`).
 | `modules.spec.ts` | každý modul: URL + `h1` + klíčová sekce; detaily nad seedovanými ID |
 | `roles-and-permissions.spec.ts` | viditelnost v menu, přímé URL na chráněné stránky, sazby, organizační kontext |
 | `subjects-flow.spec.ts` | hledání, filtry, vytvoření, validace, diakritika, duplicitní IČO, 404 |
+| `subjects-types-contacts.spec.ts` | fyzická osoba (RČ, datum narození), FOP, více e-mailů/telefonů, statutární orgány, conflict check a hledání podle kontaktů a RČ (maskované), oprávnění, audit, mobil |
 | `tasks-and-worklogs.spec.ts` | úkoly, změna statusu, komentáře, výkazy práce, reporty |
 | `responsive-and-accessibility.spec.ts` | 3 viewporty, jediný `h1`, popisky, klávesnice, hlavičky tabulek, screenshoty |
 | `overlays.spec.ts` | pop-upy (paleta, výkaz, sloupce, potvrzení, mobilní menu, landing): ×, Esc, klik mimo bez prokliknutí |

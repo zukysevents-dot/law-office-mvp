@@ -4,7 +4,12 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { Prisma } from "@/generated/prisma/client";
-import { InvoiceStatus, ModuleKey, VatMode } from "@/generated/prisma/enums";
+import {
+  InvoiceStatus,
+  ModuleKey,
+  SubjectContactType,
+  VatMode,
+} from "@/generated/prisma/enums";
 import { auditJson } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
 import { computeInvoiceTotals, computeLine, round2 } from "@/lib/billing-calc";
@@ -35,6 +40,7 @@ import {
   workLogVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { pickInvoiceRecipient, subjectEmails } from "@/lib/subjects/contacts";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -581,7 +587,18 @@ export async function emailInvoice(formData: FormData) {
     where: andWhere(invoiceVisibilityWhere(currentUser), { id: invoiceId }),
     include: {
       lines: { orderBy: { position: "asc" } },
-      subject: { select: { id: true, name: true, email: true } },
+      subject: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          contacts: {
+            where: { type: SubjectContactType.EMAIL },
+            orderBy: { position: "asc" },
+            select: { type: true, value: true, label: true, isPrimary: true },
+          },
+        },
+      },
     },
   });
   if (!invoice) {
@@ -591,7 +608,13 @@ export async function emailInvoice(formData: FormData) {
     throw new Error("E-mailem lze odeslat jen vystavenou fakturu.");
   }
 
-  const subjectEmail = (invoice.subject.email ?? "").trim();
+  const subjectEmail = pickInvoiceRecipient(
+    invoice.subject.contacts,
+    invoice.subject.email,
+  );
+  const knownEmails = subjectEmails(invoice.subject.contacts, invoice.subject.email).map(
+    (email) => email.toLowerCase(),
+  );
   const recipient = (recipientOverride ?? subjectEmail).trim();
   if (!isValidEmail(recipient)) {
     throw new Error(
@@ -600,7 +623,7 @@ export async function emailInvoice(formData: FormData) {
   }
   // Příjemce odlišný od adresy evidované u klienta — auditujeme zvlášť, ať jde
   // dohledat, kam doklad skutečně šel a že šlo o ruční přepis.
-  const recipientOverridden = recipient !== subjectEmail;
+  const recipientOverridden = !knownEmails.includes(recipient.toLowerCase());
 
   // Idempotence: odmítni opakované odeslání těsně po předchozím (dvojí klik /
   // retry akce). Okno je krátké, vědomé pozdější přeposlání zůstává možné.

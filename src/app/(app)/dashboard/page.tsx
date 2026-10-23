@@ -72,6 +72,7 @@ import {
   workLogVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { redactBirthNumberQuery } from "@/lib/subjects/birth-number";
 import {
   billingStatusTone,
   deadlineTypeTone,
@@ -756,7 +757,7 @@ function renderWidget(widget: DashboardWidgetView, data: DashboardData) {
                   {data.recentChecks.map((check) => (
                     <tr key={check.id}>
                       <td className="break-words font-medium text-[#0e1822]">
-                        {check.searchedQuery}
+                        {redactBirthNumberQuery(check.searchedQuery)}
                       </td>
                       <td className="break-words">
                         {check.subject ? (

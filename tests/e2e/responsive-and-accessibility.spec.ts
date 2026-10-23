@@ -96,7 +96,7 @@ test("formulář nového subjektu má popsaná pole", async ({ page }) => {
   const form = page.locator("#new-subject");
 
   await expect(form.getByRole("combobox", { name: "Typ", exact: true })).toBeVisible();
-  for (const label of ["Název", "IČO", "DIČ", "Adresa", "E-mail"]) {
+  for (const label of ["Název", "IČO", "DIČ", "Sídlo", "E-mail"]) {
     await expect(form.getByRole("textbox", { name: label, exact: true })).toBeVisible();
   }
 });

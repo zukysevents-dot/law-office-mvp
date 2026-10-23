@@ -20,10 +20,14 @@ function SubmitButton() {
 export function InvoiceEmailForm({
   invoiceId,
   defaultRecipient,
+  suggestions = [],
 }: {
   invoiceId: string;
   defaultRecipient: string;
+  /** The client's e-mail addresses, offered in the recipient field. */
+  suggestions?: string[];
 }) {
+  const listId = `invoice-recipient-${invoiceId}`;
   return (
     <form action={emailInvoice} className="grid gap-3 sm:max-w-lg">
       <input type="hidden" name="invoiceId" value={invoiceId} />
@@ -33,9 +37,17 @@ export function InvoiceEmailForm({
           type="email"
           defaultValue={defaultRecipient}
           placeholder="klient@firma.cz"
+          list={suggestions.length > 0 ? listId : undefined}
           required
         />
       </Field>
+      {suggestions.length > 0 ? (
+        <datalist id={listId}>
+          {suggestions.map((email) => (
+            <option key={email} value={email} />
+          ))}
+        </datalist>
+      ) : null}
       <Field label="Zpráva (volitelné)">
         <TextArea name="message" placeholder="Doprovodný text k faktuře…" />
       </Field>
