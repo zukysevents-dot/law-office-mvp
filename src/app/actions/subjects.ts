@@ -78,23 +78,31 @@ function statutoryData(row: Omit<StatutoryRow, "id">) {
 }
 
 /**
- * A statutory body may link only to an active subject of the SAME office and
- * never to the subject itself; anything else (forged id, other tenant,
- * archived) is silently unlinked — the row's name is kept.
+ * A statutory body may link only to a subject of the SAME office and never to
+ * the subject itself. A new link must point to an active subject; a link the
+ * subject already has is kept even when the linked subject was archived since
+ * (editing anything else must not silently drop it). Anything else (forged id,
+ * other tenant) is unlinked — the row's name is kept.
  */
 async function sanitizeLinkedSubjects(
   organizationId: string,
   rows: StatutoryRow[],
   selfId: string | null,
+  existingLinkedIds: ReadonlyArray<string | null> = [],
 ): Promise<StatutoryRow[]> {
   const ids = Array.from(
     new Set(rows.map((row) => row.linkedSubjectId).filter((id): id is string => Boolean(id))),
   ).filter((id) => id !== selfId);
+  const keep = existingLinkedIds.filter((id): id is string => Boolean(id));
   const allowed = ids.length
     ? new Set(
         (
           await getPrisma().subject.findMany({
-            where: { id: { in: ids }, organizationId, archivedAt: null },
+            where: {
+              id: { in: ids },
+              organizationId,
+              OR: [{ archivedAt: null }, ...(keep.length ? [{ id: { in: keep } }] : [])],
+            },
             select: { id: true },
           })
         ).map((subject) => subject.id),
@@ -194,6 +202,7 @@ export async function updateSubject(formData: FormData) {
     organizationId,
     parsed.statutory,
     subjectId,
+    old.statutoryBodies.map((body) => body.linkedSubjectId),
   );
 
   const { contacts: oldContacts, statutoryBodies: oldBodies, ...oldSubject } = old;

@@ -50,12 +50,19 @@ async function loadSubject(id: string) {
   }
 
   // Candidates for "Propojený subjekt" of a statutory body: active subjects of
-  // the same office, never the subject itself.
+  // the same office, never the subject itself — plus subjects already linked
+  // (even if archived since), so an existing link keeps its name in the select.
+  const currentLinks = subject.statutoryBodies
+    .map((body) => body.linkedSubjectId)
+    .filter((value): value is string => Boolean(value));
   const linkOptions = await prisma.subject.findMany({
     where: {
       organizationId: subject.organizationId,
-      archivedAt: null,
       id: { not: subject.id },
+      OR: [
+        { archivedAt: null },
+        ...(currentLinks.length ? [{ id: { in: currentLinks } }] : []),
+      ],
     },
     orderBy: { name: "asc" },
     select: { id: true, name: true, ico: true },

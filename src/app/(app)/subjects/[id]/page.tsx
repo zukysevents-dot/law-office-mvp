@@ -53,6 +53,7 @@ import { getPrisma } from "@/lib/prisma";
 import { getOrgUserOptions } from "@/lib/org-users";
 import { subjectRoleTone } from "@/lib/status-tones";
 import { mergeLegacyEmail } from "@/lib/subjects/contacts";
+import { composePersonName } from "@/lib/subjects/person-name";
 import { mergeLegacyStatutory } from "@/lib/subjects/statutory";
 import { isSafeHttpUrl } from "@/lib/utils";
 
@@ -446,11 +447,7 @@ export default async function SubjectDetailPage({
         },
       )
     : [];
-  const personName = subject
-    ? [subject.titleBefore, subject.firstName, subject.lastName, subject.titleAfter]
-        .filter(Boolean)
-        .join(" ")
-    : "";
+  const personName = subject ? composePersonName(subject) : "";
 
   return (
     <>
