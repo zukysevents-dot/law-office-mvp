@@ -113,6 +113,16 @@ export function isCurrentStatutory(
   return (!to || to >= today) && (!from || from <= now);
 }
 
+/** "current" | "former" (ended) | "future" (starts after today) — for badges. */
+export function statutoryStatus(
+  row: Pick<StatutoryLike, "validFrom" | "validTo">,
+  now: Date = new Date(),
+): "current" | "former" | "future" {
+  if (isCurrentStatutory(row, now)) return "current";
+  const from = row.validFrom ? new Date(row.validFrom) : null;
+  return from && from > now ? "future" : "former";
+}
+
 function summaryItem(row: StatutoryLike) {
   return row.function ? `${row.name} (${row.function})` : row.name;
 }
@@ -132,9 +142,12 @@ export function statutorySummary(
  * Tolerates drift from code that only knows `Subject.statutoryBody` (e.g. the
  * old form's free-text field during a deploy): a legacy text that is not
  * covered by the rows is shown / pre-filled as an extra row. Rows are never
- * removed. "Covered" = every "; "-separated part equals a row's name or its
- * "name (function)" summary — so rows that merely expired since the last save
- * do not produce duplicates.
+ * removed. "Covered" = the whole text equals a row's name, its
+ * "name (function)" summary or the summary of all rows (dates ignored — rows
+ * that merely expired since the last save must not produce duplicates); or,
+ * failing that, every ";"-separated part equals a row's name or summary.
+ * The whole-text check matters for migrated subjects: the backfill copied a
+ * legacy text such as "Jan Novák, jednatel; Petr Malý, jednatel" into ONE row.
  */
 export function mergeLegacyStatutory<T extends StatutoryLike>(
   rows: T[],
@@ -148,6 +161,12 @@ export function mergeLegacyStatutory<T extends StatutoryLike>(
   for (const row of rows) {
     known.add(row.name.trim());
     known.add(summaryItem(row).trim());
+  }
+  if (rows.length > 0) {
+    known.add(rows.map((row) => summaryItem(row).trim()).join("; "));
+  }
+  if (known.has(text)) {
+    return rows;
   }
   const covered = text
     .split(";")

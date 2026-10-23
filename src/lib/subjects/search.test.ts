@@ -59,11 +59,14 @@ test("subjectMatchReasons: explains non-name matches, masks the RČ", () => {
       { type: "EMAIL", value: "fakturace@abc.cz", valueNormalized: "fakturace@abc.cz" },
       { type: "PHONE", value: "+420 777 123 456", valueNormalized: "420777123456" },
     ],
-    statutoryBodies: [{ name: "Jan Novák" }],
+    statutoryBodies: [{ name: "Jan Novák" }, { name: "Petr Malý", function: "jednatel" }],
   };
   assert.deepEqual(subjectMatchReasons(subject, "fakturace@"), ["e-mail fakturace@abc.cz"]);
   assert.deepEqual(subjectMatchReasons(subject, "777123456"), ["telefon +420 777 123 456"]);
   assert.deepEqual(subjectMatchReasons(subject, "novák"), ["statutární orgán Jan Novák"]);
+  assert.deepEqual(subjectMatchReasons(subject, "malý"), [
+    "statutární orgán Petr Malý (jednatel)",
+  ]);
   assert.deepEqual(subjectMatchReasons(subject, "ABC"), []);
 
   const person = { name: "Jan Novák", birthNumber: "800101/0006" };

@@ -52,6 +52,21 @@ test("PERSON: an explicit birth date wins over the RČ; bad checksum is still sa
   assert.equal(result.subject.birthDate?.toISOString(), "1980-01-02T00:00:00.000Z");
 });
 
+test("PERSON: no birth date is derived from an RČ with a bad checksum", () => {
+  const result = parseSubjectForm(
+    form([
+      ["type", "PERSON"],
+      ["firstName", "Jan"],
+      ["lastName", "Novák"],
+      ["birthNumber", "800101/0007"],
+    ]),
+    NOW,
+  );
+  assert.ok(result.ok);
+  assert.equal(result.subject.birthNumber, "800101/0007");
+  assert.equal(result.subject.birthDate, null);
+});
+
 test("PERSON: errors for a malformed RČ and a missing name part", () => {
   assert.deepEqual(
     parseSubjectForm(form([["type", "PERSON"], ["firstName", "A"], ["lastName", "B"], ["birthNumber", "12345"]]), NOW),

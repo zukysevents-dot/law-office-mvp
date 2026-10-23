@@ -5,6 +5,7 @@ import {
   birthNumberSearchKey,
   maskBirthNumber,
   parseBirthNumber,
+  redactBirthNumberQuery,
 } from "./birth-number";
 
 const NOW = new Date("2026-10-20T12:00:00.000Z");
@@ -90,4 +91,11 @@ test("birthNumberSearchKey: only full RČ-shaped queries", () => {
   assert.equal(birthNumberSearchKey("8001010006"), "800101/0006");
   assert.equal(birthNumberSearchKey("800101"), null);
   assert.equal(birthNumberSearchKey("Novák"), null);
+});
+
+test("redactBirthNumberQuery: masks only RČ-shaped queries", () => {
+  assert.equal(redactBirthNumberQuery("800101/0006"), "••••••/••06");
+  assert.equal(redactBirthNumberQuery("8001010006"), "••••••/••06");
+  assert.equal(redactBirthNumberQuery("ABC s.r.o."), "ABC s.r.o.");
+  assert.equal(redactBirthNumberQuery("12345678"), "12345678");
 });

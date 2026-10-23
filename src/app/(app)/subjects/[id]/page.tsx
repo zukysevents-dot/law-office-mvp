@@ -52,6 +52,7 @@ import {
 import { getPrisma } from "@/lib/prisma";
 import { getOrgUserOptions } from "@/lib/org-users";
 import { subjectRoleTone } from "@/lib/status-tones";
+import { redactBirthNumberQuery } from "@/lib/subjects/birth-number";
 import { mergeLegacyEmail } from "@/lib/subjects/contacts";
 import { composePersonName } from "@/lib/subjects/person-name";
 import { mergeLegacyStatutory } from "@/lib/subjects/statutory";
@@ -837,7 +838,7 @@ export default async function SubjectDetailPage({
                   <tbody>
                     {subject.conflictChecks.map((check) => (
                       <tr key={check.id}>
-                        <td>{check.searchedQuery}</td>
+                        <td>{redactBirthNumberQuery(check.searchedQuery)}</td>
                         <td>{check.resultStatus}</td>
                         <td>{check.checkedBy?.name ?? "—"}</td>
                         <td>{formatDate(check.createdAt)}</td>

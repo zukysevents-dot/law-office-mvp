@@ -84,7 +84,7 @@ export type SubjectSearchCandidate = {
   email?: string | null;
   birthNumber?: string | null;
   contacts?: Array<{ type: string; value: string; valueNormalized: string }>;
-  statutoryBodies?: Array<{ name: string }>;
+  statutoryBodies?: Array<{ name: string; function?: string | null }>;
 };
 
 /**
@@ -136,7 +136,9 @@ export function subjectMatchReasons(
   }
   for (const body of subject.statutoryBodies ?? []) {
     if (includes(body.name)) {
-      reasons.push(`statutární orgán ${body.name}`);
+      reasons.push(
+        `statutární orgán ${body.function ? `${body.name} (${body.function})` : body.name}`,
+      );
     }
   }
 
@@ -156,6 +158,6 @@ export const subjectSearchInclude = {
   },
   statutoryBodies: {
     orderBy: { position: "asc" },
-    select: { name: true },
+    select: { name: true, function: true },
   },
 } satisfies Prisma.SubjectInclude;

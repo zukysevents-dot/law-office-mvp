@@ -133,7 +133,9 @@ export function parseSubjectForm(
     }
     if (parsed?.ok) {
       birthNumber = parsed.normalized;
-      if (!birthDate && parsed.birthDate) {
+      // Same rule as the form: a date is derived only from a valid RČ (an RČ
+      // with a bad checksum is saved with a warning, but its date is unreliable).
+      if (!birthDate && parsed.birthDate && parsed.checksumValid) {
         birthDate = parsed.birthDate;
       }
     }

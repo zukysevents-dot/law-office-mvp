@@ -108,3 +108,12 @@ export function birthNumberSearchKey(query: string): string | null {
   const parsed = parseBirthNumber(query);
   return parsed?.ok ? parsed.normalized : null;
 }
+
+/**
+ * A free-text search query safe to persist or display outside the subject
+ * detail (saved conflict checks, dashboard, audit log): an RČ-shaped query is
+ * masked, anything else is returned unchanged.
+ */
+export function redactBirthNumberQuery(query: string): string {
+  return birthNumberSearchKey(query) !== null ? maskBirthNumber(query) : query;
+}

@@ -238,7 +238,7 @@ export default async function SubjectsPage({ searchParams }: SubjectsPageProps) 
                       <td className="font-mono text-sm">{subject.dic ?? "—"}</td>
                     ) : null}
                     {visibleColumnSet.has("email") ? (
-                      <td className="max-w-xs break-all">
+                      <td className="whitespace-nowrap">
                         <PrimaryContact
                           subject={subject}
                           type={SubjectContactType.EMAIL}

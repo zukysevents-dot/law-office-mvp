@@ -4,7 +4,7 @@ import { Section } from "@/components/section";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { formatDateUtc } from "@/lib/format";
-import { isCurrentStatutory } from "@/lib/subjects/statutory";
+import { statutoryStatus } from "@/lib/subjects/statutory";
 import { cn } from "@/lib/utils";
 
 export type StatutoryBodyItem = {
@@ -25,6 +25,22 @@ export type StatutoryRoleItem = {
   validTo: Date | null;
   subject: { id: string; name: string };
 };
+
+function liClass(status: ReturnType<typeof statutoryStatus>) {
+  return cn(
+    "min-w-0 rounded-md border px-3 py-2",
+    status === "current" && "border-[#dce4e8] bg-[#F4F7F8]",
+    status === "future" && "border-[#dce4e8] bg-white",
+    // Former bodies are visibly greyed out.
+    status === "former" && "border-stone-200 bg-stone-50 text-stone-500 opacity-75",
+  );
+}
+
+function StatusBadge({ status }: { status: ReturnType<typeof statutoryStatus> }) {
+  if (status === "former") return <Badge>Bývalý</Badge>;
+  if (status === "future") return <Badge tone="blue">Budoucí</Badge>;
+  return null;
+}
 
 function period(validFrom: Date | null, validTo: Date | null) {
   if (!validFrom && !validTo) return null;
@@ -55,15 +71,13 @@ export function SubjectStatutoryBodies({
           {bodies.length > 0 ? (
             <ul className="grid gap-2">
               {bodies.map((body, index) => {
-                const current = isCurrentStatutory(body);
+                const status = statutoryStatus(body);
+                const current = status === "current";
                 const when = period(body.validFrom, body.validTo);
                 return (
                   <li
                     key={body.id ?? `legacy-${index}`}
-                    className={cn(
-                      "min-w-0 rounded-md border border-[#dce4e8] px-3 py-2",
-                      current ? "bg-[#F4F7F8]" : "bg-white text-stone-500",
-                    )}
+                    className={liClass(status)}
                   >
                     <p className="flex flex-wrap items-center gap-2">
                       {body.linkedSubject ? (
@@ -81,7 +95,7 @@ export function SubjectStatutoryBodies({
                       {body.function ? (
                         <span className="text-sm">{body.function}</span>
                       ) : null}
-                      {!current ? <Badge>Bývalý</Badge> : null}
+                      <StatusBadge status={status} />
                     </p>
                     {when ? <p className="text-xs text-stone-500">{when}</p> : null}
                     {body.actingMethod ? (
@@ -112,15 +126,12 @@ export function SubjectStatutoryBodies({
         <Section title="Působí ve statutárních orgánech">
           <ul className="grid gap-2">
             {roles.map((role) => {
-              const current = isCurrentStatutory(role);
+              const status = statutoryStatus(role);
               const when = period(role.validFrom, role.validTo);
               return (
                 <li
                   key={role.id}
-                  className={cn(
-                    "min-w-0 rounded-md border border-[#dce4e8] px-3 py-2",
-                    current ? "bg-[#F4F7F8]" : "bg-white text-stone-500",
-                  )}
+                  className={liClass(status)}
                 >
                   <p className="flex flex-wrap items-center gap-2">
                     <Link
@@ -130,7 +141,7 @@ export function SubjectStatutoryBodies({
                       {role.subject.name}
                     </Link>
                     {role.function ? <span className="text-sm">{role.function}</span> : null}
-                    {!current ? <Badge>Bývalý</Badge> : null}
+                    <StatusBadge status={status} />
                   </p>
                   {when ? <p className="text-xs text-stone-500">{when}</p> : null}
                 </li>

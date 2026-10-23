@@ -92,6 +92,8 @@ async function createCompany(
   }
   for (const [index, body] of (values.statutory ?? []).entries()) {
     await form.getByRole("button", { name: "Přidat statutární orgán" }).click();
+    // Nový řádek dostane fokus (klávesnice neztratí místo).
+    await expect(textbox(form, "Jméno / název").nth(index)).toBeFocused();
     await textbox(form, "Jméno / název").nth(index).fill(body.name);
     if (body.fn) {
       await form.getByRole("combobox", { name: "Funkce" }).nth(index).fill(body.fn);
@@ -256,6 +258,8 @@ test.describe("subjekty — více kontaktů a statutárních orgánů", () => {
     await expect(page).toHaveURL(/\/edit#kontakty$/);
     // Pořadí řádků: info (hlavní), telefon, fakturace.
     await page.getByRole("button", { name: "Odebrat kontakt 2" }).click();
+    // Fokus přejde na další řádek (bývalý třetí je teď druhý).
+    await expect(page.getByRole("button", { name: "Odebrat kontakt 2" })).toBeFocused();
     await textbox(page.locator("#kontakty"), "E-mail").nth(0).fill(`nove-${slug}@example.test`);
     await page.getByRole("button", { name: /Uložit/ }).click();
 
@@ -279,6 +283,7 @@ test.describe("subjekty — více kontaktů a statutárních orgánů", () => {
 
     await section.getByRole("link", { name: "Upravit statutární orgány" }).click();
     await page.getByRole("button", { name: "Odebrat statutární orgán 1" }).click();
+    await expect(page.getByRole("button", { name: "Přidat statutární orgán" })).toBeFocused();
     await page.getByRole("button", { name: /Uložit/ }).click();
 
     await expect(page).toHaveURL(/\/subjects\/[a-z0-9]+$/);
@@ -309,7 +314,7 @@ test.describe("subjekty — více kontaktů a statutárních orgánů", () => {
 
     await page.goto(`/conflict-check?q=${encodeURIComponent(statutory)}`);
     await expect(page.getByRole("heading", { name, level: 2 })).toBeVisible();
-    await expect(page.getByText(`Důvod shody: statutární orgán ${statutory}`)).toBeVisible();
+    await expect(page.getByText(`Důvod shody: statutární orgán ${statutory} (jednatel)`)).toBeVisible();
 
     await page.goto("/dashboard", { waitUntil: "networkidle" });
     const palette = await openCommandPalette(page);
@@ -410,6 +415,53 @@ test.describe("subjekty — oprávnění, audit a mobil", () => {
     } finally {
       await client.end();
     }
+  });
+
+  test("uložený conflict check podle RČ drží RČ jen maskované (DB, audit, historie)", async ({
+    page,
+  }) => {
+    const firstName = e2eName("rcCheck");
+    const birthNumber = uniqueBirthNumber();
+    const masked = `••••••/••${birthNumber.slice(-2)}`;
+    const detailUrl = await createPerson(page, {
+      firstName,
+      lastName: "Prověřovaná",
+      birthNumber,
+    });
+    const subjectId = detailUrl.split("/").pop() as string;
+
+    await page.goto(`/conflict-check?q=${encodeURIComponent(birthNumber)}`);
+    await expect(page.getByText(`Důvod shody: rodné číslo ${masked}`)).toBeVisible();
+    await page.getByRole("button", { name: "Uložit check" }).click();
+    await expect(page.getByRole("button", { name: "Uloženo" })).toBeVisible();
+
+    const client = new Client({ connectionString: E2E_DATABASE_URL });
+    await client.connect();
+    try {
+      const checks = await client.query<{ searchedQuery: string }>(
+        `SELECT "searchedQuery" FROM "conflictChecks" WHERE "subjectId" = $1`,
+        [subjectId],
+      );
+      expect(checks.rows).toHaveLength(1);
+      expect(checks.rows[0].searchedQuery).toBe(masked);
+      const audit = await client.query<{ entityId: string; newValue: unknown }>(
+        `SELECT "entityId", "newValue" FROM "auditLogs" WHERE "entityType" = 'ConflictCheck' AND "newValue"->>'subjectId' = $1`,
+        [subjectId],
+      );
+      expect(audit.rows).toHaveLength(1);
+      expect(JSON.stringify(audit.rows[0])).not.toContain(birthNumber.slice(0, 6));
+      expect(JSON.stringify(audit.rows[0].newValue)).toContain(masked);
+    } finally {
+      await client.end();
+    }
+
+    await page.goto(detailUrl);
+    const history = page
+      .locator("section")
+      .filter({ has: page.getByRole("heading", { name: "Conflict check historie" }) })
+      .last();
+    await expect(history.getByRole("cell", { name: masked })).toBeVisible();
+    await expect(history.getByText(birthNumber)).toHaveCount(0);
   });
 
   test("formulář s kontakty a statutáry nemá na mobilu vodorovný scroll", async ({ page }) => {

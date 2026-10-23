@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { Plus, Trash2 } from "lucide-react";
 
 import { Field, SelectInput, TextInput } from "@/components/form-field";
@@ -39,12 +40,44 @@ export function SubjectStatutoryEditor({
   linkOptions: SubjectLinkOption[];
   aresSlot?: React.ReactNode;
 }) {
+  // Keyboard users keep their place: a new row gets focus, removing a row
+  // moves focus to the next row (or the "Přidat" button).
+  const fieldsetRef = useRef<HTMLFieldSetElement>(null);
+  const focusSelector = useRef<string | null>(null);
+  const focusNewRow = useRef(false);
+  const lastKey = rows.at(-1)?.key;
+  useEffect(() => {
+    if (focusNewRow.current && lastKey) {
+      focusNewRow.current = false;
+      focusSelector.current = `[name="statutory.${lastKey}.name"]`;
+    }
+    const selector = focusSelector.current;
+    if (!selector) return;
+    focusSelector.current = null;
+    fieldsetRef.current?.querySelector<HTMLElement>(selector)?.focus();
+  }, [rows, lastKey]);
+
+  function add() {
+    focusNewRow.current = true;
+    onAdd();
+  }
+
+  function remove(key: string) {
+    const index = rows.findIndex((row) => row.key === key);
+    const remaining = rows.filter((row) => row.key !== key);
+    const next = remaining[index] ?? remaining[index - 1];
+    focusSelector.current = next
+      ? `[data-remove-statutory="${next.key}"]`
+      : "[data-add-statutory]";
+    onChange(remaining);
+  }
+
   function update(key: string, patch: Partial<StatutoryRowState>) {
     onChange(rows.map((row) => (row.key === key ? { ...row, ...patch } : row)));
   }
 
   return (
-    <fieldset id="statutarni-organy" className="grid scroll-mt-6 gap-3">
+    <fieldset ref={fieldsetRef} id="statutarni-organy" className="grid scroll-mt-6 gap-3">
       <legend className="mb-1 text-sm font-semibold text-[#0e1822]">
         Statutární orgány
       </legend>
@@ -147,7 +180,8 @@ export function SubjectStatutoryEditor({
                 <Button
                   type="button"
                   variant="ghost"
-                  onClick={() => onChange(rows.filter((item) => item.key !== row.key))}
+                  onClick={() => remove(row.key)}
+                  data-remove-statutory={row.key}
                   aria-label={`Odebrat statutární orgán ${index + 1}`}
                   className="w-full"
                 >
@@ -160,7 +194,7 @@ export function SubjectStatutoryEditor({
         })}
       </ul>
       <div>
-        <Button type="button" variant="ghost" onClick={onAdd}>
+        <Button type="button" variant="ghost" onClick={add} data-add-statutory>
           <Plus className="h-4 w-4" aria-hidden="true" />
           Přidat statutární orgán
         </Button>

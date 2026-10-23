@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 
 import { Field, SelectInput, TextInput } from "@/components/form-field";
@@ -51,16 +51,29 @@ export function SubjectContactsEditor({
     defaults.map((row, index) => ({ ...row, key: row.id ?? `n${index}` })),
   );
 
+  // Keyboard users keep their place: a new row gets focus, removing a row
+  // moves focus to the next row (or the "Přidat" buttons).
+  const fieldsetRef = useRef<HTMLFieldSetElement>(null);
+  const focusSelector = useRef<string | null>(null);
+  useEffect(() => {
+    const selector = focusSelector.current;
+    if (!selector) return;
+    focusSelector.current = null;
+    fieldsetRef.current?.querySelector<HTMLElement>(selector)?.focus();
+  }, [rows]);
+
   function nextKey() {
     counter.current += 1;
     return `new${counter.current}`;
   }
 
   function addRow(type: SubjectContactType) {
+    const key = nextKey();
+    focusSelector.current = `[name="contact.${key}.value"]`;
     setRows((current) => [
       ...current,
       {
-        key: nextKey(),
+        key,
         id: null,
         type,
         value: "",
@@ -90,11 +103,17 @@ export function SubjectContactsEditor({
   }
 
   function remove(key: string) {
-    setRows((current) => current.filter((row) => row.key !== key));
+    const index = rows.findIndex((row) => row.key === key);
+    const remaining = rows.filter((row) => row.key !== key);
+    const next = remaining[index] ?? remaining[index - 1];
+    focusSelector.current = next
+      ? `[data-remove-contact="${next.key}"]`
+      : "[data-add-contact]";
+    setRows(remaining);
   }
 
   return (
-    <fieldset id="kontakty" className="grid scroll-mt-6 gap-3">
+    <fieldset ref={fieldsetRef} id="kontakty" className="grid scroll-mt-6 gap-3">
       <legend className="mb-1 text-sm font-semibold text-[#0e1822]">
         Kontaktní údaje
       </legend>
@@ -170,6 +189,7 @@ export function SubjectContactsEditor({
                 type="button"
                 variant="ghost"
                 onClick={() => remove(row.key)}
+                data-remove-contact={row.key}
                 aria-label={`Odebrat kontakt ${index + 1}`}
                 title="Odebrat kontakt"
                 className="w-full md:w-10 md:px-0"
@@ -182,7 +202,12 @@ export function SubjectContactsEditor({
         })}
       </ul>
       <div className="flex flex-wrap gap-2">
-        <Button type="button" variant="ghost" onClick={() => addRow(SubjectContactType.EMAIL)}>
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={() => addRow(SubjectContactType.EMAIL)}
+          data-add-contact
+        >
           <Plus className="h-4 w-4" aria-hidden="true" />
           Přidat e-mail
         </Button>

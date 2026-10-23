@@ -5,6 +5,7 @@ import {
   isCurrentStatutory,
   mergeLegacyStatutory,
   parseStatutoryRows,
+  statutoryStatus,
   statutorySummary,
 } from "./statutory";
 
@@ -84,4 +85,40 @@ test("mergeLegacyStatutory: legacy text only when it is not covered", () => {
   assert.equal(merged.length, 2);
   assert.equal(merged[1].name, "Ing. Petr Novák, jednatel");
   assert.equal(mergeLegacyStatutory([], "Ing. Petr Novák").length, 1);
+});
+
+test("mergeLegacyStatutory: legacy text with ';' backfilled into one row is covered", () => {
+  const legacy = "Jan Novák, jednatel; Petr Malý, jednatel";
+  // The backfill migration copies the whole legacy text into a single row
+  // and leaves Subject.statutoryBody unchanged.
+  const backfilled = [{ name: legacy, function: null }];
+  assert.equal(mergeLegacyStatutory(backfilled, legacy), backfilled);
+  assert.equal(mergeLegacyStatutory(backfilled, `  ${legacy} `), backfilled);
+  // After a save, statutorySummary writes the same text back.
+  assert.equal(statutorySummary(backfilled, NOW), legacy);
+  assert.equal(mergeLegacyStatutory(backfilled, statutorySummary(backfilled, NOW)).length, 1);
+  // Summary of several rows (incl. expired ones — dates are ignored).
+  const rows = [
+    { name: "Jan Novák", function: "jednatel" },
+    { name: "Petr Malý", function: "jednatel", validTo: new Date("2000-01-01") },
+  ];
+  assert.equal(
+    mergeLegacyStatutory(rows, "Jan Novák (jednatel); Petr Malý (jednatel)"),
+    rows,
+  );
+  // Genuinely different legacy text is still surfaced.
+  assert.equal(mergeLegacyStatutory(backfilled, "Eva Nová, jednatelka").length, 2);
+});
+
+test("statutoryStatus: a future member is not labelled as former", () => {
+  assert.equal(statutoryStatus({}, NOW), "current");
+  assert.equal(statutoryStatus({ validTo: new Date("2020-01-01") }, NOW), "former");
+  assert.equal(statutoryStatus({ validFrom: new Date("2027-01-01") }, NOW), "future");
+  assert.equal(
+    statutoryStatus(
+      { validFrom: new Date("2027-01-01"), validTo: new Date("2028-01-01") },
+      NOW,
+    ),
+    "future",
+  );
 });
