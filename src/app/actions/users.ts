@@ -22,7 +22,15 @@ import {
   MIN_PASSWORD_LENGTH,
   verifyPassword,
 } from "@/lib/password";
-import { assertCanManageUsers } from "@/lib/permissions";
+import {
+  assertCanManageUsers,
+  assertNotPrivilegeEscalation,
+  privilegedTargetDenial,
+} from "@/lib/permissions";
+import {
+  loadEffectivePermissions,
+  loadRolePermissions,
+} from "@/lib/permission-store.server";
 import { getPrisma } from "@/lib/prisma";
 import { normalizeCalendarView } from "@/lib/calendar-view";
 import { setUserSessionCookie } from "@/lib/session-cookie";
@@ -110,6 +118,18 @@ export async function createUser(
   }
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return fail("Zadejte platný e-mail.");
+  }
+
+  // Kdo zakládá účet, zná jeho heslo: bez této kontroly by si držitel „Spravuje
+  // uživatele“ založil administrátora (nebo účet s „Spravuje oprávnění“) a
+  // přihlásil se za něj.
+  const roleDenial = privilegedTargetDenial(
+    currentUser,
+    { role, permissions: await loadRolePermissions(organizationId, role) },
+    "assignRole",
+  );
+  if (roleDenial) {
+    return fail(roleDenial);
   }
 
   const password = String(formData.get("password") ?? "");
@@ -261,6 +281,34 @@ export async function resendUserInvitation(
   };
 }
 
+async function assertCanResetPasswordOf(
+  currentUser: Awaited<ReturnType<typeof getCurrentUser>>,
+  userId: string,
+) {
+  const membership = await getPrisma().organizationMember.findUnique({
+    where: {
+      organizationId_userId: {
+        organizationId: currentUser.organizationId,
+        userId,
+      },
+    },
+    select: { role: true },
+  });
+  if (!membership) {
+    throw new Error("Uživatel nebyl nalezen.");
+  }
+  const target = await loadEffectivePermissions({
+    organizationId: currentUser.organizationId,
+    userId,
+    role: membership.role,
+  });
+  assertNotPrivilegeEscalation(
+    currentUser,
+    { role: membership.role, permissions: target.permissions },
+    "resetPassword",
+  );
+}
+
 // Admin/partner resets another user's password (e.g. forgotten password).
 export async function setUserPassword(formData: FormData) {
   const prisma = getPrisma();
@@ -277,6 +325,11 @@ export async function setUserPassword(formData: FormData) {
   // organizaci. Bez tohoto guardu by ADMIN/PARTNER mohl resetovat heslo
   // uživatele z cizí kanceláře.
   await assertUserInOrg(userId, currentUser.organizationId);
+
+  // Nové heslo = přihlášení za cílového uživatele. Účet administrátora (nebo
+  // uživatele s „Spravuje oprávnění“) proto smí resetovat jen ten, kdo by tím
+  // nezískal víc práv, než už má.
+  await assertCanResetPasswordOf(currentUser, userId);
 
   await prisma.user.update({
     where: { id: userId },

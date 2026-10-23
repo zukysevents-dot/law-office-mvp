@@ -342,6 +342,74 @@ export function assertCanManagePermissions(user: PermissionInput) {
   }
 }
 
+// --- Ochrana před eskalací práv přes správu uživatelů a členů ----------------
+//
+// „Spravuje uživatele“ / „Spravuje nastavení kanceláře“ lze v matici přidělit
+// komukoli. Kdyby šlo s nimi založit administrátora, přidělit roli s „Spravuje
+// oprávnění“ nebo resetovat heslo takového uživatele (a přihlásit se za něj),
+// obešel by držitel zámek sloupce Administrátor i pravidlo, že „Spravuje
+// oprávnění“ mění jen administrátor. Proto kdo není administrátor (ani správce
+// platformy):
+//  - nesmí sáhnout na roli Administrátor ani na účet administrátora,
+//  - na roli/účet s „Spravuje oprávnění“ smí jen, pokud to oprávnění sám má.
+export type PrivilegedTarget = {
+  role: UserRole;
+  // Efektivní matice cílové role / cílového člena v kanceláři.
+  permissions: EffectivePermissions;
+};
+
+export type PrivilegedAction = "assignRole" | "resetPassword" | "deactivate";
+
+const ADMIN_TARGET_DENIALS: Record<PrivilegedAction, string> = {
+  assignRole: "Roli Administrátor může přidělit nebo odebrat jen administrátor.",
+  resetPassword: "Heslo administrátora může změnit jen administrátor.",
+  deactivate: "Administrátora může deaktivovat jen administrátor.",
+};
+
+const PERMISSION_MANAGER_DENIALS: Record<PrivilegedAction, string> = {
+  assignRole:
+    "Roli s oprávněním „Spravuje oprávnění“ může přidělit nebo odebrat jen uživatel, který toto oprávnění sám má.",
+  resetPassword:
+    "Heslo uživatele s oprávněním „Spravuje oprávnění“ může změnit jen uživatel, který toto oprávnění sám má.",
+  deactivate:
+    "Uživatele s oprávněním „Spravuje oprávnění“ může deaktivovat jen uživatel, který toto oprávnění sám má.",
+};
+
+// Důvod zamítnutí (česky), nebo null, když akce nad cílem nevede k eskalaci.
+export function privilegedTargetDenial(
+  actor: PermissionInput,
+  target: PrivilegedTarget,
+  action: PrivilegedAction,
+): string | null {
+  if (typeof actor !== "string" && actor?.isPlatformAdmin) {
+    return null;
+  }
+  if (roleOf(actor) === UserRole.ADMIN) {
+    return null;
+  }
+  if (target.role === UserRole.ADMIN) {
+    return ADMIN_TARGET_DENIALS[action];
+  }
+  if (
+    target.permissions["function.managePermissions"] === true &&
+    !hasPermission(actor, "function.managePermissions")
+  ) {
+    return PERMISSION_MANAGER_DENIALS[action];
+  }
+  return null;
+}
+
+export function assertNotPrivilegeEscalation(
+  actor: PermissionInput,
+  target: PrivilegedTarget,
+  action: PrivilegedAction,
+) {
+  const denial = privilegedTargetDenial(actor, target, action);
+  if (denial) {
+    throw new Error(denial);
+  }
+}
+
 // Platform/developer super-admin over all organizations (the /admin panel).
 export function assertPlatformAdmin(user: PermissionInput) {
   const ok = typeof user === "string" ? false : Boolean(user?.isPlatformAdmin);

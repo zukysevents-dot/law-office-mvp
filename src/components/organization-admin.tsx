@@ -58,7 +58,8 @@ export function OrganizationAdminPanel({
   members,
   joinCodes,
   currentUserId,
-  canAssignAdmin = true,
+  assignableRoles,
+  manageableUserIds,
 }: {
   organizationId: string;
   seatLimit: number | null;
@@ -66,10 +67,13 @@ export function OrganizationAdminPanel({
   members: MemberWithUser[];
   joinCodes: OrganizationJoinCode[];
   currentUserId: string | null;
-  // Only an administrator (or the platform admin) may grant or remove the
-  // Administrátor role — the server enforces it, this hides the controls.
-  canAssignAdmin?: boolean;
+  // Roles the actor may assign and members whose role/status they may change
+  // (no escalation past the permission matrix — the server enforces it, this
+  // only hides the controls). Omitted = everything (platform admin).
+  assignableRoles?: readonly UserRole[];
+  manageableUserIds?: readonly string[];
 }) {
+  const manageable = manageableUserIds ? new Set(manageableUserIds) : null;
   const freeSeats =
     seatLimit === null ? null : Math.max(0, seatLimit - activeMembers);
 
@@ -108,10 +112,18 @@ export function OrganizationAdminPanel({
                 {members.map((member) => {
                   const isSelf = member.userId === currentUserId;
                   const locked =
-                    isSelf || (!canAssignAdmin && member.role === "ADMIN");
-                  const roleOptions = canAssignAdmin
-                    ? orgMemberRoleOptions
-                    : orgMemberRoleOptions.filter((role) => role !== "ADMIN");
+                    isSelf || (manageable !== null && !manageable.has(member.userId));
+                  const roleOptions = assignableRoles
+                    ? orgMemberRoleOptions.filter((role) =>
+                        assignableRoles.includes(role),
+                      )
+                    : [...orgMemberRoleOptions];
+                  // An unlocked row keeps the member's current role in the
+                  // select (e.g. Administrátor, which is not in the option
+                  // list), so "Uložit" never changes the role by accident.
+                  if (!roleOptions.includes(member.role)) {
+                    roleOptions.unshift(member.role);
+                  }
                   return (
                     <tr key={member.id}>
                       <td className="font-medium text-stone-950">

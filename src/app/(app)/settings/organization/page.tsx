@@ -12,13 +12,18 @@ import {
   getOrganizationEntitlements,
   getLegalTeamAdminData,
 } from "@/lib/organization";
-import { canManageOrganization, isAdmin } from "@/lib/permissions";
+import { canManageOrganization } from "@/lib/permissions";
+import { loadPrivilegeTargets } from "@/lib/permission-store.server";
+import type { UserRole } from "@/generated/prisma/enums";
 
 export const dynamic = "force-dynamic";
 
 type OrgSettingsData = Awaited<ReturnType<typeof getOrganizationAdminData>> & {
   allowed: boolean;
-  canAssignAdmin: boolean;
+  // Role, které smí aktuální uživatel přidělit, a členové, jejichž roli smí
+  // měnit / deaktivovat (bez eskalace práv — server to hlídá znovu).
+  assignableRoles: UserRole[];
+  manageableUserIds: string[];
   currentUserId: string;
   entitlements: Awaited<ReturnType<typeof getOrganizationEntitlements>> | null;
   legalTeams: Awaited<ReturnType<typeof getLegalTeamAdminData>> | null;
@@ -30,7 +35,8 @@ export default async function OrganizationSettingsPage() {
     if (!canManageOrganization(currentUser)) {
       return {
         allowed: false,
-        canAssignAdmin: false,
+        assignableRoles: [],
+        manageableUserIds: [],
         currentUserId: currentUser.id,
         organization: null,
         members: [],
@@ -46,10 +52,19 @@ export default async function OrganizationSettingsPage() {
       getOrganizationEntitlements(currentUser.organizationId),
       getLegalTeamAdminData(currentUser.organizationId),
     ]);
+    const privilegeTargets = await loadPrivilegeTargets({
+      actor: currentUser,
+      organizationId: currentUser.organizationId,
+      members: adminData.members.map((member) => ({
+        id: member.userId,
+        role: member.role,
+      })),
+    });
     return {
       ...adminData,
       allowed: true,
-      canAssignAdmin: isAdmin(currentUser),
+      assignableRoles: privilegeTargets.assignableRoles,
+      manageableUserIds: privilegeTargets.manageableUserIds,
       currentUserId: currentUser.id,
       entitlements,
       legalTeams,
@@ -118,7 +133,8 @@ export default async function OrganizationSettingsPage() {
             members={data.members}
             joinCodes={data.joinCodes}
             currentUserId={data.currentUserId}
-            canAssignAdmin={data.canAssignAdmin}
+            assignableRoles={data.assignableRoles}
+            manageableUserIds={data.manageableUserIds}
           />
           {data.legalTeams ? (
             <LegalTeamAdmin

@@ -26,7 +26,9 @@ import {
 import { userRoleLabels } from "@/lib/labels";
 import { getNotificationPreference } from "@/lib/notifications/notification-service";
 import { canManagePermissions, canManageUsers } from "@/lib/permissions";
+import { loadPrivilegeTargets } from "@/lib/permission-store.server";
 import { getPrisma } from "@/lib/prisma";
+import type { UserRole } from "@/generated/prisma/enums";
 import { calendarViewOptions, normalizeCalendarView } from "@/lib/calendar-view";
 import { getAresBaseUrl, isAresLookupEnabled } from "@/lib/ares/config";
 import {
@@ -69,6 +71,10 @@ type SettingsData = {
   auditLogCount: number;
   allowed: boolean;
   canManagePermissions: boolean;
+  // Role, které smí aktuální uživatel přidělit novému uživateli, a uživatelé,
+  // kterým smí resetovat heslo (bez eskalace práv — viz privilegedTargetDenial).
+  assignableRoles: UserRole[];
+  resettableUserIds: string[];
   integrations: {
     aresEnabled: boolean;
     aresHost: string;
@@ -158,6 +164,8 @@ export default async function SettingsPage() {
       auditLogCount: 0,
       allowed: false,
       canManagePermissions: false,
+      assignableRoles: [],
+      resettableUserIds: [],
       integrations: envIntegrationStatus(),
     },
     async () => {
@@ -213,6 +221,15 @@ export default async function SettingsPage() {
           : Promise.resolve(0),
       ]);
 
+      const privilegeTargets = allowed
+        ? await loadPrivilegeTargets({
+            actor: currentUser,
+            organizationId: currentUser.organizationId,
+            members: users.map((user) => ({ id: user.id, role: user.role })),
+            db: prisma,
+          })
+        : { assignableRoles: [], manageableUserIds: [] };
+
       return {
         currentUserName: currentUser.name,
         currentUserId: currentUser.id,
@@ -236,6 +253,8 @@ export default async function SettingsPage() {
         auditLogCount,
         allowed,
         canManagePermissions: canManagePermissions(currentUser),
+        assignableRoles: privilegeTargets.assignableRoles,
+        resettableUserIds: privilegeTargets.manageableUserIds,
         integrations: await integrationConfigStatus(
           currentUser.organizationId,
         ),
@@ -243,6 +262,10 @@ export default async function SettingsPage() {
     },
   );
   const preference = result.data.notificationPreference;
+  const resettableUserIds = new Set(result.data.resettableUserIds);
+  const resettableUsers = result.data.users.filter((user) =>
+    resettableUserIds.has(user.id),
+  );
   const mailStatus = mailConfigStatus();
 
   return (
@@ -561,15 +584,15 @@ export default async function SettingsPage() {
               )}
             </Section>
             <Section title="Nový uživatel">
-              <CreateUserForm />
+              <CreateUserForm roles={result.data.assignableRoles} />
             </Section>
           </div>
-          {result.data.users.length > 0 ? (
+          {resettableUsers.length > 0 ? (
             <Section title="Reset hesla uživatele">
               <form action={setUserPassword} className="grid max-w-sm gap-4">
                 <Field label="Uživatel">
                   <SelectInput name="userId">
-                    {result.data.users.map((user) => (
+                    {resettableUsers.map((user) => (
                       <option key={user.id} value={user.id}>
                         {user.name} ({user.email})
                       </option>

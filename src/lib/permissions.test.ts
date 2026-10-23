@@ -44,6 +44,7 @@ import {
   hrAttendanceVisibilityWhere,
   hrEmployeeVisibilityWhere,
   invoiceVisibilityWhere,
+  privilegedTargetDenial,
   projectVisibilityWhere,
   referenceVisibilityWhere,
   subjectVisibilityWhere,
@@ -973,4 +974,68 @@ test("tightening a role's module or rate permission takes effect in helpers", ()
     { permission: "function.viewRates", value: "DENY" },
   ]);
   assert.equal(canViewRates(noRatesPartner), false);
+});
+
+// --- Ochrana před eskalací přes správu uživatelů -------------------------------
+
+const roleTarget = (role: UserRole, roleOverrides: Array<{ permission: string; value: string }> = []) => ({
+  role,
+  permissions: resolvePermissions({ role, roleOverrides }),
+});
+
+test("privilegedTargetDenial: a non-admin with manageUsers can't create or take over an ADMIN", () => {
+  // Koncipient, kterému partner v matici přidal „Spravuje uživatele“.
+  const userManager = withOverrides(trainee, [
+    { permission: "function.manageUsers", value: "ALLOW" },
+  ]);
+  assert.equal(canManageUsers(userManager), true);
+  for (const action of ["assignRole", "resetPassword", "deactivate"] as const) {
+    assert.ok(privilegedTargetDenial(userManager, roleTarget(UserRole.ADMIN), action));
+    assert.ok(privilegedTargetDenial(partner, roleTarget(UserRole.ADMIN), action));
+    // Partner by default holds managePermissions → can't be taken over either.
+    assert.ok(privilegedTargetDenial(userManager, roleTarget(UserRole.PARTNER), action));
+    // Ordinary roles stay manageable.
+    assert.equal(privilegedTargetDenial(userManager, roleTarget(UserRole.LAWYER), action), null);
+    assert.equal(privilegedTargetDenial(userManager, roleTarget(UserRole.INTERN), action), null);
+  }
+  assert.equal(
+    privilegedTargetDenial(userManager, roleTarget(UserRole.ADMIN), "resetPassword"),
+    "Heslo administrátora může změnit jen administrátor.",
+  );
+  assert.equal(
+    privilegedTargetDenial(partner, roleTarget(UserRole.ADMIN), "assignRole"),
+    "Roli Administrátor může přidělit nebo odebrat jen administrátor.",
+  );
+});
+
+test("privilegedTargetDenial: managePermissions holders may act on peers, admins on anyone", () => {
+  // Partner (managePermissions by default) may still create/promote partners.
+  assert.equal(privilegedTargetDenial(partner, roleTarget(UserRole.PARTNER), "assignRole"), null);
+  // A Lawyer whose role was given managePermissions is protected from a
+  // manageUsers-only actor.
+  const userManager = withOverrides(lawyer, [], [
+    { permission: "function.manageUsers", value: "ALLOW" },
+  ]);
+  const lawyerWithMatrix = roleTarget(UserRole.LAWYER, [
+    { permission: "function.managePermissions", value: "ALLOW" },
+  ]);
+  assert.ok(privilegedTargetDenial(userManager, lawyerWithMatrix, "resetPassword"));
+  // A Partner whose managePermissions was revoked is an ordinary target.
+  const plainPartner = roleTarget(UserRole.PARTNER, [
+    { permission: "function.managePermissions", value: "DENY" },
+  ]);
+  assert.equal(privilegedTargetDenial(userManager, plainPartner, "resetPassword"), null);
+  // ADMIN and the platform admin are never limited.
+  assert.equal(privilegedTargetDenial(admin, roleTarget(UserRole.ADMIN), "resetPassword"), null);
+  assert.equal(
+    privilegedTargetDenial(
+      { id: "p", role: UserRole.LAWYER, isPlatformAdmin: true },
+      roleTarget(UserRole.ADMIN),
+      "assignRole",
+    ),
+    null,
+  );
+  // Fail closed for an unknown actor.
+  assert.ok(privilegedTargetDenial(null, roleTarget(UserRole.ADMIN), "assignRole"));
+  assert.ok(privilegedTargetDenial(null, roleTarget(UserRole.PARTNER), "assignRole"));
 });

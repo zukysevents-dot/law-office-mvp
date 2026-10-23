@@ -31,8 +31,10 @@ import { moduleKeyLabels } from "@/lib/labels";
 import { countActiveMembers } from "@/lib/organization";
 import {
   assertCanAdministerOrg,
+  assertNotPrivilegeEscalation,
   assertPlatformAdmin,
 } from "@/lib/permissions";
+import { loadEffectivePermissions } from "@/lib/permission-store.server";
 import { getPrisma } from "@/lib/prisma";
 import { notifyOrgAdminsAboutNewMember } from "@/lib/user-invitations";
 
@@ -62,19 +64,42 @@ async function authorizeOrgAction(targetOrgId: string) {
   return actor;
 }
 
-// Granting or taking away the ADMIN role is reserved to an administrator (or
-// the platform admin): ADMIN always holds every permission, so anyone else
-// could otherwise escalate past the permission matrix.
-function assertCanAssignRole(
-  actor: { role: UserRole; isPlatformAdmin?: boolean },
-  previousRole: UserRole,
+// Changing a member's role (or deactivating them) must not let a non-admin
+// escalate past the permission matrix: the ADMIN role and roles/members holding
+// "Spravuje oprávnění" are off-limits unless the actor is an administrator /
+// already holds that permission (see privilegedTargetDenial). The next role is
+// resolved with the member's own user overrides, which survive a role change.
+async function assertCanChangeMember(
+  actor: Awaited<ReturnType<typeof authorizeOrgAction>>,
+  organizationId: string,
+  member: { userId: string; role: UserRole },
   nextRole: UserRole,
+  action: "assignRole" | "deactivate",
 ) {
   if (actor.isPlatformAdmin || actor.role === UserRole.ADMIN) {
     return;
   }
-  if (previousRole === UserRole.ADMIN || nextRole === UserRole.ADMIN) {
-    throw new Error("Roli Administrátor může přidělit nebo odebrat jen administrátor.");
+  const current = await loadEffectivePermissions({
+    organizationId,
+    userId: member.userId,
+    role: member.role,
+  });
+  assertNotPrivilegeEscalation(
+    actor,
+    { role: member.role, permissions: current.permissions },
+    action,
+  );
+  if (nextRole !== member.role) {
+    const next = await loadEffectivePermissions({
+      organizationId,
+      userId: member.userId,
+      role: nextRole,
+    });
+    assertNotPrivilegeEscalation(
+      actor,
+      { role: nextRole, permissions: next.permissions },
+      action,
+    );
   }
 }
 
@@ -466,7 +491,7 @@ export async function changeMemberRole(formData: FormData) {
   if (member.userId === actor.id) {
     throw new Error("Nemůžete změnit vlastní roli.");
   }
-  assertCanAssignRole(actor, member.role, role);
+  await assertCanChangeMember(actor, organizationId, member, role, "assignRole");
 
   await prisma.$transaction([
     prisma.organizationMember.update({
@@ -507,7 +532,13 @@ export async function deactivateMember(formData: FormData) {
   if (member.userId === actor.id) {
     throw new Error("Nemůžete deaktivovat sami sebe.");
   }
-  assertCanAssignRole(actor, member.role, member.role);
+  await assertCanChangeMember(
+    actor,
+    organizationId,
+    member,
+    member.role,
+    "deactivate",
+  );
 
   // Soft deactivate only — never hard delete legal-team membership.
   await prisma.organizationMember.update({
