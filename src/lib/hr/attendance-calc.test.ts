@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   computeOvertimeHours,
   computeWorkedHours,
+  officeWallClockToInstant,
   officeWorkDate,
 } from "./attendance-calc";
 
@@ -61,4 +62,39 @@ test("computeOvertimeHours: hours beyond the daily fund, never negative", () => 
   assert.equal(computeOvertimeHours(9.5, 8), 1.5);
   assert.equal(computeOvertimeHours(7, 8), 0); // under fund → no overtime
   assert.equal(computeOvertimeHours(8, 8), 0);
+});
+
+// --- officeWallClockToInstant (pražský čas → okamžik) -----------------------
+
+test("officeWallClockToInstant: letní čas (CEST, UTC+2)", () => {
+  assert.equal(
+    officeWallClockToInstant(t("2026-10-12T00:00:00Z"), 8, 0).toISOString(),
+    "2026-10-12T06:00:00.000Z",
+  );
+});
+
+test("officeWallClockToInstant: zimní čas (CET, UTC+1)", () => {
+  assert.equal(
+    officeWallClockToInstant(t("2026-01-15T00:00:00Z"), 16, 30).toISOString(),
+    "2026-01-15T15:30:00.000Z",
+  );
+});
+
+test("officeWallClockToInstant: den přechodu na zimní čas", () => {
+  // 25. 10. 2026 se ve 3:00 CEST posouvá na 2:00 CET.
+  assert.equal(
+    officeWallClockToInstant(t("2026-10-25T00:00:00Z"), 8, 0).toISOString(),
+    "2026-10-25T07:00:00.000Z",
+  );
+  assert.equal(
+    officeWallClockToInstant(t("2026-10-25T00:00:00Z"), 1, 0).toISOString(),
+    "2026-10-24T23:00:00.000Z",
+  );
+});
+
+test("officeWallClockToInstant: půlnoc patří k danému dni", () => {
+  assert.equal(
+    officeWorkDate(officeWallClockToInstant(t("2026-07-01T00:00:00Z"), 0, 15)).toISOString(),
+    "2026-07-01T00:00:00.000Z",
+  );
 });

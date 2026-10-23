@@ -26,6 +26,7 @@ import {
   optionalString,
   requiredString,
 } from "@/lib/form";
+import { ensureEmployeeCard } from "@/lib/hr/employee-card";
 import { generateCode, hashCode } from "@/lib/join-code";
 import { moduleKeyLabels } from "@/lib/labels";
 import { countActiveMembers } from "@/lib/organization";
@@ -160,6 +161,13 @@ export async function joinOrganization(formData: FormData) {
         data: { role: UserRole.LAWYER, ...(name ? { name } : {}) },
       });
 
+      await ensureEmployeeCard(tx, {
+        organizationId: org.id,
+        userId: user.id,
+        name: name ?? user.name,
+        createdById: user.id,
+      });
+
       await tx.organizationJoinCode.update({
         where: { id: code.id },
         data: { usedCount: { increment: 1 } },
@@ -286,6 +294,13 @@ export async function createOwnOrganization(
       await tx.user.update({
         where: { id: user.id },
         data: { role: UserRole.ADMIN },
+      });
+
+      await ensureEmployeeCard(tx, {
+        organizationId: org.id,
+        userId: user.id,
+        name: user.name,
+        createdById: user.id,
       });
 
       await tx.organizationJoinCode.create({

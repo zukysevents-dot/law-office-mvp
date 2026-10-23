@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import {
   importAttendance,
   punchAttendance,
@@ -40,6 +42,8 @@ type Data = {
   records: RecordRow[];
   employees: Array<{ id: string; firstName: string; lastName: string }>;
   canManage: boolean;
+  // Karta přihlášeného uživatele — ruční zápis vlastní docházky (i zpětně).
+  myEmployeeId: string | null;
   // Samoobslužné píchačky: stav dnešního záznamu navázaného zaměstnance.
   punch: { checkIn: Date | null; checkOut: Date | null } | null;
 };
@@ -48,6 +52,7 @@ const emptyData: Data = {
   records: [],
   employees: [],
   canManage: false,
+  myEmployeeId: null,
   punch: null,
 };
 
@@ -98,10 +103,19 @@ export default async function HrAttendancePage() {
       punch = { checkIn: today?.checkIn ?? null, checkOut: today?.checkOut ?? null };
     }
 
-    return { records, employees, canManage, punch };
+    return {
+      records,
+      employees,
+      canManage,
+      myEmployeeId: myEmployee?.id ?? null,
+      punch,
+    };
   });
 
   const data = result.data ?? emptyData;
+  const canRecord = data.canManage
+    ? data.employees.length > 0
+    : Boolean(data.myEmployeeId);
 
   return (
     <>
@@ -145,38 +159,60 @@ export default async function HrAttendancePage() {
         </Section>
       ) : null}
 
-      {data.canManage ? (
+      {data.canManage && data.employees.length === 0 ? (
+        <Section title="Zapsat docházku">
+          <EmptyState>
+            Kancelář zatím nemá žádné zaměstnance. Založte je v sekci{" "}
+            <Link href="/hr/employees" className="font-medium underline">
+              Zaměstnanci
+            </Link>
+            .
+          </EmptyState>
+        </Section>
+      ) : null}
+
+      {canRecord ? (
         <Section title="Zapsat docházku">
           <form action={recordAttendance} className="grid gap-4 sm:max-w-2xl">
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Zaměstnanec">
-                <SelectInput name="employeeId" required>
-                  {data.employees.map((employee) => (
-                    <option key={employee.id} value={employee.id}>
-                      {employee.lastName} {employee.firstName}
-                    </option>
-                  ))}
-                </SelectInput>
-              </Field>
+              {data.canManage ? (
+                <Field label="Zaměstnanec">
+                  <SelectInput name="employeeId" required>
+                    {data.employees.map((employee) => (
+                      <option key={employee.id} value={employee.id}>
+                        {employee.lastName} {employee.firstName}
+                      </option>
+                    ))}
+                  </SelectInput>
+                </Field>
+              ) : (
+                <input
+                  type="hidden"
+                  name="employeeId"
+                  value={data.myEmployeeId ?? ""}
+                />
+              )}
               <Field label="Datum">
                 <TextInput name="workDate" type="date" required />
               </Field>
               <Field label="Příchod (volitelné)">
-                <TextInput name="checkIn" type="datetime-local" />
+                <TextInput name="checkIn" type="time" />
               </Field>
               <Field label="Odchod (volitelné)">
-                <TextInput name="checkOut" type="datetime-local" />
+                <TextInput name="checkOut" type="time" />
               </Field>
               <Field label="Odpracováno (h)">
-                <TextInput name="workedHours" type="number" defaultValue="8" />
+                <TextInput name="workedHours" type="number" min="0" max="24" step="any" defaultValue="8" />
               </Field>
               <Field label="Přestávka (h)">
-                <TextInput name="breakHours" type="number" defaultValue="0" />
+                <TextInput name="breakHours" type="number" min="0" max="24" step="any" defaultValue="0" />
               </Field>
             </div>
             <p className="text-xs text-stone-600">
-              Když vyplníte příchod i odchod, odpracované hodiny se dopočítají
-              automaticky (minus přestávka).
+              Docházku můžete zapsat i zpětně — vyberte den a čas příchodu
+              a odchodu. Když vyplníte oba, odpracované hodiny se dopočítají
+              automaticky (minus přestávka). Prázdné pole ponechá už
+              zaznamenaný čas.
             </p>
             <Field label="Poznámka (volitelné)">
               <TextInput name="note" />
