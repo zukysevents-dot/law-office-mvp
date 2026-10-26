@@ -12,7 +12,11 @@ import {
 import { billingWorkLogInclude } from "@/lib/billing";
 import { formatCaseLabel, formatDateUtc } from "@/lib/format";
 import { getOrgUserOptions } from "@/lib/org-users";
-import { andWhere, canApproveWorkLogs } from "@/lib/permissions";
+import {
+  andWhere,
+  canApproveWorkLogs,
+  canViewRates,
+} from "@/lib/permissions";
 import type { getPrisma } from "@/lib/prisma";
 
 type Prisma = ReturnType<typeof getPrisma>;
@@ -49,6 +53,7 @@ export type ApprovalQueueRow = {
   userId: string | null;
   userName: string | null;
   hours: number;
+  /** Always null for viewers without VIEW_RATES (never sent to the client). */
   hourlyRate: number | null;
   description: string | null;
   billingStatus: BillingStatus;
@@ -60,6 +65,8 @@ export type ApprovalQueueData = {
   totals: { count: number; hours: number };
   capped: boolean;
   access: ApprovalAccess;
+  /** Whether rates are shown (and editable) on the cards. */
+  showRates: boolean;
   users: Array<{ id: string; name: string }>;
   options: {
     subjects: Array<{ id: string; name: string }>;
@@ -80,6 +87,10 @@ export async function loadApprovalQueue(
   filters: ApprovalFilters,
 ): Promise<ApprovalQueueData> {
   const access = await getApprovalAccess(prisma, user);
+  // Rates are partner-level information (canViewRates, like /work-logs). The
+  // rows are props of a client component, so a hidden field is not enough —
+  // the value must not be serialized into the page payload at all.
+  const showRates = canViewRates(user) && access.canApprove;
   const scope = approvalScopeWhere(user, access);
   const where = andWhere(scope, approvalFilterWhere(filters));
 
@@ -167,7 +178,8 @@ export async function loadApprovalQueue(
       userId: row.userId,
       userName: row.user?.name ?? null,
       hours: Number(row.hours),
-      hourlyRate: row.hourlyRate != null ? Number(row.hourlyRate) : null,
+      hourlyRate:
+        showRates && row.hourlyRate != null ? Number(row.hourlyRate) : null,
       description: row.description,
       billingStatus: row.billingStatus,
       approvalStatus: row.approvalStatus,
@@ -178,6 +190,7 @@ export async function loadApprovalQueue(
     },
     capped: aggregate._count._all > rows.length,
     access,
+    showRates,
     users: orgUsers,
     options: {
       subjects: subjects.map((subject) => ({

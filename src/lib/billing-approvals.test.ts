@@ -249,6 +249,19 @@ test("applyApprovalDecision APPROVE s úpravami z karty", () => {
   );
 });
 
+test("applyApprovalDecision bez sazby v úpravách ponechá uloženou sazbu", () => {
+  // Schvalovatel bez VIEW_RATES sazbu nevidí ani neposílá – nesmí ji smazat.
+  const result = applyApprovalDecision(
+    pending,
+    "APPROVE",
+    { hours: 2, description: "Nový popis", userId: null },
+    now,
+  );
+  assert.equal(result.hourlyRate, 2000);
+  assert.equal(result.amountCzk, 4000);
+  assert.equal(result.description, "Nový popis");
+});
+
 test("applyApprovalDecision REJECT zachová billing status", () => {
   const result = applyApprovalDecision(
     { ...pending, billingStatus: BillingStatus.VISIBLE_WRITE_OFF },

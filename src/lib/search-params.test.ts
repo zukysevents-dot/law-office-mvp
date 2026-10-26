@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { filterQuery, firstParam, parseDateBoundary } from "./search-params";
+import {
+  filterFormKey,
+  filterQuery,
+  firstParam,
+  parseDateBoundary,
+} from "./search-params";
 
 // parseDateBoundary is the one piece of logic with real branches: regex shape
 // check, calendar validity (NaN guard), and start/end-of-day UTC pinning. It
@@ -69,4 +74,33 @@ test("firstParam: missing key → empty string", () => {
 
 test("firstParam: undefined value → empty string", () => {
   assert.equal(firstParam({ k: undefined }, "k"), "");
+});
+
+// filterFormKey remounts uncontrolled GET filter forms when the query changes
+// ("Zrušit filtry" must visibly reset every select, not just the URL).
+test("filterFormKey: empty query → constant key", () => {
+  assert.equal(filterFormKey({}), "all");
+  assert.equal(filterFormKey({ subjectId: "", userId: undefined }), "all");
+});
+
+test("filterFormKey: different filters → different keys, order-independent", () => {
+  const a = filterFormKey({ subjectId: "s1", userId: "u1" });
+  const b = filterFormKey({ userId: "u1", subjectId: "s1" });
+  assert.equal(a, b);
+  assert.notEqual(a, filterFormKey({ subjectId: "s1" }));
+  assert.notEqual(a, filterFormKey({}));
+});
+
+test("filterFormKey: ignored keys (dialog params) do not change the key", () => {
+  assert.equal(
+    filterFormKey({ subjectId: "s1", new: "1", duplicate: "x" }, ["new", "duplicate"]),
+    filterFormKey({ subjectId: "s1" }),
+  );
+});
+
+test("filterFormKey: array values are all included", () => {
+  assert.notEqual(
+    filterFormKey({ status: ["A", "B"] }),
+    filterFormKey({ status: ["A"] }),
+  );
 });

@@ -1,5 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { Client } from "pg";
 
+import { E2E_DATABASE_URL } from "./support/e2e-env";
 import {
   e2eName,
   expectNoErrorPage,
@@ -55,13 +57,38 @@ async function createWorkLog(
   await expect(dialog).toBeHidden();
 }
 
+async function setStoredRate(description: string, rate: number) {
+  const client = new Client({ connectionString: E2E_DATABASE_URL });
+  await client.connect();
+  try {
+    const result = await client.query(
+      `UPDATE "workLogs" SET "hourlyRate" = $1 WHERE description = $2`,
+      [rate, description],
+    );
+    expect(result.rowCount).toBe(1);
+  } finally {
+    await client.end();
+  }
+}
+
 function cards(page: Page) {
   return page.getByTestId("approval-card");
 }
 
+// The filter form is a plain GET form (full page load). The cascade selects
+// are controlled React state, so a change made before hydration would be lost —
+// wait until the page has settled before touching the filters again.
 async function openQueue(page: Page, prefix: string, extra = "") {
-  await page.goto(`/billing/approvals?q=${encodeURIComponent(prefix)}${extra}`);
+  await page.goto(`/billing/approvals?q=${encodeURIComponent(prefix)}${extra}`, {
+    waitUntil: "networkidle",
+  });
   await expectNoErrorPage(page);
+}
+
+async function applyFilters(page: Page, url: RegExp) {
+  await page.getByRole("button", { name: "Filtrovat" }).click();
+  await expect(page).toHaveURL(url);
+  await page.waitForLoadState("networkidle");
 }
 
 test.describe("položky ke schválení", () => {
@@ -81,8 +108,7 @@ test.describe("položky ke schválení", () => {
     await selectByText(client, "ABC s.r.o.");
     const project = page.getByRole("combobox", { name: "Projekt" });
     await expect(project.locator("option", { hasText: "Soudní spor ABC" })).toHaveCount(1);
-    await page.getByRole("button", { name: "Filtrovat" }).click();
-    await expect(page).toHaveURL(/subjectId=/);
+    await applyFilters(page, /subjectId=/);
     await expect(cards(page)).toHaveCount(2);
 
     await selectByText(client, "XYZ s.r.o.");
@@ -90,6 +116,21 @@ test.describe("položky ke schválení", () => {
 
     await page.getByRole("link", { name: "Zrušit filtry" }).click();
     await expect(page).toHaveURL(/\/billing\/approvals$/);
+    // Po zrušení filtrů ukazují všechna pole prázdné hodnoty – jinak by další
+    // „Filtrovat“ / „Vybrat vše“ potichu použil starý filtr.
+    await expect(client).toHaveValue("");
+    await expect(project).toHaveValue("");
+    await expect(page.getByLabel("Popis obsahuje")).toHaveValue("");
+
+    // Totéž pro pracovníka a datum zadané v URL (soft navigace bez reloadu).
+    await openQueue(page, p, `&dateFrom=${DATE}`);
+    const workerFilter = page.getByRole("combobox", { name: "Pracovník" }).first();
+    await workerFilter.selectOption({ label: "Admin Demo" });
+    await applyFilters(page, /userId=/);
+    await page.getByRole("link", { name: "Zrušit filtry" }).click();
+    await expect(page).toHaveURL(/\/billing\/approvals$/);
+    await expect(workerFilter).toHaveValue("");
+    await expect(page.getByLabel("Datum od")).toHaveValue("");
 
     await openQueue(page, p, `&dateFrom=${DATE}&dateTo=${DATE}`);
     await expect(cards(page)).toHaveCount(3);
@@ -102,9 +143,34 @@ test.describe("položky ke schválení", () => {
       .getByRole("combobox", { name: "Pracovník" })
       .first()
       .selectOption({ label: "Admin Demo" });
-    await page.getByRole("button", { name: "Filtrovat" }).click();
-    await expect(page).toHaveURL(/userId=/);
+    await applyFilters(page, /userId=/);
     await expect(cards(page)).toHaveCount(3);
+  });
+
+  test("filtry na desktopu: klient, projekt a případ v řádku s ostatními poli", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.goto("/billing/approvals", { waitUntil: "networkidle" });
+    const box = async (name: string) =>
+      (await page.getByRole("combobox", { name }).first().boundingBox())!;
+    const [klient, projekt, pripad, pracovnik] = await Promise.all([
+      box("Klient"),
+      box("Projekt"),
+      box("Případ"),
+      box("Pracovník"),
+    ]);
+    // Kaskáda se nesmí skládat do jednoho sloupce (display: contents).
+    expect(Math.abs(projekt.y - klient.y)).toBeLessThan(2);
+    expect(Math.abs(pripad.y - klient.y)).toBeLessThan(2);
+    expect(Math.abs(pracovnik.y - klient.y)).toBeLessThan(2);
+    expect(projekt.x).toBeGreaterThan(klient.x + klient.width);
+    // Popisek „Datum od“ je přímo nad svým polem.
+    const dateLabel = await page.getByText("Datum od", { exact: true }).boundingBox();
+    const dateInput = await page.getByLabel("Datum od").boundingBox();
+    expect(dateInput!.y - dateLabel!.y).toBeLessThan(40);
+    expect(dateInput!.y).toBeGreaterThan(dateLabel!.y);
+    await page.screenshot({ path: test.info().outputPath("filters-1400.png") });
   });
 
   test("popis úkonu je celý vidět na samostatném řádku", async ({ page }) => {
@@ -252,6 +318,43 @@ test.describe("položky ke schválení", () => {
       await expect(page.getByRole("button", { name: "Schválit" })).toHaveCount(0);
     }
     await page.context().close();
+  });
+
+  test("sazba se do fronty posílá jen uživatelům s právem vidět sazby", async ({
+    browser,
+  }) => {
+    const trainee = await pageAs(browser, "trainee");
+    const p = e2eName("schvalrate");
+    await createWorkLog(trainee, { description: p });
+    await setStoredRate(p, 4321.5);
+
+    // Koncipient (bez VIEW_RATES): sazba není v kartě ani v datech stránky
+    // (RSC payload ve vložených <script>), přestože ji výkaz uloženou má.
+    for (const path of ["/work-logs/approvals", "/billing/approvals"]) {
+      await trainee.goto(`${path}?q=${encodeURIComponent(p)}`);
+      await expectNoErrorPage(trainee);
+      await expect(cards(trainee)).toHaveCount(1);
+      await expect(cards(trainee)).toContainText(p);
+      await expect(
+        trainee.getByRole("spinbutton", { name: "Sazba", exact: true }),
+      ).toHaveCount(0);
+      const html = await trainee.content();
+      expect(html).not.toContain("4321.5");
+      expect(html).not.toContain("4\u00a0321,5");
+      expect(html).not.toContain("4 321,5");
+    }
+    await trainee.context().close();
+
+    // Kontrola, že test není prázdný: admin sazbu v datech stránky má a v kartě
+    // ji vidí i může upravit.
+    const admin = await pageAs(browser, "admin");
+    await openQueue(admin, p);
+    await expect(cards(admin)).toHaveCount(1);
+    await expect(
+      cards(admin).getByRole("spinbutton", { name: "Sazba", exact: true }),
+    ).toHaveValue("4321.5");
+    expect(await admin.content()).toContain("4321.5");
+    await admin.context().close();
   });
 
   test("fronta je přístupná a na mobilu bez vodorovného scrollu", async ({

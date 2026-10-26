@@ -260,7 +260,8 @@ export type ApprovalDecisionSource = {
 
 export type ApprovalDecisionEdits = {
   hours: number;
-  hourlyRate: number | null;
+  /** undefined = keep the stored rate (approver without VIEW_RATES never sees it). */
+  hourlyRate?: number | null;
   description: string | null;
   userId: string | null;
 };
@@ -293,11 +294,12 @@ export function applyApprovalDecision(
   now: Date = new Date(),
 ): ApprovalDecisionData {
   const hours = edits ? edits.hours : Number(old.hours.toString());
-  const hourlyRate = edits
-    ? edits.hourlyRate
-    : old.hourlyRate != null
-      ? Number(old.hourlyRate.toString())
-      : null;
+  const hourlyRate =
+    edits && edits.hourlyRate !== undefined
+      ? edits.hourlyRate
+      : old.hourlyRate != null
+        ? Number(old.hourlyRate.toString())
+        : null;
   const description = edits ? edits.description : old.description;
 
   let billingStatus = old.billingStatus;

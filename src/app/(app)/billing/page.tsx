@@ -28,7 +28,7 @@ import {
 } from "@/lib/format";
 import { getOrgUserOptions } from "@/lib/org-users";
 import { getPrisma } from "@/lib/prisma";
-import { filterQuery, firstParam } from "@/lib/search-params";
+import { filterFormKey, filterQuery, firstParam } from "@/lib/search-params";
 import {
   andWhere,
   canManageInvoices,
@@ -227,7 +227,7 @@ export default async function BillingPage({ searchParams }: BillingProps) {
       />
       <DatabaseNotice databaseReady={result.databaseReady} error={result.error} />
       <Section title="Filtry">
-        <form className="grid gap-4">
+        <form key={filterFormKey(params)} className="grid gap-4">
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {/* Subjekt → jen jeho projekty → jen jejich případy (stejná kaskáda
                 jako ve výkazech, úkolech a případech). */}

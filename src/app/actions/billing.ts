@@ -64,12 +64,23 @@ export async function decideWorkLog(formData: FormData) {
   if (!(hours > 0) || hours > 24) {
     throw new Error("Počet hodin musí být větší než 0 a nejvýše 24.");
   }
-  const hourlyRateRaw = optionalString(formData, "hourlyRate");
-  const hourlyRate = optionalNumber(formData, "hourlyRate");
+  // Rates are partner-level information: an approver without VIEW_RATES never
+  // sees the field, and a forged value is ignored — the stored rate is kept.
+  const mayEditRate = canViewRates(currentUser);
+  const hourlyRateRaw = mayEditRate
+    ? optionalString(formData, "hourlyRate")
+    : null;
+  const hourlyRate = mayEditRate
+    ? optionalNumber(formData, "hourlyRate")
+    : undefined;
   if (hourlyRateRaw !== null && hourlyRate === null) {
     throw new Error("Neplatná hodinová sazba.");
   }
-  if (hourlyRate !== null && (hourlyRate < 0 || hourlyRate > 9_999_999.99)) {
+  if (
+    hourlyRate !== null &&
+    hourlyRate !== undefined &&
+    (hourlyRate < 0 || hourlyRate > 9_999_999.99)
+  ) {
     throw new Error("Hodinová sazba musí být nezáporná a v povoleném rozsahu.");
   }
   const description = optionalString(formData, "description");
@@ -102,19 +113,11 @@ export async function decideWorkLog(formData: FormData) {
       );
     }
 
-    // Schvalovatel bez „Vidí sazby a částky“ (např. koncipient určený u
-    // klienta) sazbu nevidí ani nemění — platí uložená.
-    const rate = canViewRates(currentUser)
-      ? hourlyRate
-      : oldWorkLog.hourlyRate != null
-        ? Number(oldWorkLog.hourlyRate)
-        : null;
-
     const workLog = await tx.workLog.update({
       where: { id: workLogId },
       data: applyApprovalDecision(oldWorkLog, disposition, {
         hours,
-        hourlyRate: rate,
+        hourlyRate,
         description,
         userId,
       }),

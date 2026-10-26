@@ -1,12 +1,14 @@
 "use client";
 
 import {
+  type ReactNode,
   useActionState,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
+import { useFormStatus } from "react-dom";
 
 import { bulkDecideWorkLogs, decideWorkLog } from "@/app/actions/billing";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
@@ -48,6 +50,38 @@ function numberValue(value: number | null) {
   return value === null || value === undefined ? "" : String(value);
 }
 
+// One of the per-card decision buttons: while the card form submits, all of
+// them are disabled, but only the clicked one shows the spinner and its
+// pending text ("Schvaluji…", "Zamítám…").
+function DecisionButton({
+  value,
+  pendingLabel,
+  variant,
+  children,
+}: {
+  value: string;
+  pendingLabel: string;
+  variant?: "primary" | "secondary" | "danger";
+  children: ReactNode;
+}) {
+  const { pending, data } = useFormStatus();
+  const isMine = pending && data?.get("disposition") === value;
+  return (
+    <Button
+      type="submit"
+      name="disposition"
+      value={value}
+      variant={variant}
+      className="h-9 px-3"
+      pending={pending}
+      showPendingIndicator={isMine}
+      pendingLabel={isMine ? pendingLabel : undefined}
+    >
+      {children}
+    </Button>
+  );
+}
+
 /**
  * The approval queue ("Položky ke schválení"): one card per pending work log
  * with the full description on its own line (editable, decided per card via
@@ -58,12 +92,15 @@ export function ApprovalQueue({
   rows,
   users,
   canApprove,
+  showRates,
   totals,
   capped,
 }: {
   rows: ApprovalQueueRow[];
   users: Array<{ id: string; name: string }>;
   canApprove: boolean;
+  /** Rate field on the cards — only for approvers with VIEW_RATES. */
+  showRates: boolean;
   totals: { count: number; hours: number };
   capped: boolean;
 }) {
@@ -227,7 +264,9 @@ export function ApprovalQueue({
                         className="min-h-20 resize-y whitespace-pre-wrap break-words [field-sizing:content]"
                       />
                     </Field>
-                    <div className="grid gap-4 md:grid-cols-3">
+                    <div
+                      className={`grid gap-4 ${showRates ? "md:grid-cols-3" : "md:grid-cols-2"}`}
+                    >
                       <Field label="Pracovník">
                         <SelectInput name="userId" defaultValue={row.userId ?? ""}>
                           <option value="">Bez pracovníka</option>
@@ -248,52 +287,43 @@ export function ApprovalQueue({
                           required
                         />
                       </Field>
-                      <Field label="Sazba">
-                        <TextInput
-                          name="hourlyRate"
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          defaultValue={numberValue(row.hourlyRate)}
-                        />
-                      </Field>
+                      {showRates ? (
+                        <Field label="Sazba">
+                          <TextInput
+                            name="hourlyRate"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            defaultValue={numberValue(row.hourlyRate)}
+                          />
+                        </Field>
+                      ) : null}
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <Button
-                        type="submit"
-                        name="disposition"
-                        value="APPROVE"
-                        className="h-9 px-3"
-                      >
+                      <DecisionButton value="APPROVE" pendingLabel="Schvaluji…">
                         Schválit
-                      </Button>
-                      <Button
-                        type="submit"
-                        name="disposition"
+                      </DecisionButton>
+                      <DecisionButton
                         value="VISIBLE_WRITE_OFF"
                         variant="secondary"
-                        className="h-9 px-3"
+                        pendingLabel="Odepisuji…"
                       >
                         Viditelný odpis (0 Kč)
-                      </Button>
-                      <Button
-                        type="submit"
-                        name="disposition"
+                      </DecisionButton>
+                      <DecisionButton
                         value="HIDDEN_WRITE_OFF"
                         variant="secondary"
-                        className="h-9 px-3"
+                        pendingLabel="Odepisuji…"
                       >
                         Skrytý odpis
-                      </Button>
-                      <Button
-                        type="submit"
-                        name="disposition"
+                      </DecisionButton>
+                      <DecisionButton
                         value="REJECT"
                         variant="danger"
-                        className="h-9 px-3"
+                        pendingLabel="Zamítám…"
                       >
                         Zamítnout
-                      </Button>
+                      </DecisionButton>
                     </div>
                   </form>
                 ) : (

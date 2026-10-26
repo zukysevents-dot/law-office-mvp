@@ -120,15 +120,21 @@ export function CascadingMatterSelect({
     [tasks, cases, projects, selection],
   );
 
-  const columns =
-    className ??
-    (filterMode
-      ? "contents"
-      : includeTask
-        ? "md:grid-cols-2 xl:grid-cols-4"
-        : includeCase
-          ? "md:grid-cols-3"
-          : "md:grid-cols-2");
+  // In filterMode the selects become direct items of the parent filter grid
+  // ("contents" alone — combined with "grid" the display would stay grid and
+  // the three selects would stack in one column).
+  const wrapperClass =
+    className !== undefined
+      ? `grid gap-4 ${className}`
+      : filterMode
+        ? "contents"
+        : `grid gap-4 ${
+            includeTask
+              ? "md:grid-cols-2 xl:grid-cols-4"
+              : includeCase
+                ? "md:grid-cols-3"
+                : "md:grid-cols-2"
+          }`;
 
   const subjectEmpty =
     subjectPlaceholder ?? (filterMode ? "Všichni klienti" : "Vyberte klienta");
@@ -148,7 +154,7 @@ export function CascadingMatterSelect({
         : "Bez případu");
 
   return (
-    <div className={`grid gap-4 ${columns}`}>
+    <div className={wrapperClass}>
       <Field label={subjectLabel}>
         <SelectInput
           name="subjectId"

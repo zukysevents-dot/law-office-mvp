@@ -26,13 +26,18 @@ import {
 import type { ModulePermissionKey } from "@/lib/permission-catalog";
 import { canApproveWorkLogs, canManageInvoices } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
-import { firstParam, type SearchParamValue } from "@/lib/search-params";
+import {
+  filterFormKey,
+  firstParam,
+  type SearchParamValue,
+} from "@/lib/search-params";
 
 const emptyQueue: ApprovalQueueData = {
   rows: [],
   totals: { count: 0, hours: 0 },
   capped: false,
   access: { canApproveAll: false, canApprove: false },
+  showRates: false,
   users: [],
   options: { subjects: [], projects: [], cases: [], users: [] },
 };
@@ -125,7 +130,12 @@ export async function ApprovalQueuePage({
       />
       <DatabaseNotice databaseReady={result.databaseReady} error={result.error} />
       <Section title="Filtry">
-        <form method="get" action={basePath} className="grid gap-4">
+        <form
+          key={filterFormKey(params)}
+          method="get"
+          action={basePath}
+          className="grid gap-4"
+        >
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             {/* Nabízí jen klienty / projekty / případy, které ve frontě mají
                 položky; kaskáda jako všude jinde. */}
@@ -187,6 +197,7 @@ export async function ApprovalQueuePage({
           rows={data.rows}
           users={data.users}
           canApprove={data.access.canApprove}
+          showRates={data.showRates}
           totals={data.totals}
           capped={data.capped}
         />

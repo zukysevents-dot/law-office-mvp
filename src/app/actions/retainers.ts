@@ -68,7 +68,7 @@ export async function createRetainer(formData: FormData) {
   }
   if (projectId) {
     const project = await prisma.project.findFirst({
-      where: { id: projectId, organizationId },
+      where: { id: projectId, organizationId, archivedAt: null },
       select: { mainSubjectId: true },
     });
     if (!project || project.mainSubjectId !== subjectId) {

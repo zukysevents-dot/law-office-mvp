@@ -39,7 +39,7 @@ import {
 } from "@/lib/format";
 import { DAY_MS, fulfillmentPercent, weekStartUtcMs } from "@/lib/hours-plan";
 import { getOrgUserOptions } from "@/lib/org-users";
-import { firstParam } from "@/lib/search-params";
+import { filterFormKey, firstParam } from "@/lib/search-params";
 import {
   approvalStatusLabels,
   billingStatusLabels,
@@ -152,6 +152,10 @@ function numberParam(value: string) {
   const parsed = Number(value.replace(",", "."));
   return Number.isFinite(parsed) ? parsed : null;
 }
+
+// Query params that only open the create/duplicate dialog — they must not remount
+// (and so reset) the filter form.
+const WORK_LOG_DIALOG_PARAMS = ["new", "duplicate", "hours"] as const;
 
 export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
   const accessUser = await getCurrentUser();
@@ -651,7 +655,10 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
         </div>
       </Section>
       <Section title="Filtry">
-        <form className="grid gap-4">
+        <form
+          key={filterFormKey(params, WORK_LOG_DIALOG_PARAMS)}
+          className="grid gap-4"
+        >
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <CascadingMatterSelect
               subjects={result.data.subjects.map((subject) => ({
