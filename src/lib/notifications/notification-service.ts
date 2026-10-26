@@ -1,3 +1,4 @@
+import type { Prisma } from "@/generated/prisma/client";
 import {
   DeadlineStatus,
   NotificationStatus,
@@ -775,18 +776,24 @@ async function createScheduledFiledFollowupNotifications(now: Date) {
 //     DAY (date in the dedupe key) while the deadline stays OPEN past its date.
 // A missed procedural deadline is the lawyer's liability, so overdue keeps
 // nagging rather than firing a single easily-missed alert.
+// Only OPEN, non-archived deadlines are watched: a fulfilled (COMPLETED) or
+// archived/cancelled deadline never produces another reminder. dueDate <=
+// maxWindow covers both upcoming (≤30d) and any overdue (dueDate<now).
+export function deadlineReminderWhere(maxWindow: Date) {
+  return {
+    archivedAt: null,
+    status: DeadlineStatus.OPEN,
+    dueDate: { lte: maxWindow },
+  } satisfies Prisma.DeadlineWhereInput;
+}
+
 async function createScheduledDeadlineReminders(now: Date) {
   const prisma = getPrisma();
   const maxWindow = new Date(now);
   maxWindow.setDate(maxWindow.getDate() + 30);
 
-  // dueDate <= maxWindow covers both upcoming (≤30d) and any overdue (dueDate<now).
   const deadlines = await prisma.deadline.findMany({
-    where: {
-      archivedAt: null,
-      status: DeadlineStatus.OPEN,
-      dueDate: { lte: maxWindow },
-    },
+    where: deadlineReminderWhere(maxWindow),
     orderBy: { dueDate: "asc" },
     take: SCHEDULED_SCAN_LIMIT,
     select: {

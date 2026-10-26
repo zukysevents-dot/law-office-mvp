@@ -20,6 +20,7 @@ import {
   deadlineVisibilityWhere,
   taskVisibilityWhere,
 } from "@/lib/permissions";
+import { calendarDeadlineWhere } from "@/lib/deadlines";
 import { getPrisma } from "@/lib/prisma";
 import { deadlineTypeTone, taskDeadlineTypeTone } from "@/lib/status-tones";
 
@@ -111,8 +112,8 @@ async function getTaskDeadlineEvents(
 }
 
 // F4 / L-4: watched deadlines (Deadline) within the window. CANCELLED deadlines
-// are soft-deleted (archivedAt set) so the archivedAt filter excludes them;
-// COMPLETED ones stay visible and the view greys them via status === "COMPLETED".
+// are hidden; fulfilled (COMPLETED) ones stay visible — even once archived —
+// and the view greys them via status === "COMPLETED" (calendarDeadlineWhere).
 async function getDeadlineEvents(
   user: CalendarUser,
   range: CalendarRange,
@@ -120,10 +121,8 @@ async function getDeadlineEvents(
   const prisma = getPrisma();
   const deadlines = await prisma.deadline.findMany({
     where: andWhere(
-      {
-        archivedAt: null,
-        dueDate: { gte: range.start, lt: range.end },
-      },
+      calendarDeadlineWhere(),
+      { dueDate: { gte: range.start, lt: range.end } },
       deadlineVisibilityWhere(user),
     ),
     orderBy: { dueDate: "asc" },
@@ -141,7 +140,10 @@ async function getDeadlineEvents(
 
   return deadlines.map((deadline) => ({
     id: `deadline:${deadline.id}`,
-    title: `Lhůta: ${deadline.title}`,
+    title:
+      deadline.status === DeadlineStatus.COMPLETED
+        ? `Lhůta (splněno): ${deadline.title}`
+        : `Lhůta: ${deadline.title}`,
     date: deadline.dueDate,
     allDay: true,
     href: `/cases/${deadline.case.id}`,

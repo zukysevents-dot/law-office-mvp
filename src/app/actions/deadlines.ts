@@ -2,11 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 
+import type { Prisma } from "@/generated/prisma/client";
 import {
   DeadlineStatus,
   DeadlineType,
+  NotificationStatus,
 } from "@/generated/prisma/enums";
 import { auditJson } from "@/lib/audit";
+import { parseFulfilledOn } from "@/lib/deadlines";
 import { getCurrentUser } from "@/lib/auth";
 import {
   enumValue,
@@ -89,9 +92,12 @@ function clampText(value: string | null, max: number): string | null {
   return value;
 }
 
+// Every page that lists deadlines (the dashboard has the „Blížící se lhůty"
+// widget and the calendar preview).
 function revalidateDeadline(caseId: string) {
   revalidatePath("/deadlines");
   revalidatePath("/calendar");
+  revalidatePath("/dashboard");
   revalidatePath(`/cases/${caseId}`);
 }
 
@@ -235,41 +241,266 @@ export async function updateDeadline(formData: FormData) {
   revalidateDeadline(existing.caseId);
 }
 
-// L-3: mark a deadline COMPLETED. Idempotent — re-completing is a no-op so the
-// original completedAt is preserved and no duplicate audit row is written.
-export async function completeDeadline(formData: FormData) {
+// --- Splnění, archivace a obnovení lhůty (audit 09) ---------------------------
+
+export type DeadlineActionState = {
+  ok: boolean;
+  error?: string;
+  submittedAt?: number;
+};
+
+const NOT_FULFILLABLE_ERROR =
+  "Lhůtu nelze označit jako splněnou – je zrušená nebo archivovaná.";
+
+// Notifications already queued for this deadline (PENDING, or FAILED waiting
+// for a retry) must not go out once the obligation is fulfilled/cancelled.
+function skipQueuedDeadlineNotifications(
+  tx: Prisma.TransactionClient,
+  deadlineId: string,
+  reason: string,
+) {
+  return tx.notification.updateMany({
+    where: {
+      entityType: "Deadline",
+      entityId: deadlineId,
+      status: { in: [NotificationStatus.PENDING, NotificationStatus.FAILED] },
+    },
+    data: { status: NotificationStatus.SKIPPED, lastError: reason, lockedAt: null },
+  });
+}
+
+// „Splněno" — marks the obligation tied to the deadline as fulfilled (who,
+// when, optional note); mode "fulfil-archive" also archives it in one step.
+// For useActionState: validation problems come back inline, auth failures
+// throw like every other deadline action.
+export async function fulfillDeadline(
+  _previous: DeadlineActionState,
+  formData: FormData,
+): Promise<DeadlineActionState> {
+  const submittedAt = Date.now();
   const prisma = getPrisma();
   const { currentUser } = await authorize();
 
   const deadlineId = requiredString(formData, "deadlineId");
-  const existing = await prisma.deadline.findFirst({
-    where: andWhere({ id: deadlineId }, deadlineVisibilityWhere(currentUser)),
-    select: { id: true, caseId: true, status: true },
-  });
-  if (!existing) {
-    throw new Error("Lhůta nenalezena.");
+  const archive = formData.get("mode") === "fulfil-archive";
+
+  let completedAt: Date;
+  let completionNote: string | null;
+  try {
+    completedAt = parseFulfilledOn(optionalString(formData, "fulfilledOn"));
+    completionNote = clampText(optionalString(formData, "completionNote"), MAX_TEXT);
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Neplatné údaje.",
+      submittedAt,
+    };
   }
 
+  const existing = await prisma.deadline.findFirst({
+    where: andWhere({ id: deadlineId }, deadlineVisibilityWhere(currentUser)),
+    select: {
+      id: true,
+      caseId: true,
+      status: true,
+      archivedAt: true,
+      completedAt: true,
+    },
+  });
+  if (!existing) {
+    return { ok: false, error: "Lhůta nenalezena.", submittedAt };
+  }
+  if (existing.status === DeadlineStatus.CANCELLED || existing.archivedAt) {
+    return { ok: false, error: NOT_FULFILLABLE_ERROR, submittedAt };
+  }
+
+  const now = new Date();
+
+  // Already fulfilled (double submit, second tab): keep the original
+  // completion; only archive when that was asked for.
   if (existing.status === DeadlineStatus.COMPLETED) {
+    if (archive) {
+      await prisma.$transaction(async (tx) => {
+        await tx.deadline.update({
+          where: { id: deadlineId },
+          data: { archivedAt: now },
+        });
+        await tx.auditLog.create({
+          data: {
+            organizationId: currentUser.organizationId,
+            entityType: "Deadline",
+            entityId: deadlineId,
+            action: "ARCHIVE",
+            changedById: currentUser.id,
+            oldValue: auditJson({ archived: false }),
+            newValue: auditJson({ archived: true }),
+          },
+        });
+      });
+    }
     revalidateDeadline(existing.caseId);
-    return;
+    return { ok: true, submittedAt };
   }
 
   await prisma.$transaction(async (tx) => {
     await tx.deadline.update({
       where: { id: deadlineId },
-      data: { status: DeadlineStatus.COMPLETED, completedAt: new Date() },
+      data: {
+        status: DeadlineStatus.COMPLETED,
+        completedAt,
+        completedById: currentUser.id,
+        completionNote,
+        archivedAt: archive ? now : undefined,
+      },
     });
+
+    await skipQueuedDeadlineNotifications(tx, deadlineId, "DEADLINE_COMPLETED");
 
     await tx.auditLog.create({
       data: {
         organizationId: currentUser.organizationId,
         entityType: "Deadline",
         entityId: deadlineId,
-        action: "COMPLETE",
+        action: archive ? "COMPLETE_ARCHIVE" : "COMPLETE",
         changedById: currentUser.id,
-        oldValue: auditJson({ status: existing.status }),
-        newValue: auditJson({ status: DeadlineStatus.COMPLETED }),
+        oldValue: auditJson({ status: existing.status, archived: false }),
+        newValue: auditJson({
+          status: DeadlineStatus.COMPLETED,
+          completedAt: completedAt.toISOString(),
+          completionNote,
+          archived: archive,
+        }),
+      },
+    });
+  });
+
+  revalidateDeadline(existing.caseId);
+  return { ok: true, submittedAt };
+}
+
+async function loadFulfilledDeadline(currentUser: CurrentUser, deadlineId: string) {
+  return getPrisma().deadline.findFirst({
+    where: andWhere(
+      { id: deadlineId, status: DeadlineStatus.COMPLETED },
+      deadlineVisibilityWhere(currentUser),
+    ),
+    select: {
+      id: true,
+      caseId: true,
+      archivedAt: true,
+      completedAt: true,
+      completedById: true,
+      completionNote: true,
+    },
+  });
+}
+
+// Archive a fulfilled deadline (reversible — „Obnovit z archivu").
+export async function archiveDeadline(formData: FormData) {
+  const { currentUser } = await authorize();
+  const deadlineId = requiredString(formData, "deadlineId");
+  const existing = await loadFulfilledDeadline(currentUser, deadlineId);
+  if (!existing) {
+    throw new Error("Archivovat lze jen splněnou lhůtu.");
+  }
+  if (existing.archivedAt) {
+    revalidateDeadline(existing.caseId);
+    return;
+  }
+
+  await getPrisma().$transaction(async (tx) => {
+    await tx.deadline.update({
+      where: { id: deadlineId },
+      data: { archivedAt: new Date() },
+    });
+    await tx.auditLog.create({
+      data: {
+        organizationId: currentUser.organizationId,
+        entityType: "Deadline",
+        entityId: deadlineId,
+        action: "ARCHIVE",
+        changedById: currentUser.id,
+        oldValue: auditJson({ archived: false }),
+        newValue: auditJson({ archived: true }),
+      },
+    });
+  });
+
+  revalidateDeadline(existing.caseId);
+}
+
+// Restore an archived fulfilled deadline back to „Splněné". Cancelled
+// deadlines stay archived (cancel is final, like before).
+export async function restoreDeadline(formData: FormData) {
+  const { currentUser } = await authorize();
+  const deadlineId = requiredString(formData, "deadlineId");
+  const existing = await loadFulfilledDeadline(currentUser, deadlineId);
+  if (!existing) {
+    throw new Error("Obnovit lze jen splněnou lhůtu.");
+  }
+  if (!existing.archivedAt) {
+    revalidateDeadline(existing.caseId);
+    return;
+  }
+
+  await getPrisma().$transaction(async (tx) => {
+    await tx.deadline.update({
+      where: { id: deadlineId },
+      data: { archivedAt: null },
+    });
+    await tx.auditLog.create({
+      data: {
+        organizationId: currentUser.organizationId,
+        entityType: "Deadline",
+        entityId: deadlineId,
+        action: "RESTORE",
+        changedById: currentUser.id,
+        oldValue: auditJson({ archived: true }),
+        newValue: auditJson({ archived: false }),
+      },
+    });
+  });
+
+  revalidateDeadline(existing.caseId);
+}
+
+// Undo a mistaken „Splněno": the deadline becomes OPEN again and is watched
+// (reminders) as before. Only for non-archived fulfilled deadlines.
+export async function reopenDeadline(formData: FormData) {
+  const { currentUser } = await authorize();
+  const deadlineId = requiredString(formData, "deadlineId");
+  const existing = await loadFulfilledDeadline(currentUser, deadlineId);
+  if (!existing) {
+    throw new Error("Vrátit mezi aktivní lze jen splněnou lhůtu.");
+  }
+  if (existing.archivedAt) {
+    throw new Error("Lhůtu nejdřív obnovte z archivu.");
+  }
+
+  await getPrisma().$transaction(async (tx) => {
+    await tx.deadline.update({
+      where: { id: deadlineId },
+      data: {
+        status: DeadlineStatus.OPEN,
+        completedAt: null,
+        completedById: null,
+        completionNote: null,
+      },
+    });
+    await tx.auditLog.create({
+      data: {
+        organizationId: currentUser.organizationId,
+        entityType: "Deadline",
+        entityId: deadlineId,
+        action: "REOPEN",
+        changedById: currentUser.id,
+        oldValue: auditJson({
+          status: DeadlineStatus.COMPLETED,
+          completedAt: existing.completedAt?.toISOString() ?? null,
+          completedById: existing.completedById,
+          completionNote: existing.completionNote,
+        }),
+        newValue: auditJson({ status: DeadlineStatus.OPEN }),
       },
     });
   });
@@ -301,6 +532,8 @@ export async function cancelDeadline(formData: FormData) {
       where: { id: deadlineId },
       data: { status: DeadlineStatus.CANCELLED, archivedAt: new Date() },
     });
+
+    await skipQueuedDeadlineNotifications(tx, deadlineId, "DEADLINE_CANCELLED");
 
     await tx.auditLog.create({
       data: {
