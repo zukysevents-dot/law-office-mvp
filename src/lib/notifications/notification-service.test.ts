@@ -30,6 +30,7 @@ function preference(
     courtHearingSoonEmail: true,
     deadlineWatchDaysBefore: 3,
     registryChangeEmail: true,
+    matterAssignedEmail: true,
     ...overrides,
   };
 }
@@ -176,4 +177,21 @@ test("notificationOutcome: freshly inserted non-PENDING/SKIPPED status is neutra
     queued: 0,
     skipped: 0,
   });
+});
+
+test("preferenceAllows: MATTER_ASSIGNED follows matterAssignedEmail and the master switch", () => {
+  assert.equal(allow(preference(), NotificationType.MATTER_ASSIGNED), true);
+  assert.equal(
+    allow(preference({ matterAssignedEmail: false }), NotificationType.MATTER_ASSIGNED),
+    false,
+  );
+  assert.equal(
+    allow(preference({ emailEnabled: false }), NotificationType.MATTER_ASSIGNED),
+    false,
+  );
+  // Ostatní typy přepínač přiřazení neovlivní.
+  assert.equal(
+    allow(preference({ matterAssignedEmail: false }), NotificationType.TASK_CREATED),
+    true,
+  );
 });

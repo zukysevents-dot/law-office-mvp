@@ -14,6 +14,12 @@ export const AUDIT_ENTITY_TYPES = [
   "SubjectStatutoryBody",
   "ContactPerson",
   "SubjectRelation",
+  "ProjectAssignee",
+  "CaseAssignee",
+  "ProjectTeamAssignment",
+  "CaseTeamAssignment",
+  "LegalTeam",
+  "LegalTeamMember",
   "Reference",
   "ConflictCheck",
   "NotificationPreference",
@@ -49,6 +55,8 @@ export const AUDIT_ACTIONS = [
   "JOIN_NOTIFICATION",
   "ROLE_CHANGE",
   "RESET",
+  "ASSIGN",
+  "REMOVE",
 ] as const;
 
 export const auditEntityTypeLabels: Record<string, string> = {
@@ -62,6 +70,12 @@ export const auditEntityTypeLabels: Record<string, string> = {
   SubjectStatutoryBody: "Statutární orgán subjektu",
   ContactPerson: "Kontaktní osoba",
   SubjectRelation: "Vazba subjektu",
+  ProjectAssignee: "Řešitel projektu",
+  CaseAssignee: "Řešitel případu",
+  ProjectTeamAssignment: "Tým u projektu",
+  CaseTeamAssignment: "Tým u případu",
+  LegalTeam: "Tým",
+  LegalTeamMember: "Člen týmu",
   Reference: "Reference",
   ConflictCheck: "Kontrola konfliktu",
   NotificationPreference: "Nastavení notifikací",
@@ -97,6 +111,8 @@ export const auditActionLabels: Record<string, string> = {
   JOIN_NOTIFICATION: "Upozornění na nového člena",
   ROLE_CHANGE: "Změna role",
   RESET: "Obnovení výchozích",
+  ASSIGN: "Přiřazení",
+  REMOVE: "Odebrání",
 };
 
 export function auditActionLabel(value: string) {
