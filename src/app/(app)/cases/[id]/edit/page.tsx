@@ -7,6 +7,7 @@ import { Section } from "@/components/section";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
+import { caseAssignmentInclude } from "@/lib/assignments";
 import { getCurrentUser } from "@/lib/auth";
 import { caseStatusLabels, options } from "@/lib/labels";
 import { safeQuery } from "@/lib/db-safe";
@@ -33,7 +34,7 @@ async function loadCaseEdit(id: string) {
   const [legalCase, projects, users] = await Promise.all([
     prisma.case.findUnique({
       where: { id },
-      include: { assignees: { select: { userId: true } } },
+      include: caseAssignmentInclude,
     }),
     prisma.project.findMany({
       where: andWhere(

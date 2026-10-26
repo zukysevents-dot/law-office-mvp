@@ -3,6 +3,11 @@ import { Plus } from "lucide-react";
 
 import { createCase } from "@/app/actions/cases";
 import { CascadingMatterSelect } from "@/components/cascading-matter-select";
+import {
+  AssigneeCell,
+  AssigneeFilterField,
+  TeamSelectField,
+} from "@/components/assignee-cell";
 import { ColumnVisibilityPanel } from "@/components/column-visibility-panel";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
@@ -17,6 +22,15 @@ import {
   archivedWhere,
   archiveFilterValue,
 } from "@/lib/archive-filter";
+import {
+  assigneeFilterValue,
+  assigneeLabels,
+  caseAssigneeFilterWhere,
+  parseAssigneeFilter,
+  personAssigneeDisplaySelect,
+  teamAssignmentDisplaySelect,
+} from "@/lib/assignments";
+import { getTeamOptions } from "@/lib/assignments-overview.server";
 import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import { formatDate } from "@/lib/format";
@@ -46,7 +60,13 @@ type CasesPageProps = {
     archive?: string;
     projectId?: string;
     subjectId?: string;
+    assignee?: string;
   }>;
+};
+
+type DisplayAssignees = {
+  assignees: Array<{ user: { name: string } }>;
+  teamAssignments: Array<{ legalTeam: { name: string } }>;
 };
 
 type CasesPageData = {
@@ -63,12 +83,13 @@ type CasesPageData = {
       id: string;
       name: string;
       mainSubject: { id: string; name: string } | null;
-    };
+    } & DisplayAssignees;
     responsibleUser: { name: string } | null;
-  }>;
+  } & DisplayAssignees>;
   projects: Array<{ id: string; name: string; mainSubjectId: string }>;
   subjects: Array<{ id: string; name: string }>;
   users: Array<{ id: string; name: string }>;
+  teams: Array<{ id: string; name: string }>;
   tableView: TableViewState;
 };
 
@@ -84,19 +105,22 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
   const archive = archiveFilterValue(params.archive);
   const projectId = params.projectId ?? "";
   const subjectId = params.subjectId ?? "";
+  const assigneeFilter = parseAssigneeFilter(params.assignee);
+  const assignee = assigneeFilterValue(assigneeFilter);
   const result = await safeQuery<CasesPageData>(
     {
       cases: [],
       projects: [],
       subjects: [],
       users: [],
+      teams: [],
       tableView: getDefaultTableView("cases"),
     },
     async () => {
       const prisma = getPrisma();
       const currentUser = await getCurrentUser();
       const tableView = await getCurrentTableView("cases");
-      const [cases, projects, subjects, users] = await Promise.all([
+      const [cases, projects, subjects, users, teams] = await Promise.all([
         prisma.case.findMany({
           where: andWhere(
             archivedWhere(archive),
@@ -107,6 +131,7 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
                 ? { project: { mainSubjectId: subjectId } }
                 : {}),
             },
+            caseAssigneeFilterWhere(assigneeFilter, currentUser.id),
           ),
           orderBy: { createdAt: "desc" },
           include: {
@@ -115,9 +140,13 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
                 id: true,
                 name: true,
                 mainSubject: { select: { id: true, name: true } },
+                assignees: personAssigneeDisplaySelect,
+                teamAssignments: teamAssignmentDisplaySelect,
               },
             },
             responsibleUser: { select: { name: true } },
+            assignees: personAssigneeDisplaySelect,
+            teamAssignments: teamAssignmentDisplaySelect,
           },
         }),
         prisma.project.findMany({
@@ -137,9 +166,10 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
           select: { id: true, name: true },
         }),
         getOrgUserOptions(currentUser),
+        getTeamOptions(prisma, currentUser.organizationId),
       ]);
 
-      return { cases, projects, subjects, users, tableView };
+      return { cases, projects, subjects, users, teams, tableView };
     },
   );
   const visibleColumnSet = new Set(result.data.tableView.visibleColumns);
@@ -174,6 +204,11 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
             includeCase={false}
             filterMode
           />
+          <AssigneeFilterField
+            value={assignee}
+            teams={result.data.teams}
+            users={result.data.users}
+          />
           <Field label="Archiv">
             <SelectInput name="archive" defaultValue={archive}>
               {Object.entries(archiveFilterLabels).map(([value, label]) => (
@@ -186,7 +221,7 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
           <Button type="submit" variant="secondary" className="self-end">
             Filtrovat
           </Button>
-          {subjectId || projectId || archive !== "active" ? (
+          {subjectId || projectId || assignee || archive !== "active" ? (
             <ButtonLink href="/cases" variant="ghost" className="self-end">
               Zrušit filtry
             </ButtonLink>
@@ -262,6 +297,20 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
                     {visibleColumnSet.has("responsibleUser") ? (
                       <td>{legalCase.responsibleUser?.name ?? "—"}</td>
                     ) : null}
+                    {visibleColumnSet.has("assignees") ? (
+                      <td>
+                        <AssigneeCell
+                          labels={assigneeLabels(
+                            legalCase.teamAssignments,
+                            legalCase.assignees,
+                          )}
+                          inheritedLabels={assigneeLabels(
+                            legalCase.project.teamAssignments,
+                            legalCase.project.assignees,
+                          )}
+                        />
+                      </td>
+                    ) : null}
                     {visibleColumnSet.has("status") ? (
                       <td>
                         <Badge tone="green">
@@ -299,7 +348,11 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
           </div>
           </RowClickNav>
         ) : (
-          <EmptyState>Zatím nejsou založené žádné případy.</EmptyState>
+          <EmptyState>
+            {subjectId || projectId || assignee || archive !== "active"
+              ? "Filtru neodpovídá žádný případ."
+              : "Zatím nejsou založené žádné případy."}
+          </EmptyState>
         )}
       </Section>
       <Section title="Nový případ" id="new-case" className="scroll-mt-6">
@@ -343,6 +396,10 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
               </SelectInput>
             </Field>
           </div>
+          <TeamSelectField
+            teams={result.data.teams}
+            hint="Řešitelé projektu vidí případ automaticky. Další řešitele přidáte v detailu."
+          />
           {showRates ? (
             <Field label="Hodinová sazba">
               <TextInput name="hourlyRate" type="number" min="0" step="0.01" />

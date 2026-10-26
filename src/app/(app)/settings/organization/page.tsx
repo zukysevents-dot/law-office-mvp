@@ -2,15 +2,13 @@ import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
 import { OrganizationAdminPanel } from "@/components/organization-admin";
 import { OrganizationModulesOverview } from "@/components/organization-modules-overview";
-import { LegalTeamAdmin } from "@/components/legal-team-admin";
 import { DatabaseNotice } from "@/components/ui/database-notice";
-import { Button } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import {
   getOrganizationAdminData,
   getOrganizationEntitlements,
-  getLegalTeamAdminData,
 } from "@/lib/organization";
 import { canManageOrganization } from "@/lib/permissions";
 import { loadPrivilegeTargets } from "@/lib/permission-store.server";
@@ -26,7 +24,6 @@ type OrgSettingsData = Awaited<ReturnType<typeof getOrganizationAdminData>> & {
   manageableUserIds: string[];
   currentUserId: string;
   entitlements: Awaited<ReturnType<typeof getOrganizationEntitlements>> | null;
-  legalTeams: Awaited<ReturnType<typeof getLegalTeamAdminData>> | null;
 };
 
 export default async function OrganizationSettingsPage() {
@@ -43,14 +40,12 @@ export default async function OrganizationSettingsPage() {
         joinCodes: [],
         activeMembers: 0,
         entitlements: null,
-        legalTeams: null,
       };
     }
 
-    const [adminData, entitlements, legalTeams] = await Promise.all([
+    const [adminData, entitlements] = await Promise.all([
       getOrganizationAdminData(currentUser.organizationId),
       getOrganizationEntitlements(currentUser.organizationId),
-      getLegalTeamAdminData(currentUser.organizationId),
     ]);
     const privilegeTargets = await loadPrivilegeTargets({
       actor: currentUser,
@@ -67,7 +62,6 @@ export default async function OrganizationSettingsPage() {
       manageableUserIds: privilegeTargets.manageableUserIds,
       currentUserId: currentUser.id,
       entitlements,
-      legalTeams,
     };
   });
 
@@ -136,13 +130,19 @@ export default async function OrganizationSettingsPage() {
             assignableRoles={data.assignableRoles}
             manageableUserIds={data.manageableUserIds}
           />
-          {data.legalTeams ? (
-            <LegalTeamAdmin
-              organizationId={data.organization.id}
-              teams={data.legalTeams.teams}
-              users={data.legalTeams.users}
-            />
-          ) : null}
+          <Section title="Právní týmy">
+            <p className="text-sm text-stone-600">
+              Týmy a jejich přiřazení k projektům a případům spravujete na
+              stránce Týmy a řešitelé.
+            </p>
+            <ButtonLink
+              href="/settings/assignments"
+              variant="secondary"
+              className="mt-3"
+            >
+              Otevřít Týmy a řešitelé
+            </ButtonLink>
+          </Section>
           {data.entitlements ? (
             <OrganizationModulesOverview
               modules={data.entitlements.modules}

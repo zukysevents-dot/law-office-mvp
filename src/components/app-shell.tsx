@@ -13,6 +13,7 @@ import {
   canManageInvoices,
   canManageOrganization,
   canManagePermissions,
+  canOpenAssignments,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
@@ -32,6 +33,7 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
     manageOrganization: canManageOrganization(currentUser),
     managePermissions: canManagePermissions(currentUser),
     manageHr: canManageHr(currentUser),
+    manageAssignments: canOpenAssignments(currentUser),
   };
 
   return (

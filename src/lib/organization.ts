@@ -50,9 +50,12 @@ export async function getOrganizationAdminData(organizationId: string) {
   return { organization, members, joinCodes, activeMembers };
 }
 
+// Data pro správu týmů (Týmy a řešitelé): aktivní týmy s členy a počty
+// přiřazení, archivované týmy a aktivní členové kanceláře s jejich současným
+// týmem (člověk může být v jednom týmu — přidáním jinam se přesune).
 export async function getLegalTeamAdminData(organizationId: string) {
   const prisma = getPrisma();
-  const [teams, members] = await Promise.all([
+  const [teams, archivedTeams, members] = await Promise.all([
     prisma.legalTeam.findMany({
       where: { organizationId, archivedAt: null },
       orderBy: { name: "asc" },
@@ -61,15 +64,58 @@ export async function getLegalTeamAdminData(organizationId: string) {
           orderBy: { user: { name: "asc" } },
           include: { user: { select: { id: true, name: true, email: true } } },
         },
+        _count: { select: { projectAssignments: true, caseAssignments: true } },
+      },
+    }),
+    prisma.legalTeam.findMany({
+      where: { organizationId, archivedAt: { not: null } },
+      orderBy: { name: "asc" },
+      select: {
+        id: true,
+        name: true,
+        archivedAt: true,
+        _count: { select: { members: true } },
       },
     }),
     prisma.organizationMember.findMany({
-      where: { organizationId, status: OrganizationMemberStatus.ACTIVE },
+      where: {
+        organizationId,
+        status: OrganizationMemberStatus.ACTIVE,
+        user: { is: { active: true } },
+      },
       orderBy: { user: { name: "asc" } },
-      select: { user: { select: { id: true, name: true, email: true } } },
+      select: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            legalTeamMemberships: {
+              where: { organizationId },
+              select: {
+                legalTeamId: true,
+                legalTeam: { select: { name: true, archivedAt: true } },
+              },
+            },
+          },
+        },
+      },
     }),
   ]);
-  return { teams, users: members.map((member) => member.user) };
+  return {
+    teams,
+    archivedTeams,
+    users: members.map(({ user }) => {
+      const membership = user.legalTeamMemberships[0] ?? null;
+      return {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        currentTeamId: membership?.legalTeamId ?? null,
+        currentTeamName: membership?.legalTeam.name ?? null,
+      };
+    }),
+  };
 }
 
 export type OrganizationModuleView = {

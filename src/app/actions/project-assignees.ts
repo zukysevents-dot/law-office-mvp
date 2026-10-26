@@ -2,101 +2,58 @@
 
 import { revalidatePath } from "next/cache";
 
-import { Prisma } from "@/generated/prisma/client";
-import { OrganizationMemberStatus } from "@/generated/prisma/enums";
+import {
+  parseAssigneeToken,
+  projectAssignmentInclude,
+} from "@/lib/assignments";
 import { writeAuditLog } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
 import { requiredString } from "@/lib/form";
+import {
+  assignmentRevalidationPaths,
+  assignToMatters,
+  loadEditableMatter,
+  resolveAssignee,
+} from "@/lib/matter-assignments.server";
+import { assertCanAccessModule } from "@/lib/module-access.server";
 import { assertCanEditRecord } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
-import { assertCanAccessModule } from "@/lib/module-access.server";
 
-// Přiřazovaný uživatel musí být aktivním členem stejné kanceláře jako ten, kdo
-// přiřazuje (žádné cross-org přiřazení). User nemá přímé organizationId — řeší
-// se přes členství.
-async function assertSameOrgMember(
-  organizationId: string | null | undefined,
-  userId: string,
-) {
-  const prisma = getPrisma();
-  const membership = organizationId
-    ? await prisma.organizationMember.findFirst({
-        where: {
-          userId,
-          organizationId,
-          status: OrganizationMemberStatus.ACTIVE,
-        },
-        select: { id: true },
-      })
-    : null;
-  if (!membership) {
-    throw new Error("Uživatel nepatří do vaší kanceláře.");
+function revalidateProject(projectId: string) {
+  const paths = assignmentRevalidationPaths([
+    { kind: "project", id: projectId, name: "", organizationId: "", projectId: null },
+  ]);
+  for (const path of paths) {
+    revalidatePath(path);
   }
 }
 
-export async function addProjectAssignee(formData: FormData) {
+// Přidání řešitele projektu z detailu: osoba ("user:<id>") nebo celý tým
+// ("team:<id>"). Přiřazovat smí ten, kdo smí projekt upravit (ADMIN/PARTNER,
+// odpovědný nebo řešitel s „Upravuje svoje projekty a případy“) — stejný gate
+// jako editace, žádné nové oprávnění. Přiřazení dostanou notifikaci.
+export async function addProjectAssignment(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
   await assertCanAccessModule(currentUser, "module.projects");
   const projectId = requiredString(formData, "projectId");
+  const token = parseAssigneeToken(formData.get("assignee"));
+  if (!token) {
+    throw new Error("Vyberte tým nebo osobu.");
+  }
+
+  const matter = await loadEditableMatter(prisma, currentUser, "project", projectId);
+  const assignee = await resolveAssignee(prisma, currentUser, token);
+  await assignToMatters(prisma, currentUser, [matter], assignee);
+
+  revalidateProject(projectId);
+}
+
+// Starší tvar formuláře (pole `userId`) — deleguje na addProjectAssignment.
+export async function addProjectAssignee(formData: FormData) {
   const userId = requiredString(formData, "userId");
-
-  const project = await prisma.project.findUniqueOrThrow({
-    where: { id: projectId },
-    select: {
-      id: true,
-      organizationId: true,
-      responsibleUserId: true,
-      assignees: { select: { userId: true } },
-    },
-  });
-  // Přiřazovat smí ten, kdo smí projekt editovat (ADMIN/PARTNER/odpovědný nebo
-  // řešitel LAWYER) — stejný gate jako editace, žádné nové oprávnění.
-  assertCanEditRecord(currentUser, "Project", project);
-  await assertSameOrgMember(currentUser.organizationId, userId);
-
-  // Idempotentní díky @@unique([projectId, userId]); duplicitu tiše přeskoč.
-  const existing = await prisma.projectAssignee.findUnique({
-    where: { projectId_userId: { projectId, userId } },
-    select: { id: true },
-  });
-  if (existing) {
-    return;
-  }
-
-  let assignee;
-  try {
-    assignee = await prisma.projectAssignee.create({
-      data: {
-        organizationId: project.organizationId,
-        projectId,
-        userId,
-        assignedById: currentUser.id,
-      },
-    });
-  } catch (error) {
-    // Souběžné přidání téhož řešitele narazí na @@unique([projectId,userId]);
-    // ber jako idempotentní no-op (řádek už mezitím vznikl).
-    if (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === "P2002"
-    ) {
-      return;
-    }
-    throw error;
-  }
-
-  await writeAuditLog({
-    organizationId: currentUser.organizationId,
-    entityType: "ProjectAssignee",
-    entityId: assignee.id,
-    action: "CREATE",
-    changedById: currentUser.id,
-    newValue: { projectId, userId },
-  });
-
-  revalidatePath("/projects");
-  revalidatePath(`/projects/${projectId}`);
+  formData.set("assignee", `user:${userId}`);
+  await addProjectAssignment(formData);
 }
 
 export async function removeProjectAssignee(formData: FormData) {
@@ -116,7 +73,7 @@ export async function removeProjectAssignee(formData: FormData) {
           id: true,
           organizationId: true,
           responsibleUserId: true,
-          assignees: { select: { userId: true } },
+          ...projectAssignmentInclude,
         },
       },
     },
@@ -134,6 +91,50 @@ export async function removeProjectAssignee(formData: FormData) {
     oldValue: { projectId: assignee.projectId, userId: assignee.userId },
   });
 
-  revalidatePath("/projects");
-  revalidatePath(`/projects/${assignee.projectId}`);
+  revalidateProject(assignee.projectId);
+}
+
+// Odebrání týmu z řešitelů projektu. Členové tím ztratí přístup, pokud ho
+// nemají jinak (osobně, přes jiný tým nebo jako odpovědní).
+export async function removeProjectTeamAssignment(formData: FormData) {
+  const prisma = getPrisma();
+  const currentUser = await getCurrentUser();
+  await assertCanAccessModule(currentUser, "module.projects");
+  const id = requiredString(formData, "id");
+
+  const assignment = await prisma.projectTeamAssignment.findUniqueOrThrow({
+    where: { id },
+    select: {
+      id: true,
+      projectId: true,
+      legalTeamId: true,
+      legalTeam: { select: { name: true } },
+      project: {
+        select: {
+          id: true,
+          organizationId: true,
+          responsibleUserId: true,
+          ...projectAssignmentInclude,
+        },
+      },
+    },
+  });
+  assertCanEditRecord(currentUser, "Project", assignment.project);
+
+  await prisma.projectTeamAssignment.delete({ where: { id } });
+
+  await writeAuditLog({
+    organizationId: currentUser.organizationId,
+    entityType: "ProjectTeamAssignment",
+    entityId: id,
+    action: "DELETE",
+    changedById: currentUser.id,
+    oldValue: {
+      projectId: assignment.projectId,
+      legalTeamId: assignment.legalTeamId,
+      teamName: assignment.legalTeam.name,
+    },
+  });
+
+  revalidateProject(assignment.projectId);
 }

@@ -3,8 +3,9 @@ import { notFound } from "next/navigation";
 
 import { archiveProject, restoreProject } from "@/app/actions/projects";
 import {
-  addProjectAssignee,
+  addProjectAssignment,
   removeProjectAssignee,
+  removeProjectTeamAssignment,
 } from "@/app/actions/project-assignees";
 import { addProjectSubjectRelation } from "@/app/actions/subject-relations";
 import { ArchiveActionForm } from "@/components/archive-action-form";
@@ -20,7 +21,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
+import {
+  personAssigneeDisplaySelect,
+  teamAssignmentDisplaySelect,
+} from "@/lib/assignments";
+import { getTeamOptions } from "@/lib/assignments-overview.server";
 import { getCurrentUser } from "@/lib/auth";
+import { getOrgUserOptions } from "@/lib/org-users";
 import { formatDate, formatHours, formatMoney } from "@/lib/format";
 import {
   options,
@@ -34,6 +41,7 @@ import {
   canArchiveRecords,
   canEditRecord,
   canManageReferences,
+  canOpenAssignments,
   canViewRates,
   caseVisibilityWhere,
   projectVisibilityWhere,
@@ -58,20 +66,14 @@ async function loadProject(id: string) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
 
-  const [project, subjects, users] = await Promise.all([
+  const [project, subjects, users, teamOptions] = await Promise.all([
     prisma.project.findFirst({
       where: andWhere({ id }, projectVisibilityWhere(currentUser)),
       include: {
         mainSubject: { select: { id: true, name: true, ico: true } },
         responsibleUser: { select: { name: true } },
-        assignees: {
-          orderBy: { assignedAt: "asc" },
-          select: {
-            id: true,
-            userId: true,
-            user: { select: { id: true, name: true } },
-          },
-        },
+        assignees: personAssigneeDisplaySelect,
+        teamAssignments: teamAssignmentDisplaySelect,
         subjectRelations: {
           orderBy: { createdAt: "desc" },
           include: {
@@ -139,21 +141,17 @@ async function loadProject(id: string) {
       orderBy: { name: "asc" },
       select: { id: true, name: true, ico: true },
     }),
-    // Kandidáti na řešitele = aktivní členové stejné kanceláře (org-scoped).
-    prisma.organizationMember.findMany({
-      where: {
-        organizationId: currentUser.organizationId ?? undefined,
-        status: "ACTIVE",
-      },
-      orderBy: { user: { name: "asc" } },
-      select: { user: { select: { id: true, name: true } } },
-    }),
+    // Kandidáti na řešitele = aktivní členové a aktivní týmy téže kanceláře.
+    getOrgUserOptions(currentUser),
+    getTeamOptions(prisma, currentUser.organizationId),
   ]);
 
   return {
     project,
     subjects,
-    users: users.map((row) => row.user),
+    users,
+    teamOptions,
+    canOpenAssignments: canOpenAssignments(currentUser),
     canArchive: canArchiveRecords(currentUser),
     canEdit: project ? canEditRecord(currentUser, "Project", project) : false,
     canManageReferences: canManageReferences(currentUser),
@@ -166,6 +164,8 @@ const emptyProjectDetail: ProjectDetailData = {
   project: null,
   subjects: [],
   users: [],
+  teamOptions: [],
+  canOpenAssignments: false,
   canArchive: false,
   canEdit: false,
   canManageReferences: false,
@@ -197,6 +197,8 @@ export default async function ProjectDetailPage({
     project,
     subjects,
     users,
+    teamOptions,
+    canOpenAssignments: showManageLink,
     canArchive,
     canEdit,
     canManageReferences,
@@ -293,13 +295,17 @@ export default async function ProjectDetailPage({
           </Section>
           <AssigneeSection
             title="Řešitelé projektu"
-            assignees={project.assignees}
-            candidates={users}
-            parentField="projectId"
+            kind="project"
             parentId={project.id}
-            addAction={addProjectAssignee}
-            removeAction={removeProjectAssignee}
+            assignees={project.assignees}
+            teams={project.teamAssignments}
+            candidates={users}
+            teamCandidates={teamOptions}
+            addAction={addProjectAssignment}
+            removeUserAction={removeProjectAssignee}
+            removeTeamAction={removeProjectTeamAssignment}
             canEdit={canEdit}
+            manageHref={showManageLink ? "/settings/assignments" : null}
           />
           <Section title="Subjektové vazby projektu">
             {project.subjectRelations.length > 0 ? (

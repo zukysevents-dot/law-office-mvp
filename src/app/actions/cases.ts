@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { Prisma } from "@/generated/prisma/client";
 import { CaseStatus, SubjectRole } from "@/generated/prisma/enums";
 import { setArchived } from "@/lib/archive";
+import { caseAssignmentInclude } from "@/lib/assignments";
 import { auditJson } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
 import {
@@ -14,6 +15,10 @@ import {
   optionalString,
   requiredString,
 } from "@/lib/form";
+import {
+  assignToMatters,
+  resolveAssignee,
+} from "@/lib/matter-assignments.server";
 import { assertUserInOrg } from "@/lib/org-users";
 import {
   andWhere,
@@ -45,13 +50,18 @@ export async function createCase(formData: FormData) {
   const projectId = requiredString(formData, "projectId");
   const responsibleUserId = optionalString(formData, "responsibleUserId");
   await assertUserInOrg(responsibleUserId, currentUser.organizationId);
+  // Volitelný „Tým řešitelů“ (aktivní tým kanceláře), ověřený před založením.
+  const legalTeamId = optionalString(formData, "legalTeamId");
+  const team = legalTeamId
+    ? await resolveAssignee(prisma, currentUser, { kind: "team", id: legalTeamId })
+    : null;
 
-  const legalCase = await prisma.$transaction(async (tx) => {
+  const { legalCase, clientName } = await prisma.$transaction(async (tx) => {
     // Scope by visibility so a case can't be grafted onto a project the user
     // can't see (the ethics wall must hold on writes, not just reads).
     const project = await tx.project.findFirst({
       where: andWhere({ id: projectId }, projectVisibilityWhere(currentUser)),
-      select: { mainSubjectId: true },
+      select: { mainSubjectId: true, mainSubject: { select: { name: true } } },
     });
     if (!project) {
       throw new Error("Projekt nenalezen nebo k němu nemáte oprávnění.");
@@ -103,8 +113,28 @@ export async function createCase(formData: FormData) {
       },
     });
 
-    return created;
+    return { legalCase: created, clientName: project.mainSubject.name };
   });
+
+  if (team) {
+    await assignToMatters(
+      prisma,
+      currentUser,
+      [
+        {
+          kind: "case",
+          id: legalCase.id,
+          name: legalCase.name,
+          clientName,
+          organizationId: legalCase.organizationId,
+          projectId: legalCase.projectId,
+        },
+      ],
+      team,
+    );
+    revalidatePath("/settings/assignments");
+    revalidatePath(`/projects/${legalCase.projectId}`);
+  }
 
   revalidatePath("/cases");
   redirect(`/cases/${legalCase.id}`);
@@ -122,7 +152,7 @@ export async function updateCase(formData: FormData) {
 
   const oldCase = await prisma.case.findUniqueOrThrow({
     where: { id: caseId },
-    include: { assignees: { select: { userId: true } } },
+    include: caseAssignmentInclude,
   });
   assertCanEditRecord(currentUser, "Case", oldCase);
   await assertUserInOrg(responsibleUserId, currentUser.organizationId);

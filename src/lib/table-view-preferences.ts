@@ -2,7 +2,14 @@ export type TableColumnDefinition = {
   id: string;
   label: string;
   defaultVisible: boolean;
+  // Kdy sloupec přibyl (ISO datum). Výchozí viditelný sloupec se doplní i
+  // uživatelům, jejichž uložený výběr je starší — výběr uložený později už je
+  // vědomá volba (sloupec mohl schovat) a respektuje se.
+  introducedAt?: string;
 };
+
+// Sloupec „Řešitelé“ (balík 04 – týmy a řešitelé).
+const ASSIGNEES_INTRODUCED_AT = "2026-10-26T00:00:00.000Z";
 
 type TableViewConfig = {
   label: string;
@@ -96,6 +103,12 @@ export const tableViewConfigs = {
         label: "Odpovědný uživatel",
         defaultVisible: true,
       },
+      {
+        id: "assignees",
+        label: "Řešitelé",
+        defaultVisible: true,
+        introducedAt: ASSIGNEES_INTRODUCED_AT,
+      },
       { id: "status", label: "Status", defaultVisible: true },
       { id: "hourlyRate", label: "Hodinová sazba", defaultVisible: true },
       { id: "sharePointUrl", label: "SharePoint URL", defaultVisible: true },
@@ -118,6 +131,12 @@ export const tableViewConfigs = {
         id: "responsibleUser",
         label: "Odpovědný uživatel",
         defaultVisible: true,
+      },
+      {
+        id: "assignees",
+        label: "Řešitelé",
+        defaultVisible: true,
+        introducedAt: ASSIGNEES_INTRODUCED_AT,
       },
       { id: "status", label: "Status", defaultVisible: true },
       { id: "sharePointUrl", label: "SharePoint URL", defaultVisible: true },
@@ -180,6 +199,8 @@ export function normalizeVisibleColumns(
   savedColumns: unknown,
   allColumns: readonly TableColumnDefinition[],
   defaultColumns: readonly string[],
+  // Kdy byl výběr naposledy uložen (jen při čtení uložené preference).
+  savedAt?: Date | null,
 ) {
   const availableColumns = allColumns.map((column) => column.id);
   const fallback = defaultColumns.filter((column) =>
@@ -203,6 +224,20 @@ export function normalizeVisibleColumns(
   if (hasStaleColumns) {
     for (const column of fallback) {
       selectedColumns.add(column);
+    }
+  }
+
+  // Nově přidané výchozí sloupce doplnit do výběru uloženého před jejich
+  // zavedením (jinak by je uživatel s uloženým výběrem nikdy neviděl).
+  if (savedAt) {
+    for (const column of allColumns) {
+      if (
+        column.defaultVisible &&
+        column.introducedAt &&
+        savedAt.getTime() < new Date(column.introducedAt).getTime()
+      ) {
+        selectedColumns.add(column.id);
+      }
     }
   }
 

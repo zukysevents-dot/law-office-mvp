@@ -8,6 +8,10 @@
  * takže neviditelný spis skončí 404 dřív, než se sáhne na Graph.
  */
 
+import {
+  caseAssignmentInclude,
+  projectAssignmentInclude,
+} from "@/lib/assignments";
 import { getCurrentUser } from "@/lib/auth";
 import {
   andWhere,
@@ -50,6 +54,9 @@ export type MatterFolder = {
     organizationId: string;
     responsibleUserId?: string | null;
     assignees?: { userId: string }[];
+    teamAssignments?: Array<{
+      legalTeam: { archivedAt: Date | null; members: { userId: string }[] };
+    }>;
   };
 };
 
@@ -100,7 +107,7 @@ export async function resolveMatterFolder(
         name: true,
         sharepointUrl: true,
         responsibleUserId: true,
-        assignees: { select: { userId: true } },
+        ...projectAssignmentInclude,
       },
     });
     if (!record) {
@@ -119,6 +126,7 @@ export async function resolveMatterFolder(
         organizationId: record.organizationId,
         responsibleUserId: record.responsibleUserId,
         assignees: record.assignees,
+        teamAssignments: record.teamAssignments,
       },
     };
   }
@@ -132,7 +140,7 @@ export async function resolveMatterFolder(
       fileNumber: true,
       sharepointUrl: true,
       responsibleUserId: true,
-      assignees: { select: { userId: true } },
+      ...caseAssignmentInclude,
       project: { select: { id: true, name: true } },
     },
   });
@@ -152,6 +160,7 @@ export async function resolveMatterFolder(
       organizationId: record.organizationId,
       responsibleUserId: record.responsibleUserId,
       assignees: record.assignees,
+      teamAssignments: record.teamAssignments,
     },
   };
 }
