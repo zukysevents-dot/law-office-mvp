@@ -28,12 +28,17 @@ const modules: Array<{
   },
   { route: "/billing", heading: "Fakturace", section: "Položky k fakturaci" },
   { route: "/billing/invoices", heading: "Faktury", section: "Přehled faktur" },
-  { route: "/billing/invoices/new", heading: "Nová faktura", section: "Klient" },
+  { route: "/billing/invoices/new", heading: "Nová faktura", section: "Klient a spis" },
   { route: "/billing/retainers", heading: "Paušály", section: "Přehled paušálů" },
   {
     route: "/billing/approvals",
     heading: "Položky ke schválení",
     section: "Ke schválení",
+  },
+  {
+    route: "/work-logs/approvals",
+    heading: "Položky ke schválení",
+    section: "Filtry",
   },
   { route: "/reports", heading: "Reporty a exporty", section: "Reporty" },
   { route: "/reports/hours", heading: "Měsíční přehled hodin", section: "Filtry" },

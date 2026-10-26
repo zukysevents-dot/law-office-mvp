@@ -62,6 +62,9 @@ s heslem `demo1234` (viz `SEED_USER_PASSWORD`).
 | `responsive-and-accessibility.spec.ts` | 3 viewporty, jediný `h1`, popisky, klávesnice, hlavičky tabulek, screenshoty |
 | `overlays.spec.ts` | pop-upy (paleta, výkaz, sloupce, potvrzení, mobilní menu, landing): ×, Esc, klik mimo bez prokliknutí |
 | `responsiveness.spec.ts` | akce se projeví bez reloadu, pending stav tlačítek, rychlá navigace |
+| `worklog-duplicate.spec.ts` | duplikace výkazu ze seznamu i z úpravy, dnešní datum, koncipient bez sazby, neplatné ID |
+| `billing-pickers.spec.ts` | fakturace: subjekt → jen jeho projekty a případy (filtr, nová faktura, paušál, úprava výkazu) |
+| `billing-approvals.spec.ts` | fronta ke schválení: filtry v URL, celý popis úkonu, hromadné schválení/zamítnutí, vstup z výkazů, role, mobil |
 | `users-invitations.spec.ts` | založení uživatele, pozvánka (SMTP vypnuté), znovuodeslání, `/set-password` |
 
 Pomocné funkce jsou v `tests/e2e/support/helpers.ts`.

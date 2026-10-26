@@ -755,18 +755,16 @@ test.describe("praktikant a matice oprávnění", () => {
       ).toBeVisible();
       await expect(intern.getByText("Přístup odepřen")).toHaveCount(0);
       const card = intern
-        .locator("form")
-        .filter({ has: intern.locator(`input[name="description"][value="${description}"]`) });
+        .getByTestId("approval-card")
+        .filter({ hasText: description });
       await expect(card).toHaveCount(1);
       // Bez „Vidí sazby a částky“ schvalovatel sazbu nevidí.
       await expect(card.getByLabel("Sazba")).toHaveCount(0);
       await submitAndAwaitAction(
         intern,
-        card.getByRole("button", { name: "Schválit" }),
+        card.getByRole("button", { name: "Schválit", exact: true }),
       );
-      await expect(
-        intern.locator(`input[name="description"][value="${description}"]`),
-      ).toHaveCount(0);
+      await expect(card).toHaveCount(0);
       await expectNoErrorPage(intern);
     } finally {
       await page.goto(subjectUrl);

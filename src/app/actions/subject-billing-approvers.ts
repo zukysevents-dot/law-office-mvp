@@ -14,6 +14,7 @@ function revalidateBillingApprovers(subjectId: string) {
   revalidatePath(`/subjects/${subjectId}`);
   revalidatePath("/work-logs");
   revalidatePath("/billing/approvals");
+  revalidatePath("/work-logs/approvals");
   revalidatePath("/dashboard");
 }
 

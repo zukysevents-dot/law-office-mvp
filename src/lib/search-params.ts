@@ -36,3 +36,29 @@ export function parseDateBoundary(
   const date = new Date(`${value}T${time}Z`);
   return Number.isNaN(date.getTime()) ? undefined : date;
 }
+
+// Stable React key for a GET filter form, derived from the current URL query.
+// Filter forms are uncontrolled (defaultValue) and the matter cascade keeps its
+// own state, so a soft navigation to a different query (e.g. "Zrušit filtry")
+// would otherwise keep showing the old selections and silently re-apply them on
+// the next submit. Keying the form on the query remounts it with fresh values.
+export function filterFormKey(
+  params: Record<string, SearchParamValue>,
+  ignore: readonly string[] = [],
+): string {
+  const entries: Array<[string, string]> = [];
+  for (const [key, value] of Object.entries(params)) {
+    if (ignore.includes(key) || value === undefined) {
+      continue;
+    }
+    for (const item of Array.isArray(value) ? value : [value]) {
+      if (item) {
+        entries.push([key, item]);
+      }
+    }
+  }
+  entries.sort(([a, av], [b, bv]) =>
+    a === b ? (av < bv ? -1 : av > bv ? 1 : 0) : a < b ? -1 : 1,
+  );
+  return new URLSearchParams(entries).toString() || "all";
+}

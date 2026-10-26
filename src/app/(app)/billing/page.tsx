@@ -1,5 +1,6 @@
 import { FileSpreadsheet, FileDown } from "lucide-react";
 
+import { CascadingMatterSelect } from "@/components/cascading-matter-select";
 import { Field, SelectInput, TextInput } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
@@ -17,6 +18,7 @@ import {
   readBillingFilters,
   type BillingWorkLog,
 } from "@/lib/billing";
+import { approvalFilterQuery } from "@/lib/billing-approvals";
 import { safeQuery } from "@/lib/db-safe";
 import {
   formatCaseLabel,
@@ -26,7 +28,7 @@ import {
 } from "@/lib/format";
 import { getOrgUserOptions } from "@/lib/org-users";
 import { getPrisma } from "@/lib/prisma";
-import { filterQuery, firstParam } from "@/lib/search-params";
+import { filterFormKey, filterQuery, firstParam } from "@/lib/search-params";
 import {
   andWhere,
   canManageInvoices,
@@ -55,8 +57,13 @@ type BillingPageData = {
   byCase: SummaryRow[];
   totals: { hours: number; amount: number; count: number };
   subjects: Array<{ id: string; name: string; ico: string | null }>;
-  projects: Array<{ id: string; name: string }>;
-  cases: Array<{ id: string; name: string; project: { name: string } }>;
+  projects: Array<{ id: string; name: string; mainSubjectId: string }>;
+  cases: Array<{
+    id: string;
+    name: string;
+    projectId: string;
+    project: { name: string };
+  }>;
   users: Array<{ id: string; name: string }>;
 };
 
@@ -132,12 +139,17 @@ export default async function BillingPage({ searchParams }: BillingProps) {
         prisma.project.findMany({
           where: andWhere({ archivedAt: null }, projectVisibilityWhere(currentUser)),
           orderBy: { name: "asc" },
-          select: { id: true, name: true },
+          select: { id: true, name: true, mainSubjectId: true },
         }),
         prisma.case.findMany({
           where: andWhere({ archivedAt: null }, caseVisibilityWhere(currentUser)),
           orderBy: { name: "asc" },
-          select: { id: true, name: true, project: { select: { name: true } } },
+          select: {
+            id: true,
+            name: true,
+            projectId: true,
+            project: { select: { name: true } },
+          },
         }),
         getOrgUserOptions(currentUser),
       ]);
@@ -168,6 +180,9 @@ export default async function BillingPage({ searchParams }: BillingProps) {
   );
 
   const query = filterQuery(filters);
+  // The approval queue understands the same client/project/case/worker/date
+  // filters, so "Ke schválení" opens it already narrowed.
+  const approvalQuery = approvalFilterQuery(filters);
   const exportSuffix = query ? `&${query}` : "";
 
   if (result.databaseReady && !result.data.allowed) {
@@ -193,7 +208,14 @@ export default async function BillingPage({ searchParams }: BillingProps) {
         description="Fakturační podklady – schválené a fakturovatelné výkazy práce, souhrny a export."
         action={
           <div className="flex gap-2">
-            <ButtonLink href="/billing/approvals" variant="secondary">
+            <ButtonLink
+              href={
+                approvalQuery
+                  ? `/billing/approvals?${approvalQuery}`
+                  : "/billing/approvals"
+              }
+              variant="secondary"
+            >
               Ke schválení
             </ButtonLink>
             <ButtonLink href="/billing/retainers" variant="secondary">
@@ -205,39 +227,31 @@ export default async function BillingPage({ searchParams }: BillingProps) {
       />
       <DatabaseNotice databaseReady={result.databaseReady} error={result.error} />
       <Section title="Filtry">
-        <form className="grid gap-4">
+        <form key={filterFormKey(params)} className="grid gap-4">
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            <Field label="Subjekt">
-              <SelectInput name="subjectId" defaultValue={filters.subjectId}>
-                <option value="">Všechny subjekty</option>
-                {result.data.subjects.map((subject) => (
-                  <option key={subject.id} value={subject.id}>
-                    {subject.name}
-                    {subject.ico ? `, IČO ${subject.ico}` : ""}
-                  </option>
-                ))}
-              </SelectInput>
-            </Field>
-            <Field label="Projekt">
-              <SelectInput name="projectId" defaultValue={filters.projectId}>
-                <option value="">Všechny projekty</option>
-                {result.data.projects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-              </SelectInput>
-            </Field>
-            <Field label="Případ">
-              <SelectInput name="caseId" defaultValue={filters.caseId}>
-                <option value="">Všechny případy</option>
-                {result.data.cases.map((legalCase) => (
-                  <option key={legalCase.id} value={legalCase.id}>
-                    {legalCase.name} / {legalCase.project.name}
-                  </option>
-                ))}
-              </SelectInput>
-            </Field>
+            {/* Subjekt → jen jeho projekty → jen jejich případy (stejná kaskáda
+                jako ve výkazech, úkolech a případech). */}
+            <CascadingMatterSelect
+              subjects={result.data.subjects.map((subject) => ({
+                id: subject.id,
+                name: subject.ico
+                  ? `${subject.name}, IČO ${subject.ico}`
+                  : subject.name,
+              }))}
+              projects={result.data.projects}
+              cases={result.data.cases.map((legalCase) => ({
+                id: legalCase.id,
+                name: legalCase.name,
+                projectId: legalCase.projectId,
+                projectName: legalCase.project.name,
+              }))}
+              defaultSubjectId={filters.subjectId}
+              defaultProjectId={filters.projectId}
+              defaultCaseId={filters.caseId}
+              subjectLabel="Subjekt"
+              subjectPlaceholder="Všechny subjekty"
+              filterMode
+            />
             <Field label="Pracovník">
               <SelectInput name="userId" defaultValue={filters.userId}>
                 <option value="">Všichni pracovníci</option>

@@ -30,6 +30,7 @@ import {
   subjectVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { filterFormKey } from "@/lib/search-params";
 import {
   getCurrentTableView,
   getDefaultTableView,
@@ -160,7 +161,10 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
         error={result.error}
       />
       <Section>
-        <form className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <form
+          key={filterFormKey(params)}
+          className="grid gap-3 md:grid-cols-2 xl:grid-cols-4"
+        >
           <CascadingMatterSelect
             subjects={result.data.subjects}
             projects={result.data.projects}

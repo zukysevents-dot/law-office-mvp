@@ -1,4 +1,5 @@
 import { createInvoiceFromWorkLogs } from "@/app/actions/invoices";
+import { CascadingMatterSelect } from "@/components/cascading-matter-select";
 import { Field, SelectInput } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
@@ -20,6 +21,7 @@ import {
   formatHours,
   formatMoney,
 } from "@/lib/format";
+import { normalizeInvoiceMatter } from "@/lib/invoices";
 import {
   andWhere,
   canManageInvoices,
@@ -34,9 +36,18 @@ export const dynamic = "force-dynamic";
 
 type NewInvoiceData = {
   allowed: boolean;
-  subjects: Array<{ id: string; name: string }>;
+  subjects: Array<{ id: string; name: string; ico: string | null }>;
+  projects: Array<{ id: string; name: string; mainSubjectId: string }>;
+  cases: Array<{
+    id: string;
+    name: string;
+    projectId: string;
+    project: { name: string; mainSubjectId: string };
+  }>;
   workLogs: BillingWorkLog[];
   selectedSubjectId: string;
+  selectedProjectId: string;
+  selectedCaseId: string;
   issuers: Array<{ id: string; legalName: string }>;
   defaultIssuerName: string;
 };
@@ -54,12 +65,18 @@ export default async function NewInvoicePage({ searchParams }: NewInvoiceProps) 
 
   const params = await searchParams;
   const selectedSubjectId = firstParam(params, "subjectId") ?? "";
+  const requestedProjectId = firstParam(params, "projectId") ?? "";
+  const requestedCaseId = firstParam(params, "caseId") ?? "";
 
   const emptyData: NewInvoiceData = {
     allowed: false,
     subjects: [],
+    projects: [],
+    cases: [],
     workLogs: [],
     selectedSubjectId,
+    selectedProjectId: "",
+    selectedCaseId: "",
     issuers: [],
     defaultIssuerName: "Kancelář",
   };
@@ -75,15 +92,44 @@ export default async function NewInvoicePage({ searchParams }: NewInvoiceProps) 
         return emptyData;
       }
 
-      const [subjects, issuers, profile] = await Promise.all([
+      // Jen klienti/projekty/případy, ke kterým má uživatel viditelné schválené
+      // nevyfakturované výkazy — kaskáda pak nabízí jen to, co jde fakturovat.
+      const invoiceableVisible = andWhere(
+        invoiceableWorkLogWhere,
+        workLogVisibilityWhere(currentUser),
+      );
+      const [subjects, projects, cases, issuers, profile] = await Promise.all([
         prisma.subject.findMany({
           where: {
             organizationId: currentUser.organizationId,
-            workLogs: { some: invoiceableWorkLogWhere },
+            workLogs: { some: invoiceableVisible },
           },
           orderBy: { name: "asc" },
-          select: { id: true, name: true },
+          select: { id: true, name: true, ico: true },
           take: 500,
+        }),
+        prisma.project.findMany({
+          where: {
+            organizationId: currentUser.organizationId,
+            workLogs: { some: invoiceableVisible },
+          },
+          orderBy: { name: "asc" },
+          select: { id: true, name: true, mainSubjectId: true },
+          take: 1000,
+        }),
+        prisma.case.findMany({
+          where: {
+            organizationId: currentUser.organizationId,
+            workLogs: { some: invoiceableVisible },
+          },
+          orderBy: { name: "asc" },
+          select: {
+            id: true,
+            name: true,
+            projectId: true,
+            project: { select: { name: true, mainSubjectId: true } },
+          },
+          take: 1000,
         }),
         prisma.billingIssuer.findMany({
           where: {
@@ -99,12 +145,27 @@ export default async function NewInvoicePage({ searchParams }: NewInvoiceProps) 
         }),
       ]);
 
+      const matter = normalizeInvoiceMatter(
+        {
+          subjectId: selectedSubjectId,
+          projectId: requestedProjectId,
+          caseId: requestedCaseId,
+        },
+        projects,
+        cases.map((legalCase) => ({
+          id: legalCase.id,
+          projectId: legalCase.projectId,
+          mainSubjectId: legalCase.project.mainSubjectId,
+        })),
+      );
+
       const workLogs = selectedSubjectId
         ? await prisma.workLog.findMany({
             where: andWhere(
-              invoiceableWorkLogWhere,
-              workLogVisibilityWhere(currentUser),
+              invoiceableVisible,
               { subjectId: selectedSubjectId },
+              matter.projectId ? { projectId: matter.projectId } : undefined,
+              matter.caseId ? { caseId: matter.caseId } : undefined,
             ),
             orderBy: [{ workDate: "asc" }],
             include: billingWorkLogInclude,
@@ -115,8 +176,12 @@ export default async function NewInvoicePage({ searchParams }: NewInvoiceProps) 
       return {
         allowed: true,
         subjects,
+        projects,
+        cases,
         workLogs,
         selectedSubjectId,
+        selectedProjectId: matter.projectId,
+        selectedCaseId: matter.caseId,
         issuers,
         defaultIssuerName: profile?.legalName ?? "Kancelář",
       };
@@ -130,7 +195,7 @@ export default async function NewInvoicePage({ searchParams }: NewInvoiceProps) 
       <>
         <PageHeader
           title="Nová faktura"
-          description="Vyberte klienta a schválené výkazy, ze kterých vznikne rozpracovaná faktura."
+          description="Vyberte klienta, případně jeho projekt a případ, a schválené výkazy, ze kterých vznikne rozpracovaná faktura."
         />
         <Section title="Přístup odepřen">
           <p className="text-sm text-stone-600">
@@ -145,7 +210,7 @@ export default async function NewInvoicePage({ searchParams }: NewInvoiceProps) 
     <>
       <PageHeader
         title="Nová faktura"
-        description="Vyberte klienta a schválené výkazy, ze kterých vznikne rozpracovaná faktura."
+        description="Vyberte klienta, případně jeho projekt a případ, a schválené výkazy, ze kterých vznikne rozpracovaná faktura."
         action={
           <ButtonLink href="/billing/invoices" variant="secondary">
             Zpět na faktury
@@ -154,22 +219,39 @@ export default async function NewInvoicePage({ searchParams }: NewInvoiceProps) 
       />
       <DatabaseNotice databaseReady={result.databaseReady} error={result.error} />
 
-      <Section title="Klient">
+      <Section title="Klient a spis">
         {data.subjects.length > 0 ? (
-          <form method="get" className="flex flex-wrap items-end gap-3">
-            <Field label="Klient s nevyfakturovanými výkazy" className="min-w-64">
-              <SelectInput name="subjectId" defaultValue={data.selectedSubjectId}>
-                <option value="">— vyberte klienta —</option>
-                {data.subjects.map((subject) => (
-                  <option key={subject.id} value={subject.id}>
-                    {subject.name}
-                  </option>
-                ))}
-              </SelectInput>
-            </Field>
-            <Button type="submit" variant="secondary">
-              Načíst výkazy
-            </Button>
+          <form method="get" className="grid gap-4">
+            {/* Klient → jen jeho projekty → jen jejich případy. Projekt a případ
+                jsou volitelné: bez nich se fakturuje za celého klienta. */}
+            <CascadingMatterSelect
+              subjects={data.subjects.map((subject) => ({
+                id: subject.id,
+                name: subject.ico
+                  ? `${subject.name}, IČO ${subject.ico}`
+                  : subject.name,
+              }))}
+              projects={data.projects}
+              cases={data.cases.map((legalCase) => ({
+                id: legalCase.id,
+                name: legalCase.name,
+                projectId: legalCase.projectId,
+                projectName: legalCase.project.name,
+              }))}
+              defaultSubjectId={data.selectedSubjectId}
+              defaultProjectId={data.selectedProjectId}
+              defaultCaseId={data.selectedCaseId}
+              subjectLabel="Klient s nevyfakturovanými výkazy"
+              subjectPlaceholder="— vyberte klienta —"
+              projectPlaceholder="Všechny projekty klienta"
+              casePlaceholder="Všechny případy"
+              requireSubject
+            />
+            <div>
+              <Button type="submit" variant="secondary">
+                Načíst výkazy
+              </Button>
+            </div>
           </form>
         ) : (
           <EmptyState>
@@ -187,6 +269,8 @@ export default async function NewInvoicePage({ searchParams }: NewInvoiceProps) 
                 name="subjectId"
                 value={data.selectedSubjectId}
               />
+              <input type="hidden" name="projectId" value={data.selectedProjectId} />
+              <input type="hidden" name="caseId" value={data.selectedCaseId} />
               <Field label="Fakturující subjekt" className="max-w-md">
                 <SelectInput name="issuerId" defaultValue="">
                   <option value="">{data.defaultIssuerName} (kancelář)</option>
@@ -240,7 +324,9 @@ export default async function NewInvoicePage({ searchParams }: NewInvoiceProps) 
             </form>
           ) : (
             <EmptyState>
-              Tento klient nemá žádné schválené nevyfakturované výkazy.
+              {data.selectedProjectId || data.selectedCaseId
+                ? "Pro zvolený projekt/případ nemá klient žádné schválené nevyfakturované výkazy."
+                : "Tento klient nemá žádné schválené nevyfakturované výkazy."}
             </EmptyState>
           )}
         </Section>

@@ -1,4 +1,4 @@
-import { FileText, Plus } from "lucide-react";
+import { ClipboardCheck, Copy, FileText, Plus } from "lucide-react";
 
 import {
   archiveWorkLog,
@@ -23,6 +23,12 @@ import {
   archiveFilterValue,
 } from "@/lib/archive-filter";
 import { getCurrentUser } from "@/lib/auth";
+import { approvalFilterQuery } from "@/lib/billing-approvals";
+import {
+  countApprovalQueue,
+  getApprovalAccess,
+} from "@/lib/billing-approvals.server";
+import { isModuleEnabled } from "@/lib/entitlements";
 import { safeQuery } from "@/lib/db-safe";
 import {
   formatCaseLabel,
@@ -33,7 +39,7 @@ import {
 } from "@/lib/format";
 import { DAY_MS, fulfillmentPercent, weekStartUtcMs } from "@/lib/hours-plan";
 import { getOrgUserOptions } from "@/lib/org-users";
-import { firstParam } from "@/lib/search-params";
+import { filterFormKey, firstParam } from "@/lib/search-params";
 import {
   approvalStatusLabels,
   billingStatusLabels,
@@ -49,11 +55,15 @@ import {
   restrictTableView,
 } from "@/lib/table-view-preference-service";
 import type { TableViewState } from "@/lib/table-view-preferences";
-import { BillingStatus } from "@/generated/prisma/enums";
+import { BillingStatus, ModuleKey } from "@/generated/prisma/enums";
+import {
+  buildWorkLogDuplicatePrefill,
+  todayDateInputValue,
+  type WorkLogDuplicatePrefill,
+} from "@/lib/work-logs/duplicate";
 import {
   andWhere,
   billingApproverWorkLogWhere,
-  canApproveWorkLogs,
   canArchiveRecords,
   canEditRecord,
   canSetBillableStatus,
@@ -116,6 +126,10 @@ type WorkLogsPageData = {
   canViewRates: boolean;
   canSetBillable: boolean;
   canApprove: boolean;
+  /** null = no link (not an approver or the billing module is off). */
+  approvalQueueCount: number | null;
+  /** undefined = no ?duplicate, null = source not found / not visible. */
+  duplicatePrefill: WorkLogDuplicatePrefill | null | undefined;
   timeIncrementMinutes: number;
   // Souhrn hodin přihlášeného uživatele (jeho vlastní výkazy).
   monthSummary: {
@@ -138,6 +152,10 @@ function numberParam(value: string) {
   const parsed = Number(value.replace(",", "."));
   return Number.isFinite(parsed) ? parsed : null;
 }
+
+// Query params that only open the create/duplicate dialog — they must not remount
+// (and so reset) the filter form.
+const WORK_LOG_DIALOG_PARAMS = ["new", "duplicate", "hours"] as const;
 
 export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
   const accessUser = await getCurrentUser();
@@ -163,8 +181,12 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
   // The floating timer stops into this form with ?hours=<elapsed> so the most
   // repeated daily action needs zero manual time math.
   const hoursPrefill = firstParam(params, "hours");
+  // "Duplikovat" opens the same dialog prefilled from an existing work log.
+  const duplicateId = firstParam(params, "duplicate");
   const showNewDialog =
-    firstParam(params, "new") === "1" || Boolean(hoursPrefill);
+    firstParam(params, "new") === "1" ||
+    Boolean(hoursPrefill) ||
+    Boolean(duplicateId);
 
   const result = await safeQuery<WorkLogsPageData>(
     {
@@ -179,6 +201,8 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
       canViewRates: false,
       canSetBillable: false,
       canApprove: false,
+      approvalQueueCount: null,
+      duplicatePrefill: undefined,
       timeIncrementMinutes: 15,
       monthSummary: { billable: 0, needsApproval: 0, internal: 0, total: 0 },
       weekHours: 0,
@@ -189,16 +213,8 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
       const prisma = getPrisma();
       const currentUser = await getCurrentUser();
       const tableView = await getCurrentTableView("workLogs");
-      const canApproveAll = canApproveWorkLogs(currentUser);
-      const approvalAssignmentCount = canApproveAll
-        ? 0
-        : await prisma.subjectBillingApprover.count({
-            where: {
-              organizationId: currentUser.organizationId,
-              userId: currentUser.id,
-            },
-          });
-      const canApprove = canApproveAll || approvalAssignmentCount > 0;
+      const approvalAccess = await getApprovalAccess(prisma, currentUser);
+      const { canApproveAll, canApprove } = approvalAccess;
       const visibleWorkLogsWhere = canApproveAll
         ? workLogVisibilityWhere(currentUser)
         : canApprove
@@ -233,6 +249,8 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
         weekAgg,
         hoursPlan,
         organization,
+        approvalQueueCount,
+        duplicateSource,
       ] = await Promise.all([
         prisma.workLog.findMany({
           where: andWhere(
@@ -355,6 +373,30 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
           where: { id: currentUser.organizationId },
           select: { billingTimeIncrementMinutes: true },
         }),
+        canApprove &&
+        (await isModuleEnabled(currentUser.organizationId, ModuleKey.BILLING))
+          ? countApprovalQueue(prisma, currentUser, approvalAccess)
+          : null,
+        // Source of "Duplikovat" — same scope as the list (org + visibility /
+        // approver scope), so an unknown or foreign ID simply isn't found.
+        duplicateId
+          ? prisma.workLog.findFirst({
+              where: andWhere({ id: duplicateId }, visibleWorkLogsWhere),
+              select: {
+                subjectId: true,
+                projectId: true,
+                caseId: true,
+                taskId: true,
+                hours: true,
+                hourlyRate: true,
+                billingStatus: true,
+                legalArea: true,
+                internalCategory: true,
+                description: true,
+                workDate: true,
+              },
+            })
+          : null,
       ]);
 
       const sumGroups = (predicate: (group: (typeof monthGroups)[number]) => boolean) =>
@@ -383,6 +425,27 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
         total,
       };
       const weekHours = Number(weekAgg._sum.hours ?? 0);
+      // Only matters the user can still pick (visible + not archived) are
+      // prefilled; the copy is validated again by createWorkLog.
+      const duplicatePrefill = duplicateId
+        ? duplicateSource
+          ? buildWorkLogDuplicatePrefill(
+              duplicateSource,
+              {
+                subjectIds: new Set(subjects.map((subject) => subject.id)),
+                projectIds: new Set(projects.map((project) => project.id)),
+                caseIds: new Set(cases.map((legalCase) => legalCase.id)),
+                tasks: new Map(
+                  tasks.map((task) => [
+                    task.id,
+                    { projectId: task.projectId, caseId: task.caseId },
+                  ]),
+                ),
+              },
+              canViewRates(currentUser),
+            )
+          : null
+        : undefined;
 
       return {
         workLogs: workLogs.map((workLog) => ({
@@ -399,6 +462,8 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
         canViewRates: canViewRates(currentUser),
         canSetBillable: canSetBillableStatus(currentUser),
         canApprove,
+        approvalQueueCount,
+        duplicatePrefill,
         timeIncrementMinutes:
           organization?.billingTimeIncrementMinutes ?? 15,
         monthSummary,
@@ -449,7 +514,12 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
     : "/work-logs/timesheet";
   const closeDialogParams = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
-    if (key === "new" || key === "hours" || value === undefined) {
+    if (
+      key === "new" ||
+      key === "hours" ||
+      key === "duplicate" ||
+      value === undefined
+    ) {
       continue;
     }
     for (const item of Array.isArray(value) ? value : [value]) {
@@ -457,6 +527,23 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
     }
   }
   const closeDialogQuery = closeDialogParams.toString();
+  // "Duplikovat" keeps the current filters, so closing the dialog returns to
+  // the same filtered list.
+  const duplicateHref = (id: string) => {
+    const query = new URLSearchParams(closeDialogParams);
+    query.set("duplicate", id);
+    return `/work-logs?${query.toString()}`;
+  };
+  const duplicatePrefill = result.data.duplicatePrefill;
+  const isDuplicate = Boolean(duplicatePrefill);
+  const approvalQuery = approvalFilterQuery({
+    subjectId,
+    projectId,
+    caseId,
+    userId,
+    dateFrom,
+    dateTo,
+  });
   const closeDialogHref = closeDialogQuery
     ? `/work-logs?${closeDialogQuery}`
     : "/work-logs";
@@ -486,7 +573,20 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
             : "Evidence vykázané práce a odpracovaného času."
         }
         action={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            {result.data.approvalQueueCount !== null ? (
+              <ButtonLink
+                href={
+                  approvalQuery
+                    ? `/work-logs/approvals?${approvalQuery}`
+                    : "/work-logs/approvals"
+                }
+                variant="secondary"
+              >
+                <ClipboardCheck className="h-4 w-4" aria-hidden="true" />
+                Ke schválení ({result.data.approvalQueueCount})
+              </ButtonLink>
+            ) : null}
             <ButtonLink href={timesheetHref} variant="secondary">
               <FileText className="h-4 w-4" aria-hidden="true" />
               Výkaz pro klienta
@@ -555,7 +655,10 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
         </div>
       </Section>
       <Section title="Filtry">
-        <form className="grid gap-4">
+        <form
+          key={filterFormKey(params, WORK_LOG_DIALOG_PARAMS)}
+          className="grid gap-4"
+        >
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <CascadingMatterSelect
               subjects={result.data.subjects.map((subject) => ({
@@ -749,6 +852,14 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
                             Upravit
                           </ButtonLink>
                         ) : null}
+                        <ButtonLink
+                          href={duplicateHref(log.id)}
+                          variant="ghost"
+                          className="h-8 px-3"
+                        >
+                          <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                          Duplikovat
+                        </ButtonLink>
                         {result.data.canArchive ? (
                           <ArchiveActionForm
                             action={log.archivedAt ? restoreWorkLog : archiveWorkLog}
@@ -771,8 +882,24 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
       <WorkLogCreateDialog
         open={showNewDialog}
         closeHref={closeDialogHref}
+        title={isDuplicate ? "Duplikovat výkaz práce" : "Nový výkaz práce"}
+        description={
+          duplicatePrefill
+            ? `Kopie výkazu z ${formatDateUtc(duplicatePrefill.sourceDate)}. Upravte datum a popis a uložte jako nový výkaz.`
+            : duplicatePrefill === null
+              ? "Výkaz pro duplikaci nebyl nalezen nebo k němu nemáte přístup."
+              : undefined
+        }
       >
-        <form action={createWorkLog} className="grid gap-4">
+        {/* key: switching ?duplicate=a → b re-mounts the uncontrolled defaults. */}
+        <form
+          key={duplicateId || "new"}
+          action={createWorkLog}
+          className="grid gap-4"
+        >
+          {duplicatePrefill ? (
+            <input type="hidden" name="sourceWorkLogId" value={duplicateId} />
+          ) : null}
           {/* Cascading subject → project → case → task. Choosing a project/case
               narrows the task list to only that matter's tasks. */}
           <CascadingMatterSelect
@@ -792,6 +919,10 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
             tasks={result.data.tasks}
             includeTask
             subjectLabel="Subjekt"
+            defaultSubjectId={duplicatePrefill?.subjectId}
+            defaultProjectId={duplicatePrefill?.projectId}
+            defaultCaseId={duplicatePrefill?.caseId}
+            defaultTaskId={duplicatePrefill?.taskId}
           />
           <div
             className={
@@ -804,7 +935,7 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
               <TextInput
                 name="workDate"
                 type="date"
-                defaultValue={new Date().toISOString().slice(0, 10)}
+                defaultValue={todayDateInputValue()}
                 required
               />
             </Field>
@@ -815,14 +946,20 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
                 min="0"
                 step={timeIncrementHours}
                 required
-                defaultValue={hoursPrefill}
+                defaultValue={duplicatePrefill?.hours ?? hoursPrefill}
               />
             </Field>
             {/* Rate is hidden during reporting for non-partners — it is derived
                 from the case/project and they shouldn't see (or set) pricing. */}
             {result.data.canViewRates ? (
               <Field label="Sazba">
-                <TextInput name="hourlyRate" type="number" min="0" step="0.01" />
+                <TextInput
+                  name="hourlyRate"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  defaultValue={duplicatePrefill?.hourlyRate ?? ""}
+                />
               </Field>
             ) : null}
           </div>
@@ -832,7 +969,11 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
               value: status,
               label: billingStatusLabels[status],
             }))}
-            defaultBillingStatus={defaultBillingStatus}
+            defaultBillingStatus={
+              duplicatePrefill?.billingStatus ?? defaultBillingStatus
+            }
+            defaultLegalArea={duplicatePrefill?.legalArea ?? ""}
+            defaultInternalCategory={duplicatePrefill?.internalCategory ?? ""}
             legalAreas={legalAreaOptions}
             internalCategories={options.internalTaskCategories.map((category) => ({
               value: category,
@@ -840,10 +981,15 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
             }))}
           />
           <Field label="Popis práce">
-            <TextArea name="description" />
+            <TextArea
+              name="description"
+              defaultValue={duplicatePrefill?.description ?? ""}
+            />
           </Field>
           <div className="flex flex-wrap gap-2">
-            <Button type="submit" pendingLabel="Vytvářím…">Vytvořit výkaz</Button>
+            <Button type="submit" pendingLabel="Vytvářím…">
+              {isDuplicate ? "Vytvořit kopii výkazu" : "Vytvořit výkaz"}
+            </Button>
           </div>
         </form>
       </WorkLogCreateDialog>

@@ -38,6 +38,7 @@ export async function createRetainer(formData: FormData) {
 
   const organizationId = currentUser.organizationId;
   const subjectId = requiredString(formData, "subjectId");
+  const projectId = optionalString(formData, "projectId");
   const monthlyFeeCzk = round2(requiredNumber(formData, "monthlyFeeCzk"));
   const includedHours = optionalNumber(formData, "includedHours");
   const vatRate = optionalNumber(formData, "vatRate") ?? DEFAULT_VAT_RATE;
@@ -65,11 +66,21 @@ export async function createRetainer(formData: FormData) {
   if (!subject) {
     throw new Error("Klient nenalezen.");
   }
+  if (projectId) {
+    const project = await prisma.project.findFirst({
+      where: { id: projectId, organizationId, archivedAt: null },
+      select: { mainSubjectId: true },
+    });
+    if (!project || project.mainSubjectId !== subjectId) {
+      throw new Error("Vybraný projekt nepatří zvolenému klientovi.");
+    }
+  }
 
   const created = await prisma.retainerAgreement.create({
     data: {
       organizationId,
       subjectId,
+      projectId,
       monthlyFeeCzk,
       includedHours,
       vatRate,
@@ -86,7 +97,7 @@ export async function createRetainer(formData: FormData) {
       entityId: created.id,
       action: "CREATE",
       changedById: currentUser.id,
-      newValue: auditJson({ subjectId, monthlyFeeCzk }),
+      newValue: auditJson({ subjectId, projectId, monthlyFeeCzk }),
     },
   });
 

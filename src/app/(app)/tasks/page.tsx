@@ -51,6 +51,7 @@ import {
   taskVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { filterFormKey } from "@/lib/search-params";
 import {
   isTaskOverdue,
   taskDeadlineTypeTone,
@@ -444,7 +445,10 @@ export default async function TasksPage({ searchParams }: TasksProps) {
         />
       </div>
       <Section>
-        <form className="grid gap-3 lg:grid-cols-4 xl:grid-cols-5">
+        <form
+          key={filterFormKey(params)}
+          className="grid gap-3 lg:grid-cols-4 xl:grid-cols-5"
+        >
           <Field label="Status">
             <SelectInput name="status" defaultValue={status}>
               <option value="">Všechny statusy</option>

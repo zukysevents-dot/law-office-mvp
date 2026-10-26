@@ -16,9 +16,11 @@ import {
   requiredString,
 } from "@/lib/form";
 import {
+  andWhere,
   assertCanEditRecord,
   canSetBillableStatus,
   canViewRates,
+  workLogVisibilityWhere,
 } from "@/lib/permissions";
 import { resolveVisibleMatterSelection } from "@/lib/matter-integrity.server";
 import { getPrisma } from "@/lib/prisma";
@@ -91,6 +93,20 @@ export async function createWorkLog(formData: FormData) {
   });
   const { subjectId, projectId, caseId, taskId } = matter;
 
+  // "Duplikovat": the copy is an ordinary new work log built from the form.
+  // The source ID only goes into the audit trail, and only when the user can
+  // actually see that work log (never a channel to probe foreign IDs).
+  const sourceWorkLogId = optionalString(formData, "sourceWorkLogId");
+  const duplicatedFrom = sourceWorkLogId
+    ? await prisma.workLog.findFirst({
+        where: andWhere(
+          { id: sourceWorkLogId },
+          workLogVisibilityWhere(currentUser),
+        ),
+        select: { id: true },
+      })
+    : null;
+
   const derivedHourlyRate =
     manualHourlyRate ??
     resolveHourlyRate({
@@ -145,6 +161,7 @@ export async function createWorkLog(formData: FormData) {
         hourlyRate: workLog.hourlyRate?.toString() ?? null,
         amountCzk: workLog.amountCzk?.toString() ?? null,
         workDate: workLog.workDate.toISOString(),
+        ...(duplicatedFrom ? { duplicatedFromId: duplicatedFrom.id } : {}),
       },
     },
   });

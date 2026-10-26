@@ -1,12 +1,13 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import { Dialog } from "@/components/ui/dialog";
 
 /**
- * "Nový výkaz práce" modal. Its open state lives in the URL (?new=1), so every
+ * "Nový výkaz práce" / "Duplikovat výkaz práce" modal. Its open state lives in
+ * the URL (?new=1, ?hours=… from the timer, ?duplicate=<id>), so every
  * close path (×, Escape, click outside) replaces the URL with `closeHref`
  * exactly once; the dialog hides immediately without waiting for that
  * navigation.
@@ -14,11 +15,15 @@ import { Dialog } from "@/components/ui/dialog";
 export function WorkLogCreateDialog({
   open,
   closeHref,
+  title = "Nový výkaz práce",
+  description,
   children,
 }: {
   open: boolean;
   closeHref: string;
-  children: React.ReactNode;
+  title?: string;
+  description?: ReactNode;
+  children: ReactNode;
 }) {
   const router = useRouter();
   const [dismissed, setDismissed] = useState(false);
@@ -42,7 +47,8 @@ export function WorkLogCreateDialog({
     <Dialog
       open={open && !dismissed}
       onOpenChange={onOpenChange}
-      title="Nový výkaz práce"
+      title={title}
+      description={description}
       size="xl"
     >
       <div className="p-5">{children}</div>
