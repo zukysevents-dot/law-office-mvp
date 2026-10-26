@@ -720,6 +720,44 @@ async function main() {
     note: "XYZ s.r.o. jako protistrana.",
   });
 
+  // Demo právní tým „Sporná agenda“ (Advokát + Koncipient) jako řešitel
+  // projektu „Soudní spor ABC“ — v UX je hned vidět tým s členy. Praktikant do
+  // týmu záměrně nepatří (je vyhrazen sériovým E2E testům matice oprávnění).
+  // Idempotentní: upsert podle unikátních klíčů; existující členství (třeba
+  // ručně přesunuté do jiného týmu) seed nepřepisuje.
+  const demoTeam = await prisma.legalTeam.upsert({
+    where: {
+      organizationId_name: { organizationId: demoOrg.id, name: "Sporná agenda" },
+    },
+    update: {},
+    create: { organizationId: demoOrg.id, name: "Sporná agenda" },
+  });
+  for (const member of [lawyer, trainee]) {
+    await prisma.legalTeamMember.upsert({
+      where: {
+        organizationId_userId: { organizationId: demoOrg.id, userId: member.id },
+      },
+      update: {},
+      create: {
+        organizationId: demoOrg.id,
+        legalTeamId: demoTeam.id,
+        userId: member.id,
+      },
+    });
+  }
+  await prisma.projectTeamAssignment.upsert({
+    where: {
+      projectId_legalTeamId: { projectId: project.id, legalTeamId: demoTeam.id },
+    },
+    update: {},
+    create: {
+      organizationId: demoOrg.id,
+      projectId: project.id,
+      legalTeamId: demoTeam.id,
+      assignedById: admin.id,
+    },
+  });
+
   // Demo document templates (F5 / DOCUMENTS) — idempotent by org + name.
   const demoTemplates = [
     {

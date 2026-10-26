@@ -78,6 +78,11 @@ const modules: Array<{
     section: "Členové kanceláře",
   },
   {
+    route: "/settings/assignments",
+    heading: "Týmy a řešitelé",
+    section: "Řešitelé projektů a případů",
+  },
+  {
     route: "/settings/billing",
     heading: "Fakturační údaje kanceláře",
     section: "Údaje vystavitele",

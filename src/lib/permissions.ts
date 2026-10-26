@@ -7,6 +7,7 @@ import type {
   PermissionScope,
   ScopePermissionKey,
 } from "@/lib/permission-catalog";
+import { caseTeamWhere, projectTeamWhere } from "@/lib/assignments";
 import {
   defaultPermissionsForRole,
   resolvePermissions,
@@ -52,15 +53,27 @@ type AssignmentRecord = {
 
 type AssigneeRef = { userId: string };
 
+// Přiřazený právní tým (načtený přes projectAssignmentInclude /
+// caseAssignmentInclude ze src/lib/assignments.ts). Chybí-li, týmová cesta se
+// nepoužije (fail-closed).
+type TeamAssignmentRef = {
+  legalTeam: {
+    archivedAt?: Date | null;
+    members: AssigneeRef[];
+  };
+};
+
 type ProjectRecord = {
   responsibleUserId?: string | null;
   assignees?: AssigneeRef[] | null;
+  teamAssignments?: TeamAssignmentRef[] | null;
 };
 
 type CaseRecord = {
   responsibleUserId?: string | null;
   project?: ProjectRecord | null;
   assignees?: AssigneeRef[] | null;
+  teamAssignments?: TeamAssignmentRef[] | null;
 };
 
 type WorkLogRecord = {
@@ -189,6 +202,33 @@ function isAssigneeOf(
   userId: string,
 ) {
   return Array.isArray(assignees) && assignees.some((a) => a.userId === userId);
+}
+
+// True when the user is a member of a (non-archived) team assigned to the
+// record. Membership is read from the loaded rows, so it is always current.
+function isTeamAssigneeOf(
+  teamAssignments: TeamAssignmentRef[] | null | undefined,
+  userId: string,
+) {
+  return (
+    Array.isArray(teamAssignments) &&
+    teamAssignments.some(
+      (assignment) =>
+        !assignment.legalTeam.archivedAt &&
+        assignment.legalTeam.members.some((member) => member.userId === userId),
+    )
+  );
+}
+
+// Direct assignee OR member of an assigned team.
+function isMatterAssigneeOf(
+  record: ProjectRecord | CaseRecord | null | undefined,
+  userId: string,
+) {
+  return (
+    isAssigneeOf(record?.assignees, userId) ||
+    isTeamAssigneeOf(record?.teamAssignments, userId)
+  );
 }
 
 // Prisma `where` fragments matching a project/case where the user is an
@@ -342,6 +382,32 @@ export function assertCanManagePermissions(user: PermissionInput) {
   }
 }
 
+// --- Týmy a řešitelé (/settings/assignments) ---------------------------------
+
+// Právní týmy patří do nastavení kanceláře (zakládání, členové, archivace).
+export function canManageTeams(user: PermissionInput) {
+  return canManageOrganization(user);
+}
+
+// Hromadné přiřazování řešitelů: kdo smí upravit každý projekt a případ, smí i
+// hromadně přiřazovat (stejný gate jako přidání na detailu; každý záznam se
+// navíc ověřuje přes assertCanEditRecord).
+export function canBulkAssign(user: PermissionInput) {
+  return (
+    Boolean(orgIdOf(user)) && hasPermission(user, "function.editAllMatters")
+  );
+}
+
+export function assertCanBulkAssign(user: PermissionInput) {
+  if (!canBulkAssign(user)) {
+    throw new Error("Nemáte oprávnění hromadně přiřazovat řešitele.");
+  }
+}
+
+export function canOpenAssignments(user: PermissionInput) {
+  return canManageTeams(user) || canBulkAssign(user);
+}
+
 // --- Ochrana před eskalací práv přes správu uživatelů a členů ----------------
 //
 // „Spravuje uživatele“ / „Spravuje nastavení kanceláře“ lze v matici přidělit
@@ -468,6 +534,10 @@ function assignedTaskWhere(userId: string): Prisma.TaskWhereInput {
           is: { project: { is: projectAssigneeWhere(userId) } },
         },
       },
+      // Team mirror: the same through a team the user is a member of.
+      { project: { is: projectTeamWhere(userId) } },
+      { case: { is: caseTeamWhere(userId) } },
+      { case: { is: { project: { is: projectTeamWhere(userId) } } } },
     ],
   };
 }
@@ -479,6 +549,10 @@ function assignedProjectWhere(userId: string): Prisma.ProjectWhereInput {
       { assignees: { some: { userId } } },
       { cases: { some: { responsibleUserId: userId } } },
       { cases: { some: { assignees: { some: { userId } } } } },
+      // Team mirror: the project or one of its cases is assigned to a team
+      // the user is a member of.
+      projectTeamWhere(userId),
+      { cases: { some: caseTeamWhere(userId) } },
       { tasks: { some: directTaskUserWhere(userId) } },
       { workLogs: { some: { userId } } },
     ],
@@ -492,6 +566,9 @@ function assignedCaseWhere(userId: string): Prisma.CaseWhereInput {
       { assignees: { some: { userId } } },
       { project: { is: { responsibleUserId: userId } } },
       { project: { is: projectAssigneeWhere(userId) } },
+      // Team mirror: the case or its project is assigned to the user's team.
+      caseTeamWhere(userId),
+      { project: { is: projectTeamWhere(userId) } },
       { tasks: { some: directTaskUserWhere(userId) } },
       { workLogs: { some: { userId } } },
     ],
@@ -518,6 +595,10 @@ function assignedWorkLogWhere(userId: string): Prisma.WorkLogWhereInput {
           is: { project: { is: projectAssigneeWhere(userId) } },
         },
       },
+      // Team mirror.
+      { project: { is: projectTeamWhere(userId) } },
+      { case: { is: caseTeamWhere(userId) } },
+      { case: { is: { project: { is: projectTeamWhere(userId) } } } },
     ],
   };
 }
@@ -540,6 +621,10 @@ function assignedReferenceWhere(userId: string): Prisma.ReferenceWhereInput {
           is: { project: { is: projectAssigneeWhere(userId) } },
         },
       },
+      // Team mirror.
+      { project: { is: projectTeamWhere(userId) } },
+      { case: { is: caseTeamWhere(userId) } },
+      { case: { is: { project: { is: projectTeamWhere(userId) } } } },
       { project: { is: { tasks: { some: directTaskUserWhere(userId) } } } },
       { case: { is: { tasks: { some: directTaskUserWhere(userId) } } } },
       { project: { is: { workLogs: { some: { userId } } } } },
@@ -583,6 +668,10 @@ function assignedInvoiceWhere(userId: string): Prisma.InvoiceWhereInput {
       { project: { is: projectAssigneeWhere(userId) } },
       { case: { is: caseAssigneeWhere(userId) } },
       { case: { is: { project: { is: projectAssigneeWhere(userId) } } } },
+      // Team mirror.
+      { project: { is: projectTeamWhere(userId) } },
+      { case: { is: caseTeamWhere(userId) } },
+      { case: { is: { project: { is: projectTeamWhere(userId) } } } },
     ],
   };
 }
@@ -598,6 +687,9 @@ function assignedDataMessageWhere(
       // Assignee mirror: data messages on a case the user is assigned to.
       { case: { is: caseAssigneeWhere(userId) } },
       { case: { is: { project: { is: projectAssigneeWhere(userId) } } } },
+      // Team mirror: the case or its project is assigned to the user's team.
+      { case: { is: caseTeamWhere(userId) } },
+      { case: { is: { project: { is: projectTeamWhere(userId) } } } },
     ],
   };
 }
@@ -612,6 +704,9 @@ function assignedDeadlineWhere(userId: string): Prisma.DeadlineWhereInput {
       // Assignee mirror: deadlines on a case the user is assigned to.
       { case: { is: caseAssigneeWhere(userId) } },
       { case: { is: { project: { is: projectAssigneeWhere(userId) } } } },
+      // Team mirror: the case or its project is assigned to the user's team.
+      { case: { is: caseTeamWhere(userId) } },
+      { case: { is: { project: { is: projectTeamWhere(userId) } } } },
     ],
   };
 }
@@ -628,6 +723,9 @@ function assignedCourtHearingWhere(
       // Assignee mirror: court hearings on a case the user is assigned to.
       { case: { is: caseAssigneeWhere(userId) } },
       { case: { is: { project: { is: projectAssigneeWhere(userId) } } } },
+      // Team mirror: the case or its project is assigned to the user's team.
+      { case: { is: caseTeamWhere(userId) } },
+      { case: { is: { project: { is: projectTeamWhere(userId) } } } },
     ],
   };
 }
@@ -644,6 +742,9 @@ function assignedDocumentWhere(
       // Assignee mirror: documents on a case the user is assigned to.
       { case: { is: caseAssigneeWhere(userId) } },
       { case: { is: { project: { is: projectAssigneeWhere(userId) } } } },
+      // Team mirror: the case or its project is assigned to the user's team.
+      { case: { is: caseTeamWhere(userId) } },
+      { case: { is: { project: { is: projectTeamWhere(userId) } } } },
       {
         subject: {
           is: andWhere<Prisma.SubjectWhereInput>(
@@ -1005,9 +1106,9 @@ export function canViewRecord(
       task.project?.responsibleUserId === userId ||
       task.case?.responsibleUserId === userId ||
       task.case?.project?.responsibleUserId === userId ||
-      isAssigneeOf(task.project?.assignees, userId) ||
-      isAssigneeOf(task.case?.assignees, userId) ||
-      isAssigneeOf(task.case?.project?.assignees, userId)
+      isMatterAssigneeOf(task.project, userId) ||
+      isMatterAssigneeOf(task.case, userId) ||
+      isMatterAssigneeOf(task.case?.project, userId)
     );
   }
 
@@ -1015,7 +1116,7 @@ export function canViewRecord(
     const project = record as ProjectRecord;
     return (
       project.responsibleUserId === userId ||
-      isAssigneeOf(project.assignees, userId)
+      isMatterAssigneeOf(project, userId)
     );
   }
 
@@ -1024,8 +1125,8 @@ export function canViewRecord(
     return (
       legalCase.responsibleUserId === userId ||
       legalCase.project?.responsibleUserId === userId ||
-      isAssigneeOf(legalCase.assignees, userId) ||
-      isAssigneeOf(legalCase.project?.assignees, userId)
+      isMatterAssigneeOf(legalCase, userId) ||
+      isMatterAssigneeOf(legalCase.project, userId)
     );
   }
 
@@ -1090,7 +1191,7 @@ export function canEditRecord(
     return (
       hasPermission(user, "function.editAssignedMatters") &&
       (project.responsibleUserId === userId ||
-        isAssigneeOf(project.assignees, userId))
+        isMatterAssigneeOf(project, userId))
     );
   }
 
@@ -1099,7 +1200,7 @@ export function canEditRecord(
     return (
       hasPermission(user, "function.editAssignedMatters") &&
       (legalCase.responsibleUserId === userId ||
-        isAssigneeOf(legalCase.assignees, userId))
+        isMatterAssigneeOf(legalCase, userId))
     );
   }
 

@@ -25,6 +25,9 @@ import {
   canManagePortal,
   canManageReferences,
   canManageSubjects,
+  canManageTeams,
+  canBulkAssign,
+  canOpenAssignments,
   canApproveWorkLogs,
   canArchiveRecords,
   canManageOrganization,
@@ -75,6 +78,13 @@ function withOverrides(
   return {
     ...user,
     permissions: resolvePermissions({ role: user.role, roleOverrides, userOverrides }),
+  };
+}
+
+// Tvar týmové větve (src/lib/assignments.ts teamMemberWhere).
+function teamMember(userId: string) {
+  return {
+    legalTeam: { is: { archivedAt: null, members: { some: { userId } } } },
   };
 }
 
@@ -168,7 +178,7 @@ test("Subject/Reference visibility remains broader than management for LAWYER", 
     AND?: Array<{ organizationId?: string; OR?: unknown[] }>;
   };
   assert.deepEqual(referenceWhere.AND?.[0], { organizationId: org });
-  assert.equal(referenceWhere.AND?.[1]?.OR?.length, 10);
+  assert.equal(referenceWhere.AND?.[1]?.OR?.length, 13);
 
   const subjectWhere = subjectVisibilityWhere(
     withOverrides(lawyer, ASSIGNED_MATTERS),
@@ -273,8 +283,9 @@ test("every scoped *VisibilityWhere denies without an org, even with scope ALL",
 });
 
 test("taskVisibilityWhere: ASSIGNED scope = direct + responsibility + assignee OR", () => {
-  // org-scoped: { AND: [{ organizationId }, { OR: [...7 clauses] }] } — direct,
-  // 3 responsibility paths + 3 assignee mirrors (project/case/case→project).
+  // org-scoped: { AND: [{ organizationId }, { OR: [...10 clauses] }] } — direct,
+  // 3 responsibility paths + 3 assignee mirrors + 3 team mirrors
+  // (project/case/case→project).
   for (const user of [lawyer, trainee, intern]) {
     const where = taskVisibilityWhere(
       withOverrides(user, [{ permission: "scope.tasks", value: "ASSIGNED" }]),
@@ -285,7 +296,7 @@ test("taskVisibilityWhere: ASSIGNED scope = direct + responsibility + assignee O
     assert.deepEqual(where.AND?.[0], { organizationId: org });
     const orClause = where.AND?.[1];
     assert.ok(Array.isArray(orClause?.OR));
-    assert.equal(orClause?.OR?.length, 7);
+    assert.equal(orClause?.OR?.length, 10);
     assert.deepEqual(orClause?.OR?.[0], {
       OR: [
         { createdById: user.id },
@@ -331,8 +342,8 @@ test("dataMessageVisibilityWhere: ADMIN/PARTNER see all messages in their org", 
 });
 
 test("dataMessageVisibilityWhere: LAWYER scoped to own + responsible/assigned-case messages", () => {
-  // org-scoped: { AND: [{ organizationId }, { OR: [...5 clauses] }] } — own +
-  // case/project responsibility + case/project assignee mirrors.
+  // org-scoped: { AND: [{ organizationId }, { OR: [...7 clauses] }] } — own +
+  // case/project responsibility + case/project assignee and team mirrors.
   const expected = {
     AND: [
       { organizationId: org },
@@ -347,6 +358,14 @@ test("dataMessageVisibilityWhere: LAWYER scoped to own + responsible/assigned-ca
               is: { project: { is: { assignees: { some: { userId: "u-lawyer" } } } } },
             },
           },
+          { case: { is: { teamAssignments: { some: teamMember("u-lawyer") } } } },
+          {
+            case: {
+              is: {
+                project: { is: { teamAssignments: { some: teamMember("u-lawyer") } } },
+              },
+            },
+          },
         ],
       },
     ],
@@ -354,7 +373,7 @@ test("dataMessageVisibilityWhere: LAWYER scoped to own + responsible/assigned-ca
   assert.deepEqual(dataMessageVisibilityWhere(lawyer), expected);
 });
 
-test("dataMessageVisibilityWhere: LAWYER OR has exactly the 5 documented branches", () => {
+test("dataMessageVisibilityWhere: LAWYER OR has exactly the 7 documented branches", () => {
   const where = dataMessageVisibilityWhere(lawyer) as {
     AND?: Array<{ organizationId?: string; OR?: unknown[] }>;
   };
@@ -362,7 +381,7 @@ test("dataMessageVisibilityWhere: LAWYER OR has exactly the 5 documented branche
   assert.deepEqual(where.AND?.[0], { organizationId: org });
   const orClause = where.AND?.[1];
   assert.ok(Array.isArray(orClause?.OR));
-  assert.equal(orClause?.OR?.length, 5);
+  assert.equal(orClause?.OR?.length, 7);
 });
 
 test("dataMessageVisibilityWhere: TRAINEE/INTERN see only messages they created", () => {
@@ -439,6 +458,14 @@ test("deadlineVisibilityWhere: LAWYER scoped to own + responsible/assigned-case 
               is: { project: { is: { assignees: { some: { userId: "u-lawyer" } } } } },
             },
           },
+          { case: { is: { teamAssignments: { some: teamMember("u-lawyer") } } } },
+          {
+            case: {
+              is: {
+                project: { is: { teamAssignments: { some: teamMember("u-lawyer") } } },
+              },
+            },
+          },
         ],
       },
     ],
@@ -468,8 +495,8 @@ test("courtHearingVisibilityWhere: ADMIN org-wide; LAWYER scoped", () => {
     AND?: Array<{ organizationId?: string; OR?: unknown[] }>;
   };
   assert.deepEqual(lawyerWhere.AND?.[0], { organizationId: org });
-  // 4 responsibility paths + 2 case/project assignee mirrors.
-  assert.equal(lawyerWhere.AND?.[1]?.OR?.length, 6);
+  // 4 responsibility paths + 2 case/project assignee + 2 team mirrors.
+  assert.equal(lawyerWhere.AND?.[1]?.OR?.length, 8);
 });
 
 // --- F5 documents: management gates + visibility ---
@@ -515,8 +542,8 @@ test("documentVisibilityWhere: LAWYER OR covers created + case + assignee + subj
   };
   assert.deepEqual(where.AND?.[0], { organizationId: org });
   // created + case-responsible + case-project-responsible + case-assignee +
-  // case-project-assignee + subject-visible
-  assert.equal(where.AND?.[1]?.OR?.length, 6);
+  // case-project-assignee + 2 team mirrors + subject-visible
+  assert.equal(where.AND?.[1]?.OR?.length, 8);
 });
 
 test("documentTemplateVisibilityWhere: org-scoped read, fail-closed without org", () => {
@@ -769,7 +796,7 @@ function orBranches(where: unknown): unknown[] {
 test("projectVisibilityWhere: ASSIGNED scope OR adds direct + via-case assignee mirrors", () => {
   for (const user of [lawyer, trainee, intern]) {
     const branches = orBranches(projectVisibilityWhere(withOverrides(user, ASSIGNED_MATTERS)));
-    assert.equal(branches.length, 6);
+    assert.equal(branches.length, 8);
     assert.ok(
       branches.some(
         (b) => JSON.stringify(b) === JSON.stringify({ assignees: { some: { userId: user.id } } }),
@@ -779,12 +806,12 @@ test("projectVisibilityWhere: ASSIGNED scope OR adds direct + via-case assignee 
 });
 
 test("caseVisibilityWhere: ASSIGNED scope gains case + project-assignee paths", () => {
-  assert.equal(orBranches(caseVisibilityWhere(withOverrides(lawyer, ASSIGNED_MATTERS))).length, 6);
-  assert.equal(orBranches(caseVisibilityWhere(withOverrides(intern, ASSIGNED_MATTERS))).length, 6);
+  assert.equal(orBranches(caseVisibilityWhere(withOverrides(lawyer, ASSIGNED_MATTERS))).length, 8);
+  assert.equal(orBranches(caseVisibilityWhere(withOverrides(intern, ASSIGNED_MATTERS))).length, 8);
 });
 
 test("workLogVisibilityWhere: LAWYER OR mirrors assignee on project/case", () => {
-  assert.equal(orBranches(workLogVisibilityWhere(lawyer)).length, 8);
+  assert.equal(orBranches(workLogVisibilityWhere(lawyer)).length, 11);
 });
 
 test("billingApproverWorkLogWhere covers direct, project, and case client", () => {
@@ -795,8 +822,9 @@ test("billingApproverWorkLogWhere covers direct, project, and case client", () =
 });
 
 test("invoiceVisibilityWhere: LAWYER gains assignee paths; juniors stay created-only", () => {
-  // 5 responsibility/ownership paths + 3 assignee mirrors (project/case/case→project).
-  assert.equal(orBranches(invoiceVisibilityWhere(lawyer)).length, 8);
+  // 5 responsibility/ownership paths + 3 assignee + 3 team mirrors
+  // (project/case/case→project).
+  assert.equal(orBranches(invoiceVisibilityWhere(lawyer)).length, 11);
   // Sensitive billing data must NOT widen for juniors — created-only fallback.
   assert.deepEqual(invoiceVisibilityWhere(trainee), {
     AND: [{ organizationId: org }, { createdById: "u-trainee" }],
@@ -1038,4 +1066,177 @@ test("privilegedTargetDenial: managePermissions holders may act on peers, admins
   // Fail closed for an unknown actor.
   assert.ok(privilegedTargetDenial(null, roleTarget(UserRole.ADMIN), "assignRole"));
   assert.ok(privilegedTargetDenial(null, roleTarget(UserRole.PARTNER), "assignRole"));
+});
+
+// --- Týmy jako řešitelé (balík 04): ASSIGNED scope zahrnuje členy týmů ---
+
+function hasBranch(branches: unknown[], expected: unknown) {
+  return branches.some((b) => JSON.stringify(b) === JSON.stringify(expected));
+}
+
+test("projectVisibilityWhere ASSIGNED: team path on the project and via its cases", () => {
+  for (const user of [lawyer, trainee, intern]) {
+    const branches = orBranches(
+      projectVisibilityWhere(withOverrides(user, ASSIGNED_MATTERS)),
+    );
+    assert.ok(hasBranch(branches, { teamAssignments: { some: teamMember(user.id) } }));
+    assert.ok(
+      hasBranch(branches, {
+        cases: { some: { teamAssignments: { some: teamMember(user.id) } } },
+      }),
+    );
+  }
+});
+
+test("caseVisibilityWhere ASSIGNED: team of the case and team of its project", () => {
+  for (const user of [lawyer, trainee, intern]) {
+    const branches = orBranches(
+      caseVisibilityWhere(withOverrides(user, ASSIGNED_MATTERS)),
+    );
+    assert.ok(hasBranch(branches, { teamAssignments: { some: teamMember(user.id) } }));
+    assert.ok(
+      hasBranch(branches, {
+        project: { is: { teamAssignments: { some: teamMember(user.id) } } },
+      }),
+    );
+  }
+});
+
+test("task/workLog/reference/invoice ASSIGNED: 3 team mirrors (project, case, case→project)", () => {
+  const scopes = [
+    { permission: "scope.tasks", value: "ASSIGNED" },
+    { permission: "scope.workLogs", value: "ASSIGNED" },
+    { permission: "scope.references", value: "ASSIGNED" },
+    { permission: "scope.invoices", value: "ASSIGNED" },
+  ];
+  const user = withOverrides(intern, scopes);
+  const team = { teamAssignments: { some: teamMember(intern.id) } };
+  for (const where of [
+    taskVisibilityWhere(user),
+    workLogVisibilityWhere(user),
+    referenceVisibilityWhere(user),
+    invoiceVisibilityWhere(user),
+  ]) {
+    const branches = orBranches(where);
+    assert.ok(hasBranch(branches, { project: { is: team } }));
+    assert.ok(hasBranch(branches, { case: { is: team } }));
+    assert.ok(hasBranch(branches, { case: { is: { project: { is: team } } } }));
+  }
+});
+
+test("dataMessage/deadline/courtHearing/document ASSIGNED: case + case→project team mirrors", () => {
+  const scopes = [
+    { permission: "scope.dataMessages", value: "ASSIGNED" },
+    { permission: "scope.deadlines", value: "ASSIGNED" },
+    { permission: "scope.documents", value: "ASSIGNED" },
+  ];
+  const user = withOverrides(trainee, scopes);
+  const team = { teamAssignments: { some: teamMember(trainee.id) } };
+  for (const where of [
+    dataMessageVisibilityWhere(user),
+    deadlineVisibilityWhere(user),
+    courtHearingVisibilityWhere(user),
+    documentVisibilityWhere(user),
+  ]) {
+    const branches = orBranches(where);
+    assert.ok(hasBranch(branches, { case: { is: team } }));
+    assert.ok(hasBranch(branches, { case: { is: { project: { is: team } } } }));
+  }
+});
+
+test("subjectVisibilityWhere ASSIGNED: client of a project assigned to the user's team", () => {
+  const where = subjectVisibilityWhere(withOverrides(intern, ASSIGNED_MATTERS));
+  const branches = orBranches(where) as Array<{
+    mainProjects?: { some?: { AND?: Array<{ OR?: unknown[] }> } };
+  }>;
+  const mainProjects = branches.find((b) => b.mainProjects)?.mainProjects;
+  const projectBranches = mainProjects?.some?.AND?.[1]?.OR ?? [];
+  assert.ok(
+    hasBranch(projectBranches, { teamAssignments: { some: teamMember(intern.id) } }),
+  );
+});
+
+test("team scope keeps ALL = whole office and denies without an org", () => {
+  assert.deepEqual(projectVisibilityWhere(intern), { organizationId: org });
+  assert.deepEqual(caseVisibilityWhere(lawyer), { organizationId: org });
+  const orgless = { id: "u-x", role: UserRole.INTERN };
+  assert.deepEqual(projectVisibilityWhere(orgless), { id: "__role_denied__" });
+});
+
+const teamWith = (userIds: string[], archivedAt: Date | null = null) => ({
+  legalTeam: { archivedAt, members: userIds.map((userId) => ({ userId })) },
+});
+
+test("canViewRecord: member of an assigned team sees the project, case and task", () => {
+  const narrowed = withOverrides(intern, ASSIGNED_MATTERS);
+  const project = { teamAssignments: [teamWith(["u-intern", "u-lawyer"])] };
+  assert.equal(canViewRecord(narrowed, "Project", project), true);
+  assert.equal(canViewRecord(narrowed, "Case", { teamAssignments: project.teamAssignments }), true);
+  // Případ vidí i člen týmu projektu.
+  assert.equal(canViewRecord(narrowed, "Case", { project }), true);
+  assert.equal(canViewRecord(narrowed, "Task", { case: { project } }), true);
+  assert.equal(canViewRecord(narrowed, "Task", { project }), true);
+});
+
+test("canViewRecord: another team, an archived team or missing rows give no access", () => {
+  const narrowed = withOverrides(intern, ASSIGNED_MATTERS);
+  assert.equal(
+    canViewRecord(narrowed, "Project", { teamAssignments: [teamWith(["u-lawyer"])] }),
+    false,
+  );
+  assert.equal(
+    canViewRecord(narrowed, "Project", {
+      teamAssignments: [teamWith(["u-intern"], new Date())],
+    }),
+    false,
+  );
+  assert.equal(canViewRecord(narrowed, "Project", {}), false);
+  assert.equal(canViewRecord(narrowed, "Project", { teamAssignments: null }), false);
+});
+
+test("canEditRecord: LAWYER in the project's team edits it; TRAINEE in the team does not", () => {
+  const project = { teamAssignments: [teamWith(["u-lawyer", "u-trainee"])] };
+  assert.equal(canEditRecord(lawyer, "Project", project), true);
+  assert.equal(canEditRecord(trainee, "Project", project), false);
+  assert.equal(canEditRecord(lawyer, "Case", { teamAssignments: project.teamAssignments }), true);
+  // Tým projektu nedává editaci případu (zrcadlí přímého řešitele projektu).
+  assert.equal(canEditRecord(lawyer, "Case", { project }), false);
+  // Bez načtených týmových přiřazení fail-closed.
+  assert.equal(canEditRecord(lawyer, "Project", { assignees: [] }), false);
+  assert.equal(
+    canEditRecord(lawyer, "Project", {
+      teamAssignments: [teamWith(["u-lawyer"], new Date())],
+    }),
+    false,
+  );
+});
+
+test("canManageTeams / canBulkAssign / canOpenAssignments follow the default matrix", () => {
+  for (const user of [admin, partner]) {
+    assert.equal(canManageTeams(user), true);
+    assert.equal(canBulkAssign(user), true);
+    assert.equal(canOpenAssignments(user), true);
+  }
+  for (const user of [lawyer, trainee, intern]) {
+    assert.equal(canManageTeams(user), false);
+    assert.equal(canBulkAssign(user), false);
+    assert.equal(canOpenAssignments(user), false);
+  }
+  assert.equal(canBulkAssign({ id: "u-x", role: UserRole.ADMIN }), false);
+  assert.equal(canOpenAssignments(null), false);
+});
+
+test("canBulkAssign: a LAWYER with editAllMatters may bulk-assign, but not manage teams", () => {
+  const widened = withOverrides(lawyer, [
+    { permission: "function.editAllMatters", value: "ALLOW" },
+  ]);
+  assert.equal(canBulkAssign(widened), true);
+  assert.equal(canManageTeams(widened), false);
+  assert.equal(canOpenAssignments(widened), true);
+  const manager = withOverrides(trainee, [
+    { permission: "function.manageOrganization", value: "ALLOW" },
+  ]);
+  assert.equal(canManageTeams(manager), true);
+  assert.equal(canBulkAssign(manager), false);
+  assert.equal(canOpenAssignments(manager), true);
 });

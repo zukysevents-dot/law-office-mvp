@@ -25,6 +25,9 @@ export function ConfirmDialogButton({
   pendingLabel,
   variant = "danger",
   className,
+  confirmName,
+  confirmValue,
+  disabled,
 }: {
   label: ReactNode;
   message: ReactNode;
@@ -36,6 +39,12 @@ export function ConfirmDialogButton({
   pendingLabel?: string;
   variant?: Variant;
   className?: string;
+  /** name/value of the confirming submit button (e.g. mode=unassign) when the
+   * form has several submit actions. */
+  confirmName?: string;
+  confirmValue?: string;
+  /** Disables the trigger (nothing to confirm yet). */
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -47,6 +56,7 @@ export function ConfirmDialogButton({
         className={className}
         onClick={() => setOpen(true)}
         aria-haspopup="dialog"
+        disabled={disabled}
       >
         {label}
       </Button>
@@ -57,7 +67,13 @@ export function ConfirmDialogButton({
             <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
               {cancelLabel}
             </Button>
-            <Button type="submit" variant={variant} pendingLabel={pendingLabel}>
+            <Button
+              type="submit"
+              variant={variant}
+              pendingLabel={pendingLabel}
+              name={confirmName}
+              value={confirmValue}
+            >
               {confirmLabel ?? label}
             </Button>
           </div>

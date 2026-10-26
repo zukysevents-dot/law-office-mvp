@@ -33,6 +33,7 @@ import {
   Settings,
   ShieldAlert,
   ShieldCheck,
+  UsersRound,
 } from "lucide-react";
 
 import { logoutAction } from "@/app/actions/auth";
@@ -52,7 +53,8 @@ export type NavFunctionGate =
   | "manageInvoices"
   | "manageOrganization"
   | "managePermissions"
-  | "manageHr";
+  | "manageHr"
+  | "manageAssignments";
 
 type NavItem = {
   href: string;
@@ -168,6 +170,12 @@ const navSections: NavSection[] = [
         label: "Kancelář",
         icon: Briefcase,
         requires: "manageOrganization",
+      },
+      {
+        href: "/settings/assignments",
+        label: "Týmy a řešitelé",
+        icon: UsersRound,
+        requires: "manageAssignments",
       },
       {
         href: "/settings/permissions",

@@ -4,6 +4,11 @@ import {
   NotificationType,
   TaskStatus,
 } from "@/generated/prisma/enums";
+import {
+  formatMatterAssignedNotification,
+  formatTeamJoinedNotification,
+  type RecipientNotice,
+} from "@/lib/assignments";
 import { taskStatusLabels } from "@/lib/labels";
 import {
   appUrl,
@@ -39,6 +44,7 @@ export type NotificationPreferenceShape = {
   courtHearingSoonEmail: boolean;
   deadlineWatchDaysBefore: number;
   registryChangeEmail: boolean;
+  matterAssignedEmail: boolean;
 };
 
 export type NotificationPayload = {
@@ -74,6 +80,7 @@ const defaultPreference: NotificationPreferenceShape = {
   courtHearingSoonEmail: true,
   deadlineWatchDaysBefore: DEFAULT_DEADLINE_WATCH_DAYS,
   registryChangeEmail: true,
+  matterAssignedEmail: true,
 };
 
 export function uniqueRecipients(
@@ -135,6 +142,10 @@ export function preferenceAllows(
 
   if (type === NotificationType.REGISTRY_CHANGE) {
     return current.registryChangeEmail;
+  }
+
+  if (type === NotificationType.MATTER_ASSIGNED) {
+    return current.matterAssignedEmail;
   }
 
   return false;
@@ -337,6 +348,76 @@ export async function queueTaskCreatedNotifications({
     }),
     entityType: "Task",
     entityId: task.id,
+  });
+}
+
+// Přiřazení k projektům/případům (osobně nebo přes tým): jedna notifikace na
+// příjemce — u hromadné akce souhrn. Respektuje preference (matterAssignedEmail)
+// a dedupe klíč (opakované odeslání téhož přiřazení nic nezduplikuje).
+export async function queueMatterAssignedNotifications({
+  notices,
+  actorUserId,
+}: {
+  notices: readonly RecipientNotice[];
+  actorUserId: string;
+}) {
+  const results = await Promise.all(
+    notices
+      .filter((notice) => notice.items.length > 0)
+      .map((notice) => {
+        const { subject, body, dedupeKey } = formatMatterAssignedNotification(
+          notice.items,
+          appUrl,
+        );
+        const [first] = notice.items;
+        return queueInternalNotification({
+          toUserId: notice.recipientId,
+          actorUserId,
+          type: NotificationType.MATTER_ASSIGNED,
+          subject,
+          body,
+          entityType: first.matter.kind === "project" ? "Project" : "Case",
+          entityId: first.matter.id,
+          dedupeKey,
+        });
+      }),
+  );
+  return results.reduce(
+    (sum, entry) => ({
+      queued: sum.queued + entry.queued,
+      skipped: sum.skipped + entry.skipped,
+    }),
+    { queued: 0, skipped: 0 },
+  );
+}
+
+// Nový člen týmu: dozví se, ke kterým záznamům mu tým dává přístup.
+export async function queueTeamJoinedNotification({
+  recipientUserId,
+  actorUserId,
+  team,
+}: {
+  recipientUserId: string;
+  actorUserId: string;
+  team: { id: string; name: string; projectCount: number; caseCount: number };
+}) {
+  const { subject, body } = formatTeamJoinedNotification(
+    {
+      teamName: team.name,
+      projectCount: team.projectCount,
+      caseCount: team.caseCount,
+    },
+    appUrl,
+  );
+  return queueInternalNotification({
+    toUserId: recipientUserId,
+    actorUserId,
+    type: NotificationType.MATTER_ASSIGNED,
+    subject,
+    body,
+    entityType: "LegalTeam",
+    // Bez dedupe klíče: každé (znovu)přidání do týmu je nová událost.
+    entityId: team.id,
   });
 }
 

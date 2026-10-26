@@ -233,6 +233,8 @@ enum NotificationType {
   COURT_HEARING_SOON
   // Hlídání rejstříků: zjištěná změna v ISIR/OR u sledovaného subjektu.
   REGISTRY_CHANGE
+  // Přiřazení k projektu/případu (osobně nebo přes tým) a přidání do týmu.
+  MATTER_ASSIGNED
 }
 
 enum NotificationStatus {
@@ -372,6 +374,8 @@ model User {
   caseAssignees               CaseAssignee[]            @relation("CaseAssigneeUser")
   assignedProjectAssignees    ProjectAssignee[]         @relation("ProjectAssigneeAssignedBy")
   assignedCaseAssignees       CaseAssignee[]            @relation("CaseAssigneeAssignedBy")
+  assignedProjectTeams        ProjectTeamAssignment[]   @relation("ProjectTeamAssignmentAssignedBy")
+  assignedCaseTeams           CaseTeamAssignment[]      @relation("CaseTeamAssignmentAssignedBy")
   createdTasks                Task[]                    @relation("TaskCreatedBy")
   assignedTasks               Task[]                    @relation("TaskAssignedTo")
   responsibleTasks            Task[]                    @relation("TaskResponsibleUser")
@@ -742,9 +746,9 @@ model Project {
   updatedAt         DateTime      @updatedAt
   archivedAt        DateTime?
 
-  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  mainSubject        Subject             @relation("ProjectMainSubject", fields: [mainSubjectId], references: [id], onDelete: Restrict)
-  responsibleUser    User?               @relation("ProjectResponsibleUser", fields: [responsibleUserId], references: [id], onDelete: SetNull)
+  organization       Organization            @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  mainSubject        Subject                 @relation("ProjectMainSubject", fields: [mainSubjectId], references: [id], onDelete: Restrict)
+  responsibleUser    User?                   @relation("ProjectResponsibleUser", fields: [responsibleUserId], references: [id], onDelete: SetNull)
   cases              Case[]
   tasks              Task[]
   subjectRelations   SubjectRelation[]
@@ -754,6 +758,7 @@ model Project {
   retainerAgreements RetainerAgreement[]
   contactPersons     ContactPerson[]
   assignees          ProjectAssignee[]
+  teamAssignments    ProjectTeamAssignment[]
 
   @@index([organizationId])
   @@index([mainSubjectId])
@@ -778,9 +783,9 @@ model Case {
   updatedAt         DateTime   @updatedAt
   archivedAt        DateTime?
 
-  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  project          Project           @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  responsibleUser  User?             @relation("CaseResponsibleUser", fields: [responsibleUserId], references: [id], onDelete: SetNull)
+  organization     Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  project          Project              @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  responsibleUser  User?                @relation("CaseResponsibleUser", fields: [responsibleUserId], references: [id], onDelete: SetNull)
   tasks            Task[]
   subjectRelations SubjectRelation[]
   references       Reference[]
@@ -793,6 +798,7 @@ model Case {
   portalShares     PortalShare[]
   contactPersons   ContactPerson[]
   assignees        CaseAssignee[]
+  teamAssignments  CaseTeamAssignment[]
 
   @@unique([projectId, fileNumber])
   @@index([organizationId])
@@ -1051,6 +1057,8 @@ model NotificationPreference {
   deadlineWatchDaysBefore Int      @default(3)
   // Hlídání rejstříků: e-mail při zjištěné změně v ISIR/OR.
   registryChangeEmail     Boolean  @default(true)
+  // Přiřazení k projektu/případu (osobně nebo přes tým) a přidání do týmu.
+  matterAssignedEmail     Boolean  @default(true)
   // FullCalendar view persisted per user: day, week, month, or year agenda.
   calendarDefaultView     String   @default("dayGridMonth")
   createdAt               DateTime @default(now())
@@ -1201,6 +1209,51 @@ model CaseAssignee {
   @@map("caseAssignees")
 }
 
+// Tým jako řešitel projektu. Členství je dynamické: kdo je v týmu
+// (LegalTeamMember), má stejný přístup jako přímý řešitel (ProjectAssignee);
+// po odchodu z týmu ho ztratí. Archivovaný tým přístup nedává. Osoby dál žijí
+// v ProjectAssignee — tahle tabulka nic nenahrazuje (bez backfillu).
+model ProjectTeamAssignment {
+  id             String   @id @default(cuid())
+  organizationId String
+  projectId      String
+  legalTeamId    String
+  assignedAt     DateTime @default(now())
+  assignedById   String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  project      Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  legalTeam    LegalTeam    @relation(fields: [legalTeamId], references: [id], onDelete: Cascade)
+  assignedBy   User?        @relation("ProjectTeamAssignmentAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
+
+  @@unique([projectId, legalTeamId])
+  @@index([organizationId])
+  @@index([projectId])
+  @@index([legalTeamId])
+  @@map("projectTeamAssignments")
+}
+
+// Tým jako řešitel případu. Stejná sémantika jako ProjectTeamAssignment.
+model CaseTeamAssignment {
+  id             String   @id @default(cuid())
+  organizationId String
+  caseId         String
+  legalTeamId    String
+  assignedAt     DateTime @default(now())
+  assignedById   String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  case         Case         @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  legalTeam    LegalTeam    @relation(fields: [legalTeamId], references: [id], onDelete: Cascade)
+  assignedBy   User?        @relation("CaseTeamAssignmentAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
+
+  @@unique([caseId, legalTeamId])
+  @@index([organizationId])
+  @@index([caseId])
+  @@index([legalTeamId])
+  @@map("caseTeamAssignments")
+}
+
 model Notification {
   id              String             @id @default(cuid())
   recipientUserId String
@@ -1294,6 +1347,8 @@ model Organization {
   userHoursPlans            UserHoursPlan[]
   projectAssignees          ProjectAssignee[]
   caseAssignees             CaseAssignee[]
+  projectTeamAssignments    ProjectTeamAssignment[]
+  caseTeamAssignments       CaseTeamAssignment[]
   capabilityGrants          UserCapabilityGrant[]
   legalTeams                LegalTeam[]
   legalTeamMembers          LegalTeamMember[]
@@ -1425,8 +1480,10 @@ model LegalTeam {
   updatedAt      DateTime  @updatedAt
   archivedAt     DateTime?
 
-  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  members      LegalTeamMember[]
+  organization       Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  members            LegalTeamMember[]
+  projectAssignments ProjectTeamAssignment[]
+  caseAssignments    CaseTeamAssignment[]
 
   @@unique([organizationId, name])
   @@index([organizationId])

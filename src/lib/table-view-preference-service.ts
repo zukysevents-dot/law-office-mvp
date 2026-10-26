@@ -24,6 +24,7 @@ export async function getTableViewPreference(
     },
     select: {
       visibleColumns: true,
+      updatedAt: true,
     },
   });
 
@@ -31,6 +32,7 @@ export async function getTableViewPreference(
     preference?.visibleColumns,
     tableViewConfigs[tableKey].columns,
     defaultColumns,
+    preference?.updatedAt ?? null,
   );
 }
 

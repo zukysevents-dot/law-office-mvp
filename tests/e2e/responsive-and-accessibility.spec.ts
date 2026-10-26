@@ -39,6 +39,7 @@ const wideTableRoutes = [
   "/work-logs",
   "/references",
   "/settings",
+  "/settings/assignments",
 ];
 
 for (const viewport of viewports) {

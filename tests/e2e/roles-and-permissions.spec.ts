@@ -27,6 +27,7 @@ test.describe("viditelnost v navigaci", () => {
     await expect(nav.getByRole("link", { name: "Kancelář" })).toBeVisible();
     await expect(nav.getByRole("link", { name: "Fakturace" })).toBeVisible();
     await expect(nav.getByRole("link", { name: "AML / KYC" })).toBeVisible();
+    await expect(nav.getByRole("link", { name: "Týmy a řešitelé" })).toBeVisible();
   });
 
   test("koncipient nevidí administrativní položky menu", async ({ browser }) => {
@@ -39,6 +40,7 @@ test.describe("viditelnost v navigaci", () => {
     await expect(nav.getByRole("link", { name: "AML / KYC" })).toHaveCount(0);
     await expect(nav.getByRole("link", { name: "Fakturace" })).toHaveCount(0);
     await expect(nav.getByRole("link", { name: "Oprávnění" })).toHaveCount(0);
+    await expect(nav.getByRole("link", { name: "Týmy a řešitelé" })).toHaveCount(0);
     // Běžné moduly zůstávají dostupné.
     await expect(nav.getByRole("link", { name: "Úkoly", exact: true })).toBeVisible();
     await expect(nav.getByRole("link", { name: "Projekty" })).toBeVisible();
@@ -85,6 +87,7 @@ const guardedRoutes: Array<{ route: string; roles: RoleKey[] }> = [
   { route: "/billing/invoices/new", roles: ["trainee"] },
   { route: "/billing/retainers", roles: ["trainee"] },
   { route: "/settings/permissions", roles: ["trainee", "lawyer"] },
+  { route: "/settings/assignments", roles: ["trainee", "lawyer"] },
 ];
 
 for (const guarded of guardedRoutes) {
@@ -379,6 +382,189 @@ test.describe("praktikant a matice oprávnění", () => {
         .getByRole("link", { name: "Projekty" }),
     ).toBeVisible();
     await intern.context().close();
+  });
+
+  test("praktikant s rozsahem Přiřazené uvidí projekt až přes tým a ztratí ho po odchodu z týmu", async ({
+    page,
+    browser,
+  }) => {
+    test.setTimeout(150_000);
+    const intern = await pageAs(browser, "intern");
+    const projectName = e2eName("tymovy-projekt");
+    const caseName = e2eName("tymovy-pripad");
+    const taskTitle = e2eName("tymovy-ukol");
+    const teamName = e2eName("tym-praktikant");
+    const description = e2eName("tymovy-vykaz");
+    const client = "Petr Dvořák – Truhlářství";
+    const notFoundHeading = intern.getByRole("heading", {
+      name: "Tuto stránku jsme nenašli",
+    });
+
+    try {
+      // Admin: projekt (klient bez jiných vazeb na praktikanta), případ a
+      // úkol kolegy.
+      await page.goto("/projects");
+      const projectForm = page.locator("#new-project");
+      await projectForm.getByLabel("Název projektu").fill(projectName);
+      await projectForm
+        .getByRole("combobox", { name: "Klient", exact: true })
+        .selectOption({ label: `${client}, IČO 76543218` });
+      await projectForm.getByRole("button", { name: "Vytvořit projekt" }).click();
+      await expect(page).toHaveURL(/\/projects\/[a-z0-9]+$/);
+      const projectPath = new URL(page.url()).pathname;
+      const projectId = projectPath.split("/").pop() as string;
+
+      await page.goto(`/cases?projectId=${projectId}`);
+      const caseForm = page.locator("#new-case");
+      await caseForm.getByLabel("Název případu").fill(caseName);
+      await caseForm.getByRole("button", { name: "Vytvořit případ" }).click();
+      await expect(page).toHaveURL(/\/cases\/[a-z0-9]+$/);
+      const casePath = new URL(page.url()).pathname;
+
+      await page.goto(`/tasks?projectId=${projectId}`);
+      const taskForm = page.locator("#new-task");
+      await taskForm.getByLabel("Název úkolu").fill(taskTitle);
+      await taskForm
+        .getByRole("combobox", { name: "Řešitel", exact: true })
+        .selectOption({ label: "Advokát Demo" });
+      await taskForm.getByRole("button", { name: "Vytvořit úkol" }).click();
+      await expect(page).toHaveURL(/\/tasks\/[a-z0-9]+$/);
+
+      // Matice: Praktikant vidí jen přiřazené subjekty, projekty, případy, úkoly.
+      await page.goto("/settings/permissions");
+      for (const entity of ["Subjekty", "Projekty", "Případy", "Úkoly"]) {
+        await page
+          .getByRole("combobox", { name: `Rozsah dat ${entity} – Praktikant` })
+          .selectOption("ASSIGNED");
+      }
+      await submitAndAwaitAction(
+        page,
+        page.getByRole("button", { name: "Uložit oprávnění" }),
+      );
+      await expect(
+        page.getByRole("status").filter({ hasText: "Oprávnění uložena." }),
+      ).toBeVisible();
+
+      // Bez přiřazení projekt nevidí — ani v seznamu, ani přímou URL.
+      await intern.goto("/projects");
+      await expect(
+        intern.getByRole("heading", { name: "Projekty", level: 1 }),
+      ).toBeVisible();
+      await expect(intern.getByRole("link", { name: projectName })).toHaveCount(0);
+      await intern.goto(projectPath);
+      await expect(notFoundHeading).toBeVisible();
+
+      // Admin: tým s praktikantem přiřazený k projektu na detailu.
+      await page.goto("/settings/assignments");
+      await page.getByLabel("Název týmu").fill(teamName);
+      await submitAndAwaitAction(page, page.getByRole("button", { name: "Vytvořit tým" }));
+      const card = page.getByRole("article", { name: teamName, exact: true });
+      const addMember = async () => {
+        await card
+          .getByRole("combobox", { name: `Přidat člena do týmu ${teamName}` })
+          .selectOption({ label: "Praktikant Demo" });
+        await submitAndAwaitAction(
+          page,
+          card.getByRole("button", { name: "Přidat", exact: true }),
+        );
+        await expect(
+          card.getByRole("button", { name: `Odebrat Praktikant Demo z týmu ${teamName}` }),
+        ).toBeVisible();
+      };
+      await addMember();
+      await page.goto(projectPath);
+      await page
+        .getByRole("combobox", { name: "Přidat řešitele nebo tým" })
+        .selectOption({ label: `${teamName} (1 člen)` });
+      await submitAndAwaitAction(
+        page,
+        page.getByRole("button", { name: "Přidat", exact: true }),
+      );
+      await expect(
+        page.getByRole("button", { name: `Odebrat tým ${teamName}` }),
+      ).toBeVisible();
+
+      // Praktikant (bez ručního reloadu) projekt vidí: seznam, filtr „Já“,
+      // detail, případ, úkol kolegy i klienta.
+      await intern.goto("/projects");
+      await expect(intern.getByRole("link", { name: projectName })).toBeVisible();
+      await intern.goto("/projects?assignee=me");
+      await expect(intern.getByRole("link", { name: projectName })).toBeVisible();
+      await intern.getByRole("link", { name: projectName }).click();
+      await expect(
+        intern.getByRole("heading", { name: projectName, level: 1 }),
+      ).toBeVisible();
+      await expect(intern.getByRole("link", { name: caseName })).toBeVisible();
+      await expect(intern.getByRole("link", { name: taskTitle })).toBeVisible();
+      await expect(intern.getByRole("link", { name: client }).first()).toBeVisible();
+      await intern.goto(casePath);
+      await expect(
+        intern.getByRole("heading", { name: caseName, level: 1 }),
+      ).toBeVisible();
+      await intern.goto("/subjects");
+      await expect(intern.getByRole("link", { name: client }).first()).toBeVisible();
+
+      // Odchod z týmu přístup hned odebere…
+      await page.goto("/settings/assignments");
+      await submitAndAwaitAction(
+        page,
+        card.getByRole("button", { name: `Odebrat Praktikant Demo z týmu ${teamName}` }),
+      );
+      await expect(
+        card.getByRole("button", { name: `Odebrat Praktikant Demo z týmu ${teamName}` }),
+      ).toHaveCount(0);
+      await intern.goto(projectPath);
+      await expect(notFoundHeading).toBeVisible();
+
+      // …a návrat do týmu ho vrátí (dynamické členství).
+      await addMember();
+      await intern.goto(projectPath);
+      await expect(
+        intern.getByRole("heading", { name: projectName, level: 1 }),
+      ).toBeVisible();
+
+      // Teprve teď výkaz: vlastní výkaz je sám o sobě cesta „Přiřazené“.
+      await intern.goto("/work-logs");
+      await ensureWorkLogDescriptionColumn(intern);
+      await intern.getByRole("link", { name: "Nový výkaz" }).click();
+      const form = intern.getByRole("dialog", { name: "Nový výkaz práce" });
+      await expect(form).toBeVisible();
+      await form
+        .getByRole("combobox", { name: "Subjekt", exact: true })
+        .selectOption({ label: `${client}, IČO 76543218` });
+      await form
+        .getByRole("combobox", { name: "Projekt", exact: true })
+        .selectOption({ label: projectName });
+      await form.getByLabel("Hodiny").fill("0.5");
+      await form.getByLabel("Popis práce").fill(description);
+      await submitAndAwaitAction(
+        intern,
+        form.getByRole("button", { name: "Vytvořit výkaz" }),
+      );
+      await expect(form).toBeHidden();
+      await expect(intern.getByText(/nemáte oprávnění/i)).toHaveCount(0);
+      await ensureWorkLogDescriptionColumn(intern);
+      await expect(
+        intern.getByRole("row").filter({ hasText: description }),
+      ).toHaveCount(1);
+    } finally {
+      // Výchozí matice Praktikanta a praktikant mimo e2e tým (jen E2E DB).
+      const db = new Client({ connectionString: E2E_DATABASE_URL });
+      await db.connect();
+      try {
+        await db.query(
+          `DELETE FROM "rolePermissionOverrides" WHERE "role" = 'INTERN'`,
+        );
+        await db.query(
+          `DELETE FROM "legalTeamMembers" WHERE "userId" =
+             (SELECT "id" FROM "users" WHERE "email" = 'praktikant.demo@example.local')
+             AND "legalTeamId" IN (SELECT "id" FROM "legalTeams" WHERE "name" LIKE 'e2e-%')`,
+        );
+      } finally {
+        await db.end();
+      }
+      await intern.context().close();
+    }
   });
 
   test("změny matice jsou v audit logu", async ({ page }) => {

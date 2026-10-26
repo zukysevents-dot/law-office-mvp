@@ -354,6 +354,11 @@ export default async function SettingsPage() {
                 label="Změna v rejstříku (ISIR/OR)"
                 defaultChecked={preference.registryChangeEmail}
               />
+              <PreferenceCheckbox
+                name="matterAssignedEmail"
+                label="Přiřazení k projektu nebo případu (osobně nebo přes tým)"
+                defaultChecked={preference.matterAssignedEmail}
+              />
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               <Field label="Upozornit kolik dní před deadlinem">

@@ -7,6 +7,7 @@ import { Section } from "@/components/section";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
+import { projectAssignmentInclude } from "@/lib/assignments";
 import { getCurrentUser } from "@/lib/auth";
 import { numberInputValue } from "@/lib/form-values";
 import { options, projectStatusLabels } from "@/lib/labels";
@@ -33,7 +34,7 @@ async function loadProjectEdit(id: string) {
   const [project, subjects, users] = await Promise.all([
     prisma.project.findUnique({
       where: { id },
-      include: { assignees: { select: { userId: true } } },
+      include: projectAssignmentInclude,
     }),
     prisma.subject.findMany({
       where: andWhere(

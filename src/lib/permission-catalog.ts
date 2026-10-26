@@ -314,7 +314,7 @@ export const PERMISSION_CATALOG: readonly PermissionDef[] = [
     label: "Subjekty",
     description: "Které subjekty uživatel vidí v seznamech, výběrech a hledání.",
     scopeHint:
-      "Přiřazené = klient nebo účastník projektu či případu, na kterém pracuje, nebo subjekt s jeho výkazem.",
+      "Přiřazené = klient nebo účastník projektu či případu, na kterém pracuje (i přes tým), nebo subjekt s jeho výkazem.",
     options: ALL_ASSIGNED,
     defaults: scopes("ALL", "ALL", "ALL", "ALL", "ALL"),
   },
@@ -324,7 +324,7 @@ export const PERMISSION_CATALOG: readonly PermissionDef[] = [
     label: "Projekty",
     description: "Které projekty uživatel vidí v seznamech, výběrech a hledání.",
     scopeHint:
-      "Přiřazené = je odpovědný nebo řešitel projektu či jeho případu, má v něm úkol nebo výkaz.",
+      "Přiřazené = je odpovědný nebo řešitel projektu či jeho případu (osobně nebo přes tým), má v něm úkol nebo výkaz.",
     options: ALL_ASSIGNED,
     defaults: scopes("ALL", "ALL", "ALL", "ALL", "ALL"),
   },
@@ -334,7 +334,7 @@ export const PERMISSION_CATALOG: readonly PermissionDef[] = [
     label: "Případy",
     description: "Které případy uživatel vidí v seznamech, výběrech a hledání.",
     scopeHint:
-      "Přiřazené = je odpovědný nebo řešitel případu či jeho projektu, má v něm úkol nebo výkaz.",
+      "Přiřazené = je odpovědný nebo řešitel případu či jeho projektu (osobně nebo přes tým), má v něm úkol nebo výkaz.",
     options: ALL_ASSIGNED,
     defaults: scopes("ALL", "ALL", "ALL", "ALL", "ALL"),
   },
@@ -344,7 +344,7 @@ export const PERMISSION_CATALOG: readonly PermissionDef[] = [
     label: "Úkoly",
     description: "Které úkoly uživatel vidí v seznamech, výběrech a hledání.",
     scopeHint:
-      "Přiřazené = úkol zadal, řeší nebo za něj odpovídá, případně je odpovědný nebo řešitel projektu či případu úkolu.",
+      "Přiřazené = úkol zadal, řeší nebo za něj odpovídá, případně je odpovědný nebo řešitel projektu či případu úkolu (osobně nebo přes tým).",
     options: ALL_ASSIGNED,
     defaults: scopes("ALL", "ALL", "ALL", "ALL", "ALL"),
   },
@@ -354,7 +354,7 @@ export const PERMISSION_CATALOG: readonly PermissionDef[] = [
     label: "Výkazy práce",
     description: "Čí výkazy práce uživatel vidí.",
     scopeHint:
-      "Přiřazené = vlastní a výkazy na jeho úkolech, projektech a případech. Vlastní = jen své výkazy.",
+      "Přiřazené = vlastní a výkazy na jeho úkolech, projektech a případech (i přes tým). Vlastní = jen své výkazy.",
     options: ALL_ASSIGNED_OWN,
     defaults: scopes("ALL", "ALL", "ASSIGNED", "OWN", "OWN"),
   },
@@ -364,7 +364,7 @@ export const PERMISSION_CATALOG: readonly PermissionDef[] = [
     label: "Lhůty a soudní jednání",
     description: "Které lhůty a jednání uživatel vidí v lhůtníku a kalendáři.",
     scopeHint:
-      "Přiřazené = vlastní a lhůty jeho případů. Vlastní = je za lhůtu odpovědný nebo ji založil.",
+      "Přiřazené = vlastní a lhůty jeho případů (i přes tým). Vlastní = je za lhůtu odpovědný nebo ji založil.",
     options: ALL_ASSIGNED_OWN,
     defaults: scopes("ALL", "ALL", "ASSIGNED", "OWN", "OWN"),
   },
@@ -374,7 +374,7 @@ export const PERMISSION_CATALOG: readonly PermissionDef[] = [
     label: "Dokumenty",
     description: "Které dokumenty uživatel vidí ve spisovně.",
     scopeHint:
-      "Přiřazené = vlastní, dokumenty jeho případů a jeho subjektů. Vlastní = dokumenty, které založil.",
+      "Přiřazené = vlastní, dokumenty jeho případů (i přes tým) a jeho subjektů. Vlastní = dokumenty, které založil.",
     options: ALL_ASSIGNED_OWN,
     defaults: scopes("ALL", "ALL", "ASSIGNED", "OWN", "OWN"),
   },
@@ -384,7 +384,7 @@ export const PERMISSION_CATALOG: readonly PermissionDef[] = [
     label: "Datové zprávy",
     description: "Které datové zprávy uživatel vidí.",
     scopeHint:
-      "Přiřazené = vlastní a zprávy jeho případů. Vlastní = zprávy, které zapsal.",
+      "Přiřazené = vlastní a zprávy jeho případů (i přes tým). Vlastní = zprávy, které zapsal.",
     options: ALL_ASSIGNED_OWN,
     defaults: scopes("ALL", "ALL", "ASSIGNED", "OWN", "OWN"),
   },
@@ -394,7 +394,7 @@ export const PERMISSION_CATALOG: readonly PermissionDef[] = [
     label: "Faktury",
     description: "Které faktury uživatel vidí ve fakturaci.",
     scopeHint:
-      "Přiřazené = vlastní a faktury jeho projektů a případů. Vlastní = faktury, které vytvořil.",
+      "Přiřazené = vlastní a faktury jeho projektů a případů (i přes tým). Vlastní = faktury, které vytvořil.",
     options: ALL_ASSIGNED_OWN,
     defaults: scopes("ALL", "ALL", "ASSIGNED", "OWN", "OWN"),
   },
@@ -404,7 +404,7 @@ export const PERMISSION_CATALOG: readonly PermissionDef[] = [
     label: "Reference",
     description: "Které reference uživatel vidí.",
     scopeHint:
-      "Přiřazené = reference projektů a případů, na kterých pracoval.",
+      "Přiřazené = reference projektů a případů, na kterých pracoval nebo které řeší (i přes tým).",
     options: ALL_ASSIGNED,
     defaults: scopes("ALL", "ALL", "ASSIGNED", "ASSIGNED", "ASSIGNED"),
   },
@@ -470,7 +470,7 @@ export const PERMISSION_CATALOG: readonly PermissionDef[] = [
     key: "function.editAssignedMatters",
     label: "Upravuje svoje projekty a případy",
     description:
-      "Projekty a případy, kde je odpovědný nebo řešitel. Úkoly, které zadal nebo řeší, upravuje každý.",
+      "Projekty a případy, kde je odpovědný nebo řešitel (i přes tým). Úkoly, které zadal nebo řeší, upravuje každý.",
     defaults: WITH_LAWYER,
   },
   {
