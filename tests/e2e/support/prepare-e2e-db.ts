@@ -111,6 +111,65 @@ async function main() {
       where: { description: { startsWith: E2E_PREFIX } },
     });
 
+    // Teams created by teams-and-assignees / roles specs (`e2e-…`). Deleting a
+    // team cascades to its memberships and project/case team assignments.
+    const staleTeamIds = (
+      await prisma.legalTeam.findMany({
+        where: { name: { startsWith: E2E_PREFIX } },
+        select: { id: true },
+      })
+    ).map((team) => team.id);
+    if (staleTeamIds.length > 0) {
+      await prisma.notification.deleteMany({
+        where: { entityType: "LegalTeam", entityId: { in: staleTeamIds } },
+      });
+      await prisma.auditLog.deleteMany({
+        where: { entityType: "LegalTeam", entityId: { in: staleTeamIds } },
+      });
+      await prisma.legalTeam.deleteMany({ where: { id: { in: staleTeamIds } } });
+    }
+
+    // Projects (and their cases) created by the specs (`e2e-…`). Case →
+    // project is ON DELETE RESTRICT, so cases go first; tasks / work logs on
+    // them would only be SetNull-orphaned, so they are removed explicitly.
+    const staleProjectIds = (
+      await prisma.project.findMany({
+        where: { name: { startsWith: E2E_PREFIX } },
+        select: { id: true },
+      })
+    ).map((project) => project.id);
+    if (staleProjectIds.length > 0) {
+      const staleCaseIds = (
+        await prisma.case.findMany({
+          where: { projectId: { in: staleProjectIds } },
+          select: { id: true },
+        })
+      ).map((row) => row.id);
+      const onMatter = {
+        OR: [
+          { projectId: { in: staleProjectIds } },
+          { caseId: { in: staleCaseIds } },
+        ],
+      };
+      const matterTaskIds = (
+        await prisma.task.findMany({ where: onMatter, select: { id: true } })
+      ).map((task) => task.id);
+      await prisma.workLog.deleteMany({
+        where: { OR: [...onMatter.OR, { taskId: { in: matterTaskIds } }] },
+      });
+      await prisma.taskComment.deleteMany({ where: { taskId: { in: matterTaskIds } } });
+      await prisma.taskStatusHistory.deleteMany({
+        where: { taskId: { in: matterTaskIds } },
+      });
+      await prisma.task.deleteMany({ where: { id: { in: matterTaskIds } } });
+      await prisma.subjectRelation.deleteMany({ where: onMatter });
+      const matterIds = [...staleProjectIds, ...staleCaseIds, ...matterTaskIds];
+      await prisma.notification.deleteMany({ where: { entityId: { in: matterIds } } });
+      await prisma.auditLog.deleteMany({ where: { entityId: { in: matterIds } } });
+      await prisma.case.deleteMany({ where: { id: { in: staleCaseIds } } });
+      await prisma.project.deleteMany({ where: { id: { in: staleProjectIds } } });
+    }
+
     const staleSubjectIds = (
       await prisma.subject.findMany({
         where: { name: { startsWith: E2E_PREFIX } },

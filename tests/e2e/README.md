@@ -65,6 +65,7 @@ s heslem `demo1234` (viz `SEED_USER_PASSWORD`).
 | `worklog-duplicate.spec.ts` | duplikace výkazu ze seznamu i z úpravy, dnešní datum, koncipient bez sazby, neplatné ID |
 | `billing-pickers.spec.ts` | fakturace: subjekt → jen jeho projekty a případy (filtr, nová faktura, paušál, úprava výkazu) |
 | `billing-approvals.spec.ts` | fronta ke schválení: filtry v URL, celý popis úkonu, hromadné schválení/zamítnutí, vstup z výkazů, role, mobil |
+| `teams-and-assignees.spec.ts` | Týmy a řešitelé: založení a přejmenování týmu, duplicitní název, hromadné přiřazení / odebrání týmu (potvrzení), sloupec a filtr „Řešitelé“, detail projektu a případu (zdědění řešitelé), notifikace, audit |
 | `users-invitations.spec.ts` | založení uživatele, pozvánka (SMTP vypnuté), znovuodeslání, `/set-password` |
 
 Pomocné funkce jsou v `tests/e2e/support/helpers.ts`.
@@ -77,6 +78,11 @@ Pomocné funkce jsou v `tests/e2e/support/helpers.ts`.
   vrací výchozí stav (`finally`). Žádný jiný spec se praktikantem nepřihlašuje.
   `prepare-e2e-db.ts` na začátku běhu smaže všechny řádky
   `rolePermissionOverrides` / `userPermissionOverrides` (jen E2E databáze).
+  Stejně tak test „praktikant … uvidí projekt až přes tým“ (přiřazení přes
+  tým a dynamické členství) je v tomto sériovém bloku;
+  `teams-and-assignees.spec.ts` pracuje jen s administrátorem, vlastním
+  `e2e-` týmem a `e2e-` projekty (Partner Demo jako člen týmu). Týmy a
+  projekty s prefixem `e2e-` maže `prepare-e2e-db.ts` na začátku běhu.
 
 - **Žádný route-level `loading.tsx`.** V Next 16.2.9 způsoboval
   `src/app/(app)/loading.tsx` (a stejné soubory v `(portal)` a `admin`), že se
