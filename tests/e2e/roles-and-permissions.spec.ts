@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
+import { Client } from "pg";
 
-import type { RoleKey } from "./support/e2e-env";
+import { E2E_DATABASE_URL, type RoleKey } from "./support/e2e-env";
 import {
   e2eName,
   expectNoErrorPage,
@@ -204,6 +205,18 @@ test.describe("praktikant a matice oprávnění", () => {
     await expect(
       page.getByRole("button", { name: "Vytvořit subjekt" }),
     ).toHaveCount(0);
+
+    // Subjekt vidí (i kontakty a statutáry), ale úpravu nedostane ani přímou URL.
+    await page.getByRole("link", { name: "ABC s.r.o." }).first().click();
+    await expect(page).toHaveURL(/\/subjects\/[a-z0-9]+$/);
+    await expect(
+      page.locator("#kontaktni-udaje").getByRole("link", { name: "info@abc.example" }),
+    ).toBeVisible();
+    await expect(page.getByRole("link", { name: "Upravit subjekt" })).toHaveCount(0);
+    await page.goto(`${new URL(page.url()).pathname}/edit`);
+    await expect(
+      page.getByRole("heading", { name: "Tuto stránku jsme nenašli" }),
+    ).toBeVisible();
     await page.context().close();
   });
 
@@ -436,6 +449,142 @@ test.describe("praktikant a matice oprávnění", () => {
     ).toHaveCount(0);
     await intern.context().close();
   });
+  test("praktikant se „Zakládá a upravuje subjekty“ sazby subjektu nevidí ani neuloží", async ({
+    page,
+    browser,
+  }) => {
+    const intern = await pageAs(browser, "intern");
+    const name = e2eName("sazby-subjektu");
+    await page.goto("/settings/permissions");
+    await page
+      .getByRole("link", { name: "Upravit výjimky – Praktikant Demo" })
+      .click();
+    await expect(
+      page.getByRole("heading", { name: "Oprávnění: Praktikant Demo", level: 1 }),
+    ).toBeVisible();
+
+    try {
+      await page
+        .getByRole("group", { name: "Zakládá a upravuje subjekty" })
+        .getByLabel("Povolit")
+        .check();
+      await submitAndAwaitAction(
+        page,
+        page.getByRole("button", { name: "Uložit výjimky" }),
+      );
+      await expect(
+        page.getByRole("status").filter({ hasText: "Výjimky uloženy." }),
+      ).toBeVisible();
+
+      // Nový formulář subjektu: bez polí sazeb a poznámky k odměně.
+      await intern.goto("/subjects", { waitUntil: "networkidle" });
+      const form = intern.locator("#new-subject form");
+      await expect(form.getByRole("button", { name: "Vytvořit subjekt" })).toBeVisible();
+      for (const field of ["hourlyRate", "flatFee", "feeNote"]) {
+        await expect(form.locator(`[name="${field}"]`)).toHaveCount(0);
+      }
+      await form.getByRole("textbox", { name: "Název", exact: true }).fill(name);
+      // Podvržená pole (přímý POST) server bez oprávnění ignoruje.
+      await form.evaluate((element) => {
+        for (const [field, value] of [
+          ["hourlyRate", "9999"],
+          ["flatFee", "8888"],
+          ["feeNote", "Podvržená sazba"],
+        ]) {
+          const input = document.createElement("input");
+          input.type = "hidden";
+          input.name = field;
+          input.value = value;
+          element.appendChild(input);
+        }
+      });
+      await form.getByRole("button", { name: "Vytvořit subjekt" }).click();
+      await expect(intern).toHaveURL(/\/subjects\/[a-z0-9]+$/);
+      const subjectId = intern.url().split("/").pop() as string;
+
+      const client = new Client({ connectionString: E2E_DATABASE_URL });
+      await client.connect();
+      try {
+        const created = await client.query<{
+          hourlyRate: string | null;
+          flatFee: string | null;
+          feeNote: string | null;
+        }>(
+          `SELECT "hourlyRate", "flatFee", "feeNote" FROM "subjects" WHERE "id" = $1`,
+          [subjectId],
+        );
+        expect(created.rows[0]).toEqual({ hourlyRate: null, flatFee: null, feeNote: null });
+
+        // Sazbu a poznámku nastaví někdo s oprávněním (zde přímo v DB).
+        await client.query(
+          `UPDATE "subjects" SET "hourlyRate" = 1537, "feeNote" = 'Sazba dle smlouvy' WHERE "id" = $1`,
+          [subjectId],
+        );
+
+        // Detail: podmínky bez sazeb a poznámky k odměně.
+        await intern.goto(`/subjects/${subjectId}`);
+        await expect(
+          intern.getByRole("heading", { name: "Podmínky poskytování právních služeb" }),
+        ).toBeVisible();
+        await expect(intern.getByText(/1\s?537/)).toHaveCount(0);
+        await expect(intern.getByText("Sazba dle smlouvy")).toHaveCount(0);
+        await expect(intern.getByText("Poznámka k odměně", { exact: true })).toHaveCount(0);
+
+        // Úprava: bez polí sazeb; podvržená hodnota uloženou sazbu nepřepíše.
+        await intern.goto(`/subjects/${subjectId}/edit`, { waitUntil: "networkidle" });
+        const editForm = intern.locator("form").filter({
+          has: intern.getByRole("button", { name: "Uložit subjekt" }),
+        });
+        for (const field of ["hourlyRate", "flatFee", "feeNote"]) {
+          await expect(editForm.locator(`[name="${field}"]`)).toHaveCount(0);
+        }
+        await editForm.evaluate((element) => {
+          for (const [field, value] of [
+            ["hourlyRate", "1"],
+            ["feeNote", ""],
+          ]) {
+            const input = document.createElement("input");
+            input.type = "hidden";
+            input.name = field;
+            input.value = value;
+            element.appendChild(input);
+          }
+        });
+        await editForm.getByRole("button", { name: "Uložit subjekt" }).click();
+        await expect(intern).toHaveURL(new RegExp(`/subjects/${subjectId}$`));
+        const updated = await client.query<{
+          hourlyRate: string | null;
+          feeNote: string | null;
+        }>(`SELECT "hourlyRate", "feeNote" FROM "subjects" WHERE "id" = $1`, [subjectId]);
+        expect(Number(updated.rows[0].hourlyRate)).toBe(1537);
+        expect(updated.rows[0].feeNote).toBe("Sazba dle smlouvy");
+      } finally {
+        await client.end();
+      }
+
+      // Administrátor sazbu i poznámku v detailu vidí.
+      await page.goto(`/subjects/${subjectId}`);
+      await expect(page.getByText(/1\s?537/).first()).toBeVisible();
+      await expect(page.getByText("Sazba dle smlouvy")).toBeVisible();
+    } finally {
+      await page.goto("/settings/permissions");
+      await page
+        .getByRole("link", { name: "Upravit výjimky – Praktikant Demo" })
+        .click();
+      const reset = page.getByRole("button", { name: "Zrušit všechny výjimky" });
+      if ((await reset.count()) > 0) {
+        await reset.click();
+        const dialog = page.getByRole("dialog", { name: "Zrušit všechny výjimky" });
+        await submitAndAwaitAction(
+          page,
+          dialog.getByRole("button", { name: "Zrušit výjimky" }),
+        );
+        await expect(dialog).toBeHidden();
+      }
+      await intern.context().close();
+    }
+  });
+
   test("praktikant se „Spravuje uživatele“ nezaloží administrátora ani nezmění jeho heslo", async ({
     page,
     browser,

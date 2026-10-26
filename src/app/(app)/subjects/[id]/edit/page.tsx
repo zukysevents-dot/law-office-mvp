@@ -245,9 +245,11 @@ export default async function SubjectEditPage({
                 </Field>
               </div>
             ) : null}
-            <Field label="Poznámka k odměně">
-              <TextArea name="feeNote" defaultValue={subject.feeNote ?? ""} />
-            </Field>
+            {showRates ? (
+              <Field label="Poznámka k odměně">
+                <TextArea name="feeNote" defaultValue={subject.feeNote ?? ""} />
+              </Field>
+            ) : null}
             <div className="flex flex-wrap gap-2">
               <Button type="submit" pendingLabel="Ukládám…">Uložit subjekt</Button>
               <ButtonLink href={`/subjects/${subject.id}`} variant="ghost">

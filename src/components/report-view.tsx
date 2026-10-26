@@ -22,6 +22,7 @@ import {
   type ReportSummaryRow,
   type ReportWorkLog,
 } from "@/lib/reporting/aggregations";
+import { reportCopy } from "@/lib/reporting/copy";
 import {
   readReportFilters,
   workLogReportWhere,
@@ -143,7 +144,7 @@ export async function ReportView({
     <>
       <PageHeader
         title={title}
-        description={description}
+        description={reportCopy(description, result.data.showAmounts)}
         action={
           <ButtonLink href="/reports" variant="ghost">
             Zpět na reporty

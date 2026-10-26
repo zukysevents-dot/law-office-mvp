@@ -9,7 +9,8 @@ import {
 import { getCurrentUser } from "@/lib/auth";
 import { formatDateTime } from "@/lib/format";
 import { formatPermissionAudit } from "@/lib/permission-audit";
-import { andWhere, canViewAuditLog } from "@/lib/permissions";
+import { auditRowForViewer } from "@/lib/audit-redact";
+import { andWhere, canViewAuditLog, canViewRates } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { canAccessModule } from "@/lib/module-access.server";
 
@@ -105,7 +106,9 @@ export async function GET(request: NextRequest) {
     return new Response("Databáze není připravena.", { status: 503 });
   }
 
-  return new Response(buildCsv(rows), {
+  // Rates/amounts in the stored diffs only for viewers who may see them.
+  const showRates = canViewRates(currentUser);
+  return new Response(buildCsv(rows.map((row) => auditRowForViewer(row, showRates))), {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
       "Content-Disposition": 'attachment; filename="audit-log.csv"',

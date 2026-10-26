@@ -15,7 +15,8 @@ import { ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
-import { canViewTeamReports } from "@/lib/permissions";
+import { canViewRates, canViewTeamReports } from "@/lib/permissions";
+import { reportCopy } from "@/lib/reporting/copy";
 import { AccessDenied } from "@/components/access-denied";
 import {
   canAccessModule,
@@ -115,6 +116,7 @@ export default async function ReportsPage() {
       canViewBillabilityKpi: false,
       canExportReferences: false,
       canExportTasks: false,
+      showAmounts: false,
     },
     async () => {
       const currentUser = await getCurrentUser();
@@ -126,6 +128,7 @@ export default async function ReportsPage() {
           "module.references",
         ),
         canExportTasks: await canAccessModule(currentUser, "module.tasks"),
+        showAmounts: canViewRates(currentUser),
       };
     },
   );
@@ -183,7 +186,7 @@ export default async function ReportsPage() {
                     ) : null}
                   </span>
                   <span className="mt-1 block text-sm text-[#566673]">
-                    {entry.description}
+                    {reportCopy(entry.description, result.data.showAmounts)}
                   </span>
                 </span>
               </Link>

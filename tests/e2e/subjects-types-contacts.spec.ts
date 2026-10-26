@@ -348,7 +348,10 @@ test.describe("subjekty — více kontaktů a statutárních orgánů", () => {
 });
 
 test.describe("subjekty — oprávnění, audit a mobil", () => {
-  test("koncipient vidí kontakty a statutáry, ale nemůže je upravit; praktikant editaci nedostane", async ({
+  // Praktikant (bez úpravy subjektů) je ověřený v sériovém bloku
+  // „praktikant a matice oprávnění“ v roles-and-permissions.spec.ts — ten
+  // praktikantovi mění oprávnění, takže paralelní test téže role by byl nestabilní.
+  test("koncipient vidí kontakty a statutáry, ale nemůže je upravit", async ({
     browser,
     page,
   }) => {
@@ -366,13 +369,6 @@ test.describe("subjekty — oprávnění, audit a mobil", () => {
     ).toHaveCount(0);
     await expect(trainee.getByRole("link", { name: "Upravit subjekt" })).toHaveCount(0);
     await trainee.context().close();
-
-    const intern = await pageAs(browser, "intern");
-    await intern.goto(`${abcPath}/edit`);
-    await expect(
-      intern.getByRole("heading", { name: "Tuto stránku jsme nenašli" }),
-    ).toBeVisible();
-    await intern.context().close();
   });
 
   test("audit zaznamená kontakty a rodné číslo jen maskované", async ({ page }) => {

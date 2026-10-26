@@ -18,7 +18,8 @@ import { safeQuery } from "@/lib/db-safe";
 import { formatDateTime } from "@/lib/format";
 import { formatPermissionAudit } from "@/lib/permission-audit";
 import { permissionRoleLabels } from "@/lib/permission-catalog";
-import { andWhere, canViewAuditLog } from "@/lib/permissions";
+import { auditRowForViewer } from "@/lib/audit-redact";
+import { andWhere, canViewAuditLog, canViewRates } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { firstParam } from "@/lib/search-params";
 import { AccessDenied } from "@/components/access-denied";
@@ -135,7 +136,14 @@ export default async function AuditLogPage({ searchParams }: AuditLogPageProps) 
         }),
       ]);
 
-      return { allowed: true, logs, total, users };
+      // Rates/amounts in the stored diffs only for viewers who may see them.
+      const showRates = canViewRates(currentUser);
+      return {
+        allowed: true,
+        logs: logs.map((log) => auditRowForViewer(log, showRates)),
+        total,
+        users,
+      };
     },
   );
 

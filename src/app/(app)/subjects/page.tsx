@@ -386,9 +386,11 @@ export default async function SubjectsPage({ searchParams }: SubjectsPageProps) 
                 </Field>
               </div>
             ) : null}
-            <Field label="Poznámka k odměně">
-              <TextArea name="feeNote" />
-            </Field>
+            {showRates ? (
+              <Field label="Poznámka k odměně">
+                <TextArea name="feeNote" />
+              </Field>
+            ) : null}
             <div>
               <Button type="submit" pendingLabel="Vytvářím…">Vytvořit subjekt</Button>
             </div>

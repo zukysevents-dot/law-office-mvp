@@ -9,6 +9,7 @@ import { safeQuery } from "@/lib/db-safe";
 import { formatHours, formatMoney } from "@/lib/format";
 import { canAccessModule } from "@/lib/module-access.server";
 import { canViewRates, canViewTeamReports } from "@/lib/permissions";
+import { reportCopy } from "@/lib/reporting/copy";
 import { getPrisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -152,7 +153,10 @@ export default async function TeamReportPage({
     <>
       <PageHeader
         title="Reporting podle právních týmů"
-        description="Výkon týmů podle období, hodin, částky a právních oblastí."
+        description={reportCopy(
+          "Výkon týmů podle období, hodin, částky a právních oblastí.",
+          result.data.showAmounts,
+        )}
         action={<ButtonLink href="/reports" variant="secondary">Zpět na reporty</ButtonLink>}
       />
       <DatabaseNotice databaseReady={result.databaseReady} error={result.error} />

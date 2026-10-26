@@ -746,14 +746,17 @@ export default async function SubjectDetailPage({
                   </div>
                 </>
               ) : null}
-              <div className="md:col-span-3">
-                <p className="text-xs font-semibold uppercase text-stone-500">
-                  Poznámka k odměně
-                </p>
-                <p className="whitespace-pre-wrap rounded-md border border-[#dce4e8] bg-[#F4F7F8] p-3">
-                  {subject.feeNote ?? "—"}
-                </p>
-              </div>
+              {showRates ? (
+                // A free-text fee note often carries amounts — shown with the rates.
+                <div className="md:col-span-3">
+                  <p className="text-xs font-semibold uppercase text-stone-500">
+                    Poznámka k odměně
+                  </p>
+                  <p className="whitespace-pre-wrap rounded-md border border-[#dce4e8] bg-[#F4F7F8] p-3">
+                    {subject.feeNote ?? "—"}
+                  </p>
+                </div>
+              ) : null}
             </div>
           </Section>
           {canManageBillingApprovers ? (

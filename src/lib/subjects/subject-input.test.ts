@@ -196,6 +196,7 @@ test("subjectWriteData: rates only for users who may see them", () => {
   const denied = subjectWriteData(result.subject, false);
   assert.equal("hourlyRate" in denied, false);
   assert.equal("flatFee" in denied, false);
+  assert.equal("feeNote" in denied, false);
   assert.equal(denied.name, "Sazby s.r.o.");
-  assert.equal(denied.feeNote, "Poznámka");
+  assert.equal(allowed.feeNote, "Poznámka");
 });
