@@ -18,11 +18,13 @@ import {
 } from "@/lib/labels";
 import {
   andWhere,
-  canViewAllLegalData,
+  canManageOrganization,
   dataMessageVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { dataMessageStatusTone } from "@/lib/status-tones";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +41,12 @@ type Data = {
 };
 
 export default async function DataBoxesPage() {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.dataBoxes");
+  if (accessDenied) {
+    return <AccessDenied title="Datové schránky" message={accessDenied} />;
+  }
+
   const result = await safeQuery<Data>(
     { messages: [], canConfigure: false },
     async () => {
@@ -52,7 +60,7 @@ export default async function DataBoxesPage() {
         orderBy: [{ deliveredAt: "desc" }, { createdAt: "desc" }],
         take: 500,
       });
-      return { messages, canConfigure: canViewAllLegalData(currentUser) };
+      return { messages, canConfigure: canManageOrganization(currentUser) };
     },
   );
 

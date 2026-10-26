@@ -1,5 +1,24 @@
 import type { Prisma } from "@/generated/prisma/client";
 import { Capability, UserRole } from "@/generated/prisma/enums";
+import type {
+  FunctionPermissionKey,
+  ModulePermissionKey,
+  PermissionKey,
+  PermissionScope,
+  ScopePermissionKey,
+} from "@/lib/permission-catalog";
+import {
+  defaultPermissionsForRole,
+  resolvePermissions,
+  type EffectivePermissions,
+} from "@/lib/permission-resolver";
+
+// Autorita pro přístup k datům a funkcím. Každý helper tady čte EFEKTIVNÍ
+// MATICI OPRÁVNĚNÍ uživatele (src/lib/permission-catalog.ts + výjimky role a
+// uživatele v kanceláři), kterou getCurrentUser() vyhodnotí jednou za request a
+// přibalí na usera jako `permissions`. Role-only calleři (string role, unit
+// testy) dostanou výchozí hodnoty své role. Izolace kanceláří (orgClause) platí
+// vždy a jako první, bez ohledu na matici.
 
 type PermissionUser = {
   id: string;
@@ -8,9 +27,11 @@ type PermissionUser = {
   // passed. Visibility helpers DENY when it's missing (fail closed).
   organizationId?: string | null;
   isPlatformAdmin?: boolean;
-  // Per-user granty nad rámec role (allow-only). Chybí u role-only callerů →
-  // hasCapability fail-closed na false → spadne se na role baseline.
+  // Starší per-user granty (deprecated, čtou se jako fallback ALLOW).
   capabilities?: Capability[];
+  // Efektivní matice oprávnění z getCurrentUser(). Chybí-li, spočítá se
+  // z role (+ capabilities) bez výjimek kanceláře.
+  permissions?: EffectivePermissions;
 };
 
 type PermissionInput = PermissionUser | UserRole | null | undefined;
@@ -64,6 +85,13 @@ function roleOf(user: PermissionInput) {
   return typeof user === "string" ? user : user?.role;
 }
 
+function isKnownRole(role: unknown): role is UserRole {
+  return (
+    typeof role === "string" &&
+    (Object.values(UserRole) as string[]).includes(role)
+  );
+}
+
 function userIdOf(user: PermissionInput) {
   return typeof user === "string" ? null : user?.id ?? null;
 }
@@ -72,9 +100,44 @@ function orgIdOf(user: PermissionInput): string | null {
   return typeof user === "string" ? null : user?.organizationId ?? null;
 }
 
-// True když uživatel nese daný per-user grant. Fail-closed: string/role-only/
-// null user nebo chybějící pole → false (can* helpery pak spadnou na role
-// baseline). Grant může jen ROZŠÍŘIT, nikdy nezužuje to, co dává role.
+// Efektivní matice pro libovolný vstup. Fail-closed: null/neznámá role → nic.
+export function permissionsOf(user: PermissionInput): EffectivePermissions {
+  if (!user) {
+    return resolvePermissions({ role: null });
+  }
+  if (typeof user === "string") {
+    return defaultPermissionsForRole(user);
+  }
+  if (user.permissions) {
+    return user.permissions;
+  }
+  if (!user.capabilities || user.capabilities.length === 0) {
+    return defaultPermissionsForRole(user.role);
+  }
+  return resolvePermissions({
+    role: user.role,
+    legacyCapabilities: user.capabilities,
+  });
+}
+
+// True when the boolean permission (module / function) is granted.
+export function hasPermission(
+  user: PermissionInput,
+  key: ModulePermissionKey | FunctionPermissionKey,
+): boolean {
+  return permissionsOf(user)[key as PermissionKey] === true;
+}
+
+// Data scope of the user for an entity ("ALL" | "ASSIGNED" | "OWN").
+export function scopeOf(
+  user: PermissionInput,
+  key: ScopePermissionKey,
+): PermissionScope {
+  return permissionsOf(user)[key] as PermissionScope;
+}
+
+// True když uživatel nese daný starší per-user grant (deprecated tabulka).
+// Fail-closed: string/role-only/null user nebo chybějící pole → false.
 export function hasCapability(user: PermissionInput, capability: Capability) {
   if (!user || typeof user === "string") {
     return false;
@@ -171,16 +234,13 @@ export function isPartner(user: PermissionInput) {
   return roleOf(user) === UserRole.PARTNER;
 }
 
-export function canViewAllLegalData(user: PermissionInput) {
-  return isAdmin(user) || isPartner(user);
-}
+// --- Funkce (function.*) ----------------------------------------------------
 
-// Subject registry and references are office-wide records in the MVP: they can
-// become visible to multiple matters and contain commercial/risk data. Keep
-// their create/edit policy aligned and limited to office leadership. This also
-// guarantees that anyone allowed to create one can subsequently edit it.
+// Subject registry and references are office-wide records: they can become
+// visible to multiple matters and contain commercial/risk data. Anyone allowed
+// to create one can subsequently edit it (same permission).
 export function canManageSubjects(user: PermissionInput) {
-  return Boolean(orgIdOf(user)) && canViewAllLegalData(user);
+  return Boolean(orgIdOf(user)) && hasPermission(user, "function.manageSubjects");
 }
 
 export function assertCanManageSubjects(user: PermissionInput) {
@@ -190,7 +250,9 @@ export function assertCanManageSubjects(user: PermissionInput) {
 }
 
 export function canManageReferences(user: PermissionInput) {
-  return Boolean(orgIdOf(user)) && canViewAllLegalData(user);
+  return (
+    Boolean(orgIdOf(user)) && hasPermission(user, "function.manageReferences")
+  );
 }
 
 export function assertCanManageReferences(user: PermissionInput) {
@@ -199,35 +261,152 @@ export function assertCanManageReferences(user: PermissionInput) {
   }
 }
 
-// Hourly rates / billed amounts are partner-level information. Default: only
-// ADMIN/PARTNER see the rate column. Admin can additionally grant VIEW_RATES to
-// a specific user (revize ř.35/62) — granted users then see rates everywhere
-// canViewRates is checked (work-logs server-side + page-level restrictTableView).
+// Hourly rates / flat fees / billed amounts. Default: ADMIN/PARTNER; others via
+// role override or a per-user exception (incl. the legacy VIEW_RATES grant).
 export function canViewRates(user: PermissionInput) {
-  return canViewAllLegalData(user) || hasCapability(user, Capability.VIEW_RATES);
+  return hasPermission(user, "function.viewRates");
 }
 
-// Who may mark work directly billable. Junior roles (trainee, intern) only get
+// Who may mark work directly billable. Without it a user only picks
 // "ke schválení" / "interní" — a partner/advokát decides what gets billed.
 export function canSetBillableStatus(user: PermissionInput) {
-  return canViewAllLegalData(user) || roleOf(user) === UserRole.LAWYER;
+  return hasPermission(user, "function.setBillable");
+}
+
+export function canArchiveRecords(user: PermissionInput) {
+  return hasPermission(user, "function.archiveRecords");
 }
 
 export function assertCanArchiveRecords(user: PermissionInput) {
-  if (!canViewAllLegalData(user)) {
+  if (!canArchiveRecords(user)) {
     throw new Error("Nemáte oprávnění archivovat ani obnovovat záznamy.");
   }
 }
 
+export function canManageUsers(user: PermissionInput) {
+  return Boolean(orgIdOf(user)) && hasPermission(user, "function.manageUsers");
+}
+
 export function assertCanManageUsers(user: PermissionInput) {
-  if (!canViewAllLegalData(user)) {
+  if (!canManageUsers(user)) {
     throw new Error("Nemáte oprávnění spravovat uživatele.");
   }
 }
 
+// Office-wide approval of billing documents. Client-level approvers
+// (SubjectBillingApprover) approve their client's logs even without it.
+export function canApproveWorkLogs(user: PermissionInput) {
+  return hasPermission(user, "function.approveWorkLogs");
+}
+
 export function assertCanApproveBilling(user: PermissionInput) {
-  if (!canViewAllLegalData(user)) {
+  if (!canApproveWorkLogs(user)) {
     throw new Error("Nemáte oprávnění schvalovat fakturační podklady.");
+  }
+}
+
+export function canViewAuditLog(user: PermissionInput) {
+  return Boolean(orgIdOf(user)) && hasPermission(user, "module.auditLog");
+}
+
+export function assertCanViewAuditLog(user: PermissionInput) {
+  if (!canViewAuditLog(user)) {
+    throw new Error("Nemáte oprávnění zobrazit audit log.");
+  }
+}
+
+// Office settings: members & roles, join codes, teams, billing profile, data
+// box accounts, SharePoint connection.
+export function canManageOrganization(user: PermissionInput) {
+  return (
+    Boolean(orgIdOf(user)) && hasPermission(user, "function.manageOrganization")
+  );
+}
+
+// Reports across colleagues/teams, billability KPIs, WIP, colleague filter.
+export function canViewTeamReports(user: PermissionInput) {
+  return hasPermission(user, "function.viewTeamReports");
+}
+
+// The permission matrix itself. ADMIN always (resolver), others only with the
+// permission — which in turn only an ADMIN may grant.
+export function canManagePermissions(user: PermissionInput) {
+  return (
+    Boolean(orgIdOf(user)) && hasPermission(user, "function.managePermissions")
+  );
+}
+
+export function assertCanManagePermissions(user: PermissionInput) {
+  if (!canManagePermissions(user)) {
+    throw new Error("Nemáte oprávnění spravovat oprávnění.");
+  }
+}
+
+// --- Ochrana před eskalací práv přes správu uživatelů a členů ----------------
+//
+// „Spravuje uživatele“ / „Spravuje nastavení kanceláře“ lze v matici přidělit
+// komukoli. Kdyby šlo s nimi založit administrátora, přidělit roli s „Spravuje
+// oprávnění“ nebo resetovat heslo takového uživatele (a přihlásit se za něj),
+// obešel by držitel zámek sloupce Administrátor i pravidlo, že „Spravuje
+// oprávnění“ mění jen administrátor. Proto kdo není administrátor (ani správce
+// platformy):
+//  - nesmí sáhnout na roli Administrátor ani na účet administrátora,
+//  - na roli/účet s „Spravuje oprávnění“ smí jen, pokud to oprávnění sám má.
+export type PrivilegedTarget = {
+  role: UserRole;
+  // Efektivní matice cílové role / cílového člena v kanceláři.
+  permissions: EffectivePermissions;
+};
+
+export type PrivilegedAction = "assignRole" | "resetPassword" | "deactivate";
+
+const ADMIN_TARGET_DENIALS: Record<PrivilegedAction, string> = {
+  assignRole: "Roli Administrátor může přidělit nebo odebrat jen administrátor.",
+  resetPassword: "Heslo administrátora může změnit jen administrátor.",
+  deactivate: "Administrátora může deaktivovat jen administrátor.",
+};
+
+const PERMISSION_MANAGER_DENIALS: Record<PrivilegedAction, string> = {
+  assignRole:
+    "Roli s oprávněním „Spravuje oprávnění“ může přidělit nebo odebrat jen uživatel, který toto oprávnění sám má.",
+  resetPassword:
+    "Heslo uživatele s oprávněním „Spravuje oprávnění“ může změnit jen uživatel, který toto oprávnění sám má.",
+  deactivate:
+    "Uživatele s oprávněním „Spravuje oprávnění“ může deaktivovat jen uživatel, který toto oprávnění sám má.",
+};
+
+// Důvod zamítnutí (česky), nebo null, když akce nad cílem nevede k eskalaci.
+export function privilegedTargetDenial(
+  actor: PermissionInput,
+  target: PrivilegedTarget,
+  action: PrivilegedAction,
+): string | null {
+  if (typeof actor !== "string" && actor?.isPlatformAdmin) {
+    return null;
+  }
+  if (roleOf(actor) === UserRole.ADMIN) {
+    return null;
+  }
+  if (target.role === UserRole.ADMIN) {
+    return ADMIN_TARGET_DENIALS[action];
+  }
+  if (
+    target.permissions["function.managePermissions"] === true &&
+    !hasPermission(actor, "function.managePermissions")
+  ) {
+    return PERMISSION_MANAGER_DENIALS[action];
+  }
+  return null;
+}
+
+export function assertNotPrivilegeEscalation(
+  actor: PermissionInput,
+  target: PrivilegedTarget,
+  action: PrivilegedAction,
+) {
+  const denial = privilegedTargetDenial(actor, target, action);
+  if (denial) {
+    throw new Error(denial);
   }
 }
 
@@ -239,9 +418,9 @@ export function assertPlatformAdmin(user: PermissionInput) {
   }
 }
 
-// Authorizes administering a SPECIFIC org: platform admin (any org) OR an
-// ADMIN/PARTNER acting within their own org. Used by the shared org actions so
-// /admin and /settings/organization can reuse them safely.
+// Authorizes administering a SPECIFIC org: platform admin (any org) OR a member
+// with "Spravuje nastavení kanceláře" acting within their own org. Used by the
+// shared org actions so /admin and /settings/organization can reuse them safely.
 export function assertCanAdministerOrg(
   user: PermissionInput,
   organizationId: string,
@@ -249,211 +428,286 @@ export function assertCanAdministerOrg(
   if (typeof user !== "string" && user?.isPlatformAdmin) {
     return;
   }
-  if (canViewAllLegalData(user) && orgIdOf(user) === organizationId) {
+  if (canManageOrganization(user) && orgIdOf(user) === organizationId) {
     return;
   }
   throw new Error("Nemáte oprávnění spravovat tuto kancelář.");
 }
 
 // Throws if the record belongs to a different organization than the user. Used
-// by archive/restore actions (which gate on role, not on canEditRecord).
+// by archive/restore actions (which gate on permission, not on canEditRecord).
 export function assertSameOrg(user: PermissionInput, record: ViewRecord) {
   if (orgMismatch(user, record)) {
     throw new Error("Záznam patří jiné kanceláři.");
   }
 }
 
-export function taskVisibilityWhere(user: PermissionInput): Prisma.TaskWhereInput {
+// --- Rozsah dat (scope.*) -----------------------------------------------------
+//
+// "Přiřazené" buildery jsou ZÁMĚRNĚ nezávislé na rozsahu ostatních entit: kdyby
+// dokumenty skládaly subjectVisibilityWhere(user), výchozí rozsah ALL u subjektů
+// by advokátovi odkryl všechny dokumenty všech subjektů. Každý builder je přesně
+// dřívější větev role LAWYER.
+
+function assignedTaskWhere(userId: string): Prisma.TaskWhereInput {
+  return {
+    OR: [
+      directTaskUserWhere(userId),
+      { project: { is: { responsibleUserId: userId } } },
+      { case: { is: { responsibleUserId: userId } } },
+      {
+        case: {
+          is: { project: { is: { responsibleUserId: userId } } },
+        },
+      },
+      // Assignee mirror: tasks of a project/case the user is assigned to.
+      { project: { is: projectAssigneeWhere(userId) } },
+      { case: { is: caseAssigneeWhere(userId) } },
+      {
+        case: {
+          is: { project: { is: projectAssigneeWhere(userId) } },
+        },
+      },
+    ],
+  };
+}
+
+function assignedProjectWhere(userId: string): Prisma.ProjectWhereInput {
+  return {
+    OR: [
+      { responsibleUserId: userId },
+      { assignees: { some: { userId } } },
+      { cases: { some: { responsibleUserId: userId } } },
+      { cases: { some: { assignees: { some: { userId } } } } },
+      { tasks: { some: directTaskUserWhere(userId) } },
+      { workLogs: { some: { userId } } },
+    ],
+  };
+}
+
+function assignedCaseWhere(userId: string): Prisma.CaseWhereInput {
+  return {
+    OR: [
+      { responsibleUserId: userId },
+      { assignees: { some: { userId } } },
+      { project: { is: { responsibleUserId: userId } } },
+      { project: { is: projectAssigneeWhere(userId) } },
+      { tasks: { some: directTaskUserWhere(userId) } },
+      { workLogs: { some: { userId } } },
+    ],
+  };
+}
+
+function assignedWorkLogWhere(userId: string): Prisma.WorkLogWhereInput {
+  return {
+    OR: [
+      { userId },
+      { task: { is: directTaskUserWhere(userId) } },
+      { project: { is: { responsibleUserId: userId } } },
+      { case: { is: { responsibleUserId: userId } } },
+      {
+        case: {
+          is: { project: { is: { responsibleUserId: userId } } },
+        },
+      },
+      // Assignee mirror: work-logs on a project/case the user is assigned to.
+      { project: { is: projectAssigneeWhere(userId) } },
+      { case: { is: caseAssigneeWhere(userId) } },
+      {
+        case: {
+          is: { project: { is: projectAssigneeWhere(userId) } },
+        },
+      },
+    ],
+  };
+}
+
+function assignedReferenceWhere(userId: string): Prisma.ReferenceWhereInput {
+  return {
+    OR: [
+      { project: { is: { responsibleUserId: userId } } },
+      { case: { is: { responsibleUserId: userId } } },
+      {
+        case: {
+          is: { project: { is: { responsibleUserId: userId } } },
+        },
+      },
+      // Assignee mirror: references on a project/case the user is assigned to.
+      { project: { is: projectAssigneeWhere(userId) } },
+      { case: { is: caseAssigneeWhere(userId) } },
+      {
+        case: {
+          is: { project: { is: projectAssigneeWhere(userId) } },
+        },
+      },
+      { project: { is: { tasks: { some: directTaskUserWhere(userId) } } } },
+      { case: { is: { tasks: { some: directTaskUserWhere(userId) } } } },
+      { project: { is: { workLogs: { some: { userId } } } } },
+      { case: { is: { workLogs: { some: { userId } } } } },
+    ],
+  };
+}
+
+function assignedSubjectWhere(
+  userId: string,
+  org: { organizationId: string },
+): Prisma.SubjectWhereInput {
+  const projectWhere = andWhere<Prisma.ProjectWhereInput>(
+    org,
+    assignedProjectWhere(userId),
+  );
+  const caseWhere = andWhere<Prisma.CaseWhereInput>(
+    org,
+    assignedCaseWhere(userId),
+  );
+  return {
+    OR: [
+      { mainProjects: { some: projectWhere } },
+      { relations: { some: { project: { is: projectWhere } } } },
+      { relations: { some: { case: { is: caseWhere } } } },
+      { workLogs: { some: andWhere(org, assignedWorkLogWhere(userId)) } },
+      { references: { some: andWhere(org, assignedReferenceWhere(userId)) } },
+    ],
+  };
+}
+
+function assignedInvoiceWhere(userId: string): Prisma.InvoiceWhereInput {
+  return {
+    OR: [
+      { createdById: userId },
+      { issuedById: userId },
+      { project: { is: { responsibleUserId: userId } } },
+      { case: { is: { responsibleUserId: userId } } },
+      { case: { is: { project: { is: { responsibleUserId: userId } } } } },
+      // Assignee mirror: invoices on a project/case the user is assigned to.
+      { project: { is: projectAssigneeWhere(userId) } },
+      { case: { is: caseAssigneeWhere(userId) } },
+      { case: { is: { project: { is: projectAssigneeWhere(userId) } } } },
+    ],
+  };
+}
+
+function assignedDataMessageWhere(
+  userId: string,
+): Prisma.DataMessageWhereInput {
+  return {
+    OR: [
+      { createdById: userId },
+      { case: { is: { responsibleUserId: userId } } },
+      { case: { is: { project: { is: { responsibleUserId: userId } } } } },
+      // Assignee mirror: data messages on a case the user is assigned to.
+      { case: { is: caseAssigneeWhere(userId) } },
+      { case: { is: { project: { is: projectAssigneeWhere(userId) } } } },
+    ],
+  };
+}
+
+function assignedDeadlineWhere(userId: string): Prisma.DeadlineWhereInput {
+  return {
+    OR: [
+      { responsibleUserId: userId },
+      { createdById: userId },
+      { case: { is: { responsibleUserId: userId } } },
+      { case: { is: { project: { is: { responsibleUserId: userId } } } } },
+      // Assignee mirror: deadlines on a case the user is assigned to.
+      { case: { is: caseAssigneeWhere(userId) } },
+      { case: { is: { project: { is: projectAssigneeWhere(userId) } } } },
+    ],
+  };
+}
+
+function assignedCourtHearingWhere(
+  userId: string,
+): Prisma.CourtHearingWhereInput {
+  return {
+    OR: [
+      { responsibleUserId: userId },
+      { createdById: userId },
+      { case: { is: { responsibleUserId: userId } } },
+      { case: { is: { project: { is: { responsibleUserId: userId } } } } },
+      // Assignee mirror: court hearings on a case the user is assigned to.
+      { case: { is: caseAssigneeWhere(userId) } },
+      { case: { is: { project: { is: projectAssigneeWhere(userId) } } } },
+    ],
+  };
+}
+
+function assignedDocumentWhere(
+  userId: string,
+  org: { organizationId: string },
+): Prisma.DocumentWhereInput {
+  return {
+    OR: [
+      { createdById: userId },
+      { case: { is: { responsibleUserId: userId } } },
+      { case: { is: { project: { is: { responsibleUserId: userId } } } } },
+      // Assignee mirror: documents on a case the user is assigned to.
+      { case: { is: caseAssigneeWhere(userId) } },
+      { case: { is: { project: { is: projectAssigneeWhere(userId) } } } },
+      {
+        subject: {
+          is: andWhere<Prisma.SubjectWhereInput>(
+            org,
+            assignedSubjectWhere(userId, org),
+          ),
+        },
+      },
+    ],
+  };
+}
+
+// Common shape of every scoped *VisibilityWhere: org first (isolation), then
+// the user's scope for the entity. ALL → whole office; ASSIGNED / OWN → the
+// matching builder (OWN falls back to ASSIGNED where an entity has no OWN
+// variant — the catalog never offers it there anyway). Fail-closed without an
+// org, a known role, or (for narrowed scopes) a user id.
+function scopedWhere<T extends object>(
+  user: PermissionInput,
+  key: ScopePermissionKey,
+  assigned: (userId: string, org: { organizationId: string }) => object,
+  own?: (userId: string) => object,
+): T {
   const org = orgClause(user);
-  if (!org) {
-    return denyWhere<Prisma.TaskWhereInput>();
+  if (!org || !isKnownRole(roleOf(user))) {
+    return denyWhere<T>();
   }
 
-  if (canViewAllLegalData(user)) {
-    return org;
+  const scope = scopeOf(user, key);
+  if (scope === "ALL") {
+    return org as T;
   }
 
   const userId = userIdOf(user);
-  const role = roleOf(user);
-
-  if (!userId || !role) {
-    return denyWhere<Prisma.TaskWhereInput>();
+  if (!userId) {
+    return denyWhere<T>();
   }
 
-  const directWhere = directTaskUserWhere(userId);
-
-  if (role === UserRole.LAWYER) {
-    return andWhere(org, {
-      OR: [
-        directWhere,
-        { project: { is: { responsibleUserId: userId } } },
-        { case: { is: { responsibleUserId: userId } } },
-        {
-          case: {
-            is: { project: { is: { responsibleUserId: userId } } },
-          },
-        },
-        // Assignee mirror: tasks of a project/case the user is assigned to.
-        { project: { is: projectAssigneeWhere(userId) } },
-        { case: { is: caseAssigneeWhere(userId) } },
-        {
-          case: {
-            is: { project: { is: projectAssigneeWhere(userId) } },
-          },
-        },
-      ],
-    });
+  if (scope === "OWN" && own) {
+    return andWhere<T>(org, own(userId));
   }
+  return andWhere<T>(org, assigned(userId, org));
+}
 
-  if (role === UserRole.TRAINEE || role === UserRole.INTERN) {
-    return andWhere(org, directWhere);
-  }
-
-  return denyWhere<Prisma.TaskWhereInput>();
+export function taskVisibilityWhere(user: PermissionInput): Prisma.TaskWhereInput {
+  return scopedWhere(user, "scope.tasks", assignedTaskWhere);
 }
 
 export function projectVisibilityWhere(
   user: PermissionInput,
 ): Prisma.ProjectWhereInput {
-  const org = orgClause(user);
-  if (!org) {
-    return denyWhere<Prisma.ProjectWhereInput>();
-  }
-
-  if (canViewAllLegalData(user)) {
-    return org;
-  }
-
-  const userId = userIdOf(user);
-  const role = roleOf(user);
-
-  if (!userId || !role) {
-    return denyWhere<Prisma.ProjectWhereInput>();
-  }
-
-  if (role === UserRole.LAWYER) {
-    return andWhere(org, {
-      OR: [
-        { responsibleUserId: userId },
-        { assignees: { some: { userId } } },
-        { cases: { some: { responsibleUserId: userId } } },
-        { cases: { some: { assignees: { some: { userId } } } } },
-        { tasks: { some: directTaskUserWhere(userId) } },
-        { workLogs: { some: { userId } } },
-      ],
-    });
-  }
-
-  if (role === UserRole.TRAINEE) {
-    return andWhere(org, {
-      OR: [
-        // Project view mirrors LAWYER assignee paths so an assigned trainee
-        // sees the whole project (and projects of cases they're assigned to).
-        { assignees: { some: { userId } } },
-        { cases: { some: { assignees: { some: { userId } } } } },
-        { tasks: { some: directTaskUserWhere(userId) } },
-        { workLogs: { some: { userId } } },
-      ],
-    });
-  }
-
-  return denyWhere<Prisma.ProjectWhereInput>();
+  return scopedWhere(user, "scope.projects", assignedProjectWhere);
 }
 
 export function caseVisibilityWhere(user: PermissionInput): Prisma.CaseWhereInput {
-  const org = orgClause(user);
-  if (!org) {
-    return denyWhere<Prisma.CaseWhereInput>();
-  }
-
-  if (canViewAllLegalData(user)) {
-    return org;
-  }
-
-  const userId = userIdOf(user);
-  const role = roleOf(user);
-
-  if (!userId || !role) {
-    return denyWhere<Prisma.CaseWhereInput>();
-  }
-
-  if (role === UserRole.LAWYER) {
-    return andWhere(org, {
-      OR: [
-        { responsibleUserId: userId },
-        { assignees: { some: { userId } } },
-        { project: { is: { responsibleUserId: userId } } },
-        { project: { is: projectAssigneeWhere(userId) } },
-        { tasks: { some: directTaskUserWhere(userId) } },
-        { workLogs: { some: { userId } } },
-      ],
-    });
-  }
-
-  if (role === UserRole.TRAINEE) {
-    return andWhere(org, {
-      OR: [
-        // Case view mirrors LAWYER assignee paths: assigned to the case, or to
-        // its project (project assignee sees the project's cases).
-        { assignees: { some: { userId } } },
-        { project: { is: projectAssigneeWhere(userId) } },
-        { tasks: { some: directTaskUserWhere(userId) } },
-        { workLogs: { some: { userId } } },
-      ],
-    });
-  }
-
-  return denyWhere<Prisma.CaseWhereInput>();
+  return scopedWhere(user, "scope.cases", assignedCaseWhere);
 }
 
 export function workLogVisibilityWhere(
   user: PermissionInput,
 ): Prisma.WorkLogWhereInput {
-  const org = orgClause(user);
-  if (!org) {
-    return denyWhere<Prisma.WorkLogWhereInput>();
-  }
-
-  if (canViewAllLegalData(user)) {
-    return org;
-  }
-
-  const userId = userIdOf(user);
-  const role = roleOf(user);
-
-  if (!userId || !role) {
-    return denyWhere<Prisma.WorkLogWhereInput>();
-  }
-
-  if (role === UserRole.LAWYER) {
-    return andWhere(org, {
-      OR: [
-        { userId },
-        { task: { is: directTaskUserWhere(userId) } },
-        { project: { is: { responsibleUserId: userId } } },
-        { case: { is: { responsibleUserId: userId } } },
-        {
-          case: {
-            is: { project: { is: { responsibleUserId: userId } } },
-          },
-        },
-        // Assignee mirror: work-logs on a project/case the user is assigned to.
-        { project: { is: projectAssigneeWhere(userId) } },
-        { case: { is: caseAssigneeWhere(userId) } },
-        {
-          case: {
-            is: { project: { is: projectAssigneeWhere(userId) } },
-          },
-        },
-      ],
-    });
-  }
-
-  if (role === UserRole.TRAINEE || role === UserRole.INTERN) {
-    return andWhere(org, { userId });
-  }
-
-  return denyWhere<Prisma.WorkLogWhereInput>();
+  return scopedWhere(user, "scope.workLogs", assignedWorkLogWhere, (userId) => ({
+    userId,
+  }));
 }
 
 // Work logs whose client explicitly assigned this user as a billing approver.
@@ -478,51 +732,16 @@ export function billingApproverWorkLogWhere(
 export function invoiceVisibilityWhere(
   user: PermissionInput,
 ): Prisma.InvoiceWhereInput {
-  const org = orgClause(user);
-  if (!org) {
-    return denyWhere<Prisma.InvoiceWhereInput>();
-  }
-
-  if (canViewAllLegalData(user)) {
-    return org;
-  }
-
-  const userId = userIdOf(user);
-  const role = roleOf(user);
-
-  if (!userId || !role) {
-    return denyWhere<Prisma.InvoiceWhereInput>();
-  }
-
-  if (role === UserRole.LAWYER) {
-    return andWhere(org, {
-      OR: [
-        { createdById: userId },
-        { issuedById: userId },
-        { project: { is: { responsibleUserId: userId } } },
-        { case: { is: { responsibleUserId: userId } } },
-        { case: { is: { project: { is: { responsibleUserId: userId } } } } },
-        // Assignee mirror: invoices on a project/case the user is assigned to.
-        { project: { is: projectAssigneeWhere(userId) } },
-        { case: { is: caseAssigneeWhere(userId) } },
-        { case: { is: { project: { is: projectAssigneeWhere(userId) } } } },
-      ],
-    });
-  }
-
-  // TRAINEE/INTERN don't manage invoices; only ones they created (≈ none).
-  return andWhere(org, { createdById: userId });
+  return scopedWhere(user, "scope.invoices", assignedInvoiceWhere, (userId) => ({
+    createdById: userId,
+  }));
 }
 
 // Who may create/issue/cancel client invoices, record payments, send reminders
-// and manage retainers. Default: ADMIN/PARTNER only (revize ř.77 — fakturace jen
-// pro vedení a vybrané osoby). Other users (incl. LAWYER) need an explicit
-// MANAGE_INVOICES grant — existing active lawyers were granted it by the
-// data-migration, so admin can revoke from those who shouldn't invoice.
+// and manage retainers. Default: ADMIN/PARTNER; others via the matrix (the
+// legacy MANAGE_INVOICES grant counts as a per-user ALLOW).
 export function canManageInvoices(user: PermissionInput) {
-  return (
-    canViewAllLegalData(user) || hasCapability(user, Capability.MANAGE_INVOICES)
-  );
+  return hasPermission(user, "function.manageInvoices");
 }
 
 export function assertCanManageInvoices(user: PermissionInput) {
@@ -531,59 +750,34 @@ export function assertCanManageInvoices(user: PermissionInput) {
   }
 }
 
-// Visibility for data messages (F2). Data-box content is sensitive: ADMIN/PARTNER
-// see all org messages; a LAWYER sees only ones they recorded or that are
-// assigned to a case they're responsible for. Unassigned messages (no case)
-// therefore stay visible only to ADMIN/PARTNER and their creator. TRAINEE/INTERN
-// see only what they created (default-deny on sensitive DS data).
+// Data-box content is sensitive. Default: ADMIN/PARTNER whole office, LAWYER
+// own + messages of their cases, juniors only what they recorded.
 export function dataMessageVisibilityWhere(
   user: PermissionInput,
 ): Prisma.DataMessageWhereInput {
-  const org = orgClause(user);
-  if (!org) {
-    return denyWhere<Prisma.DataMessageWhereInput>();
-  }
-
-  if (canViewAllLegalData(user)) {
-    return org;
-  }
-
-  const userId = userIdOf(user);
-  const role = roleOf(user);
-
-  if (!userId || !role) {
-    return denyWhere<Prisma.DataMessageWhereInput>();
-  }
-
-  if (role === UserRole.LAWYER) {
-    return andWhere(org, {
-      OR: [
-        { createdById: userId },
-        { case: { is: { responsibleUserId: userId } } },
-        { case: { is: { project: { is: { responsibleUserId: userId } } } } },
-        // Assignee mirror: data messages on a case the user is assigned to.
-        { case: { is: caseAssigneeWhere(userId) } },
-        { case: { is: { project: { is: projectAssigneeWhere(userId) } } } },
-      ],
-    });
-  }
-
-  return andWhere(org, { createdById: userId });
+  return scopedWhere(
+    user,
+    "scope.dataMessages",
+    assignedDataMessageWhere,
+    (userId) => ({ createdById: userId }),
+  );
 }
 
-// Who may record/assign/send data messages: ADMIN, PARTNER, LAWYER. (Configuring
-// a DataBoxAccount is stricter — ADMIN/PARTNER via assertCanAdministerOrg.)
+// Who may record/assign/send data messages. (Configuring a DataBoxAccount is
+// stricter — "Spravuje nastavení kanceláře" via assertCanAdministerOrg.)
+export function canManageDataBoxes(user: PermissionInput) {
+  return hasPermission(user, "function.manageDataBoxes");
+}
+
 export function assertCanManageDataBoxes(user: PermissionInput) {
-  const ok = canViewAllLegalData(user) || roleOf(user) === UserRole.LAWYER;
-  if (!ok) {
+  if (!canManageDataBoxes(user)) {
     throw new Error("Nemáte oprávnění pracovat s datovými schránkami.");
   }
 }
 
-// AML/KYC data is compliance-sensitive (identity documents, PEP/sanctions) —
-// restricted to ADMIN/PARTNER for both viewing and management.
+// AML/KYC data is compliance-sensitive (identity documents, PEP/sanctions).
 export function canManageAml(user: PermissionInput): boolean {
-  return canViewAllLegalData(user);
+  return hasPermission(user, "function.manageAml");
 }
 
 export function assertCanManageAml(user: PermissionInput) {
@@ -592,11 +786,10 @@ export function assertCanManageAml(user: PermissionInput) {
   }
 }
 
-// Who may create/edit/complete deadlines and court hearings: ADMIN, PARTNER,
-// LAWYER. Closing a procedural deadline is a liability act (a missed deadline is
-// the lawyer's liability), so TRAINEE/INTERN are excluded from managing them.
+// Closing a procedural deadline is a liability act, so by default juniors
+// don't manage deadlines/hearings.
 export function canManageDeadlines(user: PermissionInput): boolean {
-  return canViewAllLegalData(user) || roleOf(user) === UserRole.LAWYER;
+  return hasPermission(user, "function.manageDeadlines");
 }
 
 export function assertCanManageDeadlines(user: PermissionInput) {
@@ -605,53 +798,18 @@ export function assertCanManageDeadlines(user: PermissionInput) {
   }
 }
 
-// Visibility for deadlines (F4). Deadlines are case-bound, so visibility derives
-// from the case (like data messages): ADMIN/PARTNER see all org deadlines; a
-// LAWYER sees ones they own (responsible/created) or on a case they're
-// responsible for; TRAINEE/INTERN see only ones they own. Fail-closed without org.
 export function deadlineVisibilityWhere(
   user: PermissionInput,
 ): Prisma.DeadlineWhereInput {
-  const org = orgClause(user);
-  if (!org) {
-    return denyWhere<Prisma.DeadlineWhereInput>();
-  }
-
-  if (canViewAllLegalData(user)) {
-    return org;
-  }
-
-  const userId = userIdOf(user);
-  const role = roleOf(user);
-
-  if (!userId || !role) {
-    return denyWhere<Prisma.DeadlineWhereInput>();
-  }
-
-  if (role === UserRole.LAWYER) {
-    return andWhere(org, {
-      OR: [
-        { responsibleUserId: userId },
-        { createdById: userId },
-        { case: { is: { responsibleUserId: userId } } },
-        { case: { is: { project: { is: { responsibleUserId: userId } } } } },
-        // Assignee mirror: deadlines on a case the user is assigned to.
-        { case: { is: caseAssigneeWhere(userId) } },
-        { case: { is: { project: { is: projectAssigneeWhere(userId) } } } },
-      ],
-    });
-  }
-
-  return andWhere(org, {
+  return scopedWhere(user, "scope.deadlines", assignedDeadlineWhere, (userId) => ({
     OR: [{ responsibleUserId: userId }, { createdById: userId }],
-  });
+  }));
 }
 
-// Who may create/edit/version documents: ADMIN, PARTNER, LAWYER. Documents are
-// case/subject-bound work artifacts under attorney confidentiality, so junior
-// roles (TRAINEE/INTERN) don't author or version them in the MVP.
+// Documents are case/subject-bound work artifacts under attorney
+// confidentiality; by default juniors don't author or version them.
 export function canManageDocuments(user: PermissionInput): boolean {
-  return canViewAllLegalData(user) || roleOf(user) === UserRole.LAWYER;
+  return hasPermission(user, "function.manageDocuments");
 }
 
 export function assertCanManageDocuments(user: PermissionInput) {
@@ -660,10 +818,9 @@ export function assertCanManageDocuments(user: PermissionInput) {
   }
 }
 
-// Templates are an office-wide asset (they change generation for everyone), so
-// managing them is restricted to ADMIN/PARTNER. LAWYER uses but doesn't edit.
+// Templates are an office-wide asset (they change generation for everyone).
 export function canManageDocumentTemplates(user: PermissionInput): boolean {
-  return canViewAllLegalData(user);
+  return hasPermission(user, "function.manageDocumentTemplates");
 }
 
 export function assertCanManageDocumentTemplates(user: PermissionInput) {
@@ -672,44 +829,12 @@ export function assertCanManageDocumentTemplates(user: PermissionInput) {
   }
 }
 
-// Visibility for documents (F5). Case/subject-bound and confidentiality-sensitive:
-// ADMIN/PARTNER see all org documents; a LAWYER sees ones they created, on a case
-// they're responsible for, or on a subject visible to them; TRAINEE/INTERN see
-// only ones they created (default-deny on confidential material). Fail-closed.
 export function documentVisibilityWhere(
   user: PermissionInput,
 ): Prisma.DocumentWhereInput {
-  const org = orgClause(user);
-  if (!org) {
-    return denyWhere<Prisma.DocumentWhereInput>();
-  }
-
-  if (canViewAllLegalData(user)) {
-    return org;
-  }
-
-  const userId = userIdOf(user);
-  const role = roleOf(user);
-
-  if (!userId || !role) {
-    return denyWhere<Prisma.DocumentWhereInput>();
-  }
-
-  if (role === UserRole.LAWYER) {
-    return andWhere(org, {
-      OR: [
-        { createdById: userId },
-        { case: { is: { responsibleUserId: userId } } },
-        { case: { is: { project: { is: { responsibleUserId: userId } } } } },
-        // Assignee mirror: documents on a case the user is assigned to.
-        { case: { is: caseAssigneeWhere(userId) } },
-        { case: { is: { project: { is: projectAssigneeWhere(userId) } } } },
-        { subject: { is: subjectVisibilityWhere(user) } },
-      ],
-    });
-  }
-
-  return andWhere(org, { createdById: userId });
+  return scopedWhere(user, "scope.documents", assignedDocumentWhere, (userId) => ({
+    createdById: userId,
+  }));
 }
 
 // Templates are office-wide: any org member who has the module may read them.
@@ -724,11 +849,10 @@ export function documentTemplateVisibilityWhere(
   return org;
 }
 
-// Who may grant/revoke client portal access and share records with clients:
-// ADMIN, PARTNER, LAWYER (sharing confidential data with an external party is a
-// case-handling decision). TRAINEE/INTERN are excluded.
+// Who may grant/revoke client portal access and share records with clients
+// (sharing confidential data with an external party is a case decision).
 export function canManagePortal(user: PermissionInput): boolean {
-  return canViewAllLegalData(user) || roleOf(user) === UserRole.LAWYER;
+  return hasPermission(user, "function.managePortal");
 }
 
 export function assertCanManagePortal(user: PermissionInput) {
@@ -737,11 +861,11 @@ export function assertCanManagePortal(user: PermissionInput) {
   }
 }
 
-// HR / Docházka (F7). HR data are personal/sensitive (payroll, absences), so
-// management (employees, approvals, exports) is restricted to ADMIN/PARTNER (the
-// HR manager). Regular employees see and request only their OWN records.
+// HR data are personal/sensitive (payroll, absences): management (employees,
+// approvals, exports) needs "Spravuje HR a docházku"; everyone else sees and
+// requests only their OWN records.
 export function canManageHr(user: PermissionInput): boolean {
-  return canViewAllLegalData(user);
+  return hasPermission(user, "function.manageHr");
 }
 
 export function assertCanManageHr(user: PermissionInput) {
@@ -750,7 +874,7 @@ export function assertCanManageHr(user: PermissionInput) {
   }
 }
 
-// Employee visibility: ADMIN/PARTNER see all employees in the org; everyone else
+// Employee visibility: HR managers see all employees in the org; everyone else
 // sees only their own employee record (linked via userId). Fail-closed w/o org.
 export function hrEmployeeVisibilityWhere(
   user: PermissionInput,
@@ -805,145 +929,36 @@ export function hrAbsenceVisibilityWhere(
   return andWhere(org, { employee: { is: { userId } } });
 }
 
-// Visibility for court hearings (F4) — same case-derived rules as deadlines.
+// Court hearings share the deadline scope (one "Lhůty a soudní jednání" row).
 export function courtHearingVisibilityWhere(
   user: PermissionInput,
 ): Prisma.CourtHearingWhereInput {
-  const org = orgClause(user);
-  if (!org) {
-    return denyWhere<Prisma.CourtHearingWhereInput>();
-  }
-
-  if (canViewAllLegalData(user)) {
-    return org;
-  }
-
-  const userId = userIdOf(user);
-  const role = roleOf(user);
-
-  if (!userId || !role) {
-    return denyWhere<Prisma.CourtHearingWhereInput>();
-  }
-
-  if (role === UserRole.LAWYER) {
-    return andWhere(org, {
-      OR: [
-        { responsibleUserId: userId },
-        { createdById: userId },
-        { case: { is: { responsibleUserId: userId } } },
-        { case: { is: { project: { is: { responsibleUserId: userId } } } } },
-        // Assignee mirror: court hearings on a case the user is assigned to.
-        { case: { is: caseAssigneeWhere(userId) } },
-        { case: { is: { project: { is: projectAssigneeWhere(userId) } } } },
-      ],
-    });
-  }
-
-  return andWhere(org, {
-    OR: [{ responsibleUserId: userId }, { createdById: userId }],
-  });
+  return scopedWhere(
+    user,
+    "scope.deadlines",
+    assignedCourtHearingWhere,
+    (userId) => ({
+      OR: [{ responsibleUserId: userId }, { createdById: userId }],
+    }),
+  );
 }
 
 export function referenceVisibilityWhere(
   user: PermissionInput,
 ): Prisma.ReferenceWhereInput {
-  const org = orgClause(user);
-  if (!org) {
-    return denyWhere<Prisma.ReferenceWhereInput>();
-  }
-
-  if (canViewAllLegalData(user)) {
-    return org;
-  }
-
-  const userId = userIdOf(user);
-  const role = roleOf(user);
-
-  if (!userId || !role) {
-    return denyWhere<Prisma.ReferenceWhereInput>();
-  }
-
-  if (role === UserRole.LAWYER) {
-    return andWhere(org, {
-      OR: [
-        { project: { is: { responsibleUserId: userId } } },
-        { case: { is: { responsibleUserId: userId } } },
-        {
-          case: {
-            is: { project: { is: { responsibleUserId: userId } } },
-          },
-        },
-        // Assignee mirror: references on a project/case the user is assigned to.
-        { project: { is: projectAssigneeWhere(userId) } },
-        { case: { is: caseAssigneeWhere(userId) } },
-        {
-          case: {
-            is: { project: { is: projectAssigneeWhere(userId) } },
-          },
-        },
-        { project: { is: { tasks: { some: directTaskUserWhere(userId) } } } },
-        { case: { is: { tasks: { some: directTaskUserWhere(userId) } } } },
-        { project: { is: { workLogs: { some: { userId } } } } },
-        { case: { is: { workLogs: { some: { userId } } } } },
-      ],
-    });
-  }
-
-  return denyWhere<Prisma.ReferenceWhereInput>();
+  return scopedWhere(user, "scope.references", assignedReferenceWhere);
 }
 
 export function subjectVisibilityWhere(
   user: PermissionInput,
 ): Prisma.SubjectWhereInput {
-  const org = orgClause(user);
-  if (!org) {
-    return denyWhere<Prisma.SubjectWhereInput>();
-  }
-
-  if (canViewAllLegalData(user)) {
-    return org;
-  }
-
-  const userId = userIdOf(user);
-  const role = roleOf(user);
-
-  if (!userId || !role) {
-    return denyWhere<Prisma.SubjectWhereInput>();
-  }
-
-  if (role === UserRole.INTERN) {
-    return andWhere(org, { workLogs: { some: { userId } } });
-  }
-
-  const projectWhere = projectVisibilityWhere(user);
-  const caseWhere = caseVisibilityWhere(user);
-
-  if (role === UserRole.LAWYER) {
-    return andWhere(org, {
-      OR: [
-        { mainProjects: { some: projectWhere } },
-        { relations: { some: { project: { is: projectWhere } } } },
-        { relations: { some: { case: { is: caseWhere } } } },
-        { workLogs: { some: workLogVisibilityWhere(user) } },
-        { references: { some: referenceVisibilityWhere(user) } },
-      ],
-    });
-  }
-
-  if (role === UserRole.TRAINEE) {
-    return andWhere(org, {
-      OR: [
-        { mainProjects: { some: projectWhere } },
-        { relations: { some: { project: { is: projectWhere } } } },
-        { relations: { some: { case: { is: caseWhere } } } },
-        { workLogs: { some: { userId } } },
-      ],
-    });
-  }
-
-  return denyWhere<Prisma.SubjectWhereInput>();
+  return scopedWhere(user, "scope.subjects", assignedSubjectWhere);
 }
 
+// In-memory view check for an already loaded record. Query-layer visibility
+// (*VisibilityWhere) is authoritative; this mirrors it for the fields a record
+// carries (relations like tasks/work-logs aren't loaded, so a narrowed scope
+// only honours responsibility/assignment/ownership here).
 export function canViewRecord(
   user: PermissionInput,
   type: RecordType,
@@ -958,14 +973,24 @@ export function canViewRecord(
     return false;
   }
 
-  if (canViewAllLegalData(user)) {
+  if (!isKnownRole(roleOf(user))) {
+    return false;
+  }
+
+  const scopeKey: Record<RecordType, ScopePermissionKey> = {
+    Task: "scope.tasks",
+    Project: "scope.projects",
+    Case: "scope.cases",
+    WorkLog: "scope.workLogs",
+    Reference: "scope.references",
+    Subject: "scope.subjects",
+  };
+  if (scopeOf(user, scopeKey[type]) === "ALL") {
     return true;
   }
 
   const userId = userIdOf(user);
-  const role = roleOf(user);
-
-  if (!userId || !role) {
+  if (!userId) {
     return false;
   }
 
@@ -977,40 +1002,30 @@ export function canViewRecord(
 
     return (
       hasDirectTaskAccess(task, userId) ||
-      (role === UserRole.LAWYER &&
-        (task.project?.responsibleUserId === userId ||
-          task.case?.responsibleUserId === userId ||
-          task.case?.project?.responsibleUserId === userId))
+      task.project?.responsibleUserId === userId ||
+      task.case?.responsibleUserId === userId ||
+      task.case?.project?.responsibleUserId === userId ||
+      isAssigneeOf(task.project?.assignees, userId) ||
+      isAssigneeOf(task.case?.assignees, userId) ||
+      isAssigneeOf(task.case?.project?.assignees, userId)
     );
   }
 
   if (type === "Project") {
     const project = record as ProjectRecord;
-    if (role === UserRole.LAWYER && project.responsibleUserId === userId) {
-      return true;
-    }
-    // Assignees (LAWYER + TRAINEE) see the project they're assigned to.
     return (
-      (role === UserRole.LAWYER || role === UserRole.TRAINEE) &&
+      project.responsibleUserId === userId ||
       isAssigneeOf(project.assignees, userId)
     );
   }
 
   if (type === "Case") {
     const legalCase = record as CaseRecord;
-    if (
-      role === UserRole.LAWYER &&
-      (legalCase.responsibleUserId === userId ||
-        legalCase.project?.responsibleUserId === userId)
-    ) {
-      return true;
-    }
-    // Assignees (LAWYER + TRAINEE) see a case they're assigned to, or whose
-    // project they're assigned to.
     return (
-      (role === UserRole.LAWYER || role === UserRole.TRAINEE) &&
-      (isAssigneeOf(legalCase.assignees, userId) ||
-        isAssigneeOf(legalCase.project?.assignees, userId))
+      legalCase.responsibleUserId === userId ||
+      legalCase.project?.responsibleUserId === userId ||
+      isAssigneeOf(legalCase.assignees, userId) ||
+      isAssigneeOf(legalCase.project?.assignees, userId)
     );
   }
 
@@ -1045,14 +1060,24 @@ export function canEditRecord(
     return canManageReferences(user);
   }
 
-  if (canViewAllLegalData(user)) {
+  if (!isKnownRole(roleOf(user))) {
+    return false;
+  }
+
+  if (
+    (type === "Task" || type === "Project" || type === "Case") &&
+    hasPermission(user, "function.editAllMatters")
+  ) {
+    return true;
+  }
+
+  if (type === "WorkLog" && hasPermission(user, "function.editAllWorkLogs")) {
     return true;
   }
 
   const userId = userIdOf(user);
-  const role = roleOf(user);
 
-  if (!userId || !role) {
+  if (!userId) {
     return false;
   }
 
@@ -1063,7 +1088,7 @@ export function canEditRecord(
   if (type === "Project") {
     const project = record as ProjectRecord;
     return (
-      role === UserRole.LAWYER &&
+      hasPermission(user, "function.editAssignedMatters") &&
       (project.responsibleUserId === userId ||
         isAssigneeOf(project.assignees, userId))
     );
@@ -1072,7 +1097,7 @@ export function canEditRecord(
   if (type === "Case") {
     const legalCase = record as CaseRecord;
     return (
-      role === UserRole.LAWYER &&
+      hasPermission(user, "function.editAssignedMatters") &&
       (legalCase.responsibleUserId === userId ||
         isAssigneeOf(legalCase.assignees, userId))
     );

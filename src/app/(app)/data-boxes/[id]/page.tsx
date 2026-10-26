@@ -13,7 +13,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { ModuleKey } from "@/generated/prisma/enums";
 import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
-import { assertModuleEnabled, isModuleEnabled } from "@/lib/entitlements";
+import { assertModuleEnabled } from "@/lib/entitlements";
 import { formatCaseLabel, formatDate } from "@/lib/format";
 import {
   dataMessageDirectionLabels,
@@ -28,6 +28,11 @@ import {
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { dataMessageStatusTone } from "@/lib/status-tones";
+import { AccessDenied } from "@/components/access-denied";
+import {
+  canAccessModule,
+  moduleAccessDenial,
+} from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -54,6 +59,12 @@ export default async function DataMessageDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.dataBoxes");
+  if (accessDenied) {
+    return <AccessDenied title="Datové schránky" message={accessDenied} />;
+  }
+
   const { id } = await params;
 
   const result = await safeQuery<Data | null>(null, async () => {
@@ -67,9 +78,9 @@ export default async function DataMessageDetailPage({
     if (!message) {
       return null;
     }
-    const deadlinesEnabled = await isModuleEnabled(
-      currentUser.organizationId,
-      ModuleKey.DEADLINES,
+    const deadlinesEnabled = await canAccessModule(
+      currentUser,
+      "module.deadlines",
     );
     const [cases, subjects, memberRows] = await Promise.all([
       prisma.case.findMany({

@@ -3,12 +3,15 @@ import { formatHours, formatMoney } from "@/lib/format";
 import type { ReportSummaryRow } from "@/lib/reporting/aggregations";
 
 // Shared "label / hodiny / částka / počet" summary table for report views.
+// The amount column renders only for users who may see rates and amounts.
 export function ReportSummaryTable({
   labelHeader,
   rows,
+  showAmounts,
 }: {
   labelHeader: string;
   rows: ReportSummaryRow[];
+  showAmounts: boolean;
 }) {
   if (rows.length === 0) {
     return <EmptyState>Žádné výkazy práce neodpovídají filtru.</EmptyState>;
@@ -21,7 +24,7 @@ export function ReportSummaryTable({
           <tr>
             <th>{labelHeader}</th>
             <th>Hodiny</th>
-            <th>Částka</th>
+            {showAmounts ? <th>Částka</th> : null}
             <th>Počet položek</th>
           </tr>
         </thead>
@@ -30,7 +33,7 @@ export function ReportSummaryTable({
             <tr key={row.key}>
               <td>{row.label}</td>
               <td>{formatHours(row.hours)}</td>
-              <td>{formatMoney(row.amount)}</td>
+              {showAmounts ? <td>{formatMoney(row.amount)}</td> : null}
               <td>{row.count}</td>
             </tr>
           ))}

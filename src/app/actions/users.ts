@@ -5,11 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { Prisma } from "@/generated/prisma/client";
-import {
-  Capability,
-  OrganizationMemberStatus,
-  UserRole,
-} from "@/generated/prisma/enums";
+import { OrganizationMemberStatus, UserRole } from "@/generated/prisma/enums";
 import { auditJson, writeAuditLog } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
 import {
@@ -26,7 +22,15 @@ import {
   MIN_PASSWORD_LENGTH,
   verifyPassword,
 } from "@/lib/password";
-import { assertCanManageUsers } from "@/lib/permissions";
+import {
+  assertCanManageUsers,
+  assertNotPrivilegeEscalation,
+  privilegedTargetDenial,
+} from "@/lib/permissions";
+import {
+  loadEffectivePermissions,
+  loadRolePermissions,
+} from "@/lib/permission-store.server";
 import { getPrisma } from "@/lib/prisma";
 import { normalizeCalendarView } from "@/lib/calendar-view";
 import { setUserSessionCookie } from "@/lib/session-cookie";
@@ -114,6 +118,18 @@ export async function createUser(
   }
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return fail("Zadejte platný e-mail.");
+  }
+
+  // Kdo zakládá účet, zná jeho heslo: bez této kontroly by si držitel „Spravuje
+  // uživatele“ založil administrátora (nebo účet s „Spravuje oprávnění“) a
+  // přihlásil se za něj.
+  const roleDenial = privilegedTargetDenial(
+    currentUser,
+    { role, permissions: await loadRolePermissions(organizationId, role) },
+    "assignRole",
+  );
+  if (roleDenial) {
+    return fail(roleDenial);
   }
 
   const password = String(formData.get("password") ?? "");
@@ -265,6 +281,34 @@ export async function resendUserInvitation(
   };
 }
 
+async function assertCanResetPasswordOf(
+  currentUser: Awaited<ReturnType<typeof getCurrentUser>>,
+  userId: string,
+) {
+  const membership = await getPrisma().organizationMember.findUnique({
+    where: {
+      organizationId_userId: {
+        organizationId: currentUser.organizationId,
+        userId,
+      },
+    },
+    select: { role: true },
+  });
+  if (!membership) {
+    throw new Error("Uživatel nebyl nalezen.");
+  }
+  const target = await loadEffectivePermissions({
+    organizationId: currentUser.organizationId,
+    userId,
+    role: membership.role,
+  });
+  assertNotPrivilegeEscalation(
+    currentUser,
+    { role: membership.role, permissions: target.permissions },
+    "resetPassword",
+  );
+}
+
 // Admin/partner resets another user's password (e.g. forgotten password).
 export async function setUserPassword(formData: FormData) {
   const prisma = getPrisma();
@@ -281,6 +325,11 @@ export async function setUserPassword(formData: FormData) {
   // organizaci. Bez tohoto guardu by ADMIN/PARTNER mohl resetovat heslo
   // uživatele z cizí kanceláře.
   await assertUserInOrg(userId, currentUser.organizationId);
+
+  // Nové heslo = přihlášení za cílového uživatele. Účet administrátora (nebo
+  // uživatele s „Spravuje oprávnění“) proto smí resetovat jen ten, kdo by tím
+  // nezískal víc práv, než už má.
+  await assertCanResetPasswordOf(currentUser, userId);
 
   await prisma.user.update({
     where: { id: userId },
@@ -415,80 +464,6 @@ export async function updateUserHoursPlan(formData: FormData) {
   revalidatePath("/settings");
   revalidatePath("/work-logs");
   revalidatePath("/dashboard");
-}
-
-const ALL_CAPABILITIES = [Capability.MANAGE_INVOICES, Capability.VIEW_RATES];
-
-// Admin/partner nastaví granulární oprávnění (capability granty) uživatele —
-// desired-state save: smaž vše a vytvoř vybrané v jedné transakci (jeden
-// společný „uložit", revize ř.4). Allow-only nad rámec role.
-export async function setUserCapabilities(formData: FormData) {
-  const prisma = getPrisma();
-  const currentUser = await getCurrentUser();
-  assertCanManageUsers(currentUser);
-
-  const userId = requiredString(formData, "userId");
-  const organizationId = currentUser.organizationId;
-
-  // Cross-org guard: cílový uživatel musí být aktivním členem stejné kanceláře.
-  const membership = organizationId
-    ? await prisma.organizationMember.findFirst({
-        where: {
-          userId,
-          organizationId,
-          status: OrganizationMemberStatus.ACTIVE,
-        },
-        select: { id: true },
-      })
-    : null;
-  if (!organizationId || !membership) {
-    throw new Error("Uživatel nepatří do vaší kanceláře.");
-  }
-
-  // Jen platné Capability hodnoty z formuláře (zbytek ignoruj).
-  const selected = formData
-    .getAll("capabilities")
-    .filter((value): value is string => typeof value === "string");
-  const capabilities = ALL_CAPABILITIES.filter((capability) =>
-    selected.includes(capability),
-  );
-
-  const previous = await prisma.userCapabilityGrant.findMany({
-    where: { userId },
-    select: { capability: true },
-  });
-
-  await prisma.$transaction([
-    prisma.userCapabilityGrant.deleteMany({ where: { userId } }),
-    ...(capabilities.length > 0
-      ? [
-          prisma.userCapabilityGrant.createMany({
-            data: capabilities.map((capability) => ({
-              organizationId,
-              userId,
-              capability,
-              grantedById: currentUser.id,
-            })),
-          }),
-        ]
-      : []),
-  ]);
-
-  await prisma.auditLog.create({
-    data: {
-      organizationId: currentUser.organizationId,
-      entityType: "UserCapabilityGrant",
-      entityId: userId,
-      action: "UPDATE",
-      changedById: currentUser.id,
-      oldValue: previous.map((grant) => grant.capability).sort(),
-      newValue: [...capabilities].sort(),
-    },
-  });
-
-  revalidatePath("/settings");
-  revalidatePath("/work-logs");
-  revalidatePath("/billing");
 }
 
 export async function updateNotificationPreference(formData: FormData) {

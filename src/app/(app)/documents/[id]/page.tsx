@@ -29,11 +29,13 @@ import {
   andWhere,
   canManageDocuments,
   canManagePortal,
-  canViewAllLegalData,
+  canArchiveRecords,
   documentVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { documentKindTone } from "@/lib/status-tones";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -69,6 +71,12 @@ export default async function DocumentDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.documents");
+  if (accessDenied) {
+    return <AccessDenied title="Dokument" message={accessDenied} />;
+  }
+
   const { id } = await params;
 
   const result = await safeQuery<Data>(emptyData, async () => {
@@ -102,7 +110,7 @@ export default async function DocumentDetailPage({
     return {
       document,
       canManage: canManageDocuments(currentUser),
-      canArchive: canViewAllLegalData(currentUser),
+      canArchive: canArchiveRecords(currentUser),
       portalTargets,
     };
   });

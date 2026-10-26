@@ -24,6 +24,8 @@ import {
   projectVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -78,6 +80,12 @@ const emptyTaskEdit: TaskEditData = {
 };
 
 export default async function TaskEditPage({ params }: TaskEditProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.tasks");
+  if (accessDenied) {
+    return <AccessDenied title="Úkoly" message={accessDenied} />;
+  }
+
   const { id } = await params;
   const result = await safeQuery<TaskEditData>(
     emptyTaskEdit,

@@ -11,7 +11,7 @@ import {
   OrganizationStatus,
   UserRole,
 } from "@/generated/prisma/enums";
-import { getAuthUser } from "@/lib/auth";
+import { getAuthUser, getCurrentUser } from "@/lib/auth";
 import {
   canEnableModule,
   dependentsBlockingDisable,
@@ -31,8 +31,10 @@ import { moduleKeyLabels } from "@/lib/labels";
 import { countActiveMembers } from "@/lib/organization";
 import {
   assertCanAdministerOrg,
+  assertNotPrivilegeEscalation,
   assertPlatformAdmin,
 } from "@/lib/permissions";
+import { loadEffectivePermissions } from "@/lib/permission-store.server";
 import { getPrisma } from "@/lib/prisma";
 import { notifyOrgAdminsAboutNewMember } from "@/lib/user-invitations";
 
@@ -48,30 +50,57 @@ class JoinError extends Error {
 
 // Resolves the acting user for an org-admin action and authorizes them for the
 // target org. Works for BOTH a platform admin (any org, no membership) and an
-// org-level ADMIN/PARTNER acting within their own org.
+// org member with "Spravuje nastavení kanceláře" acting within their own org.
+// The member branch goes through getCurrentUser() so the permission matrix
+// (role overrides + per-user exceptions) applies, not just the bare role.
 async function authorizeOrgAction(targetOrgId: string) {
   const user = await getAuthUser();
   if (user.isPlatformAdmin) {
     return user;
   }
 
-  const prisma = getPrisma();
-  const membership = await prisma.organizationMember.findFirst({
-    where: {
-      userId: user.id,
-      status: OrganizationMemberStatus.ACTIVE,
-      organization: { is: { status: OrganizationStatus.ACTIVE } },
-    },
-    select: { organizationId: true, role: true },
-  });
-
-  const actor = {
-    ...user,
-    role: membership?.role ?? user.role,
-    organizationId: membership?.organizationId ?? null,
-  };
+  const actor = await getCurrentUser();
   assertCanAdministerOrg(actor, targetOrgId);
   return actor;
+}
+
+// Changing a member's role (or deactivating them) must not let a non-admin
+// escalate past the permission matrix: the ADMIN role and roles/members holding
+// "Spravuje oprávnění" are off-limits unless the actor is an administrator /
+// already holds that permission (see privilegedTargetDenial). The next role is
+// resolved with the member's own user overrides, which survive a role change.
+async function assertCanChangeMember(
+  actor: Awaited<ReturnType<typeof authorizeOrgAction>>,
+  organizationId: string,
+  member: { userId: string; role: UserRole },
+  nextRole: UserRole,
+  action: "assignRole" | "deactivate",
+) {
+  if (actor.isPlatformAdmin || actor.role === UserRole.ADMIN) {
+    return;
+  }
+  const current = await loadEffectivePermissions({
+    organizationId,
+    userId: member.userId,
+    role: member.role,
+  });
+  assertNotPrivilegeEscalation(
+    actor,
+    { role: member.role, permissions: current.permissions },
+    action,
+  );
+  if (nextRole !== member.role) {
+    const next = await loadEffectivePermissions({
+      organizationId,
+      userId: member.userId,
+      role: nextRole,
+    });
+    assertNotPrivilegeEscalation(
+      actor,
+      { role: nextRole, permissions: next.permissions },
+      action,
+    );
+  }
 }
 
 // --- Join flow (self-service, run by the joining user) -----------------------
@@ -462,6 +491,7 @@ export async function changeMemberRole(formData: FormData) {
   if (member.userId === actor.id) {
     throw new Error("Nemůžete změnit vlastní roli.");
   }
+  await assertCanChangeMember(actor, organizationId, member, role, "assignRole");
 
   await prisma.$transaction([
     prisma.organizationMember.update({
@@ -502,6 +532,13 @@ export async function deactivateMember(formData: FormData) {
   if (member.userId === actor.id) {
     throw new Error("Nemůžete deaktivovat sami sebe.");
   }
+  await assertCanChangeMember(
+    actor,
+    organizationId,
+    member,
+    member.role,
+    "deactivate",
+  );
 
   // Soft deactivate only — never hard delete legal-team membership.
   await prisma.organizationMember.update({

@@ -216,3 +216,19 @@ export function parseSubjectForm(
     statutory: statutoryResult.rows,
   };
 }
+
+/**
+ * Rates (hourly rate, flat fee and the free-text fee note, which often
+ * carries amounts) are written only by users who may see them ("Vidí sazby
+ * a částky"). For anyone else the columns are left out of the write, so a
+ * create stores none and an update keeps the stored values — even when the
+ * request carries crafted `hourlyRate` / `flatFee` / `feeNote` fields.
+ */
+export function subjectWriteData(
+  subject: SubjectData,
+  canViewRates: boolean,
+): Omit<SubjectData, "hourlyRate" | "flatFee" | "feeNote"> &
+  Partial<Pick<SubjectData, "hourlyRate" | "flatFee" | "feeNote">> {
+  const { hourlyRate, flatFee, feeNote, ...rest } = subject;
+  return canViewRates ? { ...rest, hourlyRate, flatFee, feeNote } : rest;
+}

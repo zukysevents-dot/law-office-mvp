@@ -19,10 +19,12 @@ import {
   assertCanManageReferences,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { assertCanAccessModule } from "@/lib/module-access.server";
 
 export async function createReference(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
+  await assertCanAccessModule(currentUser, "module.references");
   assertCanManageReferences(currentUser);
   const matter = await resolveVisibleMatterSelection(prisma, currentUser, {
     projectId: optionalString(formData, "projectId"),
@@ -87,6 +89,7 @@ export async function createReference(formData: FormData) {
 export async function updateReference(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
+  await assertCanAccessModule(currentUser, "module.references");
   const referenceId = requiredString(formData, "id");
 
   const oldReference = await prisma.reference.findUniqueOrThrow({

@@ -40,8 +40,10 @@ import {
   listSharepointChildren,
 } from "@/lib/microsoft/graph-drive";
 import { formatRelativePath, parseRelativePath } from "@/lib/microsoft/sharepoint";
-import { canViewAllLegalData } from "@/lib/permissions";
+import { canManageOrganization } from "@/lib/permissions";
 import { cn, isSafeHttpUrl } from "@/lib/utils";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -136,6 +138,12 @@ function FileIcon({ name, isFolder }: { name: string; isFolder: boolean }) {
 }
 
 export default async function SharepointLibraryPage({ searchParams }: PageProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.documents");
+  if (accessDenied) {
+    return <AccessDenied title="SharePoint" message={accessDenied} />;
+  }
+
   const params = await searchParams;
   const rawPath = Array.isArray(params.path) ? params.path[0] : params.path;
   // Cesta z URL projde stejným filtrem jako v prohlížeči spisů (žádné "..").
@@ -151,7 +159,7 @@ export default async function SharepointLibraryPage({ searchParams }: PageProps)
     // Graph běží s aplikačním oprávněním a vidí CELOU knihovnu, ne jen spisy
     // uživatele — proto celou knihovnu smí procházet jen ten, kdo vidí všechna
     // právní data. Ostatní procházejí složky svých spisů.
-    if (!canViewAllLegalData(currentUser)) {
+    if (!canManageOrganization(currentUser)) {
       return EMPTY;
     }
     const organizationId = currentUser.organizationId;

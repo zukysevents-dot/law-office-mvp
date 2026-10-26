@@ -53,7 +53,8 @@ import { BillingStatus } from "@/generated/prisma/enums";
 import {
   andWhere,
   billingApproverWorkLogWhere,
-  canViewAllLegalData,
+  canApproveWorkLogs,
+  canArchiveRecords,
   canEditRecord,
   canSetBillableStatus,
   canViewRates,
@@ -63,6 +64,8 @@ import {
   taskVisibilityWhere,
   workLogVisibilityWhere,
 } from "@/lib/permissions";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -137,6 +140,12 @@ function numberParam(value: string) {
 }
 
 export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.workLogs");
+  if (accessDenied) {
+    return <AccessDenied title="Výkazy práce" message={accessDenied} />;
+  }
+
   const params = await searchParams;
   const subjectId = firstParam(params, "subjectId");
   const projectId = firstParam(params, "projectId");
@@ -180,7 +189,7 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
       const prisma = getPrisma();
       const currentUser = await getCurrentUser();
       const tableView = await getCurrentTableView("workLogs");
-      const canApproveAll = canViewAllLegalData(currentUser);
+      const canApproveAll = canApproveWorkLogs(currentUser);
       const approvalAssignmentCount = canApproveAll
         ? 0
         : await prisma.subjectBillingApprover.count({
@@ -386,7 +395,7 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
         tasks,
         users,
         tableView,
-        canArchive: canViewAllLegalData(currentUser),
+        canArchive: canArchiveRecords(currentUser),
         canViewRates: canViewRates(currentUser),
         canSetBillable: canSetBillableStatus(currentUser),
         canApprove,
@@ -471,7 +480,11 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
     <>
       <PageHeader
         title="Výkazy práce"
-        description="Evidence vykázané práce se sazbou a částkou jako příprava pro budoucí fakturaci."
+        description={
+          result.data.canViewRates
+            ? "Evidence vykázané práce se sazbou a částkou jako příprava pro budoucí fakturaci."
+            : "Evidence vykázané práce a odpracovaného času."
+        }
         action={
           <div className="flex gap-2">
             <ButtonLink href={timesheetHref} variant="secondary">

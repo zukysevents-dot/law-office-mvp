@@ -15,6 +15,7 @@ import { mapAresStatutoryBodies } from "@/lib/ares/statutory";
 import { auditJson, writeAuditLog } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
 import { requiredString } from "@/lib/form";
+import { assertCanAccessModule } from "@/lib/module-access.server";
 import { assertCanEditRecord, canManageSubjects } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { composeSubjectName } from "@/lib/subjects/person-name";
@@ -119,6 +120,7 @@ export async function verifySubjectFromAres(formData: FormData) {
   const id = requiredString(formData, "id");
   const detailPath = `/subjects/${id}`;
 
+  await assertCanAccessModule(currentUser, "module.subjects");
   const subject = await prisma.subject.findUniqueOrThrow({ where: { id } });
   assertCanEditRecord(currentUser, "Subject", subject);
 

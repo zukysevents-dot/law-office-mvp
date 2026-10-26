@@ -7,10 +7,12 @@ import { getCurrentUser } from "@/lib/auth";
 import { optionalString, requiredString } from "@/lib/form";
 import { assertCanEditRecord } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { assertCanAccessModule } from "@/lib/module-access.server";
 
 export async function createContactPerson(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
+  await assertCanAccessModule(currentUser, "module.subjects");
   const subjectId = requiredString(formData, "subjectId");
 
   const subject = await prisma.subject.findUniqueOrThrow({
@@ -87,6 +89,7 @@ export async function createContactPerson(formData: FormData) {
 export async function removeContactPerson(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
+  await assertCanAccessModule(currentUser, "module.subjects");
   const id = requiredString(formData, "id");
 
   const contact = await prisma.contactPerson.findUniqueOrThrow({

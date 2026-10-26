@@ -8,11 +8,9 @@ import {
   HrAbsenceType,
   HrAttendanceSource,
   HrEmploymentType,
-  ModuleKey,
 } from "@/generated/prisma/enums";
 import { auditJson } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
-import { assertModuleEnabled } from "@/lib/entitlements";
 import {
   checkboxValue,
   enumValue,
@@ -40,6 +38,7 @@ import {
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { parseSalaryTaxMode, validateGrossSalary } from "@/lib/salary";
+import { assertCanAccessModule } from "@/lib/module-access.server";
 
 type CurrentUser = Awaited<ReturnType<typeof getCurrentUser>>;
 
@@ -51,7 +50,7 @@ async function authorize(): Promise<{
   organizationId: string;
 }> {
   const currentUser = await getCurrentUser();
-  await assertModuleEnabled(currentUser, ModuleKey.HR_ATTENDANCE);
+  await assertCanAccessModule(currentUser, "module.hr");
   const organizationId = currentUser.organizationId;
   if (!organizationId) {
     throw new Error("Chybí organizace.");

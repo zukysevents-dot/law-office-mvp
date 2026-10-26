@@ -14,9 +14,12 @@ import { safeQuery } from "@/lib/db-safe";
 import {
   andWhere,
   canEditRecord,
+  canViewRates,
   subjectVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -68,6 +71,13 @@ const emptyProjectEdit: ProjectEditData = {
 };
 
 export default async function ProjectEditPage({ params }: ProjectEditProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.projects");
+  if (accessDenied) {
+    return <AccessDenied title="Projekty" message={accessDenied} />;
+  }
+  const showRates = canViewRates(accessUser);
+
   const { id } = await params;
   const result = await safeQuery<ProjectEditData>(
     emptyProjectEdit,
@@ -142,15 +152,17 @@ export default async function ProjectEditPage({ params }: ProjectEditProps) {
                 </SelectInput>
               </Field>
             </div>
-            <Field label="Hodinová sazba">
-              <TextInput
-                name="hourlyRate"
-                type="number"
-                min="0"
-                step="0.01"
-                defaultValue={numberInputValue(project.hourlyRate)}
-              />
-            </Field>
+            {showRates ? (
+              <Field label="Hodinová sazba">
+                <TextInput
+                  name="hourlyRate"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  defaultValue={numberInputValue(project.hourlyRate)}
+                />
+              </Field>
+            ) : null}
             <Field label="SharePoint URL">
               <TextInput
                 name="sharepointUrl"

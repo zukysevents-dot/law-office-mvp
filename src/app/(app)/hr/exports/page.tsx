@@ -7,10 +7,18 @@ import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import { assertModuleEnabled } from "@/lib/entitlements";
 import { canManageHr } from "@/lib/permissions";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
 export default async function HrExportsPage() {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.hr");
+  if (accessDenied) {
+    return <AccessDenied title="Mzdový export" message={accessDenied} />;
+  }
+
   const result = await safeQuery<{ canManage: boolean }>(
     { canManage: false },
     async () => {

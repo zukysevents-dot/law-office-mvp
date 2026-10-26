@@ -17,7 +17,7 @@ import {
   requiredString,
 } from "@/lib/form";
 import { assertUserInOrg } from "@/lib/org-users";
-import { canViewAllLegalData } from "@/lib/permissions";
+import { canApproveWorkLogs, canViewRates } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 type Disposition = "APPROVE" | "REJECT" | "HIDDEN_WRITE_OFF" | "VISIBLE_WRITE_OFF";
@@ -38,6 +38,9 @@ const DISPOSITIONS: Disposition[] = [
 export async function decideWorkLog(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
+  // Jen modul kanceláře (entitlement), ne sekce Fakturace v matici: o schválení
+  // rozhoduje funkce „Schvaluje výkazy celé kanceláře“ NEBO přiřazení schvalovatelem u klienta
+  // (SubjectBillingApprover — kterýkoli člen, i koncipient), viz níže.
   await assertModuleEnabled(currentUser, ModuleKey.BILLING);
 
   const workLogId = requiredString(formData, "id");
@@ -82,7 +85,7 @@ export async function decideWorkLog(formData: FormData) {
     if (!oldWorkLog) {
       throw new Error("Nemáte oprávnění k tomuto výkazu práce.");
     }
-    if (!canViewAllLegalData(currentUser)) {
+    if (!canApproveWorkLogs(currentUser)) {
       const billingSubjectId =
         oldWorkLog.subjectId ??
         oldWorkLog.project?.mainSubjectId ??
@@ -109,7 +112,14 @@ export async function decideWorkLog(formData: FormData) {
       );
     }
 
-    const baseAmount = hourlyRate != null ? hours * hourlyRate : null;
+    // Schvalovatel bez „Vidí sazby a částky“ (např. koncipient určený u
+    // klienta) sazbu nevidí ani nemění — platí uložená.
+    const rate = canViewRates(currentUser)
+      ? hourlyRate
+      : oldWorkLog.hourlyRate != null
+        ? Number(oldWorkLog.hourlyRate)
+        : null;
+    const baseAmount = rate != null ? hours * rate : null;
     let billingStatus = oldWorkLog.billingStatus;
     let approvalStatus = oldWorkLog.approvalStatus;
     let amountCzk: number | null = baseAmount;
@@ -141,7 +151,7 @@ export async function decideWorkLog(formData: FormData) {
       where: { id: workLogId },
       data: {
         hours,
-        hourlyRate: hourlyRate ?? null,
+        hourlyRate: rate ?? null,
         amountCzk,
         description,
         ...(userId ? { userId } : {}),

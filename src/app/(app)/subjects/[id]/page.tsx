@@ -39,10 +39,12 @@ import {
 import { safeQuery } from "@/lib/db-safe";
 import {
   andWhere,
+  canArchiveRecords,
   canEditRecord,
   canManageDocuments,
   canManagePortal,
-  canViewAllLegalData,
+  canManageSubjects,
+  canViewRates,
   caseVisibilityWhere,
   documentTemplateVisibilityWhere,
   documentVisibilityWhere,
@@ -57,6 +59,8 @@ import { mergeLegacyEmail } from "@/lib/subjects/contacts";
 import { composePersonName } from "@/lib/subjects/person-name";
 import { mergeLegacyStatutory } from "@/lib/subjects/statutory";
 import { isSafeHttpUrl } from "@/lib/utils";
+import { AccessDenied } from "@/components/access-denied";
+import { canAccessModule, moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -77,10 +81,6 @@ type SubjectDetailData = Awaited<ReturnType<typeof loadSubject>>;
 function subjectRelationVisibilityWhere(
   user: Awaited<ReturnType<typeof getCurrentUser>>,
 ): Prisma.SubjectRelationWhereInput {
-  if (canViewAllLegalData(user)) {
-    return {};
-  }
-
   const projectWhere = projectVisibilityWhere(user);
   const caseWhere = caseVisibilityWhere(user);
 
@@ -206,9 +206,9 @@ async function loadSubject(id: string) {
       }
     : { projects: [], cases: [] };
 
-  // AML/KYC data is compliance-sensitive — load it only for ADMIN/PARTNER, and
-  // never include it in the main subject query a LAWYER can run.
-  const canAml = canViewAllLegalData(currentUser);
+  // AML/KYC data is compliance-sensitive — load it only for users with the AML
+  // module (permission + office entitlement), never in the main subject query.
+  const canAml = await canAccessModule(currentUser, "module.aml");
   let aml: {
     identifications: Awaited<
       ReturnType<typeof prisma.amlIdentification.findMany>
@@ -269,7 +269,7 @@ async function loadSubject(id: string) {
 
   const documentsEnabled =
     subject != null &&
-    (await isModuleEnabled(currentUser.organizationId, ModuleKey.DOCUMENTS));
+    (await canAccessModule(currentUser, "module.documents"));
   const [documents, documentTemplates] = documentsEnabled
     ? await Promise.all([
         prisma.document.findMany({
@@ -299,7 +299,9 @@ async function loadSubject(id: string) {
       ])
     : [[], []];
 
-  const [billingApprovers, billingApproverMembers] = canAml && subject
+  const canManageBillingApprovers = canManageSubjects(currentUser);
+  const [billingApprovers, billingApproverMembers] =
+    canManageBillingApprovers && subject
     ? await Promise.all([
         prisma.subjectBillingApprover.findMany({
           where: { subjectId: subject.id },
@@ -316,7 +318,7 @@ async function loadSubject(id: string) {
   return {
     subject,
     visibleLinked,
-    canArchive: canViewAllLegalData(currentUser),
+    canArchive: canArchiveRecords(currentUser),
     canEdit: subject ? canEditRecord(currentUser, "Subject", subject) : false,
     canAml,
     aml,
@@ -327,6 +329,7 @@ async function loadSubject(id: string) {
     documents,
     documentTemplates,
     canManageDocuments: canManageDocuments(currentUser),
+    canManageBillingApprovers,
     billingApprovers,
     billingApproverMembers,
   };
@@ -369,6 +372,13 @@ export default async function SubjectDetailPage({
   params,
   searchParams,
 }: SubjectDetailProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.subjects");
+  if (accessDenied) {
+    return <AccessDenied title="Subjekty" message={accessDenied} />;
+  }
+  const showRates = canViewRates(accessUser);
+
   const { id } = await params;
   const { sharepoint, ares } = await searchParams;
   const result = await safeQuery<SubjectDetailData>(
@@ -386,6 +396,7 @@ export default async function SubjectDetailPage({
       documents: [],
       documentTemplates: [],
       canManageDocuments: false,
+      canManageBillingApprovers: false,
       billingApprovers: [],
       billingApproverMembers: [],
     },
@@ -410,6 +421,7 @@ export default async function SubjectDetailPage({
     documents,
     documentTemplates,
     canManageDocuments: canManageDocumentsFlag,
+    canManageBillingApprovers,
     billingApprovers,
     billingApproverMembers,
   } = result.data;
@@ -718,29 +730,36 @@ export default async function SubjectDetailPage({
                 </p>
                 <p>{subject.feeType ? feeTypeLabels[subject.feeType] : "—"}</p>
               </div>
-              <div>
-                <p className="text-xs font-semibold uppercase text-stone-500">
-                  Hodinová sazba
-                </p>
-                <p>{formatMoney(subject.hourlyRate)}</p>
-              </div>
-              <div>
-                <p className="text-xs font-semibold uppercase text-stone-500">
-                  Paušální odměna
-                </p>
-                <p>{formatMoney(subject.flatFee)}</p>
-              </div>
-              <div className="md:col-span-3">
-                <p className="text-xs font-semibold uppercase text-stone-500">
-                  Poznámka k odměně
-                </p>
-                <p className="whitespace-pre-wrap rounded-md border border-[#dce4e8] bg-[#F4F7F8] p-3">
-                  {subject.feeNote ?? "—"}
-                </p>
-              </div>
+              {showRates ? (
+                <>
+                  <div>
+                    <p className="text-xs font-semibold uppercase text-stone-500">
+                      Hodinová sazba
+                    </p>
+                    <p>{formatMoney(subject.hourlyRate)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase text-stone-500">
+                      Paušální odměna
+                    </p>
+                    <p>{formatMoney(subject.flatFee)}</p>
+                  </div>
+                </>
+              ) : null}
+              {showRates ? (
+                // A free-text fee note often carries amounts — shown with the rates.
+                <div className="md:col-span-3">
+                  <p className="text-xs font-semibold uppercase text-stone-500">
+                    Poznámka k odměně
+                  </p>
+                  <p className="whitespace-pre-wrap rounded-md border border-[#dce4e8] bg-[#F4F7F8] p-3">
+                    {subject.feeNote ?? "—"}
+                  </p>
+                </div>
+              ) : null}
             </div>
           </Section>
-          {canAml ? (
+          {canManageBillingApprovers ? (
             <SubjectBillingApprovers
               subjectId={subject.id}
               members={billingApproverMembers}

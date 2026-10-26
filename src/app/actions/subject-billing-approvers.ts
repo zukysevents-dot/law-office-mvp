@@ -8,6 +8,7 @@ import { requiredString } from "@/lib/form";
 import { assertUserInOrg } from "@/lib/org-users";
 import { assertCanManageSubjects } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { assertCanAccessModule } from "@/lib/module-access.server";
 
 function revalidateBillingApprovers(subjectId: string) {
   revalidatePath(`/subjects/${subjectId}`);
@@ -19,6 +20,7 @@ function revalidateBillingApprovers(subjectId: string) {
 export async function addSubjectBillingApprover(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
+  await assertCanAccessModule(currentUser, "module.subjects");
   assertCanManageSubjects(currentUser);
   const subjectId = requiredString(formData, "subjectId");
   const userId = requiredString(formData, "userId");
@@ -57,6 +59,7 @@ export async function addSubjectBillingApprover(formData: FormData) {
 export async function removeSubjectBillingApprover(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
+  await assertCanAccessModule(currentUser, "module.subjects");
   assertCanManageSubjects(currentUser);
   const id = requiredString(formData, "id");
   const approver = await prisma.subjectBillingApprover.findFirst({

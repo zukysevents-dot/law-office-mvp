@@ -11,6 +11,8 @@ import { taskStatusLabels } from "@/lib/labels";
 import { andWhere, taskVisibilityWhere } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { taskStatusTone } from "@/lib/status-tones";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +34,12 @@ type ArchivedTask = {
 };
 
 export default async function TaskArchivePage() {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.tasks");
+  if (accessDenied) {
+    return <AccessDenied title="Archiv úkolů" message={accessDenied} />;
+  }
+
   const result = await safeQuery<{ tasks: ArchivedTask[] }>(
     { tasks: [] },
     async () => {

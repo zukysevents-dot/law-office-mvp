@@ -19,6 +19,9 @@ export const AUDIT_ENTITY_TYPES = [
   "NotificationPreference",
   "User",
   "OrganizationMember",
+  "RolePermission",
+  "UserPermission",
+  "UserCapabilityGrant",
 ] as const;
 
 export const AUDIT_ACTIONS = [
@@ -44,6 +47,8 @@ export const AUDIT_ACTIONS = [
   "PASSWORD_SET_VIA_INVITATION",
   "JOIN",
   "JOIN_NOTIFICATION",
+  "ROLE_CHANGE",
+  "RESET",
 ] as const;
 
 export const auditEntityTypeLabels: Record<string, string> = {
@@ -62,6 +67,9 @@ export const auditEntityTypeLabels: Record<string, string> = {
   NotificationPreference: "Nastavení notifikací",
   User: "Uživatel",
   OrganizationMember: "Člen kanceláře",
+  RolePermission: "Oprávnění role",
+  UserPermission: "Oprávnění uživatele",
+  UserCapabilityGrant: "Granty uživatele (starší)",
 };
 
 export const auditActionLabels: Record<string, string> = {
@@ -87,6 +95,8 @@ export const auditActionLabels: Record<string, string> = {
   PASSWORD_SET_VIA_INVITATION: "Nastavení hesla z pozvánky",
   JOIN: "Připojení ke kanceláři",
   JOIN_NOTIFICATION: "Upozornění na nového člena",
+  ROLE_CHANGE: "Změna role",
+  RESET: "Obnovení výchozích",
 };
 
 export function auditActionLabel(value: string) {

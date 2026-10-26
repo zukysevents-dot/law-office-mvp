@@ -2,10 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 
-import { DocumentKind, ModuleKey } from "@/generated/prisma/enums";
+import { DocumentKind } from "@/generated/prisma/enums";
 import { auditJson } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
-import { assertModuleEnabled } from "@/lib/entitlements";
 import {
   checkboxValue,
   enumValue,
@@ -32,6 +31,7 @@ import {
   sharepointFolderSegments,
   uniqueSharepointFilename,
 } from "@/lib/microsoft/sharepoint";
+import { assertCanAccessModule } from "@/lib/module-access.server";
 
 type CurrentUser = Awaited<ReturnType<typeof getCurrentUser>>;
 
@@ -47,7 +47,7 @@ async function authorize(): Promise<{
   organizationId: string;
 }> {
   const currentUser = await getCurrentUser();
-  await assertModuleEnabled(currentUser, ModuleKey.DOCUMENTS);
+  await assertCanAccessModule(currentUser, "module.documents");
   const organizationId = currentUser.organizationId;
   if (!organizationId) {
     throw new Error("Chybí organizace.");

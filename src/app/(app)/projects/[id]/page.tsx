@@ -31,9 +31,10 @@ import {
 import { safeQuery } from "@/lib/db-safe";
 import {
   andWhere,
-  canManageReferences,
-  canViewAllLegalData,
+  canArchiveRecords,
   canEditRecord,
+  canManageReferences,
+  canViewRates,
   caseVisibilityWhere,
   projectVisibilityWhere,
   referenceVisibilityWhere,
@@ -43,6 +44,8 @@ import {
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { subjectRoleTone } from "@/lib/status-tones";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -151,7 +154,7 @@ async function loadProject(id: string) {
     project,
     subjects,
     users: users.map((row) => row.user),
-    canArchive: canViewAllLegalData(currentUser),
+    canArchive: canArchiveRecords(currentUser),
     canEdit: project ? canEditRecord(currentUser, "Project", project) : false,
     canManageReferences: canManageReferences(currentUser),
   };
@@ -172,6 +175,13 @@ export default async function ProjectDetailPage({
   params,
   searchParams,
 }: ProjectDetailProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.projects");
+  if (accessDenied) {
+    return <AccessDenied title="Projekty" message={accessDenied} />;
+  }
+  const showRates = canViewRates(accessUser);
+
   const { id } = await params;
   const { sharepoint } = await searchParams;
   const result = await safeQuery<ProjectDetailData>(
@@ -259,12 +269,14 @@ export default async function ProjectDetailPage({
                 </p>
                 <p>{project.responsibleUser?.name ?? "—"}</p>
               </div>
-              <div>
-                <p className="text-xs font-semibold uppercase text-stone-500">
-                  Hodinová sazba projektu
-                </p>
-                <p>{formatMoney(project.hourlyRate)}</p>
-              </div>
+              {showRates ? (
+                <div>
+                  <p className="text-xs font-semibold uppercase text-stone-500">
+                    Hodinová sazba projektu
+                  </p>
+                  <p>{formatMoney(project.hourlyRate)}</p>
+                </div>
+              ) : null}
               <SharepointFolderField
                 entityType="Project"
                 id={project.id}
@@ -479,7 +491,7 @@ export default async function ProjectDetailPage({
                     <tr>
                       <th>Název</th>
                       <th>Právní odvětví</th>
-                      <th>Hodnota</th>
+                      {showRates ? <th>Hodnota</th> : null}
                       <th>Období</th>
                       <th>Případ</th>
                       <th>Popis</th>
@@ -492,7 +504,9 @@ export default async function ProjectDetailPage({
                           {reference.title}
                         </td>
                         <td>{reference.legalArea ?? "—"}</td>
-                        <td>{formatMoney(reference.valueCzk)}</td>
+                        {showRates ? (
+                          <td>{formatMoney(reference.valueCzk)}</td>
+                        ) : null}
                         <td>
                           {formatDate(reference.startDate)} –{" "}
                           {reference.endDate

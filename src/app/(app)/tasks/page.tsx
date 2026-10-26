@@ -63,6 +63,8 @@ import {
   getDefaultTableView,
 } from "@/lib/table-view-preference-service";
 import type { TableViewState } from "@/lib/table-view-preferences";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -192,6 +194,12 @@ function taskSubjectName(task: TaskRow) {
 }
 
 export default async function TasksPage({ searchParams }: TasksProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.tasks");
+  if (accessDenied) {
+    return <AccessDenied title="Úkoly" message={accessDenied} />;
+  }
+
   const params = await searchParams;
   const status = validEnum(TaskStatus, params.status);
   const priority = validEnum(TaskPriority, params.priority);

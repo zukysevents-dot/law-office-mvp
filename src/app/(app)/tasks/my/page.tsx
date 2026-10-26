@@ -33,6 +33,8 @@ import {
   taskStatusRowClass,
   taskStatusTone,
 } from "@/lib/status-tones";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -93,6 +95,12 @@ function taskOrderBy(sort: string) {
 }
 
 export default async function MyTasksPage({ searchParams }: MyTasksProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.tasks");
+  if (accessDenied) {
+    return <AccessDenied title="Moje úkoly" message={accessDenied} />;
+  }
+
   const params = await searchParams;
   const status = validEnum(TaskStatus, params.status);
   const priority = validEnum(TaskPriority, params.priority);

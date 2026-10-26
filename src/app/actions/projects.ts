@@ -17,13 +17,16 @@ import { assertUserInOrg } from "@/lib/org-users";
 import {
   andWhere,
   assertCanEditRecord,
+  canViewRates,
   subjectVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { assertCanAccessModule } from "@/lib/module-access.server";
 
 export async function createProject(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
+  await assertCanAccessModule(currentUser, "module.projects");
   const status = enumValue(
     ProjectStatus,
     formData.get("status"),
@@ -51,7 +54,11 @@ export async function createProject(formData: FormData) {
         mainSubjectId,
         responsibleUserId,
         status,
-        hourlyRate: optionalNumber(formData, "hourlyRate"),
+        // Rate only from users who may see rates; otherwise create leaves it
+        // empty and update keeps the stored value.
+        ...(canViewRates(currentUser)
+          ? { hourlyRate: optionalNumber(formData, "hourlyRate") }
+          : {}),
         sharepointUrl: optionalString(formData, "sharepointUrl"),
         note: optionalString(formData, "note"),
       },
@@ -93,6 +100,7 @@ export async function createProject(formData: FormData) {
 export async function updateProject(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
+  await assertCanAccessModule(currentUser, "module.projects");
   const projectId = requiredString(formData, "id");
   const status = enumValue(
     ProjectStatus,
@@ -127,7 +135,11 @@ export async function updateProject(formData: FormData) {
       mainSubjectId,
       responsibleUserId,
       status,
-      hourlyRate: optionalNumber(formData, "hourlyRate"),
+      // Rate only from users who may see rates; otherwise create leaves it
+      // empty and update keeps the stored value.
+      ...(canViewRates(currentUser)
+        ? { hourlyRate: optionalNumber(formData, "hourlyRate") }
+        : {}),
       sharepointUrl: optionalString(formData, "sharepointUrl"),
       note: optionalString(formData, "note"),
     },

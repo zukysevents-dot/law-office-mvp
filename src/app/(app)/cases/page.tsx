@@ -24,6 +24,7 @@ import { getOrgUserOptions } from "@/lib/org-users";
 import { caseStatusLabels, options } from "@/lib/labels";
 import {
   andWhere,
+  canViewRates,
   caseVisibilityWhere,
   projectVisibilityWhere,
   subjectVisibilityWhere,
@@ -34,6 +35,8 @@ import {
   getDefaultTableView,
 } from "@/lib/table-view-preference-service";
 import type { TableViewState } from "@/lib/table-view-preferences";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -69,6 +72,13 @@ type CasesPageData = {
 };
 
 export default async function CasesPage({ searchParams }: CasesPageProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.cases");
+  if (accessDenied) {
+    return <AccessDenied title="Případy" message={accessDenied} />;
+  }
+  const showRates = canViewRates(accessUser);
+
   const params = await searchParams;
   const archive = archiveFilterValue(params.archive);
   const projectId = params.projectId ?? "";
@@ -329,9 +339,11 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
               </SelectInput>
             </Field>
           </div>
-          <Field label="Hodinová sazba">
-            <TextInput name="hourlyRate" type="number" min="0" step="0.01" />
-          </Field>
+          {showRates ? (
+            <Field label="Hodinová sazba">
+              <TextInput name="hourlyRate" type="number" min="0" step="0.01" />
+            </Field>
+          ) : null}
           <Field label="SharePoint URL">
             <TextInput name="sharepointUrl" type="url" />
           </Field>

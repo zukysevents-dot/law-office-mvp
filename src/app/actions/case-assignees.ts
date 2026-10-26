@@ -9,6 +9,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { requiredString } from "@/lib/form";
 import { assertCanEditRecord } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { assertCanAccessModule } from "@/lib/module-access.server";
 
 // Přiřazovaný uživatel musí být aktivním členem stejné kanceláře (viz
 // project-assignees). User nemá přímé organizationId — řeší se přes členství.
@@ -35,6 +36,7 @@ async function assertSameOrgMember(
 export async function addCaseAssignee(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
+  await assertCanAccessModule(currentUser, "module.cases");
   const caseId = requiredString(formData, "caseId");
   const userId = requiredString(formData, "userId");
 
@@ -98,6 +100,7 @@ export async function addCaseAssignee(formData: FormData) {
 export async function removeCaseAssignee(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
+  await assertCanAccessModule(currentUser, "module.cases");
   const id = requiredString(formData, "id");
 
   const assignee = await prisma.caseAssignee.findUniqueOrThrow({

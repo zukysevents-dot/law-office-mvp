@@ -21,6 +21,8 @@ import { assertModuleEnabled } from "@/lib/entitlements";
 import { formatDate, formatHours, formatMoney } from "@/lib/format";
 import { canManageInvoices } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +35,12 @@ type RetainersData = {
 };
 
 export default async function RetainersPage() {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.billing");
+  if (accessDenied) {
+    return <AccessDenied title="Paušály" message={accessDenied} />;
+  }
+
   const result = await safeQuery<RetainersData>(
     { allowed: false, retainers: [], subjects: [] },
     async () => {
@@ -80,7 +88,7 @@ export default async function RetainersPage() {
       {result.databaseReady && !data.allowed ? (
         <Section title="Přístup odepřen">
           <p className="text-sm text-stone-600">
-            Paušály mohou spravovat advokáti, partneři a administrátoři.
+            Paušály spravují jen uživatelé s oprávněním „Spravuje fakturaci“. O přístup požádejte administrátora kanceláře (Nastavení → Oprávnění).
           </p>
         </Section>
       ) : null}

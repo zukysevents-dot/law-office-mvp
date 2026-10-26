@@ -2,7 +2,6 @@ import Link from "next/link";
 
 import {
   changeOwnPassword,
-  setUserCapabilities,
   setUserPassword,
   updateCalendarPreference,
   updateNotificationPreference,
@@ -14,10 +13,9 @@ import { PageHeader } from "@/components/page-header";
 import { ResendInvitationButton } from "@/components/resend-invitation-button";
 import { Section } from "@/components/section";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Capability, UserRole } from "@/generated/prisma/enums";
 import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import { formatDate, formatDateTime } from "@/lib/format";
@@ -25,15 +23,12 @@ import {
   mailConfigStatus,
   mailDisabledReasonLabel,
 } from "@/lib/mail/mailer";
-import {
-  capabilityDescriptions,
-  capabilityLabels,
-  capabilityOptions,
-  userRoleLabels,
-} from "@/lib/labels";
+import { userRoleLabels } from "@/lib/labels";
 import { getNotificationPreference } from "@/lib/notifications/notification-service";
-import { canViewAllLegalData } from "@/lib/permissions";
+import { canManagePermissions, canManageUsers } from "@/lib/permissions";
+import { loadPrivilegeTargets } from "@/lib/permission-store.server";
 import { getPrisma } from "@/lib/prisma";
+import type { UserRole } from "@/generated/prisma/enums";
 import { calendarViewOptions, normalizeCalendarView } from "@/lib/calendar-view";
 import { getAresBaseUrl, isAresLookupEnabled } from "@/lib/ares/config";
 import {
@@ -71,11 +66,15 @@ type SettingsData = {
       weeklyHoursTarget: number | null;
       monthlyHoursTarget: number | null;
     } | null;
-    capabilities: Capability[];
     invitation: InvitationSummary;
   }>;
   auditLogCount: number;
   allowed: boolean;
+  canManagePermissions: boolean;
+  // Role, které smí aktuální uživatel přidělit novému uživateli, a uživatelé,
+  // kterým smí resetovat heslo (bez eskalace práv — viz privilegedTargetDenial).
+  assignableRoles: UserRole[];
+  resettableUserIds: string[];
   integrations: {
     aresEnabled: boolean;
     aresHost: string;
@@ -164,12 +163,15 @@ export default async function SettingsPage() {
       users: [],
       auditLogCount: 0,
       allowed: false,
+      canManagePermissions: false,
+      assignableRoles: [],
+      resettableUserIds: [],
       integrations: envIntegrationStatus(),
     },
     async () => {
       const prisma = getPrisma();
       const currentUser = await getCurrentUser();
-      const allowed = canViewAllLegalData(currentUser);
+      const allowed = canManageUsers(currentUser);
       const [notificationPreference, users, auditLogCount] = await Promise.all([
         getNotificationPreference(currentUser.id),
         allowed
@@ -194,7 +196,6 @@ export default async function SettingsPage() {
                     monthlyHoursTarget: true,
                   },
                 },
-                capabilityGrants: { select: { capability: true } },
                 // Latest welcome invitation (column "Pozvánka").
                 invitationTokens: {
                   where: { organizationId: currentUser.organizationId },
@@ -220,6 +221,15 @@ export default async function SettingsPage() {
           : Promise.resolve(0),
       ]);
 
+      const privilegeTargets = allowed
+        ? await loadPrivilegeTargets({
+            actor: currentUser,
+            organizationId: currentUser.organizationId,
+            members: users.map((user) => ({ id: user.id, role: user.role })),
+            db: prisma,
+          })
+        : { assignableRoles: [], manageableUserIds: [] };
+
       return {
         currentUserName: currentUser.name,
         currentUserId: currentUser.id,
@@ -239,10 +249,12 @@ export default async function SettingsPage() {
                     : null,
               }
             : null,
-          capabilities: user.capabilityGrants.map((grant) => grant.capability),
         })),
         auditLogCount,
         allowed,
+        canManagePermissions: canManagePermissions(currentUser),
+        assignableRoles: privilegeTargets.assignableRoles,
+        resettableUserIds: privilegeTargets.manageableUserIds,
         integrations: await integrationConfigStatus(
           currentUser.organizationId,
         ),
@@ -250,6 +262,10 @@ export default async function SettingsPage() {
     },
   );
   const preference = result.data.notificationPreference;
+  const resettableUserIds = new Set(result.data.resettableUserIds);
+  const resettableUsers = result.data.users.filter((user) =>
+    resettableUserIds.has(user.id),
+  );
   const mailStatus = mailConfigStatus();
 
   return (
@@ -402,6 +418,18 @@ export default async function SettingsPage() {
           později. Zatím je účet chráněn e-mailem a heslem.
         </p>
       </Section>
+      {result.data.canManagePermissions ? (
+        <Section title="Oprávnění">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm leading-6 text-stone-600">
+              Oprávnění rolí a výjimky uživatelů nastavíte v sekci Oprávnění.
+            </p>
+            <ButtonLink href="/settings/permissions" variant="secondary">
+              Otevřít oprávnění
+            </ButtonLink>
+          </div>
+        </Section>
+      ) : null}
       {result.data.allowed ? (
         <>
           <Section title="Stav integrací">
@@ -493,6 +521,11 @@ export default async function SettingsPage() {
                         <th>
                           <span className="sr-only">Akce</span>
                         </th>
+                        {result.data.canManagePermissions ? (
+                          <th>
+                            <span className="sr-only">Oprávnění</span>
+                          </th>
+                        ) : null}
                       </tr>
                     </thead>
                     <tbody>
@@ -530,6 +563,17 @@ export default async function SettingsPage() {
                               }
                             />
                           </td>
+                          {result.data.canManagePermissions ? (
+                            <td>
+                              <Link
+                                href={`/settings/permissions/users/${user.id}`}
+                                className="text-sm font-medium text-[#0e1822] underline-offset-2 hover:underline"
+                                aria-label={`Oprávnění uživatele ${user.name}`}
+                              >
+                                Oprávnění
+                              </Link>
+                            </td>
+                          ) : null}
                         </tr>
                       ))}
                     </tbody>
@@ -540,15 +584,15 @@ export default async function SettingsPage() {
               )}
             </Section>
             <Section title="Nový uživatel">
-              <CreateUserForm />
+              <CreateUserForm roles={result.data.assignableRoles} />
             </Section>
           </div>
-          {result.data.users.length > 0 ? (
+          {resettableUsers.length > 0 ? (
             <Section title="Reset hesla uživatele">
               <form action={setUserPassword} className="grid max-w-sm gap-4">
                 <Field label="Uživatel">
                   <SelectInput name="userId">
-                    {result.data.users.map((user) => (
+                    {resettableUsers.map((user) => (
                       <option key={user.id} value={user.id}>
                         {user.name} ({user.email})
                       </option>
@@ -617,68 +661,6 @@ export default async function SettingsPage() {
                     </Button>
                   </form>
                 ))}
-              </div>
-            </Section>
-          ) : null}
-          {result.data.users.length > 0 ? (
-            <Section title="Oprávnění uživatelů">
-              <p className="mb-4 text-sm text-stone-600">
-                Granty nad rámec role — např. přístup k fakturaci pro vybrané
-                advokáty nebo zobrazení sazeb. Admin a partner mají plný přístup
-                automaticky dle role.
-              </p>
-              <div className="grid gap-3">
-                {result.data.users.map((user) => {
-                  const fullByRole =
-                    user.role === UserRole.ADMIN ||
-                    user.role === UserRole.PARTNER;
-                  return (
-                    <div
-                      key={user.id}
-                      className="grid gap-3 rounded-md border border-stone-200 p-3 sm:grid-cols-[1fr_auto] sm:items-center"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-stone-950">
-                          {user.name}
-                        </p>
-                        <p className="truncate text-xs text-stone-500">
-                          {userRoleLabels[user.role]}
-                        </p>
-                      </div>
-                      {fullByRole ? (
-                        <Badge tone="green">Plný přístup dle role</Badge>
-                      ) : (
-                        <form
-                          action={setUserCapabilities}
-                          className="flex flex-wrap items-center gap-4"
-                        >
-                          <input type="hidden" name="userId" value={user.id} />
-                          {capabilityOptions.map((capability) => (
-                            <label
-                              key={capability}
-                              className="flex items-center gap-2 text-sm text-stone-700"
-                              title={capabilityDescriptions[capability]}
-                            >
-                              <input
-                                type="checkbox"
-                                name="capabilities"
-                                value={capability}
-                                defaultChecked={user.capabilities.includes(
-                                  capability,
-                                )}
-                                className="h-4 w-4 rounded border-stone-300 text-emerald-950"
-                              />
-                              {capabilityLabels[capability]}
-                            </label>
-                          ))}
-                          <Button type="submit" variant="secondary">
-                            Uložit
-                          </Button>
-                        </form>
-                      )}
-                    </div>
-                  );
-                })}
               </div>
             </Section>
           ) : null}

@@ -16,6 +16,8 @@ import { canManageAml } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { subjectSearchWhere } from "@/lib/subjects/search";
 import { amlRiskLevelTone } from "@/lib/status-tones";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -50,6 +52,12 @@ export default async function AmlPage({
 }: {
   searchParams: Promise<{ q?: string }>;
 }) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.aml");
+  if (accessDenied) {
+    return <AccessDenied title="AML / KYC" message={accessDenied} />;
+  }
+
   const params = await searchParams;
   const query = (params.q ?? "").trim().slice(0, 100);
 

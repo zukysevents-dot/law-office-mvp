@@ -8,7 +8,7 @@ import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ModuleKey } from "@/generated/prisma/enums";
 import { getCurrentUser } from "@/lib/auth";
-import { assertModuleEnabled } from "@/lib/entitlements";
+import { assertModuleEnabled, isModuleEnabled } from "@/lib/entitlements";
 import {
   BILLING_ROW_LIMIT,
   billingWorkLogInclude,
@@ -24,9 +24,16 @@ import { getPrisma } from "@/lib/prisma";
 import {
   andWhere,
   billingApproverWorkLogWhere,
-  canViewAllLegalData,
+  canApproveWorkLogs,
+  canManageInvoices,
+  canViewRates,
 } from "@/lib/permissions";
 import { approvalStatusTone, billingStatusTone } from "@/lib/status-tones";
+import { AccessDenied } from "@/components/access-denied";
+import {
+  canAccessModule,
+  moduleAccessDenial,
+} from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -35,16 +42,51 @@ type ApprovalsPageData = {
   users: Array<{ id: string; name: string }>;
   capped: boolean;
   canApprove: boolean;
+  canViewRates: boolean;
 };
 
+// Schvalování nepatří jen sekci Fakturace: stránku otevře i ten, kdo má funkci
+// „Schvaluje výkazy celé kanceláře“ nebo je schvalovatelem u některého klienta
+// (kterýkoli člen kanceláře, i koncipient bez sekce Fakturace). Modul kanceláře
+// (entitlement) musí být aktivní vždy — stejně jako v decideWorkLog.
+async function approvalsAccessDenial(
+  user: Awaited<ReturnType<typeof getCurrentUser>>,
+): Promise<string | null> {
+  const denial = await moduleAccessDenial(user, "module.billing");
+  if (!denial) {
+    return null;
+  }
+  // Neaktivní modul kanceláře nepřebije ani přiřazení schvalovatelem.
+  if (!(await isModuleEnabled(user.organizationId, ModuleKey.BILLING))) {
+    return denial;
+  }
+  if (canApproveWorkLogs(user)) {
+    return null;
+  }
+  const assignments = await getPrisma().subjectBillingApprover.count({
+    where: { organizationId: user.organizationId, userId: user.id },
+  });
+  return assignments > 0 ? null : denial;
+}
+
 export default async function BillingApprovalsPage() {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await approvalsAccessDenial(accessUser);
+  if (accessDenied) {
+    return <AccessDenied title="Fakturace" message={accessDenied} />;
+  }
+  const backHref = (await canAccessModule(accessUser, "module.billing")) &&
+    canManageInvoices(accessUser)
+    ? { href: "/billing", label: "Zpět na fakturaci" }
+    : { href: "/work-logs", label: "Zpět na výkazy práce" };
+
   const result = await safeQuery<ApprovalsPageData>(
-    { rows: [], users: [], capped: false, canApprove: false },
+    { rows: [], users: [], capped: false, canApprove: false, canViewRates: false },
     async () => {
       const prisma = getPrisma();
       const currentUser = await getCurrentUser();
       await assertModuleEnabled(currentUser, ModuleKey.BILLING);
-      const canApproveAll = canViewAllLegalData(currentUser);
+      const canApproveAll = canApproveWorkLogs(currentUser);
       const approvalAssignmentCount = canApproveAll
         ? 0
         : await prisma.subjectBillingApprover.count({
@@ -75,6 +117,7 @@ export default async function BillingApprovalsPage() {
         users,
         capped: rows.length >= BILLING_ROW_LIMIT,
         canApprove,
+        canViewRates: canViewRates(currentUser),
       };
     },
   );
@@ -83,10 +126,14 @@ export default async function BillingApprovalsPage() {
     <>
       <PageHeader
         title="Položky ke schválení"
-        description="Výkazy práce čekající na schválení do fakturačních podkladů. Lze upravit popis, pracovníka, hodiny i sazbu a rozhodnout."
+        description={
+          result.data.canViewRates
+            ? "Výkazy práce čekající na schválení do fakturačních podkladů. Lze upravit popis, pracovníka, hodiny i sazbu a rozhodnout."
+            : "Výkazy práce čekající na schválení do fakturačních podkladů. Lze upravit popis, pracovníka i hodiny a rozhodnout."
+        }
         action={
-          <ButtonLink href="/billing" variant="secondary">
-            Zpět na fakturaci
+          <ButtonLink href={backHref.href} variant="secondary">
+            {backHref.label}
           </ButtonLink>
         }
       />
@@ -146,15 +193,17 @@ export default async function BillingApprovalsPage() {
                           required
                         />
                       </Field>
-                      <Field label="Sazba">
-                        <TextInput
-                          name="hourlyRate"
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          defaultValue={numberInputValue(row.hourlyRate)}
-                        />
-                      </Field>
+                      {result.data.canViewRates ? (
+                        <Field label="Sazba">
+                          <TextInput
+                            name="hourlyRate"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            defaultValue={numberInputValue(row.hourlyRate)}
+                          />
+                        </Field>
+                      ) : null}
                       <Field label="Popis">
                         <TextInput
                           name="description"

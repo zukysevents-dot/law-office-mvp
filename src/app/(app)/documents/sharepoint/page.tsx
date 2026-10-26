@@ -16,12 +16,14 @@ import { matterBrowsePath } from "@/lib/microsoft/matter-folder";
 import type { SharepointEntityType } from "@/lib/microsoft/sharepoint";
 import {
   andWhere,
-  canViewAllLegalData,
+  canManageOrganization,
   caseVisibilityWhere,
   projectVisibilityWhere,
   subjectVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +43,12 @@ const EMPTY: Data = { configured: false, canConfigure: false, groups: [] };
 type PageProps = { searchParams: Promise<{ q?: string }> };
 
 export default async function SharepointIndexPage({ searchParams }: PageProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.documents");
+  if (accessDenied) {
+    return <AccessDenied title="SharePoint" message={accessDenied} />;
+  }
+
   const { q } = await searchParams;
   const query = q?.trim() ?? "";
 
@@ -82,7 +90,7 @@ export default async function SharepointIndexPage({ searchParams }: PageProps) {
 
     return {
       configured: await isSharepointUrlConfigured(currentUser.organizationId),
-      canConfigure: canViewAllLegalData(currentUser),
+      canConfigure: canManageOrganization(currentUser),
       groups: [
         {
           heading: "Subjekty",

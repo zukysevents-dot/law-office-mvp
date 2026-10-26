@@ -39,6 +39,8 @@ import {
   restrictTableView,
 } from "@/lib/table-view-preference-service";
 import type { TableViewState } from "@/lib/table-view-preferences";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -76,6 +78,13 @@ type SubjectsPageData = {
 };
 
 export default async function SubjectsPage({ searchParams }: SubjectsPageProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.subjects");
+  if (accessDenied) {
+    return <AccessDenied title="Subjekty" message={accessDenied} />;
+  }
+  const showRates = canViewRates(accessUser);
+
   const params = await searchParams;
   const query = params.q?.trim() ?? "";
   const archive = archiveFilterValue(params.archive);
@@ -367,17 +376,21 @@ export default async function SubjectsPage({ searchParams }: SubjectsPageProps) 
                 </SelectInput>
               </Field>
             </div>
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Hodinová sazba">
-                <TextInput name="hourlyRate" type="number" min="0" step="0.01" />
+            {showRates ? (
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Hodinová sazba">
+                  <TextInput name="hourlyRate" type="number" min="0" step="0.01" />
+                </Field>
+                <Field label="Paušální odměna">
+                  <TextInput name="flatFee" type="number" min="0" step="0.01" />
+                </Field>
+              </div>
+            ) : null}
+            {showRates ? (
+              <Field label="Poznámka k odměně">
+                <TextArea name="feeNote" />
               </Field>
-              <Field label="Paušální odměna">
-                <TextInput name="flatFee" type="number" min="0" step="0.01" />
-              </Field>
-            </div>
-            <Field label="Poznámka k odměně">
-              <TextArea name="feeNote" />
-            </Field>
+            ) : null}
             <div>
               <Button type="submit" pendingLabel="Vytvářím…">Vytvořit subjekt</Button>
             </div>

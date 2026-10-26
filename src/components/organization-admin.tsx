@@ -58,6 +58,8 @@ export function OrganizationAdminPanel({
   members,
   joinCodes,
   currentUserId,
+  assignableRoles,
+  manageableUserIds,
 }: {
   organizationId: string;
   seatLimit: number | null;
@@ -65,7 +67,13 @@ export function OrganizationAdminPanel({
   members: MemberWithUser[];
   joinCodes: OrganizationJoinCode[];
   currentUserId: string | null;
+  // Roles the actor may assign and members whose role/status they may change
+  // (no escalation past the permission matrix — the server enforces it, this
+  // only hides the controls). Omitted = everything (platform admin).
+  assignableRoles?: readonly UserRole[];
+  manageableUserIds?: readonly string[];
 }) {
+  const manageable = manageableUserIds ? new Set(manageableUserIds) : null;
   const freeSeats =
     seatLimit === null ? null : Math.max(0, seatLimit - activeMembers);
 
@@ -103,6 +111,19 @@ export function OrganizationAdminPanel({
               <tbody>
                 {members.map((member) => {
                   const isSelf = member.userId === currentUserId;
+                  const locked =
+                    isSelf || (manageable !== null && !manageable.has(member.userId));
+                  const roleOptions = assignableRoles
+                    ? orgMemberRoleOptions.filter((role) =>
+                        assignableRoles.includes(role),
+                      )
+                    : [...orgMemberRoleOptions];
+                  // An unlocked row keeps the member's current role in the
+                  // select (e.g. Administrátor, which is not in the option
+                  // list), so "Uložit" never changes the role by accident.
+                  if (!roleOptions.includes(member.role)) {
+                    roleOptions.unshift(member.role);
+                  }
                   return (
                     <tr key={member.id}>
                       <td className="font-medium text-stone-950">
@@ -110,7 +131,7 @@ export function OrganizationAdminPanel({
                       </td>
                       <td>{member.user.email}</td>
                       <td>
-                        {isSelf ? (
+                        {locked ? (
                           userRoleLabels[member.role]
                         ) : (
                           <form
@@ -129,7 +150,7 @@ export function OrganizationAdminPanel({
                               aria-label={`Role uživatele ${member.user.name}`}
                               className="h-9 w-40"
                             >
-                              {orgMemberRoleOptions.map((role: UserRole) => (
+                              {roleOptions.map((role: UserRole) => (
                                 <option key={role} value={role}>
                                   {userRoleLabels[role]}
                                 </option>
@@ -152,7 +173,7 @@ export function OrganizationAdminPanel({
                       </td>
                       <td>{formatDate(member.joinedAt)}</td>
                       <td>
-                        {!isSelf && member.status === "ACTIVE" ? (
+                        {!locked && member.status === "ACTIVE" ? (
                           <form action={deactivateMember}>
                             <input
                               type="hidden"

@@ -26,7 +26,7 @@ import { safeQuery } from "@/lib/db-safe";
 import { BillingStatus } from "@/generated/prisma/enums";
 import {
   andWhere,
-  canViewAllLegalData,
+  canArchiveRecords,
   canEditRecord,
   canSetBillableStatus,
   canViewRates,
@@ -36,6 +36,8 @@ import {
   taskVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -95,7 +97,7 @@ async function loadWorkLogEdit(id: string) {
     projects,
     cases,
     tasks,
-    canArchive: canViewAllLegalData(currentUser),
+    canArchive: canArchiveRecords(currentUser),
     canViewRates: canViewRates(currentUser),
     canSetBillable: canSetBillableStatus(currentUser),
     timeIncrementMinutes: organization?.billingTimeIncrementMinutes ?? 15,
@@ -117,6 +119,12 @@ const emptyWorkLogEdit: WorkLogEditData = {
 };
 
 export default async function WorkLogEditPage({ params }: WorkLogEditProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.workLogs");
+  if (accessDenied) {
+    return <AccessDenied title="Výkazy práce" message={accessDenied} />;
+  }
+
   const { id } = await params;
   const result = await safeQuery<WorkLogEditData>(
     emptyWorkLogEdit,

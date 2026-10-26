@@ -40,8 +40,9 @@ import {
   canManageDocuments,
   canManagePortal,
   canManageReferences,
-  canViewAllLegalData,
+  canArchiveRecords,
   canEditRecord,
+  canViewRates,
   caseVisibilityWhere,
   courtHearingVisibilityWhere,
   deadlineVisibilityWhere,
@@ -54,6 +55,8 @@ import {
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { subjectRoleTone } from "@/lib/status-tones";
+import { AccessDenied } from "@/components/access-denied";
+import { canAccessModule, moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -157,7 +160,7 @@ async function loadCase(id: string) {
 
   const deadlinesEnabled =
     legalCase != null &&
-    (await isModuleEnabled(currentUser.organizationId, ModuleKey.DEADLINES));
+    (await canAccessModule(currentUser, "module.deadlines"));
 
   const [deadlines, hearings, memberRows] = deadlinesEnabled
     ? await Promise.all([
@@ -205,7 +208,7 @@ async function loadCase(id: string) {
 
   const documentsEnabled =
     legalCase != null &&
-    (await isModuleEnabled(currentUser.organizationId, ModuleKey.DOCUMENTS));
+    (await canAccessModule(currentUser, "module.documents"));
 
   const [documents, templates] = documentsEnabled
     ? await Promise.all([
@@ -255,7 +258,7 @@ async function loadCase(id: string) {
     legalCase,
     subjects,
     assigneeCandidates: candidateRows.map((row) => row.user),
-    canArchive: canViewAllLegalData(currentUser),
+    canArchive: canArchiveRecords(currentUser),
     canEdit: legalCase ? canEditRecord(currentUser, "Case", legalCase) : false,
     canManageReferences: canManageReferences(currentUser),
     deadlinesEnabled,
@@ -296,6 +299,13 @@ export default async function CaseDetailPage({
   params,
   searchParams,
 }: CaseDetailProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.cases");
+  if (accessDenied) {
+    return <AccessDenied title="Případy" message={accessDenied} />;
+  }
+  const showRates = canViewRates(accessUser);
+
   const { id } = await params;
   const { sharepoint } = await searchParams;
   const result = await safeQuery<CaseDetailData>(
@@ -631,7 +641,7 @@ export default async function CaseDetailPage({
                     <tr>
                       <th>Název</th>
                       <th>Právní odvětví</th>
-                      <th>Hodnota</th>
+                      {showRates ? <th>Hodnota</th> : null}
                       <th>Období</th>
                       <th>Subjekt</th>
                       <th>Popis</th>
@@ -644,7 +654,9 @@ export default async function CaseDetailPage({
                           {reference.title}
                         </td>
                         <td>{reference.legalArea ?? "—"}</td>
-                        <td>{formatMoney(reference.valueCzk)}</td>
+                        {showRates ? (
+                          <td>{formatMoney(reference.valueCzk)}</td>
+                        ) : null}
                         <td>
                           {formatDateUtc(reference.startDate)} –{" "}
                           {reference.endDate

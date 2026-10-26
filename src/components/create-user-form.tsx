@@ -39,7 +39,12 @@ export function InvitationBanner({
  * new user appears in the table right away and the banner says whether the
  * welcome e-mail went out (and if not, why).
  */
-export function CreateUserForm() {
+export function CreateUserForm({
+  roles = options.userRoles,
+}: {
+  // Role, které smí aktuální uživatel přidělit (server to hlídá znovu).
+  roles?: readonly UserRole[];
+}) {
   const [state, formAction] = useActionState(createUser, initialState);
   const values = state.ok ? undefined : state.values;
 
@@ -83,8 +88,14 @@ export function CreateUserForm() {
           />
         </Field>
         <Field label="Role">
-          <SelectInput name="role" defaultValue={values?.role ?? UserRole.LAWYER}>
-            {options.userRoles.map((role) => (
+          <SelectInput
+            name="role"
+            defaultValue={
+              values?.role ??
+              (roles.includes(UserRole.LAWYER) ? UserRole.LAWYER : roles[0])
+            }
+          >
+            {roles.map((role) => (
               <option key={role} value={role}>
                 {userRoleLabels[role]}
               </option>

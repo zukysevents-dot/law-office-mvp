@@ -19,6 +19,8 @@ import {
   subjectSearchWhere,
 } from "@/lib/subjects/search";
 import { subjectRoleTone } from "@/lib/status-tones";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +62,12 @@ function conflictRoleLabel(role: keyof typeof subjectRoleLabels) {
 export default async function ConflictCheckPage({
   searchParams,
 }: ConflictCheckProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.conflictCheck");
+  if (accessDenied) {
+    return <AccessDenied title="Conflict check" message={accessDenied} />;
+  }
+
   const params = await searchParams;
   const query = params.q?.trim() ?? "";
 

@@ -28,17 +28,21 @@ import { getPrisma } from "@/lib/prisma";
 import {
   getCurrentTableView,
   getDefaultTableView,
+  restrictTableView,
 } from "@/lib/table-view-preference-service";
 import type { TableViewState } from "@/lib/table-view-preferences";
 import {
   andWhere,
   canManageReferences,
-  canViewAllLegalData,
+  canArchiveRecords,
+  canViewRates,
   caseVisibilityWhere,
   projectVisibilityWhere,
   referenceVisibilityWhere,
   subjectVisibilityWhere,
 } from "@/lib/permissions";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -104,6 +108,12 @@ function referenceStatus(reference: ReferenceRow): {
 }
 
 export default async function ReferencesPage({ searchParams }: ReferencesProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.references");
+  if (accessDenied) {
+    return <AccessDenied title="Reference" message={accessDenied} />;
+  }
+
   const params = await searchParams;
   const query = params.q?.trim() ?? "";
   const legalArea = params.legalArea ?? "";
@@ -213,8 +223,11 @@ export default async function ReferencesPage({ searchParams }: ReferencesProps) 
         projects,
         cases,
         subjects,
-        tableView,
-        canArchive: canViewAllLegalData(currentUser),
+        // Hodnota reference je částka — jen s „Vidí sazby a částky“.
+        tableView: canViewRates(currentUser)
+          ? tableView
+          : restrictTableView(tableView, ["valueCzk"]),
+        canArchive: canArchiveRecords(currentUser),
         canManage: canManageReferences(currentUser),
       };
     },

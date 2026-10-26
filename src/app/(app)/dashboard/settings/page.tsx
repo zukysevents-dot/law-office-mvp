@@ -23,12 +23,15 @@ import {
   dashboardWidgetSizes,
   dashboardWidgetTypeLabels,
   dashboardWidgetTypes,
+  filterAllowedWidgets,
+  isDashboardWidgetAllowed,
   ensureDefaultDashboardWidgets,
   getVisibleDashboardColumns,
   isDashboardTableWidget,
 } from "@/lib/dashboard-widgets";
 import { safeQuery } from "@/lib/db-safe";
 import { getCurrentUser } from "@/lib/auth";
+import { getAccessibleModules } from "@/lib/module-access.server";
 import { getPrisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -57,23 +60,31 @@ export default async function DashboardSettingsPage() {
 
       await ensureDefaultDashboardWidgets(currentUser.id);
 
-      const widgets = await prisma.dashboardWidget.findMany({
-        where: { userId: currentUser.id },
-        orderBy: [{ position: "asc" }, { createdAt: "asc" }],
-        select: {
-          id: true,
-          type: true,
-          title: true,
-          size: true,
-          visible: true,
-          config: true,
-        },
-      });
+      const allowedModules = await getAccessibleModules(currentUser);
+      // Widgets of modules the user can't open are neither offered nor listed
+      // (they never render on the dashboard either).
+      const widgets = filterAllowedWidgets(
+        await prisma.dashboardWidget.findMany({
+          where: { userId: currentUser.id },
+          orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+          select: {
+            id: true,
+            type: true,
+            title: true,
+            size: true,
+            visible: true,
+            config: true,
+          },
+        }),
+        allowedModules,
+      );
 
       return {
         userName: currentUser.name,
         availableTypes: dashboardWidgetTypes.filter(
-          (type) => !widgets.some((widget) => widget.type === type),
+          (type) =>
+            isDashboardWidgetAllowed(type, allowedModules) &&
+            !widgets.some((widget) => widget.type === type),
         ),
         widgets: widgets.map((widget) => {
           const selected = getVisibleDashboardColumns(widget.type, widget.config);

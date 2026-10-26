@@ -8,8 +8,11 @@ import {
 } from "@/lib/audit-filters";
 import { getCurrentUser } from "@/lib/auth";
 import { formatDateTime } from "@/lib/format";
-import { andWhere, canViewAllLegalData } from "@/lib/permissions";
+import { formatPermissionAudit } from "@/lib/permission-audit";
+import { auditRowForViewer } from "@/lib/audit-redact";
+import { andWhere, canViewAuditLog, canViewRates } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { canAccessModule } from "@/lib/module-access.server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -62,7 +65,7 @@ function buildCsv(rows: AuditLogRow[]) {
         auditActionLabel(row.action),
         auditEntityTypeLabel(row.entityType),
         row.entityId,
-        auditDetail(row.newValue ?? row.oldValue),
+        formatPermissionAudit(row) ?? auditDetail(row.newValue ?? row.oldValue),
       ]
         .map((cell) => csvCell(String(cell)))
         .join(";"),
@@ -74,8 +77,11 @@ function buildCsv(rows: AuditLogRow[]) {
 
 export async function GET(request: NextRequest) {
   const currentUser = await getCurrentUser();
+  if (!(await canAccessModule(currentUser, "module.auditLog"))) {
+    return new Response("Přístup odepřen.", { status: 403 });
+  }
 
-  if (!canViewAllLegalData(currentUser)) {
+  if (!canViewAuditLog(currentUser)) {
     return new Response("Přístup odepřen", { status: 403 });
   }
 
@@ -100,7 +106,9 @@ export async function GET(request: NextRequest) {
     return new Response("Databáze není připravena.", { status: 503 });
   }
 
-  return new Response(buildCsv(rows), {
+  // Rates/amounts in the stored diffs only for viewers who may see them.
+  const showRates = canViewRates(currentUser);
+  return new Response(buildCsv(rows.map((row) => auditRowForViewer(row, showRates))), {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
       "Content-Disposition": 'attachment; filename="audit-log.csv"',

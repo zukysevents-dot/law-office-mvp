@@ -2,10 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 
-import { InvoiceStatus, ModuleKey, ReminderLevel } from "@/generated/prisma/enums";
+import { InvoiceStatus, ReminderLevel } from "@/generated/prisma/enums";
 import { auditJson } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
-import { assertModuleEnabled } from "@/lib/entitlements";
 import { enumValue, optionalString, requiredString } from "@/lib/form";
 import {
   andWhere,
@@ -13,6 +12,7 @@ import {
   invoiceVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { assertCanAccessModule } from "@/lib/module-access.server";
 
 // B-8: record a dunning reminder against an unpaid issued invoice. This is the
 // legal evidence trail (1st notice / reminder / pre-litigation demand). Actual
@@ -21,7 +21,7 @@ import { getPrisma } from "@/lib/prisma";
 export async function sendReminder(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  await assertModuleEnabled(currentUser, ModuleKey.BILLING);
+  await assertCanAccessModule(currentUser, "module.billing");
   assertCanManageInvoices(currentUser);
 
   const invoiceId = requiredString(formData, "invoiceId");
@@ -77,7 +77,7 @@ export async function sendReminder(formData: FormData) {
 export async function markInvoiceSent(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  await assertModuleEnabled(currentUser, ModuleKey.BILLING);
+  await assertCanAccessModule(currentUser, "module.billing");
   assertCanManageInvoices(currentUser);
 
   const invoiceId = requiredString(formData, "invoiceId");

@@ -5,10 +5,15 @@ import { buildCsvBody, csvNumber, csvResponse } from "@/lib/export/csv";
 import { buildXlsx, xlsxResponse, type XlsxColumn } from "@/lib/export/xlsx";
 import { formatCaseLabel, formatDateUtc } from "@/lib/format";
 import { billingStatusLabels } from "@/lib/labels";
-import { andWhere, workLogVisibilityWhere } from "@/lib/permissions";
+import {
+  andWhere,
+  canViewRates,
+  workLogVisibilityWhere,
+} from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { readReportFilters, workLogReportWhere } from "@/lib/reporting/filters";
 import { writeAuditLog } from "@/lib/audit";
+import { canAccessModule } from "@/lib/module-access.server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -60,6 +65,18 @@ function toNumber(value: unknown) {
 
 export async function GET(request: NextRequest) {
   const currentUser = await getCurrentUser();
+  if (!(await canAccessModule(currentUser, "module.reports"))) {
+    return new Response("Přístup odepřen.", { status: 403 });
+  }
+  // Rates and amounts only for users with "Vidí sazby a částky".
+  const showRates = canViewRates(currentUser);
+  const rateColumns = new Set(["Sazba", "Částka (CZK)"]);
+  const csvHeaders = showRates
+    ? HEADERS
+    : HEADERS.filter((header) => !rateColumns.has(header));
+  const xlsxColumns = showRates
+    ? XLSX_COLUMNS
+    : XLSX_COLUMNS.filter((column) => !rateColumns.has(column.header));
   const searchParams = request.nextUrl.searchParams;
   const format = searchParams.get("format") === "csv" ? "csv" : "xlsx";
   const filters = readReportFilters((key) => searchParams.get(key) ?? "");
@@ -92,7 +109,7 @@ export async function GET(request: NextRequest) {
 
   if (format === "csv") {
     const body = buildCsvBody(
-      HEADERS,
+      csvHeaders,
       rows.map((row) => [
         formatDateUtc(row.workDate),
         row.subject?.name ?? "",
@@ -100,8 +117,12 @@ export async function GET(request: NextRequest) {
         formatCaseLabel(row.case, ""),
         row.user?.name ?? "",
         csvNumber(toNumber(row.hours)),
-        csvNumber(toNumber(row.hourlyRate)),
-        csvNumber(toNumber(row.amountCzk)),
+        ...(showRates
+          ? [
+              csvNumber(toNumber(row.hourlyRate)),
+              csvNumber(toNumber(row.amountCzk)),
+            ]
+          : []),
         billingStatusLabels[row.billingStatus],
         row.legalArea ?? "",
         row.description ?? "",
@@ -111,7 +132,7 @@ export async function GET(request: NextRequest) {
   }
 
   const buffer = await buildXlsx(
-    XLSX_COLUMNS,
+    xlsxColumns,
     rows.map((row) => ({
       date: formatDateUtc(row.workDate),
       subject: row.subject?.name ?? "",
@@ -119,8 +140,9 @@ export async function GET(request: NextRequest) {
       case: formatCaseLabel(row.case, ""),
       user: row.user?.name ?? "",
       hours: toNumber(row.hours),
-      rate: toNumber(row.hourlyRate),
-      amount: toNumber(row.amountCzk),
+      ...(showRates
+        ? { rate: toNumber(row.hourlyRate), amount: toNumber(row.amountCzk) }
+        : {}),
       billingStatus: billingStatusLabels[row.billingStatus],
       legalArea: row.legalArea ?? "",
       description: row.description ?? "",

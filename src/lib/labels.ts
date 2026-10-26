@@ -168,6 +168,13 @@ export const hrAttendanceSourceLabels: Record<HrAttendanceSource, string> = {
   IMPORT: "Import",
 };
 
+// Per-user exception on Nastavení → Oprávnění → výjimky uživatele.
+export const permissionOverrideLabels = {
+  INHERIT: "Podle role",
+  ALLOW: "Povolit",
+  DENY: "Zakázat",
+} as const;
+
 export const moduleKeyLabels: Record<ModuleKey, string> = {
   CORE: "Jádro",
   BILLING: "Fakturace",

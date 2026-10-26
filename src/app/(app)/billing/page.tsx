@@ -35,6 +35,8 @@ import {
   subjectVisibilityWhere,
   workLogVisibilityWhere,
 } from "@/lib/permissions";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -89,6 +91,12 @@ function summarize(
 }
 
 export default async function BillingPage({ searchParams }: BillingProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.billing");
+  if (accessDenied) {
+    return <AccessDenied title="Fakturace" message={accessDenied} />;
+  }
+
   const params = await searchParams;
   const filters = readBillingFilters((key) => firstParam(params, key));
 
@@ -171,7 +179,7 @@ export default async function BillingPage({ searchParams }: BillingProps) {
         />
         <Section title="Přístup odepřen">
           <p className="text-sm text-stone-600">
-            Fakturaci mohou spravovat partneři a administrátoři.
+            Fakturační podklady vidí jen uživatelé s oprávněním „Spravuje fakturaci“. O přístup požádejte administrátora kanceláře (Nastavení → Oprávnění).
           </p>
         </Section>
       </>

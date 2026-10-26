@@ -5,11 +5,9 @@ import { revalidatePath } from "next/cache";
 import {
   DeadlineStatus,
   DeadlineType,
-  ModuleKey,
 } from "@/generated/prisma/enums";
 import { auditJson } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
-import { assertModuleEnabled } from "@/lib/entitlements";
 import {
   enumValue,
   optionalDate,
@@ -27,6 +25,7 @@ import {
   deadlineVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { assertCanAccessModule } from "@/lib/module-access.server";
 
 type CurrentUser = Awaited<ReturnType<typeof getCurrentUser>>;
 
@@ -40,7 +39,7 @@ async function authorize(): Promise<{
   organizationId: string;
 }> {
   const currentUser = await getCurrentUser();
-  await assertModuleEnabled(currentUser, ModuleKey.DEADLINES);
+  await assertCanAccessModule(currentUser, "module.deadlines");
   assertCanManageDeadlines(currentUser);
 
   const organizationId = currentUser.organizationId;
