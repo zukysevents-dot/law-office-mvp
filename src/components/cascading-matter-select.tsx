@@ -3,6 +3,18 @@
 import { useMemo, useState } from "react";
 
 import { Field, SelectInput } from "@/components/form-field";
+import {
+  casesForSelection,
+  initialCascadeSelection,
+  nextSelectionOnCaseChange,
+  nextSelectionOnProjectChange,
+  nextSelectionOnSubjectChange,
+  nextSelectionOnTaskChange,
+  projectsForSubject,
+  tasksForSelection,
+  type MatterCascadeLists,
+  type MatterCascadeState,
+} from "@/lib/matter-cascade";
 
 export type CascadingSubject = { id: string; name: string };
 export type CascadingProject = {
@@ -23,12 +35,15 @@ export type CascadingTask = {
   caseId: string | null;
 };
 
-// Dependent client → project → case (→ task) pickers. Lawyers asked that a new
-// task/work log be filled top-down: choose the client first, then only that
-// client's projects appear, then only that project's cases, then only that
-// matter's tasks. Selecting a deeper level back-fills the higher ones. All
-// filtering is client-side over lists already loaded for the page; the selects
-// keep the same field names so the server actions are unchanged.
+// Dependent client → project → case (→ task) pickers. Lawyers asked that every
+// matter picker work top-down: choose the client first, then only that client's
+// projects and cases appear, then only that project's cases, then only that
+// matter's tasks. Selecting a deeper level back-fills the higher ones, and
+// changing (or clearing) a parent clears every child that no longer belongs to
+// it. The rules live in src/lib/matter-cascade.ts (unit-tested). All filtering
+// is client-side over lists already loaded for the page; the selects keep the
+// same field names (subjectId/projectId/caseId/taskId) so server actions and
+// GET filters are unchanged — the server still validates the hierarchy.
 export function CascadingMatterSelect({
   subjects,
   projects,
@@ -36,6 +51,7 @@ export function CascadingMatterSelect({
   tasks,
   includeTask = false,
   includeCase = true,
+  requireSubject = false,
   requireProject = false,
   requireCase = false,
   defaultSubjectId = "",
@@ -43,7 +59,13 @@ export function CascadingMatterSelect({
   defaultCaseId = "",
   defaultTaskId = "",
   subjectLabel = "Klient",
+  projectLabel = "Projekt",
+  caseLabel = "Případ",
+  subjectPlaceholder,
+  projectPlaceholder,
+  casePlaceholder,
   filterMode = false,
+  className,
 }: {
   subjects: CascadingSubject[];
   projects: CascadingProject[];
@@ -51,6 +73,7 @@ export function CascadingMatterSelect({
   tasks?: CascadingTask[];
   includeTask?: boolean;
   includeCase?: boolean;
+  requireSubject?: boolean;
   requireProject?: boolean;
   requireCase?: boolean;
   defaultSubjectId?: string;
@@ -58,100 +81,87 @@ export function CascadingMatterSelect({
   defaultCaseId?: string;
   defaultTaskId?: string;
   subjectLabel?: string;
+  projectLabel?: string;
+  caseLabel?: string;
+  /** Text of the empty option; defaults depend on filterMode / require*. */
+  subjectPlaceholder?: string;
+  projectPlaceholder?: string;
+  casePlaceholder?: string;
   filterMode?: boolean;
+  /** Overrides the wrapper grid column classes. */
+  className?: string;
 }) {
-  const initialSubject =
-    defaultSubjectId ||
-    projects.find((project) => project.id === defaultProjectId)?.mainSubjectId ||
-    "";
-
-  const [subjectId, setSubjectId] = useState(initialSubject);
-  const [projectId, setProjectId] = useState(defaultProjectId);
-  const [caseId, setCaseId] = useState(defaultCaseId);
-  const [taskId, setTaskId] = useState(defaultTaskId);
+  const lists = useMemo<MatterCascadeLists>(
+    () => ({ projects, cases, tasks: tasks ?? [] }),
+    [projects, cases, tasks],
+  );
+  const [selection, setSelection] = useState<MatterCascadeState>(() =>
+    initialCascadeSelection(
+      {
+        subjectId: defaultSubjectId,
+        projectId: defaultProjectId,
+        caseId: defaultCaseId,
+        taskId: defaultTaskId,
+      },
+      lists,
+    ),
+  );
 
   const visibleProjects = useMemo(
-    () =>
-      subjectId
-        ? projects.filter((project) => project.mainSubjectId === subjectId)
-        : projects,
-    [projects, subjectId],
+    () => projectsForSubject(projects, selection.subjectId),
+    [projects, selection.subjectId],
   );
   const visibleCases = useMemo(
-    () =>
-      projectId
-        ? cases.filter((legalCase) => legalCase.projectId === projectId)
-        : cases,
-    [cases, projectId],
+    () => casesForSelection(cases, projects, selection),
+    [cases, projects, selection],
   );
-  const visibleTasks = useMemo(() => {
-    if (!tasks) {
-      return [];
-    }
-    if (caseId) {
-      return tasks.filter((task) => task.caseId === caseId);
-    }
-    if (projectId) {
-      return tasks.filter((task) => task.projectId === projectId);
-    }
-    return tasks;
-  }, [tasks, projectId, caseId]);
+  const visibleTasks = useMemo(
+    () => (tasks ? tasksForSelection(tasks, cases, projects, selection) : []),
+    [tasks, cases, projects, selection],
+  );
 
-  function handleSubjectChange(value: string) {
-    setSubjectId(value);
-    const project = projects.find((item) => item.id === projectId);
-    if (value && project && project.mainSubjectId !== value) {
-      setProjectId("");
-      setCaseId("");
-      setTaskId("");
-    }
-  }
+  const columns =
+    className ??
+    (filterMode
+      ? "contents"
+      : includeTask
+        ? "md:grid-cols-2 xl:grid-cols-4"
+        : includeCase
+          ? "md:grid-cols-3"
+          : "md:grid-cols-2");
 
-  function handleProjectChange(value: string) {
-    setProjectId(value);
-    const project = projects.find((item) => item.id === value);
-    if (project?.mainSubjectId) {
-      setSubjectId(project.mainSubjectId);
-    }
-    const legalCase = cases.find((item) => item.id === caseId);
-    if (value && legalCase && legalCase.projectId !== value) {
-      setCaseId("");
-      setTaskId("");
-    }
-  }
-
-  function handleCaseChange(value: string) {
-    setCaseId(value);
-    const legalCase = cases.find((item) => item.id === value);
-    if (legalCase?.projectId) {
-      setProjectId(legalCase.projectId);
-      const project = projects.find((item) => item.id === legalCase.projectId);
-      if (project?.mainSubjectId) {
-        setSubjectId(project.mainSubjectId);
-      }
-    }
-    setTaskId("");
-  }
-
-  const columns = filterMode
-    ? "contents"
-    : includeTask
-      ? "md:grid-cols-2 xl:grid-cols-4"
-      : includeCase
-        ? "md:grid-cols-3"
-        : "md:grid-cols-2";
+  const subjectEmpty =
+    subjectPlaceholder ?? (filterMode ? "Všichni klienti" : "Vyberte klienta");
+  const projectEmpty =
+    projectPlaceholder ??
+    (filterMode
+      ? "Všechny projekty"
+      : requireProject
+        ? "Vyberte projekt"
+        : "Bez projektu");
+  const caseEmpty =
+    casePlaceholder ??
+    (filterMode
+      ? "Všechny případy"
+      : requireCase
+        ? "Vyberte případ"
+        : "Bez případu");
 
   return (
     <div className={`grid gap-4 ${columns}`}>
       <Field label={subjectLabel}>
         <SelectInput
           name="subjectId"
-          value={subjectId}
-          onChange={(event) => handleSubjectChange(event.target.value)}
+          value={selection.subjectId}
+          required={requireSubject}
+          onChange={(event) => {
+            const value = event.target.value;
+            setSelection((state) =>
+              nextSelectionOnSubjectChange(state, value, lists),
+            );
+          }}
         >
-          <option value="">
-            {filterMode ? "Všichni klienti" : "Vyberte klienta"}
-          </option>
+          <option value="">{subjectEmpty}</option>
           {subjects.map((subject) => (
             <option key={subject.id} value={subject.id}>
               {subject.name}
@@ -159,20 +169,19 @@ export function CascadingMatterSelect({
           ))}
         </SelectInput>
       </Field>
-      <Field label="Projekt">
+      <Field label={projectLabel}>
         <SelectInput
           name="projectId"
-          value={projectId}
+          value={selection.projectId}
           required={requireProject}
-          onChange={(event) => handleProjectChange(event.target.value)}
+          onChange={(event) => {
+            const value = event.target.value;
+            setSelection((state) =>
+              nextSelectionOnProjectChange(state, value, lists),
+            );
+          }}
         >
-          <option value="">
-            {filterMode
-              ? "Všechny projekty"
-              : requireProject
-                ? "Vyberte projekt"
-                : "Bez projektu"}
-          </option>
+          <option value="">{projectEmpty}</option>
           {visibleProjects.map((project) => (
             <option key={project.id} value={project.id}>
               {project.name}
@@ -180,34 +189,40 @@ export function CascadingMatterSelect({
           ))}
         </SelectInput>
       </Field>
-      {includeCase ? <Field label="Případ">
-        <SelectInput
-          name="caseId"
-          value={caseId}
-          required={requireCase}
-          onChange={(event) => handleCaseChange(event.target.value)}
-        >
-          <option value="">
-            {filterMode
-              ? "Všechny případy"
-              : requireCase
-                ? "Vyberte případ"
-                : "Bez případu"}
-          </option>
-          {visibleCases.map((legalCase) => (
-            <option key={legalCase.id} value={legalCase.id}>
-              {legalCase.name}
-              {legalCase.projectName ? ` / ${legalCase.projectName}` : ""}
-            </option>
-          ))}
-        </SelectInput>
-      </Field> : null}
+      {includeCase ? (
+        <Field label={caseLabel}>
+          <SelectInput
+            name="caseId"
+            value={selection.caseId}
+            required={requireCase}
+            onChange={(event) => {
+              const value = event.target.value;
+              setSelection((state) =>
+                nextSelectionOnCaseChange(state, value, lists),
+              );
+            }}
+          >
+            <option value="">{caseEmpty}</option>
+            {visibleCases.map((legalCase) => (
+              <option key={legalCase.id} value={legalCase.id}>
+                {legalCase.name}
+                {legalCase.projectName ? ` / ${legalCase.projectName}` : ""}
+              </option>
+            ))}
+          </SelectInput>
+        </Field>
+      ) : null}
       {includeTask ? (
         <Field label="Úkol">
           <SelectInput
             name="taskId"
-            value={taskId}
-            onChange={(event) => setTaskId(event.target.value)}
+            value={selection.taskId}
+            onChange={(event) => {
+              const value = event.target.value;
+              setSelection((state) =>
+                nextSelectionOnTaskChange(state, value, lists),
+              );
+            }}
           >
             <option value="">{filterMode ? "Všechny úkoly" : "Bez úkolu"}</option>
             {visibleTasks.map((task) => (
