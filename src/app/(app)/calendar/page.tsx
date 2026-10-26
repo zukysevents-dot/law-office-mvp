@@ -4,6 +4,8 @@ import { ModuleKey } from "@/generated/prisma/enums";
 import { getCurrentUser } from "@/lib/auth";
 import { assertModuleEnabled } from "@/lib/entitlements";
 import { normalizeCalendarView } from "@/lib/calendar-view";
+import { getOutlookFeedSummary } from "@/lib/calendar/outlook-feed.server";
+import { safeQuery } from "@/lib/db-safe";
 import { getNotificationPreference } from "@/lib/notifications/notification-service";
 import { AccessDenied } from "@/components/access-denied";
 import { moduleAccessDenial } from "@/lib/module-access.server";
@@ -20,15 +22,17 @@ export default async function CalendarPage() {
   const currentUser = await getCurrentUser();
   await assertModuleEnabled(currentUser, ModuleKey.DEADLINES);
   const preference = await getNotificationPreference(currentUser.id);
+  const outlook = await safeQuery(null, () => getOutlookFeedSummary(currentUser));
 
   return (
     <>
       <PageHeader
         title="Kalendář"
-        description="Termíny úkolů – procesní a interní lhůty napříč projekty a případy."
+        description="Termíny úkolů, lhůty, soudní jednání a – pokud si ho propojíte – váš Outlook kalendář."
       />
       <CalendarView
         initialView={normalizeCalendarView(preference.calendarDefaultView)}
+        outlook={outlook.data}
       />
     </>
   );

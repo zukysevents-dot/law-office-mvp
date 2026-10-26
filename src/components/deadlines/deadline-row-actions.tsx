@@ -19,7 +19,7 @@ export function FulfilledDeadlineActions({ deadlineId }: { deadlineId: string })
         <Button
           type="submit"
           variant="secondary"
-          className="h-9 px-3"
+          className="h-9 whitespace-nowrap px-3"
           pendingLabel="Archivuji…"
         >
           <ArchiveX className="h-4 w-4" aria-hidden="true" />
@@ -40,7 +40,7 @@ export function FulfilledDeadlineActions({ deadlineId }: { deadlineId: string })
           message="Vrátit lhůtu mezi aktivní? Znovu se začne hlídat a posílat upozornění."
           pendingLabel="Vracím…"
           variant="ghost"
-          className="h-9 px-3"
+          className="h-9 whitespace-nowrap px-3"
         />
       </form>
     </div>
@@ -55,7 +55,7 @@ export function ArchivedDeadlineActions({ deadlineId }: { deadlineId: string }) 
       <Button
         type="submit"
         variant="secondary"
-        className="h-9 px-3"
+        className="h-9 whitespace-nowrap px-3"
         pendingLabel="Obnovuji…"
       >
         <ArchiveRestore className="h-4 w-4" aria-hidden="true" />

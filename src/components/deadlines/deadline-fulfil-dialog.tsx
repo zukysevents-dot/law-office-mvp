@@ -160,7 +160,7 @@ export function DeadlineFulfilDialog({
       <Button
         type="button"
         variant="secondary"
-        className="h-9 px-3"
+        className="h-9 whitespace-nowrap px-3"
         onClick={() => setOpen(true)}
         aria-haspopup="dialog"
       >

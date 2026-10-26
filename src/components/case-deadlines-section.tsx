@@ -138,7 +138,7 @@ export function CaseDeadlinesSection({
                                 <Button
                                   type="submit"
                                   variant="ghost"
-                                  className="h-9 px-3"
+                                  className="h-9 whitespace-nowrap px-3"
                                   pendingLabel="Ruším…"
                                 >
                                   Zrušit
