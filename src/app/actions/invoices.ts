@@ -27,9 +27,11 @@ import {
   areLockedWorkLogsInvoiceable,
   DEFAULT_VAT_RATE,
   formatInvoiceNumber,
+  INVOICE_MATTER_MISMATCH_MESSAGE,
   invoiceLineWorkLogIds,
   vatModeForProfile,
 } from "@/lib/invoices";
+import { resolveMatterSelection } from "@/lib/matter-integrity";
 import { getSmtpTransporter } from "@/lib/notifications/notification-service";
 import {
   andWhere,
@@ -59,6 +61,10 @@ export async function createInvoiceFromWorkLogs(formData: FormData) {
 
   const organizationId = currentUser.organizationId;
   const subjectId = requiredString(formData, "subjectId");
+  // Volitelný spis (projekt / případ) zvoleného klienta. Faktura ho nese a do
+  // faktury smí jen výkazy z tohoto spisu.
+  const requestedProjectId = optionalString(formData, "projectId");
+  const requestedCaseId = optionalString(formData, "caseId");
   // Volitelný fakturující subjekt (jinak hlavní profil kanceláře).
   const issuerId = optionalString(formData, "issuerId");
   // Dedupe: a repeated id in the POST must not trip the count check below
@@ -85,6 +91,65 @@ export async function createInvoiceFromWorkLogs(formData: FormData) {
       throw new Error("Klient nenalezen.");
     }
 
+    // The project/case must belong to this client (org-scoped lookup + the
+    // shared hierarchy resolver: a case back-fills its project). A forged POST
+    // mixing another client's matter fails here.
+    let projectId: string | null = null;
+    let caseId: string | null = null;
+    if (requestedProjectId || requestedCaseId) {
+      const [project, legalCase] = await Promise.all([
+        requestedProjectId
+          ? tx.project.findFirst({
+              where: { id: requestedProjectId, organizationId },
+              select: { id: true, mainSubjectId: true },
+            })
+          : null,
+        requestedCaseId
+          ? tx.case.findFirst({
+              where: { id: requestedCaseId, organizationId },
+              select: {
+                id: true,
+                projectId: true,
+                project: { select: { mainSubjectId: true } },
+              },
+            })
+          : null,
+      ]);
+      if (
+        (requestedProjectId && !project) ||
+        (requestedCaseId && !legalCase)
+      ) {
+        throw new Error(INVOICE_MATTER_MISMATCH_MESSAGE);
+      }
+      let resolved;
+      try {
+        resolved = resolveMatterSelection(
+          {
+            subjectId,
+            projectId: requestedProjectId,
+            caseId: requestedCaseId,
+          },
+          {
+            project,
+            legalCase: legalCase
+              ? {
+                  id: legalCase.id,
+                  projectId: legalCase.projectId,
+                  mainSubjectId: legalCase.project.mainSubjectId,
+                }
+              : null,
+          },
+        );
+      } catch {
+        throw new Error(INVOICE_MATTER_MISMATCH_MESSAGE);
+      }
+      if (resolved.subjectId !== subjectId) {
+        throw new Error(INVOICE_MATTER_MISMATCH_MESSAGE);
+      }
+      projectId = resolved.projectId;
+      caseId = resolved.caseId;
+    }
+
     // Only work-logs the user may see (visibility), belonging to THIS client,
     // approved, billable, and not yet invoiced. workLogVisibilityWhere carries
     // the org clause; binding subjectId is the authoritative gate against a
@@ -93,6 +158,8 @@ export async function createInvoiceFromWorkLogs(formData: FormData) {
       where: andWhere(workLogVisibilityWhere(currentUser), {
         id: { in: workLogIds },
         subjectId,
+        ...(projectId ? { projectId } : {}),
+        ...(caseId ? { caseId } : {}),
         archivedAt: null,
         billingStatus: "BILLABLE",
         approvalStatus: "APPROVED",
@@ -164,6 +231,8 @@ export async function createInvoiceFromWorkLogs(formData: FormData) {
         totalCzk: totals.total,
         createdById: currentUser.id,
         issuerId: issuerId || null,
+        projectId,
+        caseId,
         lines: {
           create: lineInputs.map((li, index) => {
             const r = computeLine(li, vatMode);
@@ -193,6 +262,8 @@ export async function createInvoiceFromWorkLogs(formData: FormData) {
         organizationId: currentUser.organizationId,
         newValue: auditJson({
           subjectId,
+          projectId,
+          caseId,
           status: created.status,
           lineCount: lineInputs.length,
           totalCzk: totals.total,
