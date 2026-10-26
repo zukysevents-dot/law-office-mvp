@@ -308,15 +308,22 @@ test.describe("položky ke schválení", () => {
     await page.goto("/work-logs");
     await expect(page.getByRole("link", { name: /^Ke schválení/ })).toHaveCount(0);
 
-    for (const path of ["/work-logs/approvals", "/billing/approvals"]) {
-      await page.goto(`${path}?q=${encodeURIComponent(p)}`);
-      await expectNoErrorPage(page);
-      await expect(page.getByText("Nemáte oprávnění schvalovat položky.")).toBeVisible();
-      await expect(cards(page)).toHaveCount(1);
-      await expect(cards(page)).toContainText(p);
-      await expect(page.getByRole("checkbox")).toHaveCount(0);
-      await expect(page.getByRole("button", { name: "Schválit" })).toHaveCount(0);
-    }
+    // Výkazy práce → Ke schválení: jen vlastní položky, jen ke čtení.
+    await page.goto(`/work-logs/approvals?q=${encodeURIComponent(p)}`);
+    await expectNoErrorPage(page);
+    await expect(page.getByText("Nemáte oprávnění schvalovat položky.")).toBeVisible();
+    await expect(cards(page)).toHaveCount(1);
+    await expect(cards(page)).toContainText(p);
+    await expect(page.getByRole("checkbox")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Schválit" })).toHaveCount(0);
+
+    // Fakturace → Ke schválení: koncipient bez sekce Fakturace, který není
+    // schvalovatelem, dostane „Přístup odepřen“ (matice oprávnění).
+    await page.goto(`/billing/approvals?q=${encodeURIComponent(p)}`);
+    await expect(
+      page.getByRole("heading", { name: "Přístup odepřen", level: 2 }),
+    ).toBeVisible();
+    await expect(cards(page)).toHaveCount(0);
     await page.context().close();
   });
 
@@ -330,19 +337,18 @@ test.describe("položky ke schválení", () => {
 
     // Koncipient (bez VIEW_RATES): sazba není v kartě ani v datech stránky
     // (RSC payload ve vložených <script>), přestože ji výkaz uloženou má.
-    for (const path of ["/work-logs/approvals", "/billing/approvals"]) {
-      await trainee.goto(`${path}?q=${encodeURIComponent(p)}`);
-      await expectNoErrorPage(trainee);
-      await expect(cards(trainee)).toHaveCount(1);
-      await expect(cards(trainee)).toContainText(p);
-      await expect(
-        trainee.getByRole("spinbutton", { name: "Sazba", exact: true }),
-      ).toHaveCount(0);
-      const html = await trainee.content();
-      expect(html).not.toContain("4321.5");
-      expect(html).not.toContain("4\u00a0321,5");
-      expect(html).not.toContain("4 321,5");
-    }
+    // (/billing/approvals mu matice oprávnění vůbec neotevře.)
+    await trainee.goto(`/work-logs/approvals?q=${encodeURIComponent(p)}`);
+    await expectNoErrorPage(trainee);
+    await expect(cards(trainee)).toHaveCount(1);
+    await expect(cards(trainee)).toContainText(p);
+    await expect(
+      trainee.getByRole("spinbutton", { name: "Sazba", exact: true }),
+    ).toHaveCount(0);
+    const html = await trainee.content();
+    expect(html).not.toContain("4321.5");
+    expect(html).not.toContain("4\u00a0321,5");
+    expect(html).not.toContain("4 321,5");
     await trainee.context().close();
 
     // Kontrola, že test není prázdný: admin sazbu v datech stránky má a v kartě
