@@ -249,7 +249,7 @@ test.describe("duplikace úkolu", () => {
     const path = await createTask(page, title, { assignees: [ADVOKAT] });
     await page.goto("/tasks");
     const row = page.getByRole("row").filter({ hasText: title });
-    await row.getByRole("link", { name: `Duplikovat úkol ${title}` }).click();
+    await row.getByRole("link", { name: "Duplikovat", exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/tasks/new\\?duplicate=${taskIdOf(path)}$`));
     await expect(page.getByLabel("Název úkolu")).toHaveValue(title);
   });
@@ -318,7 +318,7 @@ test.describe("vykázat práci k úkolu", () => {
     await page
       .getByRole("row")
       .filter({ hasText: title })
-      .getByRole("link", { name: `Vykázat práci k úkolu ${title}` })
+      .getByRole("link", { name: "Vykázat práci", exact: true })
       .click();
     await expect(page).toHaveURL(new RegExp(`/tasks\\?logWork=${taskIdOf(path)}$`));
     const dialog = page.getByRole("dialog", { name: "Vykázat práci k úkolu" });
@@ -447,7 +447,7 @@ test.describe("archiv úkolů – filtry", () => {
     await expectCards(page, [A, B, C], []);
 
     await page.goto(`/tasks/archive?q=${encodeURIComponent(tag)}`);
-    await selectByText(page.getByLabel("Projekt"), SEED_PROJECT);
+    await selectByText(page.locator("select[name=projectId]"), SEED_PROJECT);
     await page.getByRole("button", { name: "Filtrovat" }).click();
     await expect(page).toHaveURL(/projectId=/);
     await expectCards(page, [A], [B, C]);

@@ -408,7 +408,7 @@ export default async function MyTasksPage({ searchParams }: MyTasksProps) {
                               href={logWorkHref(task.id)}
                               variant="ghost"
                               className="h-8 whitespace-nowrap px-3"
-                              aria-label={`Vykázat práci k úkolu ${task.title}`}
+                              title="Vykázat práci k úkolu"
                             >
                               Vykázat práci
                             </ButtonLink>
@@ -417,7 +417,7 @@ export default async function MyTasksPage({ searchParams }: MyTasksProps) {
                             href={`/tasks/new?duplicate=${task.id}`}
                             variant="ghost"
                             className="h-8 px-3"
-                            aria-label={`Duplikovat úkol ${task.title}`}
+                            title="Duplikovat úkol (uložit jako nový)"
                           >
                             Duplikovat
                           </ButtonLink>

@@ -472,7 +472,7 @@ export default async function TaskArchivePage({ searchParams }: TaskArchiveProps
                       href={`/tasks/new?duplicate=${task.id}`}
                       variant="ghost"
                       className="h-8 px-3"
-                      aria-label={`Duplikovat úkol ${task.title}`}
+                      title="Duplikovat úkol (uložit jako nový)"
                     >
                       <Copy className="h-4 w-4" aria-hidden="true" />
                       Duplikovat
