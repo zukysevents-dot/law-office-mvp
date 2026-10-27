@@ -45,6 +45,7 @@ export function weekStartUtcMs(now: Date): number {
   );
 }
 
+// @deprecated – dashboard používá dailyKpiBuckets (fakturovatelné + cíle).
 // Sedm košů (Po–Ne) se součtem odpracovaných hodin pro daný týden. Každý
 // workDate leží přesně na UTC půlnoci, takže index dne = celé dny od začátku
 // týdne. Úkony mimo týden se ignorují.

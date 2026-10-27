@@ -16,7 +16,8 @@ import type { OutlookFeedSummary } from "@/lib/calendar/outlook-summary";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
 import { StatCard } from "@/components/stat-card";
-import { WeeklyHoursChart } from "@/components/weekly-hours-chart";
+import { HoursKpiChart, type HoursKpiSummary } from "@/components/hours-kpi-chart";
+import { HoursKpiTabs } from "@/components/hours-kpi-tabs";
 import { DashboardWidgetGrid } from "@/components/dashboard-widget-grid";
 import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
@@ -46,10 +47,17 @@ import {
 import { formatDate, formatDateUtc, formatHours, formatMoney } from "@/lib/format";
 import {
   DAY_MS,
-  weekStartUtcMs,
-  weeklyHoursBuckets,
-  type DayBucket,
+  dailyKpiBuckets,
+  fulfillmentPercent,
+  hoursPlanFromRecord,
+  isBillableKpiHours,
+  officeWeekStartUtcMs,
+  periodTargets,
+  sumKpiBuckets,
+  weeklyKpiBuckets,
+  type HoursKpiBucket,
 } from "@/lib/hours-plan";
+import { officeWorkDate } from "@/lib/hr/attendance-calc";
 import {
   approvalStatusLabels,
   billingStatusLabels,
@@ -66,6 +74,7 @@ import { getAccessibleModules } from "@/lib/module-access.server";
 import {
   andWhere,
   canApproveWorkLogs,
+  canManageUsers,
   canViewRates,
   caseVisibilityWhere,
   projectVisibilityWhere,
@@ -202,8 +211,12 @@ type DashboardData = {
     case: { id: string; name: string };
     responsibleUser: { name: string } | null;
   }>;
-  weeklyHours: DayBucket[];
-  weeklyHoursTarget: number | null;
+  // Přehled hodin (KPI): vlastní výkazy přihlášeného uživatele.
+  hoursKpi: {
+    week: { buckets: HoursKpiBucket[]; summary: HoursKpiSummary };
+    month: { buckets: HoursKpiBucket[]; summary: HoursKpiSummary };
+  };
+  canManageUsers: boolean;
   canViewRates: boolean;
   canApprove: boolean;
   calendarDefaultView: CalendarDefaultView;
@@ -228,8 +241,17 @@ const fallbackData: DashboardData = {
   references: [],
   recentChecks: [],
   upcomingDeadlines: [],
-  weeklyHours: [],
-  weeklyHoursTarget: null,
+  hoursKpi: {
+    week: {
+      buckets: [],
+      summary: { label: "Tento týden", total: 0, billable: 0, totalTarget: null, billableTarget: null },
+    },
+    month: {
+      buckets: [],
+      summary: { label: "Tento měsíc", total: 0, billable: 0, totalTarget: null, billableTarget: null },
+    },
+  },
+  canManageUsers: false,
   canViewRates: false,
   canApprove: false,
   calendarDefaultView: "dayGridMonth",
@@ -592,26 +614,89 @@ function renderWidget(widget: DashboardWidgetView, data: DashboardData) {
           href={dashboardWidgetHref(widget.type)}
         />
       );
-    case DashboardWidgetType.WEEKLY_HOURS_CHART:
+    case DashboardWidgetType.WEEKLY_HOURS_CHART: {
+      const { week, month } = data.hoursKpi;
+      const planHint = data.canManageUsers ? (
+        <p>
+          Plán hodin nenastaven –{" "}
+          <Link
+            href="/settings#plan-hodin"
+            className="font-medium text-[#0e1822] underline underline-offset-2"
+          >
+            nastavit v Nastavení → Plán hodin pracovníků
+          </Link>
+          .
+        </p>
+      ) : (
+        <p>
+          Plán hodin nenastaven – nastaví ho administrátor v Nastavení → Plán
+          hodin pracovníků.
+        </p>
+      );
+      const emptyHint = (label: string) => (
+        <p>
+          {label} zatím nemáte vykázané žádné hodiny.{" "}
+          <Link
+            href="/work-logs?new=1"
+            className="font-medium text-[#0e1822] underline underline-offset-2"
+          >
+            Zapsat výkaz
+          </Link>
+        </p>
+      );
+      const monthPct = fulfillmentPercent(
+        month.summary.total,
+        month.summary.totalTarget,
+      );
       return (
-        <Section title={widget.title}>
-          <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,3fr)_minmax(12rem,1fr)] lg:items-stretch">
+        <Section title={widget.title} data-widget="hours-kpi">
+          <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,3fr)_minmax(12rem,1fr)] xl:items-stretch">
             <div className="min-w-0">
-              <WeeklyHoursChart
-                buckets={data.weeklyHours}
-                weeklyTarget={data.weeklyHoursTarget}
+              <HoursKpiTabs
+                tabs={[
+                  {
+                    id: "week",
+                    label: "Týden",
+                    content: (
+                      <HoursKpiChart
+                        caption="Vykázané hodiny tento týden po dnech"
+                        buckets={week.buckets}
+                        summary={week.summary}
+                        emptyHint={emptyHint("Tento týden")}
+                        planHint={planHint}
+                      />
+                    ),
+                  },
+                  {
+                    id: "month",
+                    label: "Měsíc",
+                    content: (
+                      <HoursKpiChart
+                        caption="Vykázané hodiny tento měsíc po týdnech"
+                        buckets={month.buckets}
+                        summary={month.summary}
+                        emptyHint={emptyHint("Tento měsíc")}
+                        planHint={planHint}
+                      />
+                    ),
+                  },
+                ]}
               />
             </div>
             <Link
               href="/work-logs"
               className="group flex min-h-40 flex-col justify-between rounded-xl border border-emerald-900/15 bg-emerald-950 px-5 py-5 text-white transition hover:-translate-y-0.5 hover:bg-emerald-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-2"
-              aria-label={`Hodiny tento měsíc: ${data.monthHours} hodin. Otevřít výkazy práce.`}
+              aria-label={`Moje hodiny tento měsíc: ${formatHours(month.summary.total)} hodin, z toho fakturovatelné ${formatHours(month.summary.billable)} hodin. Otevřít výkazy práce.`}
             >
               <span className="text-sm font-semibold text-emerald-100">
-                Hodiny tento měsíc
+                Moje hodiny tento měsíc
               </span>
               <span className="mt-6 text-4xl font-semibold tracking-tight">
-                {data.monthHours} h
+                {formatHours(month.summary.total)} h
+              </span>
+              <span className="mt-2 text-sm text-emerald-100">
+                fakturovatelné {formatHours(month.summary.billable)} h
+                {monthPct != null ? ` · ${monthPct} % plánu` : ""}
               </span>
               <span className="mt-3 text-xs text-emerald-100/80 group-hover:text-white">
                 Otevřít výkazy práce →
@@ -620,6 +705,7 @@ function renderWidget(widget: DashboardWidgetView, data: DashboardData) {
           </div>
         </Section>
       );
+    }
     case DashboardWidgetType.MY_TASKS_TABLE:
       return (
         <Section title={widget.title}>
@@ -859,13 +945,27 @@ function when<T>(ok: boolean, query: () => Promise<T>, fallback: T): Promise<T> 
 
 export default async function DashboardPage() {
   const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-  // Týden pro graf počítáme v UTC (workDate je uložený na UTC půlnoc), aby úkon
-  // nespadl do vedlejšího dne kvůli posunu.
-  const weekStartMs = weekStartUtcMs(now);
-  const weekStartDate = new Date(weekStartMs);
-  const weekEndDate = new Date(weekStartMs + 7 * DAY_MS);
+  // Hranice podle kancelářského dne (Europe/Prague) jako UTC půlnoci — workDate
+  // je uložený na UTC půlnoc, takže úkon nespadne do vedlejšího dne/týdne
+  // (ani v pondělí po půlnoci pražského času, kdy je v UTC ještě neděle).
+  const officeToday = officeWorkDate(now);
+  const todayMs = officeToday.getTime();
+  const monthStartMs = Date.UTC(
+    officeToday.getUTCFullYear(),
+    officeToday.getUTCMonth(),
+    1,
+  );
+  const nextMonthStartMs = Date.UTC(
+    officeToday.getUTCFullYear(),
+    officeToday.getUTCMonth() + 1,
+    1,
+  );
+  const monthStart = new Date(monthStartMs);
+  const nextMonthStart = new Date(nextMonthStartMs);
+  const weekStartMs = officeWeekStartUtcMs(now);
+  const weekEndMs = weekStartMs + 7 * DAY_MS;
+  const hoursRangeStart = new Date(Math.min(weekStartMs, monthStartMs));
+  const hoursRangeEnd = new Date(Math.max(weekEndMs, nextMonthStartMs));
 
   const result = await safeQuery<DashboardData>(fallbackData, async () => {
     const prisma = getPrisma();
@@ -904,7 +1004,7 @@ export default async function DashboardPage() {
       references,
       recentChecks,
       upcomingDeadlines,
-      weeklyHoursGroups,
+      ownHoursGroups,
       hoursPlan,
       notificationPreference,
       approvalAssignmentCount,
@@ -1163,16 +1263,18 @@ export default async function DashboardPage() {
           }),
         [],
       ),
-      // Vlastní výkazy přihlášeného uživatele za aktuální týden pro graf.
+      // Vlastní výkazy přihlášeného uživatele (týden ∪ měsíc) pro Přehled
+      // hodin — jeden groupBy, fakturovatelnost podle billing/approval statusu.
       when(
         can("module.workLogs"),
         () =>
           prisma.workLog.groupBy({
-            by: ["workDate"],
+            by: ["workDate", "billingStatus", "approvalStatus"],
             where: {
+              organizationId: currentUser.organizationId,
               userId: currentUser.id,
               archivedAt: null,
-              workDate: { gte: weekStartDate, lt: weekEndDate },
+              workDate: { gte: hoursRangeStart, lt: hoursRangeEnd },
             },
             _sum: { hours: true },
           }),
@@ -1180,7 +1282,12 @@ export default async function DashboardPage() {
       ),
       prisma.userHoursPlan.findUnique({
         where: { userId: currentUser.id },
-        select: { weeklyHoursTarget: true },
+        select: {
+          weeklyHoursTarget: true,
+          monthlyHoursTarget: true,
+          weeklyBillableHoursTarget: true,
+          monthlyBillableHoursTarget: true,
+        },
       }),
       prisma.notificationPreference.findUnique({
         where: { userId: currentUser.id },
@@ -1193,6 +1300,25 @@ export default async function DashboardPage() {
         },
       }),
     ]);
+
+    const plan = hoursPlanFromRecord(hoursPlan);
+    const kpiEntries = ownHoursGroups.map((group) => ({
+      workDate: group.workDate,
+      hours: Number(group._sum.hours ?? 0),
+      billable: isBillableKpiHours(group.billingStatus, group.approvalStatus),
+    }));
+    const weekBuckets = dailyKpiBuckets(weekStartMs, weekEndMs, kpiEntries, plan, {
+      todayMs,
+    });
+    const monthBuckets = weeklyKpiBuckets(
+      monthStartMs,
+      nextMonthStartMs,
+      kpiEntries,
+      plan,
+      { todayMs },
+    );
+    const weekTargets = periodTargets(plan, weekStartMs, weekEndMs);
+    const monthTargets = periodTargets(plan, monthStartMs, nextMonthStartMs);
 
     return {
       widgets: filterAllowedWidgets(widgets, allowedModules),
@@ -1221,17 +1347,27 @@ export default async function DashboardPage() {
       references,
       recentChecks,
       upcomingDeadlines,
-      weeklyHours: weeklyHoursBuckets(
-        weekStartMs,
-        weeklyHoursGroups.map((group) => ({
-          workDate: group.workDate,
-          hours: Number(group._sum.hours ?? 0),
-        })),
-      ),
-      weeklyHoursTarget:
-        hoursPlan?.weeklyHoursTarget != null
-          ? Number(hoursPlan.weeklyHoursTarget)
-          : null,
+      hoursKpi: {
+        week: {
+          buckets: weekBuckets,
+          summary: {
+            label: "Tento týden",
+            ...sumKpiBuckets(weekBuckets),
+            totalTarget: weekTargets.total,
+            billableTarget: weekTargets.billable,
+          },
+        },
+        month: {
+          buckets: monthBuckets,
+          summary: {
+            label: "Tento měsíc",
+            ...sumKpiBuckets(monthBuckets),
+            totalTarget: monthTargets.total,
+            billableTarget: monthTargets.billable,
+          },
+        },
+      },
+      canManageUsers: canManageUsers(currentUser),
       canViewRates: canViewRates(currentUser),
       canApprove:
         canApproveWorkLogs(currentUser) || approvalAssignmentCount > 0,
