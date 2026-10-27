@@ -16,7 +16,7 @@ export function PeriodNav({
 }) {
   return (
     <nav
-      aria-label="Období"
+      aria-label="Navigace období"
       className="flex flex-wrap items-center justify-between gap-3"
     >
       <Link href={prevHref} className={linkClass} rel="prev">

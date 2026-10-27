@@ -38,6 +38,11 @@ const COLUMNS: Column[] = [
 ];
 
 const cellBase = "px-3 py-3 align-top text-sm";
+const ROW_HEADER_STYLE = {
+  textTransform: "none",
+  fontSize: "0.875rem",
+  background: "#ffffff",
+} as const;
 const stickyCell =
   "sticky left-0 z-[1] bg-white shadow-[1px_0_0_0_#e6ecef] group-hover:bg-[#f6f8f9]";
 
@@ -177,7 +182,12 @@ export function PerformanceTable({
                 tabIndex={0}
                 className="group cursor-pointer outline-none hover:bg-[#f6f8f9] focus-visible:bg-[#eef7f7]"
               >
-                <th scope="row" className={cn(cellBase, stickyCell, "min-w-[10rem] text-left font-normal normal-case tracking-normal")}>
+                <th
+                  scope="row"
+                  className={cn(cellBase, stickyCell, "min-w-[10rem] text-left font-normal")}
+                  // Globální `th` (globals.css, mimo @layer) přebíjí utility třídy.
+                  style={ROW_HEADER_STYLE}
+                >
                   <Link
                     href={detailHref(row.userId)}
                     className="font-medium text-[#0e1822] underline-offset-2 hover:underline"
@@ -267,7 +277,11 @@ export function PerformanceTable({
           </tbody>
           <tfoot className="border-t-2 border-[#dce4e8] bg-[#f6f8f9]">
             <tr data-performance-total>
-              <th scope="row" className={cn(cellBase, "sticky left-0 z-[1] bg-[#f6f8f9] text-left font-semibold normal-case tracking-normal text-[#0e1822]")}>
+              <th
+                scope="row"
+                className={cn(cellBase, "sticky left-0 z-[1] text-left font-semibold text-[#0e1822]")}
+                style={{ ...ROW_HEADER_STYLE, background: "#f6f8f9" }}
+              >
                 Celkem
               </th>
               <td className={cellBase} data-col="total">
