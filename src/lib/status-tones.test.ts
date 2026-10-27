@@ -10,6 +10,7 @@ import {
 import {
   deadlineStatusTone,
   deadlineTypeTone,
+  fulfillmentTone,
   isTaskOverdue,
 } from "./status-tones";
 
@@ -63,4 +64,13 @@ test("isTaskOverdue: only unfinished tasks before now are overdue", () => {
     false,
   );
   assert.equal(isTaskOverdue(null, TaskStatus.CREATED, now), false);
+});
+
+test("fulfillmentTone: ≥100 green, ≥75 amber, else red", () => {
+  assert.equal(fulfillmentTone(130), "green");
+  assert.equal(fulfillmentTone(100), "green");
+  assert.equal(fulfillmentTone(99), "amber");
+  assert.equal(fulfillmentTone(75), "amber");
+  assert.equal(fulfillmentTone(74), "red");
+  assert.equal(fulfillmentTone(0), "red");
 });
