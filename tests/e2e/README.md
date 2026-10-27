@@ -66,6 +66,7 @@ s heslem `demo1234` (viz `SEED_USER_PASSWORD`).
 | `billing-pickers.spec.ts` | fakturace: subjekt → jen jeho projekty a případy (filtr, nová faktura, paušál, úprava výkazu) |
 | `billing-approvals.spec.ts` | fronta ke schválení: filtry v URL, celý popis úkonu, hromadné schválení/zamítnutí, vstup z výkazů, role, mobil |
 | `teams-and-assignees.spec.ts` | Týmy a řešitelé: založení a přejmenování týmu, duplicitní název, hromadné přiřazení / odebrání týmu (potvrzení), sloupec a filtr „Řešitelé“, detail projektu a případu (zdědění řešitelé), notifikace, audit |
+| `task-people.spec.ts` | Úkoly: více řešitelů (hlavní první) a dohled, rozbalení týmu na členy, dohled komentuje a mění status, ale neupraví, „Moje úkoly“ s filtrem role, notifikace (DB), audit lidí na úkolu, filtry Řešitel/Dohled, CSV export, „Moje úkoly“ ve výběru úkolu u výkazu, dashboard |
 | `users-invitations.spec.ts` | založení uživatele, pozvánka (SMTP vypnuté), znovuodeslání, `/set-password` |
 | `deadlines-fulfilment.spec.ts` | lhůty: „Splněno…“ s poznámkou, „Splnit a archivovat“, záložky Aktivní/Splněné/Archiv, obnovení, vrácení mezi aktivní, „Později“, žádná upozornění po splnění, role, detail spisu, kalendář, audit |
 | `calendar-outlook.spec.ts` | Outlook (ICS): návod a české chyby, SSRF ochrana (jen IP adresy, bez sítě), události z vloženého feedu (čas, celodenní, opakování), přepínač, detail jen pro čtení, izolace mezi uživateli, maska odkazu, odpojení; čas soudního jednání |
@@ -85,6 +86,11 @@ Pomocné funkce jsou v `tests/e2e/support/helpers.ts`.
   `teams-and-assignees.spec.ts` pracuje jen s administrátorem, vlastním
   `e2e-` týmem a `e2e-` projekty (Partner Demo jako člen týmu). Týmy a
   projekty s prefixem `e2e-` maže `prepare-e2e-db.ts` na začátku běhu.
+  Dohled praktikanta na úkolu (balík 05) se ověřuje ve stejném sériovém bloku
+  na úkolu mimo projekt a `finally` praktikanta z lidí na `e2e-` úkolech
+  odebere; `task-people.spec.ts` praktikanta nepoužívá a seedovaný tým
+  „Sporná agenda“ jen čte. Widget „Moje úkoly“ koncipienta si test dočasně
+  vloží a zase smaže (jen E2E databáze).
 
 - **Žádný route-level `loading.tsx`.** V Next 16.2.9 způsoboval
   `src/app/(app)/loading.tsx` (a stejné soubory v `(portal)` a `admin`), že se

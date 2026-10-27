@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { Client } from "pg";
 
 import { E2E_DATABASE_URL, type RoleKey } from "./support/e2e-env";
@@ -9,6 +9,34 @@ import {
   pageAs,
   submitAndAwaitAction,
 } from "./support/helpers";
+
+// Přidá osobu do řešitelů / dohledu na formuláři úkolu (TaskPeopleFields).
+// Opakuje výběr, dokud React nepřevezme hodnotu (tlačítko je do té doby
+// neaktivní).
+async function addTaskPerson(
+  form: Locator,
+  picker: "Přidat řešitele nebo tým" | "Přidat osobu s dohledem",
+  name: string,
+) {
+  const select = form.getByRole("combobox", { name: picker });
+  const button = form.getByRole("button", {
+    name: picker === "Přidat řešitele nebo tým" ? "Přidat řešitele" : "Přidat dohled",
+    exact: true,
+  });
+  await expect(async () => {
+    await select.selectOption({ label: name });
+    await expect(button).toBeEnabled({ timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
+  await button.click();
+  await expect(
+    form.getByRole("button", {
+      name:
+        picker === "Přidat řešitele nebo tým"
+          ? `Odebrat řešitele ${name}`
+          : `Odebrat dohled ${name}`,
+    }),
+  ).toBeVisible();
+}
 
 async function expectAccessDenied(page: Page) {
   await expect(
@@ -393,6 +421,7 @@ test.describe("praktikant a matice oprávnění", () => {
     const projectName = e2eName("tymovy-projekt");
     const caseName = e2eName("tymovy-pripad");
     const taskTitle = e2eName("tymovy-ukol");
+    const supervisedTaskTitle = e2eName("dohled-praktikant");
     const teamName = e2eName("tym-praktikant");
     const description = e2eName("tymovy-vykaz");
     const client = "Petr Dvořák – Truhlářství";
@@ -424,11 +453,20 @@ test.describe("praktikant a matice oprávnění", () => {
       await page.goto(`/tasks?projectId=${projectId}`);
       const taskForm = page.locator("#new-task");
       await taskForm.getByLabel("Název úkolu").fill(taskTitle);
-      await taskForm
-        .getByRole("combobox", { name: "Řešitel", exact: true })
-        .selectOption({ label: "Advokát Demo" });
+      await addTaskPerson(taskForm, "Přidat řešitele nebo tým", "Advokát Demo");
       await taskForm.getByRole("button", { name: "Vytvořit úkol" }).click();
       await expect(page).toHaveURL(/\/tasks\/[a-z0-9]+$/);
+
+      // Úkol mimo projekt, kde má praktikant jen dohled (audit balík 05).
+      // Mimo projekt schválně: úkol s dohledem by mu jinak odkryl i projekt.
+      await page.goto("/tasks");
+      const supervisedForm = page.locator("#new-task");
+      await supervisedForm.getByLabel("Název úkolu").fill(supervisedTaskTitle);
+      await addTaskPerson(supervisedForm, "Přidat řešitele nebo tým", "Advokát Demo");
+      await addTaskPerson(supervisedForm, "Přidat osobu s dohledem", "Praktikant Demo");
+      await supervisedForm.getByRole("button", { name: "Vytvořit úkol" }).click();
+      await expect(page).toHaveURL(/\/tasks\/[a-z0-9]+$/);
+      const supervisedTaskPath = new URL(page.url()).pathname;
 
       // Matice: Praktikant vidí jen přiřazené subjekty, projekty, případy, úkoly.
       await page.goto("/settings/permissions");
@@ -453,6 +491,20 @@ test.describe("praktikant a matice oprávnění", () => {
       await expect(intern.getByRole("link", { name: projectName })).toHaveCount(0);
       await intern.goto(projectPath);
       await expect(notFoundHeading).toBeVisible();
+
+      // Dohled stačí: úkol s dohledem praktikant vidí v seznamu i přímou URL
+      // (a smí měnit status), úkol kolegy na cizím projektu ne.
+      await intern.goto("/tasks");
+      await expect(
+        intern.getByRole("link", { name: supervisedTaskTitle }),
+      ).toBeVisible();
+      await expect(intern.getByRole("link", { name: taskTitle })).toHaveCount(0);
+      await intern.goto(supervisedTaskPath);
+      await expect(
+        intern.getByRole("heading", { name: supervisedTaskTitle, level: 1 }),
+      ).toBeVisible();
+      await expect(intern.getByLabel("Nový status")).toBeVisible();
+      await expect(intern.getByRole("link", { name: "Upravit úkol" })).toHaveCount(0);
 
       // Admin: tým s praktikantem přiřazený k projektu na detailu.
       await page.goto("/settings/assignments");
@@ -559,6 +611,12 @@ test.describe("praktikant a matice oprávnění", () => {
           `DELETE FROM "legalTeamMembers" WHERE "userId" =
              (SELECT "id" FROM "users" WHERE "email" = 'praktikant.demo@example.local')
              AND "legalTeamId" IN (SELECT "id" FROM "legalTeams" WHERE "name" LIKE 'e2e-%')`,
+        );
+        // Praktikant z dohledu e2e úkolů pryč (jinak by je dál viděl).
+        await db.query(
+          `DELETE FROM "taskAssignees" WHERE "userId" =
+             (SELECT "id" FROM "users" WHERE "email" = 'praktikant.demo@example.local')
+             AND "taskId" IN (SELECT "id" FROM "tasks" WHERE "title" LIKE 'e2e-%')`,
         );
       } finally {
         await db.end();
