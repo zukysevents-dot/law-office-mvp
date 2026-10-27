@@ -26,7 +26,7 @@ import {
   normalizeDeadlineListView,
   type DeadlineListView,
 } from "@/lib/deadlines";
-import { formatDateTimeUtc, formatDateUtc } from "@/lib/format";
+import { formatDateTime, formatDateTimeUtc, formatDateUtc } from "@/lib/format";
 import { deadlineStatusLabels, deadlineTypeLabels } from "@/lib/labels";
 import {
   andWhere,
@@ -70,6 +70,8 @@ type Data = {
   cases: Array<{ id: string; name: string; project: { name: string } }>;
   members: Array<{ id: string; name: string }>;
   canManage: boolean;
+  /** Lists narrowed to one case (link from the case detail). */
+  caseFilter: { id: string; name: string } | null;
 };
 
 const emptyData: Data = {
@@ -83,6 +85,7 @@ const emptyData: Data = {
   cases: [],
   members: [],
   canManage: false,
+  caseFilter: null,
 };
 
 const caseLinkClass = "text-[#0e1822] underline-offset-2 hover:underline";
@@ -201,7 +204,8 @@ function ClosedDeadlineTable({
                 <td className="max-w-xs whitespace-pre-line break-words">
                   {fulfilled ? (deadline.completionNote ?? "—") : "—"}
                 </td>
-                {archived ? <td>{formatDateUtc(deadline.archivedAt)}</td> : null}
+                {/* A real timestamp (not a calendar day) → Prague time. */}
+                {archived ? <td>{formatDateTime(deadline.archivedAt)}</td> : null}
                 {canManage ? (
                   <td>
                     {fulfilled ? (
@@ -224,7 +228,25 @@ function ClosedDeadlineTable({
   );
 }
 
-function ViewTabs({ view }: { view: DeadlineListView }) {
+function deadlinesHref(view: DeadlineListView, caseId?: string | null) {
+  const params = new URLSearchParams();
+  if (view !== "active") {
+    params.set("view", view);
+  }
+  if (caseId) {
+    params.set("caseId", caseId);
+  }
+  const query = params.toString();
+  return query ? `/deadlines?${query}` : "/deadlines";
+}
+
+function ViewTabs({
+  view,
+  caseId,
+}: {
+  view: DeadlineListView;
+  caseId?: string | null;
+}) {
   return (
     <nav aria-label="Zobrazení lhůt" className="flex flex-wrap gap-2">
       {DEADLINE_LIST_VIEWS.map((option) => {
@@ -232,7 +254,7 @@ function ViewTabs({ view }: { view: DeadlineListView }) {
         return (
           <Link
             key={option}
-            href={option === "active" ? "/deadlines" : `/deadlines?view=${option}`}
+            href={deadlinesHref(option, caseId)}
             aria-current={current ? "page" : undefined}
             className={cn(
               "inline-flex h-10 items-center rounded-md border px-4 text-sm font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0e1822]",
@@ -252,12 +274,14 @@ function ViewTabs({ view }: { view: DeadlineListView }) {
 export default async function DeadlinesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string | string[] }>;
+  searchParams: Promise<{ view?: string | string[]; caseId?: string | string[] }>;
 }) {
   const params = await searchParams;
   const view = normalizeDeadlineListView(
     Array.isArray(params.view) ? params.view[0] : params.view,
   );
+  const rawCaseId = (Array.isArray(params.caseId) ? params.caseId[0] : params.caseId)?.trim();
+  const requestedCaseId = rawCaseId && rawCaseId.length <= 64 ? rawCaseId : null;
   const accessUser = await getCurrentUser();
   const accessDenied = await moduleAccessDenial(accessUser, "module.deadlines");
   if (accessDenied) {
@@ -274,7 +298,20 @@ export default async function DeadlinesPage({
       now.getTime() + UPCOMING_WINDOW_DAYS * 24 * 60 * 60 * 1000,
     );
 
-    const visibility = deadlineVisibilityWhere(currentUser);
+    // Optional case filter — only a case the viewer may see.
+    const caseFilter = requestedCaseId
+      ? await prisma.case.findFirst({
+          where: andWhere<Prisma.CaseWhereInput>(
+            { id: requestedCaseId },
+            caseVisibilityWhere(currentUser),
+          ),
+          select: { id: true, name: true },
+        })
+      : null;
+    const visibility = andWhere<Prisma.DeadlineWhereInput>(
+      deadlineVisibilityWhere(currentUser),
+      caseFilter ? { caseId: caseFilter.id } : {},
+    );
     const activeWhere = deadlineListWhere("active");
     const listDeadlines = (where: Prisma.DeadlineWhereInput, orderBy: Prisma.DeadlineOrderByWithRelationInput) =>
       prisma.deadline.findMany({
@@ -284,6 +321,9 @@ export default async function DeadlinesPage({
         take: 500,
       });
     const none = Promise.resolve([] as DeadlineRow[]);
+    // Hearings and the create form (cases, members) render only on „Aktivní".
+    const activeView = view === "active";
+    const formNeeded = activeView && canManageDeadlines(currentUser);
 
     const [
       overdue,
@@ -313,32 +353,38 @@ export default async function DeadlinesPage({
       view === "archived"
         ? listDeadlines(deadlineListWhere("archived"), { archivedAt: "desc" })
         : none,
-      prisma.courtHearing.findMany({
-        where: andWhere(
-          { archivedAt: null, hearingAt: { gte: now, lte: soon } },
-          courtHearingVisibilityWhere(currentUser),
-        ),
-        include: hearingInclude,
-        orderBy: { hearingAt: "asc" },
-        take: 500,
-      }),
-      prisma.case.findMany({
-        where: andWhere(
-          { archivedAt: null },
-          caseVisibilityWhere(currentUser),
-        ),
-        orderBy: [{ project: { name: "asc" } }, { name: "asc" }],
-        select: { id: true, name: true, project: { select: { name: true } } },
-        take: 1000,
-      }),
-      prisma.organizationMember.findMany({
-        where: {
-          organizationId: currentUser.organizationId,
-          status: "ACTIVE",
-        },
-        orderBy: { user: { name: "asc" } },
-        select: { user: { select: { id: true, name: true } } },
-      }),
+      activeView
+        ? prisma.courtHearing.findMany({
+            where: andWhere(
+              { archivedAt: null, hearingAt: { gte: now, lte: soon } },
+              courtHearingVisibilityWhere(currentUser),
+            ),
+            include: hearingInclude,
+            orderBy: { hearingAt: "asc" },
+            take: 500,
+          })
+        : Promise.resolve([] as HearingRow[]),
+      formNeeded
+        ? prisma.case.findMany({
+            where: andWhere(
+              { archivedAt: null },
+              caseVisibilityWhere(currentUser),
+            ),
+            orderBy: [{ project: { name: "asc" } }, { name: "asc" }],
+            select: { id: true, name: true, project: { select: { name: true } } },
+            take: 1000,
+          })
+        : Promise.resolve([] as Data["cases"]),
+      formNeeded
+        ? prisma.organizationMember.findMany({
+            where: {
+              organizationId: currentUser.organizationId,
+              status: "ACTIVE",
+            },
+            orderBy: { user: { name: "asc" } },
+            select: { user: { select: { id: true, name: true } } },
+          })
+        : Promise.resolve([] as Array<{ user: { id: string; name: string } }>),
     ]);
 
     return {
@@ -352,6 +398,7 @@ export default async function DeadlinesPage({
       cases,
       members: memberRows.map((row) => row.user),
       canManage: canManageDeadlines(currentUser),
+      caseFilter,
     };
   });
 
@@ -432,7 +479,24 @@ export default async function DeadlinesPage({
         </Section>
       ) : null}
 
-      <ViewTabs view={data.view} />
+      <ViewTabs view={data.view} caseId={data.caseFilter?.id} />
+
+      {data.caseFilter ? (
+        <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-[#2c3a45]">
+          <span>
+            Jen lhůty spisu{" "}
+            <Link href={`/cases/${data.caseFilter.id}`} className={caseLinkClass}>
+              <strong className="font-semibold">{data.caseFilter.name}</strong>
+            </Link>
+          </span>
+          <Link
+            href={deadlinesHref(data.view)}
+            className="font-medium text-[#0e1822] underline underline-offset-2"
+          >
+            Zobrazit lhůty všech spisů
+          </Link>
+        </p>
+      ) : null}
 
       {data.view === "active" ? (
         <>

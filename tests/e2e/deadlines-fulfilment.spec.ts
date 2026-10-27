@@ -226,13 +226,15 @@ test.describe("Lhůtník – splnění a archivace lhůt", () => {
       dueInDays: 1,
       responsibleEmail: "admin.demo@example.local",
     });
-    // A reminder already queued for the deadline about to be fulfilled.
+    // A reminder already queued (by the scheduler, with its real dedupe key)
+    // for the deadline about to be fulfilled.
     await withDb((client) =>
       client.query(
         `INSERT INTO "notifications"
            ("id", "recipientUserId", "type", "status", "subject", "body",
             "entityType", "entityId", "dedupeKey", "updatedAt")
-         SELECT $1, u."id", 'DEADLINE_SOON', 'PENDING', 'e2e', 'e2e', 'Deadline', $2, $1, now()
+         SELECT $1, u."id", 'DEADLINE_SOON', 'PENDING', 'e2e', 'e2e', 'Deadline', $2,
+                'deadline:' || $2 || ':soon:' || u."id", now()
          FROM "users" u WHERE u."email" = 'admin.demo@example.local'`,
         [`e2e-notif-${doneDeadline.id}`, doneDeadline.id],
       ),
@@ -268,6 +270,43 @@ test.describe("Lhůtník – splnění a archivace lhůt", () => {
     expect(forDone).toEqual([
       { entityId: doneDeadline.id, status: "SKIPPED", lastError: "DEADLINE_COMPLETED" },
     ]);
+
+    // Reopened → watched again: the scheduler queues a fresh reminder (the
+    // skipped row no longer blocks its dedupe key) and keeps the old one.
+    await openTab(page, "Splněné");
+    await row(page, done).getByRole("button", { name: "Vrátit mezi aktivní" }).click();
+    await submitAndAwaitAction(
+      page,
+      page
+        .getByRole("dialog", { name: "Vrátit lhůtu mezi aktivní" })
+        .getByRole("button", { name: "Vrátit mezi aktivní" }),
+    );
+    await openTab(page, "Aktivní");
+    await expect(row(page, done)).toBeVisible();
+
+    const rerun = await request.post("/api/internal/notifications/run", {
+      headers: {
+        Authorization: `Bearer ${E2E_SERVER_ENV.NOTIFICATION_RUN_SECRET}`,
+      },
+    });
+    expect(rerun.status()).toBe(200);
+    const afterReopen = await withDb(async (client) => {
+      const result = await client.query<{ status: string; lastError: string | null }>(
+        `SELECT "status", "lastError" FROM "notifications"
+         WHERE "entityType" = 'Deadline' AND "entityId" = $1 AND "type" = 'DEADLINE_SOON'
+         ORDER BY "createdAt" ASC`,
+        [doneDeadline.id],
+      );
+      return result.rows;
+    });
+    // The old skipped row + a fresh one per recipient (deadline's and case's
+    // responsible person).
+    expect(afterReopen[0]).toEqual({ status: "SKIPPED", lastError: "DEADLINE_COMPLETED" });
+    const fresh = afterReopen.slice(1);
+    expect(fresh.length).toBeGreaterThan(0);
+    for (const entry of fresh) {
+      expect(entry.lastError).not.toBe("DEADLINE_COMPLETED");
+    }
   });
 
   test("koncipient vidí lhůty jen pro čtení, advokát je může splnit", async ({ browser }) => {
@@ -317,10 +356,10 @@ test.describe("Lhůtník – splnění a archivace lhůt", () => {
     await expect(row(page, title)).toContainText(/Splněno .* · Admin Demo/);
     await expect(row(page, title).getByRole("button", { name: "Archivovat" })).toBeVisible();
 
-    // Calendar: still shown, greyed + struck through (agenda view: no
-    // „+N další" collapsing of a busy day).
+    // Calendar: still shown, greyed + struck through (year list view „Rok":
+    // no „+N další" collapsing of a busy day).
     await page.goto("/calendar");
-    await page.getByRole("button", { name: "Agenda" }).click();
+    await page.getByRole("button", { name: "Rok", exact: true }).click();
     const event = page.locator(".fc-event-done", { hasText: `Lhůta (splněno): ${title}` });
     await expect(event).toBeVisible({ timeout: 15_000 });
   });

@@ -269,6 +269,26 @@ function skipQueuedDeadlineNotifications(
   });
 }
 
+// Reopening a fulfilled deadline must re-arm its reminders: the rows skipped
+// at fulfilment still hold their dedupeKey (`deadline:<id>:soon:<user>`), which
+// would stop the scheduler from ever queueing them again. Release the key; the
+// skipped row stays as history.
+function releaseSkippedDeadlineNotifications(
+  tx: Prisma.TransactionClient,
+  deadlineId: string,
+) {
+  return tx.notification.updateMany({
+    where: {
+      entityType: "Deadline",
+      entityId: deadlineId,
+      status: NotificationStatus.SKIPPED,
+      lastError: "DEADLINE_COMPLETED",
+      dedupeKey: { not: null },
+    },
+    data: { dedupeKey: null },
+  });
+}
+
 // „Splněno" — marks the obligation tied to the deadline as fulfilled (who,
 // when, optional note); mode "fulfil-archive" also archives it in one step.
 // For useActionState: validation problems come back inline, auth failures
@@ -487,6 +507,7 @@ export async function reopenDeadline(formData: FormData) {
         completionNote: null,
       },
     });
+    await releaseSkippedDeadlineNotifications(tx, deadlineId);
     await tx.auditLog.create({
       data: {
         organizationId: currentUser.organizationId,
