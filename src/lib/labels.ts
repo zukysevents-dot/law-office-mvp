@@ -31,6 +31,7 @@ import {
   SubscriptionStatus,
   TaskAssigneeRole,
   TaskDeadlineType,
+  TaskEventType,
   TaskPriority,
   TaskStatus,
   UserRole,
@@ -291,6 +292,15 @@ export const taskStatusLabels: Record<TaskStatus, string> = {
   POSTPONED: "Odloženo",
   FILED: "Podáno",
   COMPLETED: "Dokončeno",
+};
+
+// Události v historii úkolu (TaskEvent) – krátké štítky; plné věty skládá
+// src/lib/tasks/timeline.ts.
+export const taskEventTypeLabels: Record<TaskEventType, string> = {
+  DEADLINE_POSTPONED: "Odložení termínu",
+  DEADLINE_CHANGED: "Změna termínu",
+  DUPLICATED_FROM: "Vytvořeno duplikací",
+  DUPLICATED_TO: "Duplikováno",
 };
 
 export const taskAssigneeRoleLabels: Record<TaskAssigneeRole, string> = {

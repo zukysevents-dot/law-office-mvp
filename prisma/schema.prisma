@@ -239,6 +239,9 @@ enum NotificationType {
   // po termínu (řešitelé, dohled, odpovědná osoba).
   TASK_COMMENTED
   TASK_OVERDUE
+  // Úkoly: odložení nebo jiná změna termínu (řešitelé, dohled, odpovědná
+  // osoba, zadavatel).
+  TASK_DEADLINE_CHANGED
 }
 
 enum NotificationStatus {
@@ -387,6 +390,7 @@ model User {
   taskAssignmentsAssigned     TaskAssignee[]            @relation("TaskAssigneeAssignedBy")
   changedTaskStatuses         TaskStatusHistory[]       @relation("TaskStatusChangedBy")
   taskComments                TaskComment[]             @relation("TaskCommentAuthor")
+  taskEvents                  TaskEvent[]               @relation("TaskEventActor")
   workLogs                    WorkLog[]
   auditLogs                   AuditLog[]                @relation("AuditLogChangedBy")
   dashboardWidgets            DashboardWidget[]
@@ -818,32 +822,38 @@ model Case {
 }
 
 model Task {
-  id                  String           @id @default(cuid())
-  organizationId      String
-  title               String
-  projectId           String?
-  caseId              String?
-  createdById         String?
+  id                   String           @id @default(cuid())
+  organizationId       String
+  title                String
+  projectId            String?
+  caseId               String?
+  createdById          String?
   // Hlavní řešitel (kompatibilita). Zrcadlí prvního řešitele (role ASSIGNEE)
   // v TaskAssignee a nový kód ho drží v synchronizaci. Čtení vždy bere sjednocení
   // řádků TaskAssignee a tohoto sloupce. Deprecated: odstranit až v pozdější
   // contract migraci, jakmile veškerý nasazený kód čte taskAssignees.
-  assignedToId        String?
-  responsibleUserId   String?
-  status              TaskStatus       @default(CREATED)
-  priority            TaskPriority     @default(STANDARD)
-  deadlineType        TaskDeadlineType @default(INTERNAL)
-  shortDescription    String?
-  detailedDescription String?
-  sharepointUrl       String?
-  startDate           DateTime?
-  deadline            DateTime?
-  completedAt         DateTime?
-  archivedAt          DateTime?
-  createdAt           DateTime         @default(now())
-  updatedAt           DateTime         @updatedAt
+  assignedToId         String?
+  responsibleUserId    String?
+  status               TaskStatus       @default(CREATED)
+  priority             TaskPriority     @default(STANDARD)
+  deadlineType         TaskDeadlineType @default(INTERNAL)
+  shortDescription     String?
+  detailedDescription  String?
+  sharepointUrl        String?
+  startDate            DateTime?
+  deadline             DateTime?
+  completedAt          DateTime?
+  archivedAt           DateTime?
+  // „Duplikovat“: úkol vznikl jako kopie jiného úkolu (null = založen běžně).
+  duplicatedFromTaskId String?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
 
   organization    Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  duplicatedFrom  Task?               @relation("TaskDuplicates", fields: [duplicatedFromTaskId], references: [id], onDelete: SetNull)
+  duplicates      Task[]              @relation("TaskDuplicates")
+  events          TaskEvent[]         @relation("TaskEvents")
+  relatedEvents   TaskEvent[]         @relation("TaskEventRelated")
   project         Project?            @relation(fields: [projectId], references: [id], onDelete: SetNull)
   case            Case?               @relation(fields: [caseId], references: [id], onDelete: SetNull)
   createdBy       User?               @relation("TaskCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
@@ -863,7 +873,46 @@ model Task {
   @@index([deadlineType])
   @@index([deadline])
   @@index([organizationId, status, deadline])
+  @@index([organizationId, archivedAt])
+  @@index([organizationId, completedAt])
+  @@index([duplicatedFromTaskId])
   @@map("tasks")
+}
+
+enum TaskEventType {
+  DEADLINE_POSTPONED // termín posunut na pozdější datum („Odložit“ nebo úprava)
+  DEADLINE_CHANGED // jiná změna termínu (dřívější, nastavení, odstranění)
+  DUPLICATED_FROM // úkol vznikl duplikací (relatedTask = zdroj)
+  DUPLICATED_TO // z úkolu vznikla kopie (relatedTask = kopie)
+}
+
+// Historie úkolu vedle komentářů a TaskStatusHistory: odložení a změny termínu
+// a duplikace. Jen přibývá (append-only); úkoly se v aplikaci nemažou, jen
+// archivují. Starší změny termínu (před zavedením) zůstávají v auditLogs.
+model TaskEvent {
+  id             String        @id @default(cuid())
+  organizationId String
+  taskId         String
+  type           TaskEventType
+  actorId        String?
+  oldDeadline    DateTime?
+  newDeadline    DateTime?
+  reason         String?
+  // Změna termínu provedená v „Upravit úkol“ (false = akce „Odložit“).
+  viaEdit        Boolean       @default(false)
+  relatedTaskId  String?
+  createdAt      DateTime      @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  task         Task         @relation("TaskEvents", fields: [taskId], references: [id], onDelete: Cascade)
+  actor        User?        @relation("TaskEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+  relatedTask  Task?        @relation("TaskEventRelated", fields: [relatedTaskId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([taskId, createdAt])
+  @@index([taskId, type])
+  @@index([relatedTaskId])
+  @@map("taskEvents")
 }
 
 enum TaskAssigneeRole {
@@ -1082,33 +1131,36 @@ model TableViewPreference {
 }
 
 model NotificationPreference {
-  id                      String   @id @default(cuid())
-  userId                  String   @unique
-  emailEnabled            Boolean  @default(true)
-  taskCreatedEmail        Boolean  @default(true)
-  taskStatusChangedEmail  Boolean  @default(true)
-  taskForReviewEmail      Boolean  @default(true)
-  taskDeadlineSoonEmail   Boolean  @default(true)
-  taskFiledFollowupEmail  Boolean  @default(true)
-  deadlineReminderDays    Int      @default(1)
-  filedFollowupDays       Int      @default(5)
+  id                       String   @id @default(cuid())
+  userId                   String   @unique
+  emailEnabled             Boolean  @default(true)
+  taskCreatedEmail         Boolean  @default(true)
+  taskStatusChangedEmail   Boolean  @default(true)
+  taskForReviewEmail       Boolean  @default(true)
+  taskDeadlineSoonEmail    Boolean  @default(true)
+  taskFiledFollowupEmail   Boolean  @default(true)
+  deadlineReminderDays     Int      @default(1)
+  filedFollowupDays        Int      @default(5)
   // Lhůtník (F4 / L-5). Procedural deadlines carry liability, so they default ON
   // and warn earlier (3 days) than task deadlines (1).
-  deadlineSoonEmail       Boolean  @default(true)
-  deadlineOverdueEmail    Boolean  @default(true)
-  courtHearingSoonEmail   Boolean  @default(true)
-  deadlineWatchDaysBefore Int      @default(3)
+  deadlineSoonEmail        Boolean  @default(true)
+  deadlineOverdueEmail     Boolean  @default(true)
+  courtHearingSoonEmail    Boolean  @default(true)
+  deadlineWatchDaysBefore  Int      @default(3)
   // Hlídání rejstříků: e-mail při zjištěné změně v ISIR/OR.
-  registryChangeEmail     Boolean  @default(true)
+  registryChangeEmail      Boolean  @default(true)
   // Přiřazení k projektu/případu (osobně nebo přes tým) a přidání do týmu.
-  matterAssignedEmail     Boolean  @default(true)
+  matterAssignedEmail      Boolean  @default(true)
   // Úkoly: nový komentář a úkol po termínu (řešitelé, dohled, odpovědná osoba).
-  taskCommentedEmail      Boolean  @default(true)
-  taskOverdueEmail        Boolean  @default(true)
+  taskCommentedEmail       Boolean  @default(true)
+  taskOverdueEmail         Boolean  @default(true)
+  // Úkoly: odložení nebo změna termínu (řešitelé, dohled, odpovědná osoba,
+  // zadavatel).
+  taskDeadlineChangedEmail Boolean  @default(true)
   // FullCalendar view persisted per user: day, week, month, or year agenda.
-  calendarDefaultView     String   @default("dayGridMonth")
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
+  calendarDefaultView      String   @default("dayGridMonth")
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -1397,6 +1449,7 @@ model Organization {
   projectTeamAssignments    ProjectTeamAssignment[]
   caseTeamAssignments       CaseTeamAssignment[]
   taskAssignees             TaskAssignee[]
+  taskEvents                TaskEvent[]
   capabilityGrants          UserCapabilityGrant[]
   legalTeams                LegalTeam[]
   legalTeamMembers          LegalTeamMember[]

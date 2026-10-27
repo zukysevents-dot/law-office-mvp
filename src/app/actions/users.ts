@@ -481,6 +481,7 @@ export async function updateNotificationPreference(formData: FormData) {
     taskFiledFollowupEmail: checkboxValue(formData, "taskFiledFollowupEmail"),
     taskCommentedEmail: checkboxValue(formData, "taskCommentedEmail"),
     taskOverdueEmail: checkboxValue(formData, "taskOverdueEmail"),
+    taskDeadlineChangedEmail: checkboxValue(formData, "taskDeadlineChangedEmail"),
     deadlineReminderDays: boundedDays(
       optionalNumber(formData, "deadlineReminderDays"),
       1,
