@@ -5,8 +5,11 @@ import { NotificationStatus, NotificationType } from "@/generated/prisma/enums";
 
 import {
   type NotificationPreferenceShape,
+  TASK_OVERDUE_LOOKBACK_DAYS,
   notificationOutcome,
   preferenceAllows,
+  taskOverdueDedupeKey,
+  taskOverdueWindow,
   uniqueRecipients,
 } from "./notification-service";
 
@@ -31,6 +34,8 @@ function preference(
     deadlineWatchDaysBefore: 3,
     registryChangeEmail: true,
     matterAssignedEmail: true,
+    taskCommentedEmail: true,
+    taskOverdueEmail: true,
     ...overrides,
   };
 }
@@ -136,6 +141,8 @@ test("preferenceAllows: covers each notification type flag", () => {
     [NotificationType.DEADLINE_SOON, "deadlineSoonEmail"],
     [NotificationType.DEADLINE_OVERDUE, "deadlineOverdueEmail"],
     [NotificationType.COURT_HEARING_SOON, "courtHearingSoonEmail"],
+    [NotificationType.TASK_COMMENTED, "taskCommentedEmail"],
+    [NotificationType.TASK_OVERDUE, "taskOverdueEmail"],
   ];
   for (const [type, flag] of cases) {
     assert.equal(allow(preference({ [flag]: false }), type), false, flag);
@@ -194,4 +201,40 @@ test("preferenceAllows: MATTER_ASSIGNED follows matterAssignedEmail and the mast
     allow(preference({ matterAssignedEmail: false }), NotificationType.TASK_CREATED),
     true,
   );
+});
+
+test("preferenceAllows: TASK_COMMENTED / TASK_OVERDUE honour the master switch", () => {
+  for (const type of [NotificationType.TASK_COMMENTED, NotificationType.TASK_OVERDUE]) {
+    assert.equal(allow(null, type), true);
+    assert.equal(allow(preference({ emailEnabled: false }), type), false);
+  }
+  // Vypnutý komentář neovlivní upozornění po termínu a naopak.
+  assert.equal(
+    allow(preference({ taskCommentedEmail: false }), NotificationType.TASK_OVERDUE),
+    true,
+  );
+  assert.equal(
+    allow(preference({ taskOverdueEmail: false }), NotificationType.TASK_COMMENTED),
+    true,
+  );
+});
+
+test("taskOverdueWindow: only deadlines before today and within the lookback", () => {
+  const now = new Date("2026-10-27T10:15:00.000Z");
+  const { from, before } = taskOverdueWindow(now);
+  assert.equal(before.toISOString(), "2026-10-27T00:00:00.000Z");
+  assert.equal(
+    from.toISOString(),
+    `2026-10-${String(27 - TASK_OVERDUE_LOOKBACK_DAYS).padStart(2, "0")}T00:00:00.000Z`,
+  );
+  // Dnešní termín ještě není po termínu.
+  const today = new Date("2026-10-27T00:00:00.000Z");
+  assert.equal(today < before, false);
+});
+
+test("taskOverdueDedupeKey: one alert per deadline value", () => {
+  const a = taskOverdueDedupeKey("t1", new Date("2026-10-20T00:00:00.000Z"));
+  const b = taskOverdueDedupeKey("t1", new Date("2026-10-21T00:00:00.000Z"));
+  assert.equal(a, "task:t1:overdue:2026-10-20");
+  assert.notEqual(a, b);
 });

@@ -16,6 +16,7 @@ import { PageHeader } from "@/components/page-header";
 import { RowClickNav } from "@/components/row-click-nav";
 import { Section } from "@/components/section";
 import { StatCard } from "@/components/stat-card";
+import { TaskPeopleFields } from "@/components/task-people-fields";
 import { TaskStatusLegend } from "@/components/task-status-legend";
 import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
@@ -31,6 +32,8 @@ import {
   archivedWhere,
   archiveFilterValue,
 } from "@/lib/archive-filter";
+import { summarizeLabels } from "@/lib/assignments";
+import { getTeamOptionsWithMembers } from "@/lib/assignments-overview.server";
 import { getCurrentUser } from "@/lib/auth";
 import { statusCount } from "@/lib/dashboard/task-counts";
 import { safeQuery } from "@/lib/db-safe";
@@ -44,7 +47,7 @@ import {
 } from "@/lib/labels";
 import {
   andWhere,
-  canEditRecord,
+  canWorkOnTask,
   caseVisibilityWhere,
   projectVisibilityWhere,
   subjectVisibilityWhere,
@@ -60,6 +63,13 @@ import {
 } from "@/lib/status-tones";
 import { applyTaskLimit } from "@/lib/tasks/list-truncation";
 import {
+  taskAssigneeWhere,
+  taskPeopleFromRecord,
+  taskPeopleSelect,
+  taskSupervisorWhere,
+  type TaskPeopleView,
+} from "@/lib/tasks/task-people";
+import {
   getCurrentTableView,
   getDefaultTableView,
 } from "@/lib/table-view-preference-service";
@@ -74,6 +84,7 @@ type TasksProps = {
     status?: string;
     priority?: string;
     assignedToId?: string;
+    supervisorId?: string;
     responsibleUserId?: string;
     subjectId?: string;
     projectId?: string;
@@ -107,15 +118,16 @@ type TaskRow = {
     project: { mainSubject: { name: string } };
   } | null;
   createdBy: { name: string } | null;
-  assignedTo: { name: string } | null;
   responsibleUser: { name: string } | null;
-  canEdit: boolean;
+  people: TaskPeopleView;
+  canWork: boolean;
 };
 
 type TasksPageData = {
   tasks: TaskRow[];
   truncated: boolean;
   users: Array<{ id: string; name: string }>;
+  teams: Awaited<ReturnType<typeof getTeamOptionsWithMembers>>;
   subjects: Array<{ id: string; name: string }>;
   projects: Array<{ id: string; name: string; mainSubjectId: string }>;
   cases: Array<{
@@ -144,7 +156,7 @@ const sortLabels = {
   title: "Název",
   priority: "Priorita",
   status: "Status",
-  assignedTo: "Řešitel",
+  assignedTo: "Hlavní řešitel",
   responsibleUser: "Odpovědná osoba",
 };
 
@@ -186,6 +198,25 @@ function taskOrderBy(sort: string) {
   ];
 }
 
+const ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+
+function validId(value?: string) {
+  return value && ID_PATTERN.test(value) ? value : "";
+}
+
+function PeopleCell({ names }: { names: string[] }) {
+  if (names.length === 0) {
+    return <>—</>;
+  }
+  const { shown, rest } = summarizeLabels(names);
+  return (
+    <span title={names.join(", ")}>
+      {shown.join(", ")}
+      {rest > 0 ? ` +${rest}` : ""}
+    </span>
+  );
+}
+
 function taskSubjectName(task: TaskRow) {
   return (
     task.project?.mainSubject.name ??
@@ -205,7 +236,8 @@ export default async function TasksPage({ searchParams }: TasksProps) {
   const status = validEnum(TaskStatus, params.status);
   const priority = validEnum(TaskPriority, params.priority);
   const deadlineType = validEnum(TaskDeadlineType, params.deadlineType);
-  const assignedToId = params.assignedToId ?? "";
+  const assignedToId = validId(params.assignedToId);
+  const supervisorId = validId(params.supervisorId);
   const responsibleUserId = params.responsibleUserId ?? "";
   const subjectId = params.subjectId ?? "";
   const projectId = params.projectId ?? "";
@@ -219,6 +251,7 @@ export default async function TasksPage({ searchParams }: TasksProps) {
     {
       tasks: [],
       users: [],
+      teams: [],
       subjects: [],
       projects: [],
       cases: [],
@@ -243,7 +276,6 @@ export default async function TasksPage({ searchParams }: TasksProps) {
           ...(deadlineType
             ? { deadlineType: deadlineType as TaskDeadlineType }
             : {}),
-          ...(assignedToId ? { assignedToId } : {}),
           ...(responsibleUserId ? { responsibleUserId } : {}),
           ...(projectId ? { projectId } : {}),
           ...(caseId ? { caseId } : {}),
@@ -256,6 +288,10 @@ export default async function TasksPage({ searchParams }: TasksProps) {
               }
             : {}),
         },
+        // Filtr „Řešitel“ = libovolný řešitel (hlavní i další). URL parametr
+        // zůstává assignedToId kvůli starším odkazům.
+        assignedToId ? taskAssigneeWhere(assignedToId) : {},
+        supervisorId ? taskSupervisorWhere(supervisorId) : {},
         // Client filter: task hangs under a project (direct) or a case (whose
         // project carries the client). Match either path.
         subjectId
@@ -268,8 +304,16 @@ export default async function TasksPage({ searchParams }: TasksProps) {
           : {},
       );
 
-      const [tasks, users, subjects, projects, cases, statusGroups, overdue] =
-        await Promise.all([
+      const [
+        tasks,
+        users,
+        teams,
+        subjects,
+        projects,
+        cases,
+        statusGroups,
+        overdue,
+      ] = await Promise.all([
         prisma.task.findMany({
           where,
           orderBy: taskOrderBy(sort),
@@ -313,11 +357,13 @@ export default async function TasksPage({ searchParams }: TasksProps) {
               },
             },
             createdBy: { select: { name: true } },
-            assignedTo: { select: { name: true } },
             responsibleUser: { select: { name: true } },
+            // Řešitelé + dohled (obsahuje i userId/role pro canWorkOnTask).
+            ...taskPeopleSelect,
           },
         }),
         getOrgUserOptions(currentUser),
+        getTeamOptionsWithMembers(prisma, currentUser.organizationId),
         prisma.subject.findMany({
           where: andWhere(
             { archivedAt: null },
@@ -371,10 +417,13 @@ export default async function TasksPage({ searchParams }: TasksProps) {
       return {
         tasks: visibleTasks.map((task) => ({
           ...task,
-          canEdit: canEditRecord(currentUser, "Task", task),
+          people: taskPeopleFromRecord(task),
+          // Inline změna statusu: řešitelé, zadavatel, odpovědná osoba i dohled.
+          canWork: canWorkOnTask(currentUser, task),
         })),
         truncated,
         users,
+        teams,
         subjects,
         projects,
         cases,
@@ -493,6 +542,16 @@ export default async function TasksPage({ searchParams }: TasksProps) {
               ))}
             </SelectInput>
           </Field>
+          <Field label="Dohled">
+            <SelectInput name="supervisorId" defaultValue={supervisorId}>
+              <option value="">Bez filtru dohledu</option>
+              {result.data.users.map((user) => (
+                <option key={user.id} value={user.id}>
+                  {user.name}
+                </option>
+              ))}
+            </SelectInput>
+          </Field>
           <Field label="Odpovědná osoba">
             <SelectInput name="responsibleUserId" defaultValue={responsibleUserId}>
               <option value="">Všechny osoby</option>
@@ -537,6 +596,7 @@ export default async function TasksPage({ searchParams }: TasksProps) {
           {status ||
           priority ||
           assignedToId ||
+          supervisorId ||
           responsibleUserId ||
           subjectId ||
           projectId ||
@@ -619,14 +679,25 @@ export default async function TasksPage({ searchParams }: TasksProps) {
                       <td>{task.createdBy?.name ?? "—"}</td>
                     ) : null}
                     {visibleColumnSet.has("assignee") ? (
-                      <td>{task.assignedTo?.name ?? "—"}</td>
+                      <td>
+                        <PeopleCell
+                          names={task.people.assignees.map((person) => person.name)}
+                        />
+                      </td>
+                    ) : null}
+                    {visibleColumnSet.has("supervisors") ? (
+                      <td>
+                        <PeopleCell
+                          names={task.people.supervisors.map((person) => person.name)}
+                        />
+                      </td>
                     ) : null}
                     {visibleColumnSet.has("responsiblePerson") ? (
                       <td>{task.responsibleUser?.name ?? "—"}</td>
                     ) : null}
                     {visibleColumnSet.has("status") ? (
                       <td className="min-w-80">
-                        {task.canEdit ? (
+                        {task.canWork ? (
                           <form action={updateTaskStatus} className="grid min-w-0 gap-2">
                             <input type="hidden" name="taskId" value={task.id} />
                             <div className="grid min-w-0 gap-2 xl:grid-cols-[minmax(0,1fr)_auto]">
@@ -661,7 +732,7 @@ export default async function TasksPage({ searchParams }: TasksProps) {
                         ) : null}
                         <Badge
                           tone={taskStatusTone(task.status)}
-                          className={task.canEdit ? "mt-2" : undefined}
+                          className={task.canWork ? "mt-2" : undefined}
                         >
                           {taskStatusLabels[task.status]}
                         </Badge>
@@ -737,31 +808,11 @@ export default async function TasksPage({ searchParams }: TasksProps) {
               </SelectInput>
             </Field>
           </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Řešitel">
-              <SelectInput name="assignedToId">
-                <option value="">Bez přiřazení</option>
-                {result.data.users.map((user) => (
-                  <option key={user.id} value={user.id}>
-                    {user.name}
-                  </option>
-                ))}
-              </SelectInput>
-            </Field>
-            <Field label="Odpovědná osoba">
-              <SelectInput
-                name="responsibleUserId"
-                defaultValue={result.data.currentUserId}
-              >
-                <option value="">Bez přiřazení</option>
-                {result.data.users.map((user) => (
-                  <option key={user.id} value={user.id}>
-                    {user.name}
-                  </option>
-                ))}
-              </SelectInput>
-            </Field>
-          </div>
+          <TaskPeopleFields
+            users={result.data.users}
+            teams={result.data.teams}
+            defaultResponsibleUserId={result.data.currentUserId}
+          />
           {/* Cascading: pick the client first, then only their projects, then
               only that project's cases. Project can arrive pre-filled via
               ?projectId= when creating from a project. */}

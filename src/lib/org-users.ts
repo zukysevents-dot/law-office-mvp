@@ -61,3 +61,31 @@ export async function assertUserInOrg(
     throw new Error("Uživatel nepatří do vaší kanceláře.");
   }
 }
+
+// Hromadná varianta assertUserInOrg (řešitelé a dohled úkolu): jeden dotaz
+// místo N. Všechna id musí patřit aktivním členům kanceláře s aktivním účtem.
+// No-op pro prázdný seznam.
+export async function assertUsersInOrg(
+  userIds: readonly string[],
+  organizationId: string | null,
+): Promise<void> {
+  const unique = [...new Set(userIds.filter(Boolean))];
+  if (unique.length === 0) {
+    return;
+  }
+
+  const count = organizationId
+    ? await getPrisma().organizationMember.count({
+        where: {
+          userId: { in: unique },
+          organizationId,
+          status: OrganizationMemberStatus.ACTIVE,
+          user: { is: { active: true } },
+        },
+      })
+    : 0;
+
+  if (count !== unique.length) {
+    throw new Error("Uživatel nepatří do vaší kanceláře.");
+  }
+}

@@ -17,6 +17,8 @@ import {
   assertCanManageHr,
   assertCanManagePortal,
   canEditRecord,
+  canWorkOnTask,
+  assertCanWorkOnTask,
   canManageAml,
   canManageDeadlines,
   canManageDocumentTemplates,
@@ -302,6 +304,8 @@ test("taskVisibilityWhere: ASSIGNED scope = direct + responsibility + assignee O
         { createdById: user.id },
         { assignedToId: user.id },
         { responsibleUserId: user.id },
+        // Lidé na úkolu: další řešitelé i dohled úkol vidí.
+        { assignees: { some: { userId: user.id } } },
       ],
     });
   }
@@ -1239,4 +1243,87 @@ test("canBulkAssign: a LAWYER with editAllMatters may bulk-assign, but not manag
   assert.equal(canManageTeams(manager), true);
   assert.equal(canBulkAssign(manager), false);
   assert.equal(canOpenAssignments(manager), true);
+});
+
+// --- Lidé na úkolu: další řešitelé a dohled ----------------------------------
+
+const supervisorRow = (userId: string) => ({ userId, role: "SUPERVISOR" });
+const assigneeRow = (userId: string) => ({ userId, role: "ASSIGNEE" });
+
+test("canViewRecord: ASSIGNED scope — supervisor and extra assignee rows see the task", () => {
+  const narrowed = withOverrides(trainee, ASSIGNED_MATTERS);
+  assert.equal(
+    canViewRecord(narrowed, "Task", { assignees: [supervisorRow("u-trainee")] }),
+    true,
+  );
+  assert.equal(
+    canViewRecord(narrowed, "Task", { assignees: [assigneeRow("u-trainee")] }),
+    true,
+  );
+  assert.equal(
+    canViewRecord(narrowed, "Task", { assignees: [supervisorRow("other")] }),
+    false,
+  );
+});
+
+test("canEditRecord: extra assignee may edit the task, supervisor may not", () => {
+  for (const user of [lawyer, trainee, intern]) {
+    assert.equal(
+      canEditRecord(user, "Task", {
+        organizationId: org,
+        assignedToId: "other",
+        assignees: [assigneeRow("other"), assigneeRow(user.id)],
+      }),
+      true,
+    );
+    assert.equal(
+      canEditRecord(user, "Task", {
+        organizationId: org,
+        assignedToId: "other",
+        assignees: [supervisorRow(user.id)],
+      }),
+      false,
+    );
+  }
+});
+
+test("canWorkOnTask: supervisor may comment/change status, strangers and other orgs may not", () => {
+  const task = {
+    organizationId: org,
+    assignedToId: "other",
+    assignees: [assigneeRow("other"), supervisorRow("u-trainee")],
+  };
+  assert.equal(canWorkOnTask(trainee, task), true);
+  assert.equal(canWorkOnTask(intern, task), false);
+  assert.equal(canWorkOnTask(trainee, { ...task, organizationId: "org-2" }), false);
+  assert.equal(canWorkOnTask(trainee, null), false);
+  // Bez načtených řádků (fail-closed) dohled neprojde.
+  assert.equal(
+    canWorkOnTask(trainee, { organizationId: org, assignedToId: "other" }),
+    false,
+  );
+  // Kdo smí upravovat, smí i pracovat (řešitel, editAllMatters).
+  assert.equal(canWorkOnTask(intern, { ...task, assignedToId: "u-intern" }), true);
+  assert.equal(canWorkOnTask(admin, task), true);
+  const granted = withOverrides(intern, [], [
+    { permission: "function.editAllMatters", value: "ALLOW" },
+  ]);
+  assert.equal(canWorkOnTask(granted, task), true);
+  assert.throws(
+    () => assertCanWorkOnTask(intern, task),
+    /Nemáte oprávnění pracovat s tímto úkolem/,
+  );
+  assert.doesNotThrow(() => assertCanWorkOnTask(trainee, task));
+});
+
+test("projectVisibilityWhere / caseVisibilityWhere: task mirror covers task people", () => {
+  const narrowed = withOverrides(lawyer, ASSIGNED_MATTERS);
+  assert.match(
+    JSON.stringify(projectVisibilityWhere(narrowed)),
+    /"tasks":\{"some":\{"OR":\[[^\]]*"assignees":\{"some":\{"userId":"u-lawyer"\}\}/,
+  );
+  assert.match(
+    JSON.stringify(caseVisibilityWhere(narrowed)),
+    /"assignees":\{"some":\{"userId":"u-lawyer"\}\}\}\]\}\}/,
+  );
 });

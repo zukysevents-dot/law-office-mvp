@@ -324,7 +324,7 @@ export const PERMISSION_CATALOG: readonly PermissionDef[] = [
     label: "Projekty",
     description: "Které projekty uživatel vidí v seznamech, výběrech a hledání.",
     scopeHint:
-      "Přiřazené = je odpovědný nebo řešitel projektu či jeho případu (osobně nebo přes tým), má v něm úkol nebo výkaz.",
+      "Přiřazené = je odpovědný nebo řešitel projektu či jeho případu (osobně nebo přes tým), má v něm úkol (jako řešitel nebo dohled) nebo výkaz.",
     options: ALL_ASSIGNED,
     defaults: scopes("ALL", "ALL", "ALL", "ALL", "ALL"),
   },
@@ -334,7 +334,7 @@ export const PERMISSION_CATALOG: readonly PermissionDef[] = [
     label: "Případy",
     description: "Které případy uživatel vidí v seznamech, výběrech a hledání.",
     scopeHint:
-      "Přiřazené = je odpovědný nebo řešitel případu či jeho projektu (osobně nebo přes tým), má v něm úkol nebo výkaz.",
+      "Přiřazené = je odpovědný nebo řešitel případu či jeho projektu (osobně nebo přes tým), má v něm úkol (jako řešitel nebo dohled) nebo výkaz.",
     options: ALL_ASSIGNED,
     defaults: scopes("ALL", "ALL", "ALL", "ALL", "ALL"),
   },
@@ -344,7 +344,7 @@ export const PERMISSION_CATALOG: readonly PermissionDef[] = [
     label: "Úkoly",
     description: "Které úkoly uživatel vidí v seznamech, výběrech a hledání.",
     scopeHint:
-      "Přiřazené = úkol zadal, řeší nebo za něj odpovídá, případně je odpovědný nebo řešitel projektu či případu úkolu (osobně nebo přes tým).",
+      "Přiřazené = úkol zadal, řeší, má na něj dohled nebo za něj odpovídá, případně je odpovědný nebo řešitel projektu či případu úkolu (osobně nebo přes tým).",
     options: ALL_ASSIGNED,
     defaults: scopes("ALL", "ALL", "ALL", "ALL", "ALL"),
   },

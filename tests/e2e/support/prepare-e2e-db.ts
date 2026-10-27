@@ -102,7 +102,15 @@ async function main() {
       await prisma.taskStatusHistory.deleteMany({
         where: { taskId: { in: staleTaskIds } },
       });
+      // Lidé na úkolu (taskAssignees) zmizí kaskádou s úkolem; jejich audit
+      // (entityType TaskAssignee, entityId = úkol) a notifikace úkolu ne.
       await prisma.auditLog.deleteMany({
+        where: {
+          entityType: { in: ["Task", "TaskAssignee"] },
+          entityId: { in: staleTaskIds },
+        },
+      });
+      await prisma.notification.deleteMany({
         where: { entityType: "Task", entityId: { in: staleTaskIds } },
       });
       await prisma.task.deleteMany({ where: { id: { in: staleTaskIds } } });

@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { Prisma } from "@/generated/prisma/client";
+import { OrganizationMemberStatus } from "@/generated/prisma/enums";
 import {
   caseAssigneeFilterWhere,
   personAssigneeDisplaySelect,
@@ -36,6 +37,49 @@ export async function getTeamOptions(prisma: Db, organizationId: string | null) 
     id: team.id,
     name: team.name,
     memberCount: team._count.members,
+  }));
+}
+
+// Aktivní týmy i s id aktivních členů (aktivní účet + aktivní členství
+// v kanceláři) — výběr řešitelů/dohledu úkolu, kde se tým rozbalí na osoby.
+export async function getTeamOptionsWithMembers(
+  prisma: Db,
+  organizationId: string | null,
+) {
+  if (!organizationId) {
+    return [];
+  }
+  const teams = await prisma.legalTeam.findMany({
+    where: { organizationId, archivedAt: null },
+    orderBy: { name: "asc" },
+    select: {
+      id: true,
+      name: true,
+      members: {
+        where: {
+          organizationId,
+          user: {
+            is: {
+              active: true,
+              memberships: {
+                some: {
+                  organizationId,
+                  status: OrganizationMemberStatus.ACTIVE,
+                },
+              },
+            },
+          },
+        },
+        orderBy: { user: { name: "asc" } },
+        select: { userId: true },
+      },
+    },
+  });
+  return teams.map((team) => ({
+    id: team.id,
+    name: team.name,
+    memberCount: team.members.length,
+    memberIds: team.members.map((member) => member.userId),
   }));
 }
 

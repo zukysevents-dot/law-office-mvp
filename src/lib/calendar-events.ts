@@ -25,6 +25,11 @@ import {
 import { calendarDeadlineWhere } from "@/lib/deadlines";
 import { getPrisma } from "@/lib/prisma";
 import { deadlineTypeTone, taskDeadlineTypeTone } from "@/lib/status-tones";
+import {
+  formatAssigneeNames,
+  taskPeopleFromRecord,
+  taskPeopleSelect,
+} from "@/lib/tasks/task-people";
 
 /** Minimal user shape the calendar needs: visibility (`id`/`role`). */
 export type CalendarUser = {
@@ -53,9 +58,26 @@ export type CalendarEvent = {
   deadlineType?: TaskDeadlineType;
   status?: TaskStatus;
   priority?: TaskPriority;
+  // Řešitelé úkolu (všichni, hlavní první) a dohled — do tooltipu události.
   assigneeName?: string;
+  supervisorNames?: string;
   projectName?: string;
+  // Text tooltipu (title) události v kalendáři.
+  tooltip?: string;
 };
+
+// Tooltip události: „{název} – Řešitelé: A, B; Dohled: C“.
+export function calendarEventTooltip(
+  event: Pick<CalendarEvent, "title" | "assigneeName" | "supervisorNames">,
+) {
+  const parts = [
+    event.assigneeName ? `Řešitelé: ${event.assigneeName}` : null,
+    event.supervisorNames ? `Dohled: ${event.supervisorNames}` : null,
+  ].filter(Boolean);
+  return parts.length > 0
+    ? `${event.title} – ${parts.join("; ")}`
+    : event.title;
+}
 
 /** Wire form for crossing the Server→Client boundary (Date → ISO string). */
 export type SerializedCalendarEvent = Omit<CalendarEvent, "date" | "end"> & {
@@ -111,7 +133,7 @@ async function getTaskDeadlineEvents(
       deadlineType: true,
       status: true,
       priority: true,
-      assignedTo: { select: { name: true } },
+      ...taskPeopleSelect,
       project: { select: { name: true } },
       case: { select: { name: true } },
     },
@@ -119,21 +141,36 @@ async function getTaskDeadlineEvents(
 
   return tasks
     .filter(
-      (task): task is typeof task & { deadline: Date } => task.deadline !== null,
+      (task): task is typeof task & { deadline: Date } =>
+        task.deadline !== null,
     )
-    .map((task) => ({
-      id: `task:${task.id}`,
-      title: task.title,
-      date: task.deadline,
-      allDay: true,
-      href: `/tasks/${task.id}`,
-      tone: taskDeadlineTypeTone(task.deadlineType),
-      deadlineType: task.deadlineType,
-      status: task.status,
-      priority: task.priority,
-      assigneeName: task.assignedTo?.name ?? undefined,
-      projectName: task.project?.name ?? task.case?.name ?? undefined,
-    }));
+    .map((task) => {
+      const people = taskPeopleFromRecord(task);
+      const assigneeName =
+        formatAssigneeNames(people.assignees, { markPrimary: false }) ||
+        undefined;
+      const supervisorNames =
+        people.supervisors.map((person) => person.name).join(", ") || undefined;
+      return {
+        id: `task:${task.id}`,
+        title: task.title,
+        date: task.deadline,
+        allDay: true,
+        href: `/tasks/${task.id}`,
+        tone: taskDeadlineTypeTone(task.deadlineType),
+        deadlineType: task.deadlineType,
+        status: task.status,
+        priority: task.priority,
+        assigneeName,
+        supervisorNames,
+        projectName: task.project?.name ?? task.case?.name ?? undefined,
+        tooltip: calendarEventTooltip({
+          title: task.title,
+          assigneeName,
+          supervisorNames,
+        }),
+      };
+    });
 }
 
 // F4 / L-4: watched deadlines (Deadline) within the window. CANCELLED deadlines

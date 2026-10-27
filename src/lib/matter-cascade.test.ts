@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   casesForSelection,
+  groupTasksByMine,
   initialCascadeSelection,
   nextSelectionOnCaseChange,
   nextSelectionOnProjectChange,
@@ -204,4 +205,28 @@ test("projekt bez klienta (null) nespadne", () => {
     taskId: "",
   });
   assert.deepEqual(ids(projectsForSubject(withOrphan.projects, "A")), ["pA1", "pA2"]);
+});
+
+test("úkoly: „Moje úkoly“ nahoře, bez vlastních úkolů plochý seznam", () => {
+  const withMine = [
+    { id: "t1", projectId: null, caseId: null, mine: false },
+    { id: "t2", projectId: null, caseId: null, mine: true },
+    { id: "t3", projectId: null, caseId: null },
+    { id: "t4", projectId: null, caseId: null, mine: true },
+  ];
+  const grouped = groupTasksByMine(withMine);
+  assert.deepEqual(ids(grouped.mine), ["t2", "t4"]);
+  assert.deepEqual(ids(grouped.others), ["t1", "t3"]);
+
+  const flat = groupTasksByMine(tasks);
+  assert.deepEqual(flat.mine, []);
+  assert.deepEqual(ids(flat.others), ids(tasks));
+  // Příznak mine prochází filtrováním kaskády beze změny.
+  const filtered = tasksForSelection(
+    [{ id: "tm", projectId: null, caseId: "cA1", mine: true }],
+    cases,
+    projects,
+    { subjectId: "", projectId: "", caseId: "cA1" },
+  );
+  assert.equal(filtered[0]?.mine, true);
 });

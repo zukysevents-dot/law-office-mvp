@@ -87,7 +87,18 @@ async function loadWorkLogEdit(id: string) {
         taskVisibilityWhere(currentUser),
       ),
       orderBy: { createdAt: "desc" },
-      select: { id: true, title: true, projectId: true, caseId: true },
+      select: {
+        id: true,
+        title: true,
+        projectId: true,
+        caseId: true,
+        // „Moje úkoly“ ve výběru: hlavní řešitel nebo řádek řešitele/dohledu.
+        assignedToId: true,
+        assignees: {
+          where: { userId: currentUser.id },
+          select: { userId: true },
+        },
+      },
     }),
     prisma.organization.findUnique({
       where: { id: currentUser.organizationId },
@@ -103,7 +114,13 @@ async function loadWorkLogEdit(id: string) {
     subjects,
     projects,
     cases,
-    tasks,
+    tasks: tasks.map((task) => ({
+      id: task.id,
+      title: task.title,
+      projectId: task.projectId,
+      caseId: task.caseId,
+      mine: task.assignedToId === currentUser.id || task.assignees.length > 0,
+    })),
     canArchive: canArchiveRecords(currentUser),
     canViewRates: canViewRates(currentUser),
     canSetBillable: canSetBillableStatus(currentUser),
