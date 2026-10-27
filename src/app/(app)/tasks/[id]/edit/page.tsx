@@ -4,9 +4,11 @@ import { updateTask } from "@/app/actions/tasks";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
+import { TaskPeopleFields } from "@/components/task-people-fields";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
+import { getTeamOptionsWithMembers } from "@/lib/assignments-overview.server";
 import { getCurrentUser } from "@/lib/auth";
 import { dateInputValue } from "@/lib/form-values";
 import {
@@ -24,6 +26,10 @@ import {
   projectVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import {
+  taskPeopleFromRecord,
+  taskPeopleSelect,
+} from "@/lib/tasks/task-people";
 import { AccessDenied } from "@/components/access-denied";
 import { moduleAccessDenial } from "@/lib/module-access.server";
 
@@ -36,8 +42,10 @@ type TaskEditProps = {
 async function loadTaskEdit(id: string) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  const [task, projects, cases, users] = await Promise.all([
-    prisma.task.findUnique({ where: { id } }),
+  const [task, projects, cases, users, teams] = await Promise.all([
+    // Lidé na úkolu (obsahuje i userId/role, takže další řešitel projde
+    // canEditRecord; dohled ne — úkol upravovat nesmí).
+    prisma.task.findUnique({ where: { id }, include: taskPeopleSelect }),
     prisma.project.findMany({
       where: andWhere(
         { archivedAt: null },
@@ -60,13 +68,30 @@ async function loadTaskEdit(id: string) {
       },
     }),
     getOrgUserOptions(currentUser),
+    getTeamOptionsWithMembers(prisma, currentUser.organizationId),
   ]);
+  const editable = task && canEditRecord(currentUser, "Task", task) ? task : null;
+  const people = editable ? taskPeopleFromRecord(editable) : null;
+
+  // Uložení lidé, kteří už nejsou aktivními členy kanceláře, zůstávají
+  // ve výběru (aby se dali odebrat a nezmizeli potichu při uložení).
+  const userOptions = [...users];
+  for (const person of [
+    ...(people?.assignees ?? []),
+    ...(people?.supervisors ?? []),
+  ]) {
+    if (!userOptions.some((user) => user.id === person.id)) {
+      userOptions.push({ id: person.id, name: person.name });
+    }
+  }
 
   return {
-    task: task && canEditRecord(currentUser, "Task", task) ? task : null,
+    task: editable,
+    people,
     projects,
     cases,
-    users,
+    users: userOptions,
+    teams,
   };
 }
 
@@ -74,9 +99,11 @@ type TaskEditData = Awaited<ReturnType<typeof loadTaskEdit>>;
 
 const emptyTaskEdit: TaskEditData = {
   task: null,
+  people: null,
   projects: [],
   cases: [],
   users: [],
+  teams: [],
 };
 
 export default async function TaskEditPage({ params }: TaskEditProps) {
@@ -96,7 +123,7 @@ export default async function TaskEditPage({ params }: TaskEditProps) {
     notFound();
   }
 
-  const { task, projects, cases, users } = result.data;
+  const { task, people, projects, cases, users, teams } = result.data;
 
   return (
     <>
@@ -144,31 +171,16 @@ export default async function TaskEditPage({ params }: TaskEditProps) {
                 </SelectInput>
               </Field>
             </div>
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Řešitel">
-                <SelectInput name="assignedToId" defaultValue={task.assignedToId ?? ""}>
-                  <option value="">Bez řešitele</option>
-                  {users.map((user) => (
-                    <option key={user.id} value={user.id}>
-                      {user.name}
-                    </option>
-                  ))}
-                </SelectInput>
-              </Field>
-              <Field label="Odpovědná osoba">
-                <SelectInput
-                  name="responsibleUserId"
-                  defaultValue={task.responsibleUserId ?? ""}
-                >
-                  <option value="">Bez odpovědné osoby</option>
-                  {users.map((user) => (
-                    <option key={user.id} value={user.id}>
-                      {user.name}
-                    </option>
-                  ))}
-                </SelectInput>
-              </Field>
-            </div>
+            <TaskPeopleFields
+              users={users}
+              teams={teams}
+              defaultAssigneeIds={people?.assignees.map((person) => person.id) ?? []}
+              defaultSupervisorIds={
+                people?.supervisors.map((person) => person.id) ?? []
+              }
+              defaultResponsibleUserId={task.responsibleUserId ?? ""}
+              responsibleEmptyLabel="Bez odpovědné osoby"
+            />
             <div className="grid gap-4 md:grid-cols-3">
               <Field label="Status">
                 <SelectInput name="status" defaultValue={task.status}>

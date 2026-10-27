@@ -62,6 +62,11 @@ import {
   workLogVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import {
+  formatAssigneeNames,
+  taskPeopleFromRecord,
+  taskPeopleSelect,
+} from "@/lib/tasks/task-people";
 import { subjectRoleTone } from "@/lib/status-tones";
 import { AccessDenied } from "@/components/access-denied";
 import { canAccessModule, moduleAccessDenial } from "@/lib/module-access.server";
@@ -124,7 +129,7 @@ async function loadCase(id: string) {
             title: true,
             status: true,
             deadline: true,
-            assignedTo: { select: { name: true } },
+            ...taskPeopleSelect,
           },
         },
         workLogs: {
@@ -562,7 +567,7 @@ export default async function CaseDetailPage({
                   <thead>
                     <tr>
                       <th>Úkol</th>
-                      <th>Řešitel</th>
+                      <th>Řešitelé</th>
                       <th>Stav</th>
                       <th>Deadline</th>
                     </tr>
@@ -578,7 +583,11 @@ export default async function CaseDetailPage({
                             {task.title}
                           </Link>
                         </td>
-                        <td>{task.assignedTo?.name ?? "—"}</td>
+                        <td>
+                          {formatAssigneeNames(
+                            taskPeopleFromRecord(task).assignees,
+                          ) || "—"}
+                        </td>
                         <td>{taskStatusLabels[task.status]}</td>
                         <td>{formatDateUtc(task.deadline)}</td>
                       </tr>

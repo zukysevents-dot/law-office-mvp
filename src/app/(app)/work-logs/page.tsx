@@ -119,6 +119,7 @@ type WorkLogsPageData = {
     title: string;
     projectId: string | null;
     caseId: string | null;
+    mine: boolean;
   }>;
   users: Array<{ id: string; name: string }>;
   tableView: TableViewState;
@@ -345,7 +346,18 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
             taskVisibilityWhere(currentUser),
           ),
           orderBy: { createdAt: "desc" },
-          select: { id: true, title: true, projectId: true, caseId: true },
+          select: {
+            id: true,
+            title: true,
+            projectId: true,
+            caseId: true,
+            // „Moje úkoly“ ve výběru: hlavní řešitel nebo řádek řešitele/dohledu.
+            assignedToId: true,
+            assignees: {
+              where: { userId: currentUser.id },
+              select: { userId: true },
+            },
+          },
         }),
         getOrgUserOptions(currentUser),
         prisma.workLog.groupBy({
@@ -455,7 +467,14 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
         subjects,
         projects,
         cases,
-        tasks,
+        tasks: tasks.map((task) => ({
+          id: task.id,
+          title: task.title,
+          projectId: task.projectId,
+          caseId: task.caseId,
+          mine:
+            task.assignedToId === currentUser.id || task.assignees.length > 0,
+        })),
         users,
         tableView,
         canArchive: canArchiveRecords(currentUser),

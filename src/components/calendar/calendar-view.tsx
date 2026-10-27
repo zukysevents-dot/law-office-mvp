@@ -111,6 +111,7 @@ function toEventInput(event: SerializedCalendarEvent): EventInput {
       location: event.location,
       startWire: event.start,
       endWire: event.end,
+      tooltip: event.tooltip,
     },
   };
 }
@@ -419,6 +420,13 @@ export function CalendarView({
           eventSources={eventSources}
           editable={false}
           eventClick={handleEventClick}
+          eventDidMount={(info) => {
+            // Tooltip: u úkolu „{název} – Řešitelé: A, B; Dohled: C“.
+            const tooltip = info.event.extendedProps.tooltip as string | undefined;
+            if (tooltip) {
+              info.el.title = tooltip;
+            }
+          }}
           dayMaxEvents
           closeHint="Zavřít"
           moreLinkHint={(count: number) => `Zobrazit další události (${count})`}

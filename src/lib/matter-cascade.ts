@@ -11,7 +11,21 @@ export type CascadeTask = {
   id: string;
   projectId: string | null;
   caseId: string | null;
+  // Uživatel je na úkolu řešitelem nebo dohledem — výběr ho řadí do skupiny
+  // „Moje úkoly“ (filtrování kaskády ho nemění).
+  mine?: boolean;
 };
+
+// Rozdělení úkolů pro výběr: „Moje úkoly“ (řešitel/dohled) a ostatní, každá
+// skupina v původním pořadí. Bez vlastních úkolů zůstává seznam plochý
+// (mine = []).
+export function groupTasksByMine<T extends CascadeTask>(tasks: T[]) {
+  const mine = tasks.filter((task) => task.mine);
+  return {
+    mine,
+    others: mine.length > 0 ? tasks.filter((task) => !task.mine) : tasks,
+  };
+}
 
 export type MatterCascadeState = {
   subjectId: string;

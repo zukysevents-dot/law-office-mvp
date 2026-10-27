@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { Field, SelectInput } from "@/components/form-field";
 import {
   casesForSelection,
+  groupTasksByMine,
   initialCascadeSelection,
   nextSelectionOnCaseChange,
   nextSelectionOnProjectChange,
@@ -33,6 +34,8 @@ export type CascadingTask = {
   title: string;
   projectId: string | null;
   caseId: string | null;
+  // Řešitel nebo dohled úkolu → skupina „Moje úkoly“ nahoře.
+  mine?: boolean;
 };
 
 // Dependent client → project → case (→ task) pickers. Lawyers asked that every
@@ -118,6 +121,10 @@ export function CascadingMatterSelect({
   const visibleTasks = useMemo(
     () => (tasks ? tasksForSelection(tasks, cases, projects, selection) : []),
     [tasks, cases, projects, selection],
+  );
+  const groupedTasks = useMemo(
+    () => groupTasksByMine(visibleTasks),
+    [visibleTasks],
   );
 
   // In filterMode the selects become direct items of the parent filter grid
@@ -231,11 +238,32 @@ export function CascadingMatterSelect({
             }}
           >
             <option value="">{filterMode ? "Všechny úkoly" : "Bez úkolu"}</option>
-            {visibleTasks.map((task) => (
-              <option key={task.id} value={task.id}>
-                {task.title}
-              </option>
-            ))}
+            {groupedTasks.mine.length > 0 ? (
+              <>
+                <optgroup label="Moje úkoly">
+                  {groupedTasks.mine.map((task) => (
+                    <option key={task.id} value={task.id}>
+                      {task.title}
+                    </option>
+                  ))}
+                </optgroup>
+                {groupedTasks.others.length > 0 ? (
+                  <optgroup label="Ostatní úkoly">
+                    {groupedTasks.others.map((task) => (
+                      <option key={task.id} value={task.id}>
+                        {task.title}
+                      </option>
+                    ))}
+                  </optgroup>
+                ) : null}
+              </>
+            ) : (
+              visibleTasks.map((task) => (
+                <option key={task.id} value={task.id}>
+                  {task.title}
+                </option>
+              ))
+            )}
           </SelectInput>
         </Field>
       ) : null}

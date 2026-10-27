@@ -30,9 +30,15 @@ import {
   andWhere,
   canArchiveRecords,
   canEditRecord,
+  canWorkOnTask,
   taskVisibilityWhere,
   workLogVisibilityWhere,
 } from "@/lib/permissions";
+import {
+  formatAssigneeNames,
+  taskPeopleFromRecord,
+  taskPeopleSelect,
+} from "@/lib/tasks/task-people";
 import { getPrisma } from "@/lib/prisma";
 import {
   taskDeadlineTypeTone,
@@ -76,8 +82,9 @@ async function loadTask(id: string) {
         },
       },
       createdBy: { select: { name: true } },
-      assignedTo: { select: { name: true } },
       responsibleUser: { select: { name: true } },
+      // Řešitelé + dohled (obsahuje i userId/role pro kontroly práv).
+      ...taskPeopleSelect,
       statusHistory: {
         orderBy: { createdAt: "desc" },
         include: { changedBy: { select: { name: true } } },
@@ -106,8 +113,11 @@ async function loadTask(id: string) {
 
   return {
     task,
+    people: task ? taskPeopleFromRecord(task) : { assignees: [], supervisors: [] },
     canArchive: canArchiveRecords(currentUser),
     canEdit: task ? canEditRecord(currentUser, "Task", task) : false,
+    // Status a komentáře: kdo smí upravovat, a navíc dohled.
+    canWork: task ? canWorkOnTask(currentUser, task) : false,
   };
 }
 
@@ -115,8 +125,10 @@ type TaskDetailData = Awaited<ReturnType<typeof loadTask>>;
 
 const emptyTaskDetail: TaskDetailData = {
   task: null,
+  people: { assignees: [], supervisors: [] },
   canArchive: false,
   canEdit: false,
+  canWork: false,
 };
 
 export default async function TaskDetailPage({ params }: TaskDetailProps) {
@@ -133,7 +145,7 @@ export default async function TaskDetailPage({ params }: TaskDetailProps) {
     notFound();
   }
 
-  const { task, canArchive, canEdit } = result.data;
+  const { task, people, canArchive, canEdit, canWork } = result.data;
   const subject = task?.project?.mainSubject ?? task?.case?.project.mainSubject ?? null;
 
   return (
@@ -220,9 +232,27 @@ export default async function TaskDetailPage({ params }: TaskDetailProps) {
                   <p>—</p>
                 )}
               </div>
-              <Info label="Vytvořil" value={task.createdBy?.name} />
-              <Info label="Řešitel" value={task.assignedTo?.name} />
+              <Info label="Zadavatel" value={task.createdBy?.name} />
+              <Info
+                label="Řešitelé"
+                value={
+                  people.assignees.length > 0
+                    ? formatAssigneeNames(people.assignees)
+                    : null
+                }
+              />
+              <Info
+                label="Dohled"
+                value={
+                  people.supervisors.length > 0
+                    ? people.supervisors.map((person) => person.name).join(", ")
+                    : null
+                }
+              />
               <Info label="Odpovědná osoba" value={task.responsibleUser?.name} />
+              <p className="text-xs text-stone-500 md:col-span-2 md:self-end">
+                Dohled: vidí úkol, komentuje, mění status a dostává upozornění.
+              </p>
               <div>
                 <p className="text-xs font-semibold uppercase text-stone-500">
                   Status
@@ -261,7 +291,7 @@ export default async function TaskDetailPage({ params }: TaskDetailProps) {
               </div>
             </div>
           </Section>
-          {canEdit ? (
+          {canWork ? (
             <Section title="Změnit status">
               <form action={updateTaskStatus} className="grid gap-4 md:grid-cols-[1fr_2fr_auto]">
                 <input type="hidden" name="taskId" value={task.id} />
@@ -277,7 +307,12 @@ export default async function TaskDetailPage({ params }: TaskDetailProps) {
                 <Field label="Komentář ke změně">
                   <TextArea name="note" className="min-h-10" />
                 </Field>
-                <Button type="submit" variant="secondary" className="self-end">
+                <Button
+                  type="submit"
+                  variant="secondary"
+                  className="self-end"
+                  pendingLabel="Ukládám…"
+                >
                   <Save className="h-4 w-4" aria-hidden="true" />
                   Uložit status
                 </Button>
@@ -351,14 +386,14 @@ export default async function TaskDetailPage({ params }: TaskDetailProps) {
             )}
           </Section>
           <Section title="Komentáře">
-            {canEdit ? (
+            {canWork ? (
               <form action={addTaskComment} className="mb-4 grid gap-3">
                 <input type="hidden" name="taskId" value={task.id} />
                 <Field label="Nový komentář">
                   <TextArea name="comment" required />
                 </Field>
                 <div>
-                  <Button type="submit">
+                  <Button type="submit" pendingLabel="Přidávám…">
                     <MessageSquare className="h-4 w-4" aria-hidden="true" />
                     Přidat komentář
                   </Button>

@@ -26,8 +26,9 @@ export const tableViewConfigs = {
       { id: "subject", label: "Klient / subjekt", defaultVisible: true },
       { id: "project", label: "Projekt", defaultVisible: true },
       { id: "case", label: "Případ", defaultVisible: true },
-      { id: "createdBy", label: "Vytvořil", defaultVisible: false },
-      { id: "assignee", label: "Řešitel", defaultVisible: true },
+      { id: "createdBy", label: "Zadavatel", defaultVisible: false },
+      { id: "assignee", label: "Řešitelé", defaultVisible: true },
+      { id: "supervisors", label: "Dohled", defaultVisible: false },
       {
         id: "responsiblePerson",
         label: "Odpovědná osoba",

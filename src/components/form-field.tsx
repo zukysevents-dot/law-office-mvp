@@ -1,6 +1,6 @@
 import type {
+  ComponentProps,
   InputHTMLAttributes,
-  SelectHTMLAttributes,
   TextareaHTMLAttributes,
 } from "react";
 
@@ -33,10 +33,12 @@ export function TextInput({
   return <input className={cn(controlClass, className)} {...props} />;
 }
 
+// ComponentProps<"select"> (React 19) včetně `ref` — výběr lidí na úkolu
+// vrací fokus na select po přidání.
 export function SelectInput({
   className,
   ...props
-}: SelectHTMLAttributes<HTMLSelectElement>) {
+}: ComponentProps<"select">) {
   return <select className={cn(controlClass, className)} {...props} />;
 }
 

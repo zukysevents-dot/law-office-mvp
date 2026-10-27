@@ -110,7 +110,8 @@ export const dashboardTableColumns: Partial<
     { key: "status", label: "Status" },
     { key: "deadline", label: "Deadline" },
     { key: "responsibleUser", label: "Odpovědná osoba" },
-    { key: "assignedTo", label: "Řešitel" },
+    // Klíč zůstává „assignedTo“ (uložené preference), sloupec ukazuje všechny řešitele.
+    { key: "assignedTo", label: "Řešitelé" },
     { key: "priority", label: "Priorita" },
   ],
   [DashboardWidgetType.WORK_LOGS_TABLE]: [

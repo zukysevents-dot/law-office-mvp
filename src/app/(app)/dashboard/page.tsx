@@ -76,6 +76,12 @@ import {
   workLogVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import {
+  formatAssigneeNames,
+  taskPeopleFromRecord,
+  taskPeopleSelect,
+  taskPersonWhere,
+} from "@/lib/tasks/task-people";
 import { redactBirthNumberQuery } from "@/lib/subjects/birth-number";
 import {
   billingStatusTone,
@@ -113,7 +119,7 @@ type DashboardData = {
     status: TaskStatus;
     priority: TaskPriority;
     deadline: Date | null;
-    assignedTo: { name: string } | null;
+    assigneeNames: string;
     responsibleUser: { name: string } | null;
     project: {
       id: string;
@@ -330,7 +336,7 @@ function renderTaskCell(
     case "responsibleUser":
       return task.responsibleUser?.name ?? "—";
     case "assignedTo":
-      return task.assignedTo?.name ?? "—";
+      return task.assigneeNames || "—";
     case "priority":
       return taskPriorityLabels[task.priority];
     default:
@@ -959,8 +965,9 @@ export default async function DashboardPage() {
               organizationId: currentUser.organizationId,
               archivedAt: null,
               status: { not: TaskStatus.COMPLETED },
+              // Řešitel (hlavní i další), dohled, odpovědná osoba, zadavatel.
               OR: [
-                { assignedToId: currentUser.id },
+                taskPersonWhere(currentUser.id),
                 { responsibleUserId: currentUser.id },
                 { createdById: currentUser.id },
               ],
@@ -973,7 +980,7 @@ export default async function DashboardPage() {
               status: true,
               priority: true,
               deadline: true,
-              assignedTo: { select: { name: true } },
+              ...taskPeopleSelect,
               responsibleUser: { select: { name: true } },
               project: {
                 select: {
@@ -1203,7 +1210,10 @@ export default async function DashboardPage() {
         ),
       },
       monthHours: formatHours(workLogAggregate._sum.hours),
-      myTasks,
+      myTasks: myTasks.map((task) => ({
+        ...task,
+        assigneeNames: formatAssigneeNames(taskPeopleFromRecord(task).assignees),
+      })),
       workLogs,
       subjects,
       projects,

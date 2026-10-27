@@ -10,6 +10,11 @@ import { safeQuery } from "@/lib/db-safe";
 import { taskStatusLabels } from "@/lib/labels";
 import { andWhere, taskVisibilityWhere } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import {
+  formatAssigneeNames,
+  taskPeopleFromRecord,
+  taskPeopleSelect,
+} from "@/lib/tasks/task-people";
 import { taskStatusTone } from "@/lib/status-tones";
 import { AccessDenied } from "@/components/access-denied";
 import { moduleAccessDenial } from "@/lib/module-access.server";
@@ -22,7 +27,7 @@ type ArchivedTask = {
   completedAt: Date | null;
   project: { name: string } | null;
   case: { name: string; fileNumber: string | null } | null;
-  assignedTo: { name: string } | null;
+  assigneeNames: string;
   statusHistory: Array<{
     id: string;
     oldStatus: keyof typeof taskStatusLabels;
@@ -54,7 +59,7 @@ export default async function TaskArchivePage() {
         include: {
           project: { select: { name: true } },
           case: { select: { name: true, fileNumber: true } },
-          assignedTo: { select: { name: true } },
+          ...taskPeopleSelect,
           statusHistory: {
             orderBy: { createdAt: "asc" },
             include: { changedBy: { select: { name: true } } },
@@ -62,7 +67,12 @@ export default async function TaskArchivePage() {
         },
       });
 
-      return { tasks };
+      return {
+        tasks: tasks.map((task) => ({
+          ...task,
+          assigneeNames: formatAssigneeNames(taskPeopleFromRecord(task).assignees),
+        })),
+      };
     },
   );
 
@@ -113,9 +123,9 @@ export default async function TaskArchivePage() {
                       </p>
                       <p>
                         <span className="font-medium text-stone-950">
-                          Řešitel:
+                          Řešitelé:
                         </span>{" "}
-                        {task.assignedTo?.name ?? "—"}
+                        {task.assigneeNames || "—"}
                       </p>
                     </div>
                   </div>
