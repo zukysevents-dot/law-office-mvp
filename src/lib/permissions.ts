@@ -49,6 +49,10 @@ type AssignmentRecord = {
   createdById?: string | null;
   assignedToId?: string | null;
   responsibleUserId?: string | null;
+  // Lidé na úkolu (TaskAssignee): řešitelé (ASSIGNEE) a dohled (SUPERVISOR).
+  // Načítá se přes taskAccessSelect / taskPeopleSelect
+  // (src/lib/tasks/task-people.ts). Chybí-li, platí jen assignedToId.
+  assignees?: ReadonlyArray<{ userId: string; role?: string | null }> | null;
 };
 
 type AssigneeRef = { userId: string };
@@ -178,21 +182,47 @@ function denyWhere<T extends object>() {
   return { id: "__role_denied__" } as T;
 }
 
+// Uživatel je přímo na úkolu: zadavatel, řešitel (hlavní i další), dohled nebo
+// odpovědná osoba. Záměrně i dohled: v rozsahu „Přiřazené“ vidí úkol řešitel
+// i dohled (a přes zrcadla `tasks some` i projekt/případ, výkazy a reference
+// úkolu — stejně jako dosud jediný řešitel).
 function directTaskUserWhere(userId: string): Prisma.TaskWhereInput {
   return {
     OR: [
       { createdById: userId },
       { assignedToId: userId },
       { responsibleUserId: userId },
+      { assignees: { some: { userId } } },
     ],
   };
 }
 
+function taskRowsOf(record: AssignmentRecord) {
+  return Array.isArray(record.assignees) ? record.assignees : [];
+}
+
+// Další řešitel (řádek ASSIGNEE) — má stejná práva jako hlavní řešitel.
+function isTaskAssigneeRowOf(record: AssignmentRecord, userId: string) {
+  return taskRowsOf(record).some(
+    (row) => row.userId === userId && row.role === "ASSIGNEE",
+  );
+}
+
+// Dohled (řádek SUPERVISOR): úkol vidí, komentuje a mění status, neupravuje.
+function isTaskSupervisorOf(record: AssignmentRecord, userId: string) {
+  return taskRowsOf(record).some(
+    (row) => row.userId === userId && row.role === "SUPERVISOR",
+  );
+}
+
+// Úprava úkolu: zadavatel, řešitel (hlavní i další) nebo odpovědná osoba.
+// Dohled úpravu NEDÁVÁ (viz canWorkOnTask).
 function hasDirectTaskAccess(record: AssignmentRecord, userId: string) {
   return (
     record.createdById === userId ||
     record.assignedToId === userId ||
-    record.responsibleUserId === userId
+    record.responsibleUserId === userId ||
+    isTaskAssigneeRowOf(record, userId)
   );
 }
 
@@ -1103,6 +1133,7 @@ export function canViewRecord(
 
     return (
       hasDirectTaskAccess(task, userId) ||
+      isTaskSupervisorOf(task, userId) ||
       task.project?.responsibleUserId === userId ||
       task.case?.responsibleUserId === userId ||
       task.case?.project?.responsibleUserId === userId ||
@@ -1218,5 +1249,31 @@ export function assertCanEditRecord(
 ) {
   if (!canEditRecord(user, type, record)) {
     throw new Error("Nemáte oprávnění upravit tento záznam.");
+  }
+}
+
+// Práce s úkolem = komentář a změna statusu. Smí každý, kdo úkol smí upravit,
+// a navíc dohled (řádek SUPERVISOR). Úpravu úkolu dohled nedostává.
+// Záznam musí nést `assignees` (taskAccessSelect), jinak dohled neprojde.
+export function canWorkOnTask(
+  user: PermissionInput,
+  record: (AssignmentRecord & OrgScoped) | null | undefined,
+) {
+  if (canEditRecord(user, "Task", record)) {
+    return true;
+  }
+  if (!record || orgMismatch(user, record) || !isKnownRole(roleOf(user))) {
+    return false;
+  }
+  const userId = userIdOf(user);
+  return Boolean(userId) && isTaskSupervisorOf(record, userId as string);
+}
+
+export function assertCanWorkOnTask(
+  user: PermissionInput,
+  record: (AssignmentRecord & OrgScoped) | null | undefined,
+) {
+  if (!canWorkOnTask(user, record)) {
+    throw new Error("Nemáte oprávnění pracovat s tímto úkolem.");
   }
 }

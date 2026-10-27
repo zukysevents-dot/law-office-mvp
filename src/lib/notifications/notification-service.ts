@@ -12,6 +12,15 @@ import {
 } from "@/lib/assignments";
 import { taskStatusLabels } from "@/lib/labels";
 import {
+  taskCommentRecipients,
+  taskCreatedRecipients,
+  taskDeadlineSoonRecipients,
+  taskFiledRecipients,
+  taskOverdueRecipients,
+  taskStatusRecipients,
+  type TaskPeopleRecord,
+} from "@/lib/tasks/task-people";
+import {
   appUrl,
   emailHtml,
   getSmtpTransporter,
@@ -30,6 +39,12 @@ const LOCK_TIMEOUT_MINUTES = 15;
 // large backlog (esp. long-overdue OPEN deadlines) can't overwhelm one cron run.
 // Dedupe keys make this safe to resume: unsent rows are picked up next run.
 const SCHEDULED_SCAN_LIMIT = 1000;
+// Úkol po termínu: upozorňuje se jen na úkoly, jejichž termín uplynul nejvýš
+// před tolika dny. Produkční bezpečnost: první běh cronu po nasazení nesmí
+// rozeslat e-maily ke všem historicky prošlým úkolům.
+export const TASK_OVERDUE_LOOKBACK_DAYS = 7;
+// Ukázka komentáře v e-mailu.
+const COMMENT_EXCERPT_LENGTH = 300;
 
 export type NotificationPreferenceShape = {
   emailEnabled: boolean;
@@ -46,6 +61,8 @@ export type NotificationPreferenceShape = {
   deadlineWatchDaysBefore: number;
   registryChangeEmail: boolean;
   matterAssignedEmail: boolean;
+  taskCommentedEmail: boolean;
+  taskOverdueEmail: boolean;
 };
 
 export type NotificationPayload = {
@@ -82,6 +99,8 @@ const defaultPreference: NotificationPreferenceShape = {
   deadlineWatchDaysBefore: DEFAULT_DEADLINE_WATCH_DAYS,
   registryChangeEmail: true,
   matterAssignedEmail: true,
+  taskCommentedEmail: true,
+  taskOverdueEmail: true,
 };
 
 export function uniqueRecipients(
@@ -147,6 +166,14 @@ export function preferenceAllows(
 
   if (type === NotificationType.MATTER_ASSIGNED) {
     return current.matterAssignedEmail;
+  }
+
+  if (type === NotificationType.TASK_COMMENTED) {
+    return current.taskCommentedEmail;
+  }
+
+  if (type === NotificationType.TASK_OVERDUE) {
+    return current.taskOverdueEmail;
   }
 
   return false;
@@ -324,27 +351,131 @@ export async function queueInternalNotification(payload: NotificationPayload) {
   return { queued, skipped };
 }
 
+type TaskNotificationTask = TaskPeopleRecord & { id: string; title: string };
+
+function sumResults(results: ReadonlyArray<{ queued: number; skipped: number }>) {
+  return results.reduce(
+    (sum, entry) => ({
+      queued: sum.queued + entry.queued,
+      skipped: sum.skipped + entry.skipped,
+    }),
+    { queued: 0, skipped: 0 },
+  );
+}
+
+// Nový úkol: řešitelé a odpovědná osoba dostanou „Byl vám přiřazen nový úkol“,
+// dohled zvlášť s vlastním textem. Typ TASK_CREATED (preference taskCreatedEmail).
 export async function queueTaskCreatedNotifications({
   task,
   actorUserId,
 }: {
-  task: {
-    id: string;
-    title: string;
-    shortDescription: string | null;
-    assignedToId: string | null;
-    responsibleUserId: string | null;
-  };
+  task: TaskNotificationTask & { shortDescription: string | null };
   actorUserId: string;
 }) {
+  const { workers, supervisors } = taskCreatedRecipients(task);
+  const message = task.shortDescription
+    ? `Byl vám přiřazen nový úkol: ${task.shortDescription}`
+    : "Byl vám přiřazen nový úkol.";
+  const results = await Promise.all([
+    queueInternalNotification({
+      toUserIds: workers,
+      actorUserId,
+      type: NotificationType.TASK_CREATED,
+      subject: `Nový úkol: ${task.title}`,
+      body: formatTaskNotificationBody({
+        title: task.title,
+        message,
+        taskId: task.id,
+      }),
+      entityType: "Task",
+      entityId: task.id,
+    }),
+    queueInternalNotification({
+      toUserIds: supervisors,
+      actorUserId,
+      type: NotificationType.TASK_CREATED,
+      subject: `Dohled nad novým úkolem: ${task.title}`,
+      body: formatTaskNotificationBody({
+        title: task.title,
+        message:
+          "Byli jste přidáni jako dohled k úkolu. Úkol vidíte, můžete ho komentovat a měnit jeho status.",
+        taskId: task.id,
+      }),
+      entityType: "Task",
+      entityId: task.id,
+    }),
+  ]);
+  return sumResults(results);
+}
+
+// Úprava úkolu přidala nové řešitele / dohled: dostanou jen oni (TASK_CREATED).
+export async function queueTaskPeopleAddedNotifications({
+  task,
+  addedAssigneeIds,
+  addedSupervisorIds,
+  actorUserId,
+}: {
+  task: { id: string; title: string };
+  addedAssigneeIds: readonly string[];
+  addedSupervisorIds: readonly string[];
+  actorUserId: string;
+}) {
+  const results = await Promise.all([
+    queueInternalNotification({
+      toUserIds: [...addedAssigneeIds],
+      actorUserId,
+      type: NotificationType.TASK_CREATED,
+      subject: `Přidání k úkolu: ${task.title}`,
+      body: formatTaskNotificationBody({
+        title: task.title,
+        message: "Byli jste přidáni jako řešitel úkolu.",
+        taskId: task.id,
+      }),
+      entityType: "Task",
+      entityId: task.id,
+    }),
+    queueInternalNotification({
+      toUserIds: [...addedSupervisorIds],
+      actorUserId,
+      type: NotificationType.TASK_CREATED,
+      subject: `Dohled nad úkolem: ${task.title}`,
+      body: formatTaskNotificationBody({
+        title: task.title,
+        message:
+          "Byli jste přidáni jako dohled k úkolu. Úkol vidíte, můžete ho komentovat a měnit jeho status.",
+        taskId: task.id,
+      }),
+      entityType: "Task",
+      entityId: task.id,
+    }),
+  ]);
+  return sumResults(results);
+}
+
+// Nový komentář: řešitelé, dohled, odpovědná osoba a zadavatel (bez autora).
+export async function queueTaskCommentNotifications({
+  task,
+  actorUserId,
+  authorName,
+  comment,
+}: {
+  task: TaskNotificationTask;
+  actorUserId: string;
+  authorName: string;
+  comment: string;
+}) {
+  const excerpt =
+    comment.length > COMMENT_EXCERPT_LENGTH
+      ? `${comment.slice(0, COMMENT_EXCERPT_LENGTH)}…`
+      : comment;
   return queueInternalNotification({
-    toUserIds: [task.assignedToId, task.responsibleUserId],
+    toUserIds: taskCommentRecipients(task),
     actorUserId,
-    type: NotificationType.TASK_CREATED,
-    subject: `Nový úkol: ${task.title}`,
+    type: NotificationType.TASK_COMMENTED,
+    subject: `Nový komentář k úkolu: ${task.title}`,
     body: formatTaskNotificationBody({
       title: task.title,
-      message: task.shortDescription || "Byl vám přiřazen nový úkol.",
+      message: `${authorName}: ${excerpt}`,
       taskId: task.id,
     }),
     entityType: "Task",
@@ -422,31 +553,33 @@ export async function queueTeamJoinedNotification({
   });
 }
 
+// Změna statusu: řešitelé, dohled, odpovědná osoba a zadavatel (bez aktéra).
+// Poznámka ke změně jde do těla téhož e-mailu (žádný druhý e-mail o komentáři).
 export async function queueTaskStatusNotifications({
   task,
   oldStatus,
   newStatus,
   actorUserId,
+  note,
 }: {
-  task: {
-    id: string;
-    title: string;
+  task: TaskNotificationTask & {
     createdById: string | null;
-    assignedToId: string | null;
     responsibleUserId: string | null;
   };
   oldStatus: TaskStatus;
   newStatus: TaskStatus;
   actorUserId: string;
+  note?: string | null;
 }) {
+  const statusMessage = `Status se změnil z "${taskStatusLabels[oldStatus]}" na "${taskStatusLabels[newStatus]}".`;
   await queueInternalNotification({
-    toUserIds: [task.assignedToId, task.responsibleUserId, task.createdById],
+    toUserIds: taskStatusRecipients(task),
     actorUserId,
     type: NotificationType.TASK_STATUS_CHANGED,
     subject: `Změna statusu úkolu: ${task.title}`,
     body: formatTaskNotificationBody({
       title: task.title,
-      message: `Status se změnil z "${taskStatusLabels[oldStatus]}" na "${taskStatusLabels[newStatus]}".`,
+      message: note ? `${statusMessage}\nKomentář: ${note}` : statusMessage,
       taskId: task.id,
     }),
     entityType: "Task",
@@ -640,16 +773,14 @@ async function createScheduledDeadlineNotifications(now: Date) {
       deadline: true,
       assignedToId: true,
       responsibleUserId: true,
+      assignees: { select: { userId: true, role: true } },
     },
   });
   const preferenceCache = new Map<string, NotificationPreferenceShape>();
   let created = 0;
 
   for (const task of tasks) {
-    const recipientIds = uniqueRecipients([
-      task.assignedToId,
-      task.responsibleUserId,
-    ]);
+    const recipientIds = uniqueRecipients(taskDeadlineSoonRecipients(task));
 
     // Per-recipient reminder window first, then one batched queue call.
     const eligible: string[] = [];
@@ -705,6 +836,7 @@ async function createScheduledFiledFollowupNotifications(now: Date) {
       createdById: true,
       assignedToId: true,
       responsibleUserId: true,
+      assignees: { select: { userId: true, role: true } },
       statusHistory: {
         where: { newStatus: TaskStatus.FILED },
         orderBy: { createdAt: "desc" },
@@ -723,11 +855,7 @@ async function createScheduledFiledFollowupNotifications(now: Date) {
       continue;
     }
 
-    const recipientIds = uniqueRecipients([
-      task.assignedToId,
-      task.responsibleUserId,
-      task.createdById,
-    ]);
+    const recipientIds = uniqueRecipients(taskFiledRecipients(task));
 
     const eligible: string[] = [];
     for (const recipientId of recipientIds) {
@@ -762,6 +890,76 @@ async function createScheduledFiledFollowupNotifications(now: Date) {
       entityType: "Task",
       entityId: task.id,
       dedupeKey: `task:${task.id}:filed-followup:${filedHistory.id}`,
+    });
+    created += result.queued + result.skipped;
+  }
+
+  return created;
+}
+
+function startOfUtcDay(value: Date) {
+  return new Date(
+    Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()),
+  );
+}
+
+// Úkol po termínu: nedokončený, nearchivovaný úkol, jehož termín (datum, UTC
+// půlnoc) už uplynul — nejvýš TASK_OVERDUE_LOOKBACK_DAYS dní zpět. Jednou na
+// hodnotu termínu (datum termínu v dedupe klíči): posunutí termínu upozornění
+// znovu „natáhne“. Příjemci: řešitelé, dohled a odpovědná osoba.
+export function taskOverdueWindow(now: Date) {
+  const today = startOfUtcDay(now);
+  const from = new Date(today);
+  from.setUTCDate(from.getUTCDate() - TASK_OVERDUE_LOOKBACK_DAYS);
+  return { from, before: today };
+}
+
+export function taskOverdueDedupeKey(taskId: string, deadline: Date) {
+  return `task:${taskId}:overdue:${deadline.toISOString().slice(0, 10)}`;
+}
+
+async function createScheduledTaskOverdueNotifications(now: Date) {
+  const prisma = getPrisma();
+  const { from, before } = taskOverdueWindow(now);
+  const tasks = await prisma.task.findMany({
+    where: {
+      archivedAt: null,
+      status: { not: TaskStatus.COMPLETED },
+      deadline: { gte: from, lt: before },
+    },
+    orderBy: { deadline: "asc" },
+    take: SCHEDULED_SCAN_LIMIT,
+    select: {
+      id: true,
+      title: true,
+      deadline: true,
+      assignedToId: true,
+      responsibleUserId: true,
+      assignees: { select: { userId: true, role: true } },
+    },
+  });
+  let created = 0;
+
+  for (const task of tasks) {
+    if (!task.deadline) {
+      continue;
+    }
+    const recipientIds = uniqueRecipients(taskOverdueRecipients(task));
+    if (recipientIds.length === 0) {
+      continue;
+    }
+    const result = await queueInternalNotification({
+      toUserIds: recipientIds,
+      type: NotificationType.TASK_OVERDUE,
+      subject: `Úkol je po termínu: ${task.title}`,
+      body: formatTaskNotificationBody({
+        title: task.title,
+        message: `Termín úkolu uplynul ${task.deadline.toLocaleDateString("cs-CZ", { timeZone: "UTC" })}.`,
+        taskId: task.id,
+      }),
+      entityType: "Task",
+      entityId: task.id,
+      dedupeKey: taskOverdueDedupeKey(task.id, task.deadline),
     });
     created += result.queued + result.skipped;
   }
@@ -954,18 +1152,28 @@ async function createScheduledCourtHearingReminders(now: Date) {
 
 export async function runScheduledNotifications(limit = DEFAULT_SEND_LIMIT) {
   const now = new Date();
-  const [deadlineCreated, filedCreated, watchedCreated, hearingCreated] =
-    await Promise.all([
-      createScheduledDeadlineNotifications(now),
-      createScheduledFiledFollowupNotifications(now),
-      createScheduledDeadlineReminders(now),
-      createScheduledCourtHearingReminders(now),
-    ]);
+  const [
+    deadlineCreated,
+    filedCreated,
+    watchedCreated,
+    hearingCreated,
+    overdueCreated,
+  ] = await Promise.all([
+    createScheduledDeadlineNotifications(now),
+    createScheduledFiledFollowupNotifications(now),
+    createScheduledDeadlineReminders(now),
+    createScheduledCourtHearingReminders(now),
+    createScheduledTaskOverdueNotifications(now),
+  ]);
   const sendResult = await sendPendingNotifications(limit);
 
   return {
     created:
-      deadlineCreated + filedCreated + watchedCreated + hearingCreated,
+      deadlineCreated +
+      filedCreated +
+      watchedCreated +
+      hearingCreated +
+      overdueCreated,
     ...sendResult,
   } satisfies NotificationRunResult;
 }

@@ -23,6 +23,7 @@ import {
   SubjectRole,
   SubjectType,
   SubscriptionStatus,
+  TaskAssigneeRole,
   TaskDeadlineType,
   TaskPriority,
   TaskStatus,
@@ -882,6 +883,20 @@ async function main() {
           shortDescription: "Připravit první návrh vyjádření.",
         },
       });
+
+  // Řešitel demo úkolu i v tabulce lidí na úkolu (hlavní řešitel zůstává
+  // v assignedToId). Idempotentní upsert podle (taskId, userId).
+  await prisma.taskAssignee.upsert({
+    where: { taskId_userId: { taskId: task.id, userId: trainee.id } },
+    update: { role: TaskAssigneeRole.ASSIGNEE },
+    create: {
+      organizationId: demoOrg.id,
+      taskId: task.id,
+      userId: trainee.id,
+      role: TaskAssigneeRole.ASSIGNEE,
+      assignedById: partner.id,
+    },
+  });
 
   const existingComment = await prisma.taskComment.findFirst({
     where: {

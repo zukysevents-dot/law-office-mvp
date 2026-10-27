@@ -327,13 +327,23 @@ export default async function SettingsPage() {
               />
               <PreferenceCheckbox
                 name="taskCreatedEmail"
-                label="Nový úkol"
+                label="Nový úkol nebo přidání k úkolu (řešitel i dohled)"
                 defaultChecked={preference.taskCreatedEmail}
               />
               <PreferenceCheckbox
                 name="taskStatusChangedEmail"
                 label="Změna statusu úkolu"
                 defaultChecked={preference.taskStatusChangedEmail}
+              />
+              <PreferenceCheckbox
+                name="taskCommentedEmail"
+                label="Nový komentář k úkolu"
+                defaultChecked={preference.taskCommentedEmail}
+              />
+              <PreferenceCheckbox
+                name="taskOverdueEmail"
+                label="Úkol po termínu (řešitel, dohled i odpovědná osoba)"
+                defaultChecked={preference.taskOverdueEmail}
               />
               <PreferenceCheckbox
                 name="taskForReviewEmail"

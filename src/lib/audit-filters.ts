@@ -6,6 +6,7 @@ import { Prisma } from "@/generated/prisma/client";
 export const AUDIT_ENTITY_TYPES = [
   "Task",
   "TaskComment",
+  "TaskAssignee",
   "Project",
   "Case",
   "WorkLog",
@@ -73,6 +74,7 @@ export const AUDIT_ACTIONS = [
 export const auditEntityTypeLabels: Record<string, string> = {
   Task: "Úkol",
   TaskComment: "Komentář úkolu",
+  TaskAssignee: "Lidé na úkolu",
   Project: "Projekt",
   Case: "Případ",
   WorkLog: "Výkaz práce",

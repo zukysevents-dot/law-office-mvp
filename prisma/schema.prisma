@@ -235,6 +235,10 @@ enum NotificationType {
   REGISTRY_CHANGE
   // Přiřazení k projektu/případu (osobně nebo přes tým) a přidání do týmu.
   MATTER_ASSIGNED
+  // Úkoly: nový komentář (řešitelé, dohled, odpovědná osoba, zadavatel) a úkol
+  // po termínu (řešitelé, dohled, odpovědná osoba).
+  TASK_COMMENTED
+  TASK_OVERDUE
 }
 
 enum NotificationStatus {
@@ -379,6 +383,8 @@ model User {
   createdTasks                Task[]                    @relation("TaskCreatedBy")
   assignedTasks               Task[]                    @relation("TaskAssignedTo")
   responsibleTasks            Task[]                    @relation("TaskResponsibleUser")
+  taskAssignments             TaskAssignee[]            @relation("TaskAssigneeUser")
+  taskAssignmentsAssigned     TaskAssignee[]            @relation("TaskAssigneeAssignedBy")
   changedTaskStatuses         TaskStatusHistory[]       @relation("TaskStatusChangedBy")
   taskComments                TaskComment[]             @relation("TaskCommentAuthor")
   workLogs                    WorkLog[]
@@ -818,6 +824,10 @@ model Task {
   projectId           String?
   caseId              String?
   createdById         String?
+  // Hlavní řešitel (kompatibilita). Zrcadlí prvního řešitele (role ASSIGNEE)
+  // v TaskAssignee a nový kód ho drží v synchronizaci. Čtení vždy bere sjednocení
+  // řádků TaskAssignee a tohoto sloupce. Deprecated: odstranit až v pozdější
+  // contract migraci, jakmile veškerý nasazený kód čte taskAssignees.
   assignedToId        String?
   responsibleUserId   String?
   status              TaskStatus       @default(CREATED)
@@ -842,6 +852,7 @@ model Task {
   statusHistory   TaskStatusHistory[]
   comments        TaskComment[]
   workLogs        WorkLog[]
+  assignees       TaskAssignee[]
 
   @@index([organizationId])
   @@index([projectId])
@@ -853,6 +864,36 @@ model Task {
   @@index([deadline])
   @@index([organizationId, status, deadline])
   @@map("tasks")
+}
+
+enum TaskAssigneeRole {
+  ASSIGNEE // řešitel
+  SUPERVISOR // dohled
+}
+
+// Lidé na úkolu: řešitelé (ASSIGNEE) a dohled (SUPERVISOR). Hlavní řešitel je
+// dál i v Task.assignedToId (kompatibilita, drženo v synchronizaci). Jedna role
+// na osobu a úkol. Dohled úkol vidí, komentuje, mění status a dostává
+// upozornění, ale úkol upravovat nemůže.
+model TaskAssignee {
+  id             String           @id @default(cuid())
+  organizationId String
+  taskId         String
+  userId         String
+  role           TaskAssigneeRole @default(ASSIGNEE)
+  assignedAt     DateTime         @default(now())
+  assignedById   String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  task         Task         @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user         User         @relation("TaskAssigneeUser", fields: [userId], references: [id], onDelete: Cascade)
+  assignedBy   User?        @relation("TaskAssigneeAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
+
+  @@unique([taskId, userId])
+  @@index([organizationId])
+  @@index([taskId])
+  @@index([userId, role])
+  @@map("taskAssignees")
 }
 
 model TaskStatusHistory {
@@ -1061,6 +1102,9 @@ model NotificationPreference {
   registryChangeEmail     Boolean  @default(true)
   // Přiřazení k projektu/případu (osobně nebo přes tým) a přidání do týmu.
   matterAssignedEmail     Boolean  @default(true)
+  // Úkoly: nový komentář a úkol po termínu (řešitelé, dohled, odpovědná osoba).
+  taskCommentedEmail      Boolean  @default(true)
+  taskOverdueEmail        Boolean  @default(true)
   // FullCalendar view persisted per user: day, week, month, or year agenda.
   calendarDefaultView     String   @default("dayGridMonth")
   createdAt               DateTime @default(now())
@@ -1352,6 +1396,7 @@ model Organization {
   caseAssignees             CaseAssignee[]
   projectTeamAssignments    ProjectTeamAssignment[]
   caseTeamAssignments       CaseTeamAssignment[]
+  taskAssignees             TaskAssignee[]
   capabilityGrants          UserCapabilityGrant[]
   legalTeams                LegalTeam[]
   legalTeamMembers          LegalTeamMember[]

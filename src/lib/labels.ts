@@ -29,6 +29,7 @@ import {
   SubjectRole,
   SubjectType,
   SubscriptionStatus,
+  TaskAssigneeRole,
   TaskDeadlineType,
   TaskPriority,
   TaskStatus,
@@ -291,6 +292,27 @@ export const taskStatusLabels: Record<TaskStatus, string> = {
   FILED: "Podáno",
   COMPLETED: "Dokončeno",
 };
+
+export const taskAssigneeRoleLabels: Record<TaskAssigneeRole, string> = {
+  ASSIGNEE: "Řešitel",
+  SUPERVISOR: "Dohled",
+};
+
+// Role přihlášeného uživatele na úkolu („Moje úkoly“): štítek v tabulce
+// a volba filtru „Moje role“. Klíče = MyTaskRole (src/lib/tasks/task-people.ts).
+export const myTaskRoleLabels = {
+  assignee: "Řešitel",
+  supervisor: "Dohled",
+  responsible: "Odpovědná osoba",
+  created: "Zadavatel",
+} as const;
+
+export const myTaskRoleFilterLabels = {
+  assignee: "Řeším",
+  supervisor: "Dohlížím",
+  responsible: "Odpovídám",
+  created: "Zadal jsem",
+} as const;
 
 export const taskPriorityLabels: Record<TaskPriority, string> = {
   LOW: "Nízká",

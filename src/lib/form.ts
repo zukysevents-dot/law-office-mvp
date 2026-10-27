@@ -19,6 +19,29 @@ export function optionalString(formData: FormData, key: string) {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+// Opakované pole (více <input name="x"> / multi-select) jako seznam řetězců:
+// jen textové hodnoty, oříznuté, bez prázdných a duplicit, v pořadí formuláře
+// a nejvýš `max` položek (podvržený request nevyrobí neomezenou práci).
+export function stringList(formData: FormData, key: string, max = 50) {
+  const result: string[] = [];
+  const seen = new Set<string>();
+  for (const value of formData.getAll(key)) {
+    if (result.length >= max) {
+      break;
+    }
+    if (typeof value !== "string") {
+      continue;
+    }
+    const trimmed = value.trim();
+    if (!trimmed || seen.has(trimmed)) {
+      continue;
+    }
+    seen.add(trimmed);
+    result.push(trimmed);
+  }
+  return result;
+}
+
 export function checkboxValue(formData: FormData, key: string) {
   const value = formData.get(key);
   return value === "on" || value === "true";

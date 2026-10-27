@@ -6,6 +6,7 @@ import {
   optionalDateTime,
   requiredDateTime,
   safeInternalRedirectPath,
+  stringList,
 } from "./form";
 
 // Helper: build a FormData fixture carrying a single field.
@@ -186,4 +187,15 @@ test("indexedRows: a duplicated control does not override the first value", () =
   formData.append("row.a.value", "first");
   formData.append("row.a.value", "second");
   assert.equal(indexedRows(formData, "row", ["value"])[0].values.value, "first");
+});
+
+test("stringList: trims, drops empties/non-strings/duplicates, keeps order, caps", () => {
+  const formData = new FormData();
+  for (const value of [" b ", "a", "", "b", "  ", "c"]) {
+    formData.append("ids", value);
+  }
+  formData.append("ids", new Blob(["x"]));
+  assert.deepEqual(stringList(formData, "ids"), ["b", "a", "c"]);
+  assert.deepEqual(stringList(formData, "ids", 2), ["b", "a"]);
+  assert.deepEqual(stringList(formData, "missing"), []);
 });
