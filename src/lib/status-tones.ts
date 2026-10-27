@@ -195,3 +195,9 @@ export function fulfillmentTone(pct: number): BadgeTone {
   }
   return "red";
 }
+
+// Vytížení na stránce Výkonnost: nízké zelená, střední jantarová, vysoké červená.
+export function workloadLevelTone(level: "LOW" | "MEDIUM" | "HIGH"): BadgeTone {
+  const tones = { LOW: "green", MEDIUM: "amber", HIGH: "red" } as const;
+  return tones[level];
+}

@@ -252,10 +252,10 @@ export const PERMISSION_CATALOG: readonly PermissionDef[] = [
     kind: "module",
     key: "module.performance",
     label: "Výkonnost",
-    description: "Přehled výkonnosti a plnění plánu hodin.",
+    description:
+      "Přehled výkonnosti zaměstnanců: plnění KPI hodin, úkoly, docházka a vytížení.",
     entitlement: ModuleKey.CORE,
     defaults: LEADERSHIP,
-    comingSoon: true,
   },
   {
     kind: "module",

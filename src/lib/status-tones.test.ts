@@ -11,6 +11,7 @@ import {
   deadlineStatusTone,
   deadlineTypeTone,
   fulfillmentTone,
+  workloadLevelTone,
   isTaskOverdue,
 } from "./status-tones";
 
@@ -73,4 +74,10 @@ test("fulfillmentTone: ≥100 green, ≥75 amber, else red", () => {
   assert.equal(fulfillmentTone(75), "amber");
   assert.equal(fulfillmentTone(74), "red");
   assert.equal(fulfillmentTone(0), "red");
+});
+
+test("workloadLevelTone: LOW green, MEDIUM amber, HIGH red", () => {
+  assert.equal(workloadLevelTone("LOW"), "green");
+  assert.equal(workloadLevelTone("MEDIUM"), "amber");
+  assert.equal(workloadLevelTone("HIGH"), "red");
 });
