@@ -7,6 +7,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import {
   TaskAssigneeRole,
   TaskDeadlineType,
+  TaskEventType,
   TaskPriority,
   TaskStatus,
 } from "@/generated/prisma/enums";
@@ -20,17 +21,23 @@ import {
   requiredString,
   stringList,
 } from "@/lib/form";
+import { pragueTodayIso } from "@/lib/deadlines";
 import {
   queueTaskCommentNotifications,
   queueTaskCreatedNotifications,
+  queueTaskDeadlineChangedNotifications,
   queueTaskPeopleAddedNotifications,
   queueTaskStatusNotifications,
+  rearmTaskDeadlineNotifications,
 } from "@/lib/notifications/notification-service";
 import { resolveVisibleMatterSelection } from "@/lib/matter-integrity.server";
 import { assertUserInOrg, assertUsersInOrg } from "@/lib/org-users";
 import {
+  andWhere,
   assertCanEditRecord,
   assertCanWorkOnTask,
+  canEditRecord,
+  taskVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { assertCanAccessModule } from "@/lib/module-access.server";
@@ -43,8 +50,39 @@ import {
   type NormalizedTaskPeople,
   type TaskPersonRow,
 } from "@/lib/tasks/task-people";
+import {
+  classifyDeadlineChange,
+  clampPostponeReason,
+  validatePostpone,
+} from "@/lib/tasks/deadline-history";
 
 type Tx = Prisma.TransactionClient;
+
+// Výsledek akcí volaných přes useActionState (dialog „Odložit“): chyby
+// validace se vrací inline, chybějící oprávnění také (bez výjimky).
+export type TaskActionState = {
+  ok: boolean;
+  error?: string;
+  submittedAt?: number;
+};
+
+function revalidateTaskPaths(task: {
+  id: string;
+  projectId: string | null;
+  caseId: string | null;
+}) {
+  revalidatePath("/tasks");
+  revalidatePath("/tasks/archive");
+  revalidatePath("/tasks/my");
+  revalidatePath(`/tasks/${task.id}`);
+  if (task.projectId) {
+    revalidatePath(`/projects/${task.projectId}`);
+  }
+  if (task.caseId) {
+    revalidatePath(`/cases/${task.caseId}`);
+  }
+  revalidatePath("/dashboard");
+}
 
 // Řešitelé a dohled z formuláře (TaskPeopleFields): opakovaná pole
 // assigneeIds (hlavní první) a supervisorIds, primaryAssigneeId. Starý
@@ -215,10 +253,25 @@ export async function createTask(formData: FormData) {
     throw new Error("Nemáte aktivní kancelář.");
   }
 
+  // „Duplikovat“: kopie je běžný nový úkol z formuláře. Zdroj se jen
+  // zaznamená (vazba, historie, audit) — a jen když ho uživatel vidí; cizí
+  // nebo neviditelné ID se tiše ignoruje (žádný kanál pro zkoušení ID).
+  const sourceTaskId = optionalString(formData, "sourceTaskId");
+  const source = sourceTaskId
+    ? await prisma.task.findFirst({
+        where: andWhere(
+          { id: sourceTaskId, organizationId },
+          taskVisibilityWhere(currentUser),
+        ),
+        select: { id: true, title: true, projectId: true, caseId: true },
+      })
+    : null;
+
   const task = await prisma.$transaction(async (tx) => {
     const created = await tx.task.create({
       data: {
         organizationId,
+        duplicatedFromTaskId: source?.id ?? null,
         title: requiredString(formData, "title"),
         projectId: matter.projectId,
         caseId: matter.caseId,
@@ -268,9 +321,42 @@ export async function createTask(formData: FormData) {
           assigneeIds: people.assigneeIds,
           supervisorIds: people.supervisorIds,
           responsibleUserId: created.responsibleUserId,
+          deadline: created.deadline?.toISOString() ?? null,
+          duplicatedFromTaskId: created.duplicatedFromTaskId,
         },
       },
     });
+
+    if (source) {
+      await tx.taskEvent.createMany({
+        data: [
+          {
+            organizationId,
+            taskId: created.id,
+            type: TaskEventType.DUPLICATED_FROM,
+            actorId: currentUser.id,
+            relatedTaskId: source.id,
+          },
+          {
+            organizationId,
+            taskId: source.id,
+            type: TaskEventType.DUPLICATED_TO,
+            actorId: currentUser.id,
+            relatedTaskId: created.id,
+          },
+        ],
+      });
+      await tx.auditLog.create({
+        data: auditCreateData({
+          organizationId,
+          entityType: "Task",
+          entityId: source.id,
+          action: "DUPLICATE",
+          changedById: currentUser.id,
+          newValue: { newTaskId: created.id, title: created.title },
+        }),
+      });
+    }
 
     return created;
   });
@@ -283,6 +369,16 @@ export async function createTask(formData: FormData) {
   revalidatePath("/tasks");
   revalidatePath("/tasks/my");
   revalidatePath("/dashboard");
+  if (task.projectId) {
+    revalidatePath(`/projects/${task.projectId}`);
+  }
+  if (task.caseId) {
+    revalidatePath(`/cases/${task.caseId}`);
+  }
+  if (source) {
+    revalidatePath(`/tasks/${source.id}`);
+    revalidatePath("/tasks/archive");
+  }
   // Redirect na detail nového úkolu — stejný vzor jako createSubject/updateTask.
   // Bez něj uživatel zůstal na /tasks se starým renderem a nový úkol v seznamu
   // vůbec neviděl (revalidatePath na force-dynamic stránce nemá co invalidovat
@@ -348,6 +444,9 @@ export async function updateTask(formData: FormData) {
     }
   }
 
+  const newDeadline = optionalDate(formData, "deadline");
+  const deadlineChange = classifyDeadlineChange(oldTask.deadline, newDeadline);
+
   const statusChanged = oldTask.status !== newStatus;
   const completedAt =
     statusChanged && newStatus === TaskStatus.COMPLETED ? new Date() : undefined;
@@ -381,7 +480,7 @@ export async function updateTask(formData: FormData) {
         detailedDescription: optionalString(formData, "detailedDescription"),
         sharepointUrl: optionalString(formData, "sharepointUrl"),
         startDate: optionalDate(formData, "startDate"),
-        deadline: optionalDate(formData, "deadline"),
+        deadline: newDeadline,
         ...(completedAt
           ? { completedAt, archivedAt: completedAt }
           : shouldClearCompleted
@@ -400,6 +499,23 @@ export async function updateTask(formData: FormData) {
           note: "Status změněn při editaci úkolu",
         },
       });
+    }
+
+    // Změna termínu v úpravě úkolu se zapíše do historie úkolu (posun na
+    // pozdější datum se počítá jako odložení) a znovu nastaví připomínky.
+    if (deadlineChange) {
+      await tx.taskEvent.create({
+        data: {
+          organizationId: oldTask.organizationId,
+          taskId,
+          type: deadlineChange,
+          actorId: currentUser.id,
+          oldDeadline: oldTask.deadline,
+          newDeadline,
+          viaEdit: true,
+        },
+      });
+      await rearmTaskDeadlineNotifications(tx, taskId);
     }
 
     // Rozdíl se počítá proti uloženým řádkům. Hlavní řešitel zapsaný jen
@@ -442,20 +558,10 @@ export async function updateTask(formData: FormData) {
     return { task: updated, added: peopleChanges };
   });
 
-  revalidatePath("/tasks");
-  revalidatePath("/tasks/archive");
-  revalidatePath("/tasks/my");
-  revalidatePath(`/tasks/${task.id}`);
-
-  if (task.projectId) {
-    revalidatePath(`/projects/${task.projectId}`);
+  revalidateTaskPaths(task);
+  if (deadlineChange) {
+    revalidatePath("/calendar");
   }
-
-  if (task.caseId) {
-    revalidatePath(`/cases/${task.caseId}`);
-  }
-
-  revalidatePath("/dashboard");
 
   await queueTaskPeopleAddedNotifications({
     task,
@@ -473,7 +579,119 @@ export async function updateTask(formData: FormData) {
     });
   }
 
+  if (deadlineChange) {
+    await queueTaskDeadlineChangedNotifications({
+      task: { ...task, assignees: peopleRows(people) },
+      oldDeadline: oldTask.deadline,
+      newDeadline,
+      actorUserId: currentUser.id,
+      actorName: currentUser.name,
+      mode: "edit",
+    });
+  }
+
   redirect(`/tasks/${task.id}`);
+}
+
+// „Odložit“ — posune termín úkolu na pozdější datum s volitelným důvodem.
+// Odložení se zapíše do historie úkolu (TaskEvent), do auditního logu a pošle
+// upozornění řešitelům, dohledu, odpovědné osobě a zadavateli. Smí ten, kdo
+// smí úkol upravit (dohled ne). Pro useActionState: chyby se vrací inline.
+export async function postponeTask(
+  _previous: TaskActionState,
+  formData: FormData,
+): Promise<TaskActionState> {
+  const submittedAt = Date.now();
+  const prisma = getPrisma();
+  const currentUser = await getCurrentUser();
+  await assertCanAccessModule(currentUser, "module.tasks");
+  const taskId = requiredString(formData, "taskId");
+  const reason = clampPostponeReason(optionalString(formData, "reason"));
+
+  const task = await prisma.task.findFirst({
+    where: andWhere({ id: taskId }, taskVisibilityWhere(currentUser)),
+    select: {
+      id: true,
+      title: true,
+      organizationId: true,
+      deadline: true,
+      archivedAt: true,
+      status: true,
+      createdById: true,
+      assignedToId: true,
+      responsibleUserId: true,
+      projectId: true,
+      caseId: true,
+      assignees: { select: { userId: true, role: true } },
+    },
+  });
+  if (!task) {
+    return { ok: false, error: "Úkol nenalezen.", submittedAt };
+  }
+  if (!canEditRecord(currentUser, "Task", task)) {
+    return {
+      ok: false,
+      error: "Nemáte oprávnění odložit tento úkol.",
+      submittedAt,
+    };
+  }
+
+  const validation = validatePostpone({
+    currentDeadline: task.deadline,
+    newDeadlineIso: optionalString(formData, "newDeadline"),
+    todayIso: pragueTodayIso(),
+    closed: Boolean(task.archivedAt) || task.status === TaskStatus.COMPLETED,
+  });
+  if (!validation.ok) {
+    return { ok: false, error: validation.error, submittedAt };
+  }
+  const { newDeadline } = validation;
+  const oldDeadline = task.deadline;
+
+  await prisma.$transaction(async (tx) => {
+    await tx.task.update({
+      where: { id: task.id },
+      data: { deadline: newDeadline },
+    });
+    await tx.taskEvent.create({
+      data: {
+        organizationId: task.organizationId,
+        taskId: task.id,
+        type: TaskEventType.DEADLINE_POSTPONED,
+        actorId: currentUser.id,
+        oldDeadline,
+        newDeadline,
+        reason,
+      },
+    });
+    await tx.auditLog.create({
+      data: auditCreateData({
+        organizationId: task.organizationId,
+        entityType: "Task",
+        entityId: task.id,
+        action: "POSTPONE",
+        changedById: currentUser.id,
+        oldValue: { deadline: oldDeadline?.toISOString() ?? null },
+        newValue: { deadline: newDeadline.toISOString(), reason },
+      }),
+    });
+    await rearmTaskDeadlineNotifications(tx, task.id);
+  });
+
+  await queueTaskDeadlineChangedNotifications({
+    task,
+    oldDeadline,
+    newDeadline,
+    reason,
+    actorUserId: currentUser.id,
+    actorName: currentUser.name,
+    mode: "postpone",
+  });
+
+  revalidateTaskPaths(task);
+  revalidatePath("/calendar");
+
+  return { ok: true, submittedAt };
 }
 
 export async function updateTaskStatus(formData: FormData) {

@@ -62,3 +62,53 @@ export function filterFormKey(
   );
   return new URLSearchParams(entries).toString() || "all";
 }
+
+// Query parametry, které jen otevírají dialog nového výkazu práce (stránka
+// výkazů: new / hours / duplicate, úkoly: logWork). Po uložení se z cílové
+// adresy odstraní, aby redirect dialog znovu neotevřel.
+export const WORK_LOG_DIALOG_PARAMS = ["logWork", "new", "hours", "duplicate"] as const;
+
+// Interní cesta (`/tasks?x=1#a`) bez dialogových parametrů; hash zůstává.
+export function stripDialogParams(
+  path: string,
+  params: readonly string[] = WORK_LOG_DIALOG_PARAMS,
+): string {
+  const hashIndex = path.indexOf("#");
+  const hash = hashIndex >= 0 ? path.slice(hashIndex) : "";
+  const withoutHash = hashIndex >= 0 ? path.slice(0, hashIndex) : path;
+  const queryIndex = withoutHash.indexOf("?");
+  if (queryIndex < 0) {
+    return path;
+  }
+  const pathname = withoutHash.slice(0, queryIndex);
+  const query = new URLSearchParams(withoutHash.slice(queryIndex + 1));
+  for (const key of params) {
+    query.delete(key);
+  }
+  const rest = query.toString();
+  return `${pathname}${rest ? `?${rest}` : ""}${hash}`;
+}
+
+// Aktuální URL stránky (pathname + query z searchParams) bez vybraných
+// parametrů — pro closeHref/returnTo dialogů otevřených přes URL.
+export function hrefWithout(
+  pathname: string,
+  params: Record<string, SearchParamValue>,
+  drop: readonly string[],
+  extra: Record<string, string> = {},
+): string {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (drop.includes(key) || value === undefined) {
+      continue;
+    }
+    for (const item of Array.isArray(value) ? value : [value]) {
+      query.append(key, item);
+    }
+  }
+  for (const [key, value] of Object.entries(extra)) {
+    query.set(key, value);
+  }
+  const rest = query.toString();
+  return rest ? `${pathname}?${rest}` : pathname;
+}

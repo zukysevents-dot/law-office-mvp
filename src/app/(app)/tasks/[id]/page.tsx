@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { MessageSquare, Save } from "lucide-react";
+import { Clock3, Copy, MessageSquare, Save } from "lucide-react";
 
 import {
   addTaskComment,
@@ -13,12 +13,16 @@ import { ArchiveNotice } from "@/components/archive-notice";
 import { Field, SelectInput, TextArea } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
+import { TaskPostponeDialog } from "@/components/task-postpone-dialog";
+import { TaskTimeline } from "@/components/task-timeline";
+import { TaskWorkLogDialog } from "@/components/task-work-log-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getCurrentUser } from "@/lib/auth";
 import { formatDate, formatDateUtc, formatHours } from "@/lib/format";
+import { firstParam, type SearchParamValue } from "@/lib/search-params";
 import {
   options,
   taskDeadlineTypeLabels,
@@ -39,18 +43,29 @@ import {
   taskPeopleFromRecord,
   taskPeopleSelect,
 } from "@/lib/tasks/task-people";
+import {
+  deadlineIso,
+  summarizeDeadlineHistory,
+} from "@/lib/tasks/deadline-history";
+import { buildTaskTimeline } from "@/lib/tasks/timeline";
+
 import { getPrisma } from "@/lib/prisma";
 import {
+  isTaskOverdue,
   taskDeadlineTypeTone,
   taskStatusTone,
 } from "@/lib/status-tones";
 import { AccessDenied } from "@/components/access-denied";
-import { moduleAccessDenial } from "@/lib/module-access.server";
+import {
+  canAccessModule,
+  moduleAccessDenial,
+} from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
 type TaskDetailProps = {
   params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, SearchParamValue>>;
 };
 
 async function loadTask(id: string) {
@@ -93,6 +108,22 @@ async function loadTask(id: string) {
         orderBy: { createdAt: "desc" },
         include: { author: { select: { name: true } } },
       },
+      // Historie úkolu: odložení / změny termínu a duplikace.
+      events: {
+        orderBy: { createdAt: "asc" },
+        select: {
+          id: true,
+          type: true,
+          oldDeadline: true,
+          newDeadline: true,
+          reason: true,
+          viaEdit: true,
+          createdAt: true,
+          actor: { select: { name: true } },
+          relatedTask: { select: { id: true, title: true } },
+        },
+      },
+      duplicatedFrom: { select: { id: true, title: true } },
       workLogs: {
         where: andWhere(
           { archivedAt: null },
@@ -111,6 +142,32 @@ async function loadTask(id: string) {
     },
   });
 
+  // Související úkoly (duplikace) se odkazují jen tehdy, když je divák vidí;
+  // jinak se nezobrazí ani jejich název.
+  const relatedIds = task
+    ? [
+        ...new Set(
+          [
+            task.duplicatedFrom?.id,
+            ...task.events.map((event) => event.relatedTask?.id),
+          ].filter((value): value is string => Boolean(value)),
+        ),
+      ]
+    : [];
+  const visibleRelated =
+    relatedIds.length > 0
+      ? await prisma.task.findMany({
+          where: andWhere(
+            { id: { in: relatedIds } },
+            taskVisibilityWhere(currentUser),
+          ),
+          select: { id: true },
+        })
+      : [];
+
+  const canLogWork = task
+    ? await canAccessModule(currentUser, "module.workLogs")
+    : false;
   return {
     task,
     people: task ? taskPeopleFromRecord(task) : { assignees: [], supervisors: [] },
@@ -118,6 +175,8 @@ async function loadTask(id: string) {
     canEdit: task ? canEditRecord(currentUser, "Task", task) : false,
     // Status a komentáře: kdo smí upravovat, a navíc dohled.
     canWork: task ? canWorkOnTask(currentUser, task) : false,
+    canLogWork,
+    visibleRelatedIds: visibleRelated.map((item) => item.id),
   };
 }
 
@@ -129,9 +188,14 @@ const emptyTaskDetail: TaskDetailData = {
   canArchive: false,
   canEdit: false,
   canWork: false,
+  canLogWork: false,
+  visibleRelatedIds: [],
 };
 
-export default async function TaskDetailPage({ params }: TaskDetailProps) {
+export default async function TaskDetailPage({
+  params,
+  searchParams,
+}: TaskDetailProps) {
   const accessUser = await getCurrentUser();
   const accessDenied = await moduleAccessDenial(accessUser, "module.tasks");
   if (accessDenied) {
@@ -139,14 +203,37 @@ export default async function TaskDetailPage({ params }: TaskDetailProps) {
   }
 
   const { id } = await params;
-  const result = await safeQuery<TaskDetailData>(emptyTaskDetail, () => loadTask(id));
+  const query = await searchParams;
+  const logWork = Boolean(firstParam(query, "logWork"));
+  const result = await safeQuery<TaskDetailData>(emptyTaskDetail, () =>
+    loadTask(id),
+  );
 
   if (result.databaseReady && !result.data.task) {
     notFound();
   }
 
-  const { task, people, canArchive, canEdit, canWork } = result.data;
+  const {
+    task,
+    people,
+    canArchive,
+    canEdit,
+    canWork,
+    canLogWork,
+    visibleRelatedIds,
+  } = result.data;
   const subject = task?.project?.mainSubject ?? task?.case?.project.mainSubject ?? null;
+  const now = new Date();
+  const visibleRelated = new Set(visibleRelatedIds);
+  const deadlineHistory = summarizeDeadlineHistory(task?.events ?? []);
+  const canPostpone = Boolean(
+    task &&
+      canEdit &&
+      task.deadline &&
+      !task.archivedAt &&
+      task.status !== "COMPLETED",
+  );
+  const logWorkHref = task ? `/tasks/${task.id}?logWork=1` : "";
 
   return (
     <>
@@ -162,6 +249,27 @@ export default async function TaskDetailPage({ params }: TaskDetailProps) {
                     Upravit úkol
                   </ButtonLink>
                 ) : null}
+                {canPostpone && task.deadline ? (
+                  <TaskPostponeDialog
+                    task={{
+                      id: task.id,
+                      title: task.title,
+                      deadlineIso: deadlineIso(task.deadline),
+                      deadlineLabel: formatDateUtc(task.deadline),
+                      overdue: isTaskOverdue(task.deadline, task.status, now),
+                    }}
+                  />
+                ) : null}
+                {canLogWork ? (
+                  <ButtonLink href={logWorkHref} variant="secondary">
+                    <Clock3 className="h-4 w-4" aria-hidden="true" />
+                    Vykázat práci
+                  </ButtonLink>
+                ) : null}
+                <ButtonLink href={`/tasks/new?duplicate=${task.id}`} variant="secondary">
+                  <Copy className="h-4 w-4" aria-hidden="true" />
+                  Duplikovat
+                </ButtonLink>
                 {canArchive ? (
                   <ArchiveActionForm
                     action={task.archivedAt ? restoreTask : archiveTask}
@@ -270,7 +378,51 @@ export default async function TaskDetailPage({ params }: TaskDetailProps) {
                   {taskDeadlineTypeLabels[task.deadlineType]}
                 </Badge>
               </div>
-              <Info label="Deadline" value={formatDateUtc(task.deadline)} />
+              <div>
+                <p className="text-xs font-semibold uppercase text-stone-500">
+                  Deadline
+                </p>
+                <p
+                  className={
+                    isTaskOverdue(task.deadline, task.status, now)
+                      ? "font-semibold text-red-700"
+                      : undefined
+                  }
+                >
+                  {formatDateUtc(task.deadline)}
+                </p>
+                {deadlineHistory.changed ? (
+                  <p className="text-xs text-stone-600" data-testid="deadline-history">
+                    Původní termín: {formatDateUtc(deadlineHistory.originalDeadline)}
+                    {deadlineHistory.postponeCount > 0
+                      ? ` · odloženo ${deadlineHistory.postponeCount}×`
+                      : ""}
+                  </p>
+                ) : null}
+              </div>
+              <Info
+                label="Založeno"
+                value={`${formatDate(task.createdAt)}${
+                  task.createdBy ? ` (${task.createdBy.name})` : ""
+                }`}
+              />
+              {task.duplicatedFromTaskId ? (
+                <div>
+                  <p className="text-xs font-semibold uppercase text-stone-500">
+                    Vytvořeno duplikací z
+                  </p>
+                  {task.duplicatedFrom && visibleRelated.has(task.duplicatedFrom.id) ? (
+                    <Link
+                      href={`/tasks/${task.duplicatedFrom.id}`}
+                      className="font-medium text-emerald-950 hover:underline"
+                    >
+                      {task.duplicatedFrom.title}
+                    </Link>
+                  ) : (
+                    <p>úkolu, ke kterému nemáte přístup</p>
+                  )}
+                </div>
+              ) : null}
               <div className="md:col-span-2">
                 <p className="text-xs font-semibold uppercase text-stone-500">
                   SharePoint URL
@@ -320,6 +472,14 @@ export default async function TaskDetailPage({ params }: TaskDetailProps) {
             </Section>
           ) : null}
           <Section title="Výkazy práce k úkolu">
+            {canLogWork ? (
+              <div className="mb-4">
+                <ButtonLink href={logWorkHref} variant="ghost">
+                  <Clock3 className="h-4 w-4" aria-hidden="true" />
+                  Vykázat práci k úkolu
+                </ButtonLink>
+              </div>
+            ) : null}
             {task.workLogs.length > 0 ? (
               <div className="table-scroll">
                 <table className="w-max min-w-full table-auto">
@@ -385,7 +545,7 @@ export default async function TaskDetailPage({ params }: TaskDetailProps) {
               <EmptyState>Úkol zatím nemá historii změn statusu.</EmptyState>
             )}
           </Section>
-          <Section title="Komentáře">
+          <Section title="Komentáře a historie">
             {canWork ? (
               <form action={addTaskComment} className="mb-4 grid gap-3">
                 <input type="hidden" name="taskId" value={task.id} />
@@ -400,29 +560,14 @@ export default async function TaskDetailPage({ params }: TaskDetailProps) {
                 </div>
               </form>
             ) : null}
-            {task.comments.length > 0 ? (
-              <div className="grid gap-3">
-                {task.comments.map((comment) => (
-                  <article
-                    key={comment.id}
-                    className="rounded-md border border-[#dce4e8] bg-[#F4F7F8] p-3"
-                  >
-                    <div className="flex flex-wrap justify-between gap-2 text-sm">
-                      <p className="font-medium text-[#0e1822]">
-                        {comment.author?.name ?? "Neznámý autor"}
-                      </p>
-                      <p className="text-stone-500">{formatDate(comment.createdAt)}</p>
-                    </div>
-                    <p className="mt-2 whitespace-pre-wrap text-sm">
-                      {comment.comment}
-                    </p>
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <EmptyState>Úkol zatím nemá komentáře.</EmptyState>
-            )}
+            <TaskTimeline
+              items={buildTaskTimeline(task.comments, task.events)}
+              visibleTaskIds={visibleRelated}
+            />
           </Section>
+          {canLogWork && logWork ? (
+            <TaskWorkLogDialog taskId={task.id} closeHref={`/tasks/${task.id}`} />
+          ) : null}
         </>
       ) : (
         <EmptyState>Detail úkolu není dostupný bez databáze.</EmptyState>
@@ -439,3 +584,4 @@ function Info({ label, value }: { label: string; value: React.ReactNode }) {
     </div>
   );
 }
+

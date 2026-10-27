@@ -5,7 +5,9 @@ import {
   filterFormKey,
   filterQuery,
   firstParam,
+  hrefWithout,
   parseDateBoundary,
+  stripDialogParams,
 } from "./search-params";
 
 // parseDateBoundary is the one piece of logic with real branches: regex shape
@@ -102,5 +104,33 @@ test("filterFormKey: array values are all included", () => {
   assert.notEqual(
     filterFormKey({ status: ["A", "B"] }),
     filterFormKey({ status: ["A"] }),
+  );
+});
+
+// stripDialogParams: po uložení výkazu z dialogu se uživatel vrátí na stejnou
+// stránku, ale dialog se nesmí znovu otevřít.
+test("stripDialogParams: odstraní dialogové parametry, ostatní a hash zachová", () => {
+  assert.equal(
+    stripDialogParams("/tasks?status=CREATED&logWork=t1&projectId=p1#list"),
+    "/tasks?status=CREATED&projectId=p1#list",
+  );
+  assert.equal(stripDialogParams("/tasks/t1?logWork=1"), "/tasks/t1");
+  assert.equal(
+    stripDialogParams("/work-logs?new=1&hours=1.5&duplicate=w1&userId=u1"),
+    "/work-logs?userId=u1",
+  );
+  assert.equal(stripDialogParams("/tasks/t1"), "/tasks/t1");
+  assert.equal(stripDialogParams("/tasks/t1#a"), "/tasks/t1#a");
+});
+
+test("hrefWithout: zahodí vybrané parametry a přidá extra", () => {
+  assert.equal(
+    hrefWithout("/tasks", { status: "CREATED", logWork: "t1", tag: ["a", "b"] }, ["logWork"]),
+    "/tasks?status=CREATED&tag=a&tag=b",
+  );
+  assert.equal(hrefWithout("/tasks/my", { logWork: "t1" }, ["logWork"]), "/tasks/my");
+  assert.equal(
+    hrefWithout("/tasks", { status: "CREATED", logWork: "x" }, ["logWork"], { logWork: "t2" }),
+    "/tasks?status=CREATED&logWork=t2",
   );
 });
