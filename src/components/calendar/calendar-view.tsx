@@ -24,7 +24,6 @@ import type { BadgeTone } from "@/components/ui/badge";
 import {
   fetchCalendarEvents,
   fetchOutlookCalendarEvents,
-  refreshOutlookCalendar,
 } from "@/app/actions/calendar";
 import { OutlookConnectButton } from "@/components/calendar/outlook-connect-button";
 import {
@@ -32,7 +31,11 @@ import {
   type OutlookEventDetail,
 } from "@/components/calendar/outlook-event-dialog";
 import type { SerializedCalendarEvent } from "@/lib/calendar-events";
-import type { OutlookFeedSummary } from "@/lib/calendar/outlook-summary";
+import { requestOutlookRefresh } from "@/lib/calendar/outlook-refresh-client";
+import type {
+  OutlookFeedSummary,
+  OutlookRefreshResponse,
+} from "@/lib/calendar/outlook-summary";
 import { toDisplayWallIso } from "@/lib/calendar/windows-time-zones";
 import type { CalendarDefaultView } from "@/lib/calendar-view";
 import { useDismissOnOutside } from "@/lib/use-dismiss-on-outside";
@@ -185,26 +188,33 @@ export function CalendarView({
   const outlookConnected = Boolean(outlookSummary?.connected);
   const outlookStale = Boolean(outlookSummary?.connected && outlookSummary.stale);
 
+  // A fresh summary from a refresh (background or „Obnovit teď"): show its
+  // state and refetch only the Outlook source when new data may have arrived.
+  // Ignored once the user disconnected meanwhile.
+  const applyRefresh = useCallback((result: OutlookRefreshResponse) => {
+    setOutlookSummary((current) => (current?.connected ? result.summary : current));
+    if (result.outcome === "refreshed") {
+      setOutlookVersion((version) => version + 1);
+    }
+  }, []);
+
   // A stale cache (> 10 min) is refreshed in the background once per mount;
-  // the cached events are already shown meanwhile.
+  // the cached events are already shown meanwhile. requestOutlookRefresh is a
+  // plain fetch to a Route Handler — never a server action, which would queue
+  // every event fetch of the calendar behind the up-to-10-s ICS download.
   useEffect(() => {
     if (!outlookStale) {
       return;
     }
-    let cancelled = false;
-    refreshOutlookCalendar(false)
-      .then((fresh) => {
-        if (!cancelled && fresh) {
-          setOutlookSummary(fresh);
-          setOutlookVersion((version) => version + 1);
+    requestOutlookRefresh(false)
+      .then((result) => {
+        if (result) {
+          applyRefresh(result);
         }
       })
       .catch(() => {
         // Non-blocking: the cached events stay visible.
       });
-    return () => {
-      cancelled = true;
-    };
     // Only on mount / when the connection itself changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [outlookConnected]);
@@ -402,9 +412,10 @@ export function CalendarView({
             month: "Měsíc",
             week: "Týden",
             day: "Den",
-            list: "Agenda",
+            // buttonText.list beats views.*.buttonText in FullCalendar, so
+            // the year list must be named here (settings calls it „Rok").
+            list: compact ? "Agenda" : "Rok",
           }}
-          views={{ listYear: { buttonText: "Rok" } }}
           eventSources={eventSources}
           editable={false}
           eventClick={handleEventClick}

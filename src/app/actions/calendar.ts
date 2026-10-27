@@ -13,16 +13,11 @@ import { IcsFetchError, icsErrorMessage } from "@/lib/calendar/ics-errors";
 import { fetchIcsFeed, normalizeIcsUrl, urlHint } from "@/lib/calendar/ics-fetch";
 import { countIcsEvents, parseIcs } from "@/lib/calendar/ics-parse";
 import {
-  getOutlookFeedSummary,
   getOutlookOccurrences,
   OUTLOOK_PROVIDER,
-  refreshOwnOutlookFeed,
   sealSecretUrl,
 } from "@/lib/calendar/outlook-feed.server";
-import {
-  formatEventCount,
-  type OutlookFeedSummary,
-} from "@/lib/calendar/outlook-summary";
+import { formatEventCount } from "@/lib/calendar/outlook-summary";
 import { optionalString } from "@/lib/form";
 import { assertCanAccessModule } from "@/lib/module-access.server";
 import { getPrisma } from "@/lib/prisma";
@@ -107,17 +102,9 @@ export async function fetchOutlookCalendarEvents(
   }
 }
 
-/**
- * Re-download the caller's feed when stale (`force` = „Obnovit teď"). Returns
- * the fresh summary; the calendar then refetches only its Outlook source.
- */
-export async function refreshOutlookCalendar(
-  force = false,
-): Promise<OutlookFeedSummary | null> {
-  const currentUser = await outlookUser();
-  await refreshOwnOutlookFeed(currentUser, { force: force === true });
-  return getOutlookFeedSummary(currentUser);
-}
+// Refreshing the feed is NOT a server action: see
+// src/app/api/calendar/outlook/refresh/route.ts (server actions run one at a
+// time per client, so a slow ICS download would block the event fetches).
 
 export type OutlookFormState = {
   ok: boolean;

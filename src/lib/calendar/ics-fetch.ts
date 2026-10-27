@@ -5,8 +5,11 @@
 //     (private, loopback, link-local, CGNAT, documentation, multicast, reserved
 //     v4/v6 ranges and IPv4-mapped v6 are refused); IP literals are checked
 //     directly (Node skips `lookup` for them);
-//   • the connection is pinned to the validated address via a custom `lookup`
-//     (no DNS-rebinding window), SNI/Host stay the original name;
+//   • the connection is pinned to the validated addresses via a custom
+//     `lookup` (no DNS-rebinding window), SNI/Host stay the original name;
+//     ALL validated addresses are offered (IPv4 first, Node's happy eyeballs
+//     falls back between them), so a host whose first AAAA record is
+//     unreachable (no working IPv6 on the server) still works;
 //   • redirects are followed manually (max 3), each hop re-validated;
 //   • hard 10 s deadline for the whole download, 5 MB cap (Content-Length and
 //     streamed bytes), identity encoding only;
@@ -140,17 +143,36 @@ export type ResolveFn = (hostname: string) => Promise<ResolvedAddress[]>;
 const defaultResolve: ResolveFn = async (hostname) =>
   dnsLookup(hostname, { all: true, verbatim: true });
 
-async function resolvePublicAddress(
+/**
+ * Validated addresses in connection order: IPv4 first (works on every
+ * server; IPv6 is often broken), then IPv6, duplicates removed.
+ */
+export function orderAddresses(addresses: ResolvedAddress[]): ResolvedAddress[] {
+  const seen = new Set<string>();
+  const unique = addresses.filter((entry) => {
+    if (seen.has(entry.address)) {
+      return false;
+    }
+    seen.add(entry.address);
+    return true;
+  });
+  return [
+    ...unique.filter((entry) => entry.family === 4),
+    ...unique.filter((entry) => entry.family !== 4),
+  ];
+}
+
+async function resolvePublicAddresses(
   hostname: string,
   resolve: ResolveFn,
-): Promise<ResolvedAddress> {
+): Promise<ResolvedAddress[]> {
   const literal = hostname.replace(/^\[|\]$/g, "");
   const literalFamily = isIP(literal);
   if (literalFamily) {
     if (isBlockedAddress(literal)) {
       throw new IcsFetchError("BLOCKED_ADDRESS");
     }
-    return { address: literal, family: literalFamily };
+    return [{ address: literal, family: literalFamily }];
   }
   let addresses: ResolvedAddress[];
   try {
@@ -169,16 +191,23 @@ async function resolvePublicAddress(
   if (addresses.some((entry) => isBlockedAddress(entry.address))) {
     throw new IcsFetchError("BLOCKED_ADDRESS");
   }
-  return addresses[0];
+  return orderAddresses(
+    addresses.map((entry) => ({
+      address: entry.address,
+      family: isIP(entry.address) || entry.family,
+    })),
+  );
 }
 
 // --- transport ----------------------------------------------------------------
 
 export type TransportRequest = {
   url: URL;
-  /** Validated address the connection must use. */
+  /** First validated address (= `addresses[0]`). */
   address: string;
   family: number;
+  /** Every validated address, in connection order; nothing else may be used. */
+  addresses: ResolvedAddress[];
   headers: Record<string, string>;
   signal: AbortSignal;
 };
@@ -192,34 +221,88 @@ export type TransportResponse = {
 
 export type Transport = (request: TransportRequest) => Promise<TransportResponse>;
 
-/** node:https with the connection pinned to the pre-validated IP. */
+type LookupCallback = (
+  error: NodeJS.ErrnoException | null,
+  address: string | Array<{ address: string; family: number }>,
+  family?: number,
+) => void;
+
+/**
+ * `lookup` replacement that answers only with the pre-validated addresses
+ * (never a fresh DNS query). With `all` (Node's happy eyeballs /
+ * autoSelectFamily) every address is offered so a dead IPv6 route falls back
+ * to IPv4 and vice versa.
+ */
+export function pinnedLookup(addresses: ResolvedAddress[]) {
+  return (
+    _hostname: string,
+    options: unknown,
+    callback: LookupCallback,
+  ): void => {
+    const opts = (typeof options === "object" && options !== null ? options : {}) as {
+      all?: boolean;
+      family?: number | string;
+    };
+    const wanted =
+      opts.family === 4 || opts.family === "IPv4"
+        ? 4
+        : opts.family === 6 || opts.family === "IPv6"
+          ? 6
+          : 0;
+    const candidates = wanted
+      ? addresses.filter((entry) => entry.family === wanted)
+      : addresses;
+    if (candidates.length === 0) {
+      const error = Object.assign(new Error("No validated address"), {
+        code: "ENOTFOUND",
+      }) as NodeJS.ErrnoException;
+      callback(error, opts.all ? [] : "", undefined);
+      return;
+    }
+    if (opts.all) {
+      callback(
+        null,
+        candidates.map((entry) => ({ address: entry.address, family: entry.family })),
+      );
+      return;
+    }
+    callback(null, candidates[0].address, candidates[0].family);
+  };
+}
+
+/** node:https with the connection pinned to the pre-validated IPs. */
 export const httpsTransport: Transport = (request) =>
   new Promise((resolve, reject) => {
     const hostname = request.url.hostname.replace(/^\[|\]$/g, "");
+    const addresses =
+      request.addresses.length > 0
+        ? request.addresses
+        : [{ address: request.address, family: request.family }];
+    // Passed on to tls/net.connect (not declared on RequestOptions' type).
+    const options: https.RequestOptions & {
+      autoSelectFamily?: boolean;
+      autoSelectFamilyAttemptTimeout?: number;
+    } = {
+      method: "GET",
+      host: hostname,
+      port: 443,
+      path: `${request.url.pathname}${request.url.search}`,
+      headers: request.headers,
+      // SNI must be a host name (not an IP literal).
+      servername: isIP(hostname) ? undefined : hostname,
+      agent: false,
+      signal: request.signal,
+      // Try every validated address (happy eyeballs), not just the first.
+      autoSelectFamily: addresses.length > 1,
+      autoSelectFamilyAttemptTimeout: 500,
+      lookup: pinnedLookup(addresses) as unknown as https.RequestOptions["lookup"],
+    };
     const req = https.request(
-      {
-        method: "GET",
-        host: hostname,
-        port: 443,
-        path: `${request.url.pathname}${request.url.search}`,
-        headers: request.headers,
-        // SNI must be a host name (not an IP literal).
-        servername: isIP(hostname) ? undefined : hostname,
-        agent: false,
-        signal: request.signal,
-        lookup: (_host, options, callback) => {
-          const all = typeof options === "object" && options !== null && "all" in options && options.all;
-          if (all) {
-            (callback as unknown as (
-              error: NodeJS.ErrnoException | null,
-              addresses: Array<{ address: string; family: number }>,
-            ) => void)(null, [{ address: request.address, family: request.family }]);
-          } else {
-            callback(null, request.address, request.family);
-          }
-        },
-      },
+      options,
       (response) => {
+        // A connection reset mid-body ("aborted") must never become an
+        // uncaught 'error' event; the body iterator reports it instead.
+        response.on("error", () => {});
         resolve({
           status: response.statusCode ?? 0,
           headers: response.headers,
@@ -345,8 +428,8 @@ export async function fetchIcsFeed(
 
   try {
     for (let hop = 0; ; hop += 1) {
-      const target = await untilAborted(
-        resolvePublicAddress(url.hostname, resolve),
+      const targets = await untilAborted(
+        resolvePublicAddresses(url.hostname, resolve),
         controller.signal,
       );
       const headers: Record<string, string> = {
@@ -364,8 +447,9 @@ export async function fetchIcsFeed(
       const response = await untilAborted(
         transport({
           url,
-          address: target.address,
-          family: target.family,
+          address: targets[0].address,
+          family: targets[0].family,
+          addresses: targets,
           headers,
           signal: controller.signal,
         }),
@@ -381,8 +465,24 @@ export async function fetchIcsFeed(
         if (!location) {
           throw new IcsFetchError("HTTP_STATUS", response.status);
         }
+        let next: URL;
         try {
-          url = normalizeIcsUrl(new URL(location, url).toString(), { fromUser: false });
+          next = new URL(location, url);
+        } catch {
+          throw new IcsFetchError("BLOCKED_ADDRESS");
+        }
+        // Outlook sends an unpublished / revoked link to its error page
+        // (…/errorFE.aspx?httpCode=404): report the real status, not the
+        // error page's own one.
+        if (/\/errorfe\.aspx$/i.test(next.pathname)) {
+          const code = Number(next.searchParams.get("httpCode"));
+          throw new IcsFetchError(
+            "HTTP_STATUS",
+            Number.isInteger(code) && code >= 400 && code < 600 ? code : 404,
+          );
+        }
+        try {
+          url = normalizeIcsUrl(next.toString(), { fromUser: false });
         } catch {
           // Redirect to http://, another port, credentials… → refused.
           throw new IcsFetchError("BLOCKED_ADDRESS");

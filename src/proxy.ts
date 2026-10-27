@@ -58,7 +58,8 @@ export async function proxy(request: NextRequest) {
 export const config = {
   // Negative matcher: every route is behind the front door BY DEFAULT — a
   // newly added app route is session-gated without touching this file.
-  // Excluded: Next internals, /api (only /api/internal exists; Bearer-auth),
+  // Excluded: Next internals, /api (each route authenticates itself:
+  // /api/internal = Bearer secret, /api/calendar = session cookie),
   // and static files (anything with a file extension).
   matcher: ["/((?!_next/|api/|.*\\..*).*)"],
 };

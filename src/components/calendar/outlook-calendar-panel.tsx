@@ -5,13 +5,13 @@ import { useActionState, useState, useTransition, type ReactNode } from "react";
 
 import {
   disconnectOutlookCalendar,
-  refreshOutlookCalendar,
   saveOutlookCalendarUrl,
   type OutlookFormState,
 } from "@/app/actions/calendar";
 import { Field, TextInput } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialogButton } from "@/components/ui/confirm-dialog";
+import { requestOutlookRefresh } from "@/lib/calendar/outlook-refresh-client";
 import type { OutlookFeedSummary } from "@/lib/calendar/outlook-summary";
 
 const initialState: OutlookFormState = { ok: false };
@@ -101,6 +101,7 @@ export function OutlookCalendarPanel({
   const [handledSubmit, setHandledSubmit] = useState<number | undefined>(undefined);
   const [refreshing, startRefresh] = useTransition();
   const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [refreshInfo, setRefreshInfo] = useState<string | null>(null);
 
   // The page re-renders after save/disconnect → take the new server summary.
   if (summaryProp !== previousProp) {
@@ -113,14 +114,27 @@ export function OutlookCalendarPanel({
     setReplacing(false);
   }
 
+  // A Route Handler fetch (not a server action), so a slow Outlook server
+  // never holds back the calendar's own event fetches.
   function refreshNow() {
     setRefreshError(null);
+    setRefreshInfo(null);
     startRefresh(async () => {
       try {
-        const fresh = await refreshOutlookCalendar(true);
-        if (fresh) {
-          setSummary(fresh);
-          onSummaryChange?.(fresh);
+        const result = await requestOutlookRefresh(true);
+        if (!result) {
+          throw new Error("No refresh result");
+        }
+        setSummary(result.summary);
+        onSummaryChange?.(result.summary);
+        if (result.outcome === "throttled") {
+          setRefreshInfo(
+            "Kalendář byl obnoven před chvílí. Znovu ho můžete obnovit nejdříve za minutu.",
+          );
+        } else if (result.outcome === "locked") {
+          setRefreshInfo("Kalendář se právě obnovuje. Výsledek se za chvíli zobrazí.");
+        } else if (result.outcome === "refreshed" || result.outcome === "not-modified") {
+          setRefreshInfo("Kalendář je aktuální.");
         }
       } catch {
         setRefreshError("Kalendář se nepodařilo obnovit. Zkuste to prosím později.");
@@ -132,7 +146,8 @@ export function OutlookCalendarPanel({
 
   return (
     <div className="grid gap-4">
-      {state.ok && state.message ? (
+      {/* Only while connected: after „Odpojit" the old banner would lie. */}
+      {state.ok && state.message && summary.connected ? (
         <Notice tone="green" role="status">
           {state.message}
         </Notice>
@@ -163,6 +178,11 @@ export function OutlookCalendarPanel({
             <Notice tone="amber">
               Odkaz je uložený nešifrovaně (chybí DATA_ENCRYPTION_KEY). Po nastavení klíče
               se při příští aktualizaci zašifruje.
+            </Notice>
+          ) : null}
+          {refreshInfo ? (
+            <Notice tone="blue" role="status">
+              {refreshInfo}
             </Notice>
           ) : null}
           {refreshError ? (
@@ -209,7 +229,8 @@ export function OutlookCalendarPanel({
 
       {showForm ? (
         <form action={formAction} className="grid gap-3">
-          {!summary.encryptionReady ? (
+          {/* The connected block already warns about the unencrypted link. */}
+          {!summary.encryptionReady && !(summary.connected && !summary.encrypted) ? (
             <Notice tone="amber">
               Šifrovací klíč (DATA_ENCRYPTION_KEY) není nastaven – odkaz se uloží
               nešifrovaně. Požádejte správce o nastavení klíče.

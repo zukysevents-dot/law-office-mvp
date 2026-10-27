@@ -5,6 +5,10 @@ import "server-only";
 // owner ever reads it (every query is keyed by the caller's own userId +
 // organizationId — never by a role-based visibility scope).
 
+import {
+  OrganizationMemberStatus,
+  OrganizationStatus,
+} from "@/generated/prisma/enums";
 import { decryptSecret, encryptSecret, isEncryptionConfigured } from "@/lib/crypto";
 import {
   IcsFetchError,
@@ -22,6 +26,7 @@ import {
 import {
   OUTLOOK_NOT_CONNECTED,
   type OutlookFeedSummary,
+  type RefreshOutcome,
 } from "@/lib/calendar/outlook-summary";
 import { getPrisma } from "@/lib/prisma";
 
@@ -111,14 +116,7 @@ export async function getOutlookFeedSummary(
 
 // --- refresh --------------------------------------------------------------------
 
-export type RefreshOutcome =
-  | "refreshed"
-  | "not-modified"
-  | "failed"
-  | "fresh"
-  | "throttled"
-  | "locked"
-  | "missing";
+export type { RefreshOutcome };
 
 /**
  * Download the feed again when its cache is stale (or `force`). Concurrency-
@@ -267,15 +265,40 @@ export async function refreshStaleOutlookFeeds({
   now = new Date(),
 }: { limit?: number; concurrency?: number; now?: Date } = {}) {
   const threshold = new Date(now.getTime() - OUTLOOK_CRON_STALE_MS);
-  const feeds = await getPrisma().calendarFeed.findMany({
+  const candidates = await getPrisma().calendarFeed.findMany({
     where: {
       OR: [{ fetchedAt: null }, { fetchedAt: { lt: threshold } }],
       AND: [{ OR: [{ lastAttemptAt: null }, { lastAttemptAt: { lt: threshold } }] }],
+      // Only people who can still open the calendar: an active account with
+      // an active membership in an active office (deactivated users' feeds
+      // stay stored but are no longer downloaded).
+      organization: { status: OrganizationStatus.ACTIVE },
+      user: {
+        active: true,
+        memberships: { some: { status: OrganizationMemberStatus.ACTIVE } },
+      },
     },
     orderBy: [{ lastAttemptAt: { sort: "asc", nulls: "first" } }],
     take: limit,
-    select: { id: true },
+    select: {
+      id: true,
+      organizationId: true,
+      user: {
+        select: {
+          memberships: {
+            where: { status: OrganizationMemberStatus.ACTIVE },
+            select: { organizationId: true },
+          },
+        },
+      },
+    },
   });
+  // Exact check: the membership must be in the feed's own office.
+  const feeds = candidates.filter((feed) =>
+    feed.user.memberships.some(
+      (membership) => membership.organizationId === feed.organizationId,
+    ),
+  );
 
   const summary = { checked: feeds.length, refreshed: 0, notModified: 0, failed: 0, skipped: 0 };
   let cursor = 0;

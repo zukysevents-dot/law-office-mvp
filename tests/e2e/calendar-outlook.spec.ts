@@ -214,3 +214,69 @@ test("soudní jednání ukazuje v týdnu skutečný čas", async ({ page }) => {
   await showWeek(page);
   await expect(page.locator(".fc-event", { hasText: court })).toContainText("9:30");
 });
+
+test("zastaralý Outlook kalendář nezdrží lhůty ani události z mezipaměti", async ({ browser }) => {
+  // Stale cache (> 10 min) → the calendar refreshes it in the background. The
+  // refresh is held for 8 s below (= a slow Outlook server); deadlines and
+  // the cached Outlook events must show meanwhile, not after it.
+  await injectLawyerFeed();
+  await withDb((client) =>
+    client.query(
+      `UPDATE "calendarFeeds"
+          SET "fetchedAt" = now() - interval '20 minutes', "lastAttemptAt" = NULL,
+              "refreshLockedAt" = NULL, "secretUrl" = 'https://127.0.0.1/calendar.ics',
+              "isEncrypted" = false
+        WHERE "id" = 'e2e-feed-lawyer'`,
+    ),
+  );
+  const deadlineTitle = e2eName("lhuta-vedle-outlooku");
+  await withDb((client) =>
+    client.query(
+      `INSERT INTO "deadlines"
+         ("id", "organizationId", "caseId", "type", "status", "title", "dueDate",
+          "responsibleUserId", "updatedAt")
+       SELECT $1, c."organizationId", c."id", 'PROCEDURAL', 'OPEN', $2, $3::date, u."id", now()
+       FROM "cases" c
+       JOIN "users" u ON u."email" = $4
+       WHERE c."archivedAt" IS NULL AND c."organizationId" IN (
+         SELECT m."organizationId" FROM "organizationMembers" m
+         WHERE m."userId" = u."id" AND m."status" = 'ACTIVE')
+       ORDER BY c."createdAt" ASC
+       LIMIT 1`,
+      [`e2e-dl-${Math.random().toString(36).slice(2, 10)}`, deadlineTitle, pragueToday(), LAWYER_EMAIL],
+    ),
+  );
+
+  const page = await pageAs(browser, "lawyer");
+  let releaseRefresh: () => void = () => {};
+  const held = new Promise<void>((resolve) => {
+    releaseRefresh = resolve;
+  });
+  let refreshRequests = 0;
+  await page.route("**/api/calendar/outlook/refresh", async (route) => {
+    refreshRequests += 1;
+    await Promise.race([held, new Promise((resolve) => setTimeout(resolve, 8_000))]);
+    await route.continue().catch(() => {});
+  });
+
+  await page.goto("/calendar");
+  await expectNoErrorPage(page);
+  // Year list: no „+N další" collapsing of a busy day.
+  await page.getByRole("button", { name: "Rok", exact: true }).click();
+  // Well before the held refresh (8 s) would finish.
+  await expect(page.locator(".fc-event", { hasText: deadlineTitle })).toBeVisible({
+    timeout: 5_000,
+  });
+  await expect(outlookEvent(page, "e2e-outlook-porada").first()).toBeVisible({ timeout: 5_000 });
+  expect(refreshRequests).toBe(1);
+
+  // Once the refresh answers (the guard refuses 127.0.0.1), the Outlook button
+  // reports the failure without a reload.
+  const refreshed = page.waitForResponse("**/api/calendar/outlook/refresh");
+  releaseRefresh();
+  expect((await refreshed).status()).toBe(200);
+  await expect(
+    page.getByRole("button", { name: /poslední aktualizace se nezdařila/ }),
+  ).toBeVisible();
+  await page.context().close();
+});

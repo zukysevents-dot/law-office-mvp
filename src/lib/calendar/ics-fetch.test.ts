@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import net from "node:net";
 import test from "node:test";
 
 import { OUTLOOK_SAMPLE_ICS } from "@/lib/calendar/__fixtures__/outlook-sample";
@@ -12,6 +13,8 @@ import {
   fetchIcsFeed,
   isBlockedAddress,
   normalizeIcsUrl,
+  orderAddresses,
+  pinnedLookup,
   urlHint,
   type ResolveFn,
   type Transport,
@@ -308,6 +311,111 @@ test("valid redirects are followed (relative Location), at most 3", async () => 
     isCode("TOO_MANY_REDIRECTS"),
   );
   assert.equal(loop.calls.length, 4);
+});
+
+test("Outlook's error page redirect reports the real status (link no longer published)", async () => {
+  const { transport, calls } = scriptedTransport([
+    response(302, "", {
+      location: "https://outlook.office365.com/owa/calendar/errorFE.aspx?httpCode=404",
+    }),
+  ]);
+  await assert.rejects(
+    fetchIcsFeed(OUTLOOK_URL, { resolve: publicResolve, transport }),
+    isCode("HTTP_STATUS", 404),
+  );
+  // The error page itself is never downloaded.
+  assert.equal(calls.length, 1);
+});
+
+// --- several DNS answers (IPv6 first, broken IPv6 on the server) ----------------
+
+test("every validated address is handed to the transport, IPv4 first", async () => {
+  const { transport, calls } = scriptedTransport([response(200, OUTLOOK_SAMPLE_ICS)]);
+  const result = await fetchIcsFeed(OUTLOOK_URL, {
+    resolve: async () => [
+      { address: "2a00:1450:4014:800::200e", family: 6 },
+      { address: "142.251.209.14", family: 4 },
+      { address: "2603:1026::1", family: 6 },
+      { address: "142.251.209.14", family: 4 },
+      { address: "52.97.0.1", family: 4 },
+    ],
+    transport,
+  });
+  assert.equal(result.status, "ok");
+  assert.deepEqual(calls[0].addresses, [
+    { address: "142.251.209.14", family: 4 },
+    { address: "52.97.0.1", family: 4 },
+    { address: "2a00:1450:4014:800::200e", family: 6 },
+    { address: "2603:1026::1", family: 6 },
+  ]);
+  assert.equal(calls[0].address, "142.251.209.14");
+  assert.equal(calls[0].family, 4);
+});
+
+test("orderAddresses keeps IPv6-only answers", () => {
+  assert.deepEqual(orderAddresses([{ address: "2603:1026::1", family: 6 }]), [
+    { address: "2603:1026::1", family: 6 },
+  ]);
+});
+
+test("pinnedLookup answers only with the validated addresses", () => {
+  const addresses = [
+    { address: "52.97.0.1", family: 4 },
+    { address: "2603:1026::1", family: 6 },
+  ];
+  const lookup = pinnedLookup(addresses);
+  const results: unknown[] = [];
+  lookup("evil.example", { all: true }, (error, address) => results.push([error, address]));
+  lookup("evil.example", {}, (error, address, family) => results.push([error, address, family]));
+  lookup("evil.example", { all: true, family: 6 }, (error, address) =>
+    results.push([error, address]),
+  );
+  lookup("evil.example", { family: 4 }, (error, address, family) =>
+    results.push([error, address, family]),
+  );
+  assert.deepEqual(results, [
+    [null, addresses],
+    [null, "52.97.0.1", 4],
+    [null, [{ address: "2603:1026::1", family: 6 }]],
+    [null, "52.97.0.1", 4],
+  ]);
+
+  let failure: NodeJS.ErrnoException | null = null;
+  pinnedLookup([{ address: "52.97.0.1", family: 4 }])("x", { family: 6 }, (error) => {
+    failure = error;
+  });
+  assert.equal((failure as NodeJS.ErrnoException | null)?.code, "ENOTFOUND");
+});
+
+test("with pinnedLookup Node falls back to the next address when the first fails", async () => {
+  // Local only: the server listens on 127.0.0.1; the first offered address
+  // (::1, same port) refuses — like a dead IPv6 route to Outlook/Google.
+  const server = net.createServer((socket) => socket.end("ok"));
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as net.AddressInfo;
+  try {
+    const data = await new Promise<string>((resolve, reject) => {
+      const socket = net.connect({
+        host: "calendar.example",
+        port,
+        autoSelectFamily: true,
+        autoSelectFamilyAttemptTimeout: 250,
+        lookup: pinnedLookup([
+          { address: "::1", family: 6 },
+          { address: "127.0.0.1", family: 4 },
+        ]) as unknown as net.LookupFunction,
+      });
+      let received = "";
+      socket.on("data", (chunk) => {
+        received += chunk.toString();
+      });
+      socket.on("end", () => resolve(received));
+      socket.on("error", reject);
+    });
+    assert.equal(data, "ok");
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
 });
 
 test("Content-Length over the limit → TOO_LARGE", async () => {

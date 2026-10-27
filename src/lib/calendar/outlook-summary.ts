@@ -17,6 +17,22 @@ export type OutlookFeedSummary = {
   encryptionReady: boolean;
 };
 
+/** Result of one refresh attempt of a feed. */
+export type RefreshOutcome =
+  | "refreshed"
+  | "not-modified"
+  | "failed"
+  | "fresh"
+  | "throttled"
+  | "locked"
+  | "missing";
+
+/** Body of POST /api/calendar/outlook/refresh. */
+export type OutlookRefreshResponse = {
+  outcome: RefreshOutcome;
+  summary: OutlookFeedSummary;
+};
+
 export const OUTLOOK_NOT_CONNECTED: OutlookFeedSummary = {
   connected: false,
   urlHint: null,
