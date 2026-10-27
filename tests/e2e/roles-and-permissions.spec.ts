@@ -116,6 +116,7 @@ const guardedRoutes: Array<{ route: string; roles: RoleKey[] }> = [
   { route: "/billing/retainers", roles: ["trainee"] },
   { route: "/settings/permissions", roles: ["trainee", "lawyer"] },
   { route: "/settings/assignments", roles: ["trainee", "lawyer"] },
+  { route: "/performance", roles: ["trainee", "lawyer"] },
 ];
 
 for (const guarded of guardedRoutes) {
@@ -693,6 +694,79 @@ test.describe("praktikant a matice oprávnění", () => {
     ).toHaveCount(0);
     await intern.context().close();
   });
+  test("výjimka uživatele zpřístupní praktikantovi Výkonnost a jde zrušit", async ({
+    page,
+    browser,
+  }) => {
+    // Výkonnost (balík 08) je ve výchozím stavu jen pro Admin + Partner;
+    // v matici je řádek editovatelný (už ne „připravujeme“).
+    await page.goto("/settings/permissions");
+    await expect(
+      page.getByRole("checkbox", { name: "Výkonnost – Advokát", exact: true }),
+    ).not.toBeChecked();
+    await expect(
+      page.getByRole("checkbox", { name: "Výkonnost – Partner", exact: true }),
+    ).toBeChecked();
+
+    const intern = await pageAs(browser, "intern");
+    await intern.goto("/performance");
+    await expectAccessDenied(intern);
+    await expect(
+      intern.getByRole("navigation", { name: "Hlavní navigace" }).getByRole("link", { name: "Výkonnost" }),
+    ).toHaveCount(0);
+
+    await page
+      .getByRole("link", { name: "Upravit výjimky – Praktikant Demo" })
+      .click();
+    await expect(
+      page.getByRole("heading", { name: "Oprávnění: Praktikant Demo", level: 1 }),
+    ).toBeVisible();
+
+    try {
+      await page
+        .getByRole("group", { name: "Výkonnost", exact: true })
+        .getByLabel("Povolit")
+        .check();
+      await submitAndAwaitAction(
+        page,
+        page.getByRole("button", { name: "Uložit výjimky" }),
+      );
+      await expect(
+        page.getByRole("status").filter({ hasText: "Výjimky uloženy." }),
+      ).toBeVisible();
+
+      await intern.goto("/performance");
+      await expect(
+        intern.getByRole("heading", { name: "Výkonnost", level: 1 }),
+      ).toBeVisible();
+      await expect(
+        intern.getByRole("navigation", { name: "Hlavní navigace" }).getByRole("link", { name: "Výkonnost" }),
+      ).toBeVisible();
+      // Praktikant má užší rozsah dat — stránka to řekne.
+      await expect(
+        intern.getByText(/jen záznamy ve vašem rozsahu dat/),
+      ).toBeVisible();
+      // Docházku (HR) bez „Spravuje HR a docházku“ nevidí.
+      await expect(
+        intern.getByRole("columnheader", { name: "Docházka" }),
+      ).toHaveCount(0);
+    } finally {
+      await page
+        .getByRole("button", { name: "Zrušit všechny výjimky" })
+        .click();
+      const dialog = page.getByRole("dialog", { name: "Zrušit všechny výjimky" });
+      await submitAndAwaitAction(
+        page,
+        dialog.getByRole("button", { name: "Zrušit výjimky" }),
+      );
+      await expect(dialog).toBeHidden();
+    }
+
+    await intern.goto("/performance");
+    await expectAccessDenied(intern);
+    await intern.context().close();
+  });
+
   test("praktikant se „Zakládá a upravuje subjekty“ sazby subjektu nevidí ani neuloží", async ({
     page,
     browser,

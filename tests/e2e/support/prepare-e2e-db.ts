@@ -263,6 +263,23 @@ async function main() {
       await prisma.user.deleteMany({ where: { id: { in: staleUserIds } } });
     }
 
+    // KPI a Výkonnost (performance-kpi.spec.ts): plán hodin se v seedu
+    // nenastavuje, testy si ho zapisují samy — každý běh začíná bez plánu.
+    // HR záznamy a dočasné widgety testů nesou prefix `e2e-` (note / id).
+    await prisma.userHoursPlan.deleteMany({});
+    await prisma.hrAttendanceRecord.deleteMany({
+      where: { note: { startsWith: E2E_PREFIX } },
+    });
+    await prisma.hrAbsenceRequest.deleteMany({
+      where: { note: { startsWith: E2E_PREFIX } },
+    });
+    await prisma.dashboardWidget.deleteMany({
+      where: { id: { startsWith: E2E_PREFIX } },
+    });
+    await prisma.auditLog.deleteMany({
+      where: { entityType: { in: ["UserHoursPlan", "Performance"] } },
+    });
+
     // Login throttling is per-IP (30 attempts / 15 min) and every run signs six
     // users in. Start from a clean ledger so a rerun is never rate-limited.
     await prisma.loginAttempt.deleteMany({});

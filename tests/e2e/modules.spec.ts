@@ -51,6 +51,7 @@ const modules: Array<{
     section: "Filtry",
   },
   { route: "/reports/wip", heading: "Rozpracovanost (WIP)", section: "Filtry" },
+  { route: "/performance", heading: "Výkonnost", section: "Filtry" },
   { route: "/references", heading: "Reference", section: "Seznam referencí" },
   { route: "/deadlines", heading: "Lhůtník", section: "Po termínu" },
   { route: "/calendar", heading: "Kalendář" },

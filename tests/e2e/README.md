@@ -68,6 +68,7 @@ s heslem `demo1234` (viz `SEED_USER_PASSWORD`).
 | `teams-and-assignees.spec.ts` | Týmy a řešitelé: založení a přejmenování týmu, duplicitní název, hromadné přiřazení / odebrání týmu (potvrzení), sloupec a filtr „Řešitelé“, detail projektu a případu (zdědění řešitelé), notifikace, audit |
 | `task-people.spec.ts` | Úkoly: více řešitelů (hlavní první) a dohled, rozbalení týmu na členy, dohled komentuje a mění status, ale neupraví, „Moje úkoly“ s filtrem role, notifikace (DB), audit lidí na úkolu, filtry Řešitel/Dohled, CSV export, „Moje úkoly“ ve výběru úkolu u výkazu, dashboard |
 | `task-productivity.spec.ts` | Úkoly: duplikace („uložit jako“, odkaz na zdroj, komentáře se nekopírují), „Vykázat práci“ z detailu i seznamu (předvyplněná věc a úkol, koncipient bez sazby, dokončený úkol), filtry archivu (měsíc, tento měsíc, vlastní rozsah, datum založení, řešitel, zadavatel, projekt), odložení s důvodem (historie, štítek „odloženo N×“, notifikace, audit, znovunastavení připomínky), dohled neodkládá |
+| `performance-kpi.spec.ts` | KPI a Výkonnost: plán hodin se 4 cíli (uložení bez reloadu, validace, audit), graf „Přehled hodin“ na dashboardu (sloupce mají výšku, cílové značky, Týden/Měsíc, koncipient bez částek, mobil), stránka Výkonnost (přesná čísla ve fixním okně 3.–9. 3. 2025, filtry, řazení, předchozí období, úkoly po termínu u více řešitelů, detail osoby, docházka a absence z HR, export XLSX + audit, přístup partner / advokát / koncipient, mobil) |
 | `users-invitations.spec.ts` | založení uživatele, pozvánka (SMTP vypnuté), znovuodeslání, `/set-password` |
 | `deadlines-fulfilment.spec.ts` | lhůty: „Splněno…“ s poznámkou, „Splnit a archivovat“, záložky Aktivní/Splněné/Archiv, obnovení, vrácení mezi aktivní, „Později“, žádná upozornění po splnění, role, detail spisu, kalendář, audit |
 | `calendar-outlook.spec.ts` | Outlook (ICS): návod a české chyby, SSRF ochrana (jen IP adresy, bez sítě), události z vloženého feedu (čas, celodenní, opakování), přepínač, detail jen pro čtení, izolace mezi uživateli, maska odkazu, odpojení; čas soudního jednání |
@@ -93,6 +94,15 @@ Pomocné funkce jsou v `tests/e2e/support/helpers.ts`.
   „Sporná agenda“ jen čte. Widget „Moje úkoly“ koncipienta si test dočasně
   vloží a zase smaže (jen E2E databáze).
 
+- **KPI a Výkonnost.** `performance-kpi.spec.ts` ověřuje přesná čísla jen ve
+  fixním historickém okně 3.–9. 3. 2025, kam jiné specy nic nezapisují; v
+  aktuálním týdnu/měsíci jen „> 0“ / „≥“, protože paralelní specy přidávají
+  advokátovi výkazy a úkoly. Plán hodin advokáta (40 / 30 / 160 / 120 h) platí
+  jen během souboru (`afterAll` plány smaže, `prepare-e2e-db.ts` maže všechny
+  `userHoursPlans` na začátku běhu). Seedovaní uživatelé v už seedované DB mají
+  legacy widget „Hodiny tento měsíc“ — graf „Přehled hodin“ si test dočasně
+  vloží (id `e2e-…`). Výjimka „Výkonnost“ pro praktikanta se ověřuje v sériovém
+  bloku `roles-and-permissions.spec.ts`.
 - **Žádný route-level `loading.tsx`.** V Next 16.2.9 způsoboval
   `src/app/(app)/loading.tsx` (a stejné soubory v `(portal)` a `admin`), že se
   po server action s `revalidatePath()` / `redirect()` i po `router.refresh()`
