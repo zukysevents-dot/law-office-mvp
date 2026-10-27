@@ -7,6 +7,7 @@ import {
   updateNotificationPreference,
   updateUserHoursPlan,
 } from "@/app/actions/users";
+import { OutlookCalendarPanel } from "@/components/calendar/outlook-calendar-panel";
 import { CreateUserForm } from "@/components/create-user-form";
 import { Field, SelectInput, TextInput } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
@@ -30,6 +31,9 @@ import { loadPrivilegeTargets } from "@/lib/permission-store.server";
 import { getPrisma } from "@/lib/prisma";
 import type { UserRole } from "@/generated/prisma/enums";
 import { calendarViewOptions, normalizeCalendarView } from "@/lib/calendar-view";
+import { getOutlookFeedSummary } from "@/lib/calendar/outlook-feed.server";
+import type { OutlookFeedSummary } from "@/lib/calendar/outlook-summary";
+import { canAccessModule } from "@/lib/module-access.server";
 import { getAresBaseUrl, isAresLookupEnabled } from "@/lib/ares/config";
 import {
   getGraphConfigForOrg,
@@ -75,6 +79,8 @@ type SettingsData = {
   // kterým smí resetovat heslo (bez eskalace práv — viz privilegedTargetDenial).
   assignableRoles: UserRole[];
   resettableUserIds: string[];
+  /** Own Outlook calendar connection (null = calendar module not available). */
+  outlook: OutlookFeedSummary | null;
   integrations: {
     aresEnabled: boolean;
     aresHost: string;
@@ -166,6 +172,7 @@ export default async function SettingsPage() {
       canManagePermissions: false,
       assignableRoles: [],
       resettableUserIds: [],
+      outlook: null,
       integrations: envIntegrationStatus(),
     },
     async () => {
@@ -255,6 +262,9 @@ export default async function SettingsPage() {
         canManagePermissions: canManagePermissions(currentUser),
         assignableRoles: privilegeTargets.assignableRoles,
         resettableUserIds: privilegeTargets.manageableUserIds,
+        outlook: (await canAccessModule(currentUser, "module.calendar"))
+          ? await getOutlookFeedSummary(currentUser)
+          : null,
         integrations: await integrationConfigStatus(
           currentUser.organizationId,
         ),
@@ -298,6 +308,12 @@ export default async function SettingsPage() {
             </Field>
             <Button type="submit" pendingLabel="Ukládám…">Uložit kalendář</Button>
           </form>
+          {result.data.outlook ? (
+            <div className="mt-6 grid max-w-2xl gap-3 border-t border-[#dce4e8] pt-5">
+              <h3 className="text-sm font-semibold text-[#0e1822]">Outlook kalendář</h3>
+              <OutlookCalendarPanel summary={result.data.outlook} />
+            </div>
+          ) : null}
         </Section>
       ) : null}
       {preference ? (

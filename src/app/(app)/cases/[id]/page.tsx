@@ -162,7 +162,7 @@ async function loadCase(id: string) {
     legalCase != null &&
     (await canAccessModule(currentUser, "module.deadlines"));
 
-  const [deadlines, hearings, memberRows] = deadlinesEnabled
+  const [deadlines, hearings, memberRows, archivedDeadlineCount] = deadlinesEnabled
     ? await Promise.all([
         prisma.deadline.findMany({
           where: andWhere(
@@ -177,7 +177,10 @@ async function loadCase(id: string) {
             status: true,
             title: true,
             dueDate: true,
+            completedAt: true,
+            completionNote: true,
             responsibleUser: { select: { name: true } },
+            completedBy: { select: { name: true } },
           },
         }),
         prisma.courtHearing.findMany({
@@ -203,8 +206,14 @@ async function loadCase(id: string) {
           orderBy: { user: { name: "asc" } },
           select: { user: { select: { id: true, name: true } } },
         }),
+        prisma.deadline.count({
+          where: andWhere(
+            { caseId: id, archivedAt: { not: null } },
+            deadlineVisibilityWhere(currentUser),
+          ),
+        }),
       ])
-    : [[], [], []];
+    : [[], [], [], 0];
 
   const documentsEnabled =
     legalCase != null &&
@@ -265,6 +274,7 @@ async function loadCase(id: string) {
     canManageReferences: canManageReferences(currentUser),
     deadlinesEnabled,
     deadlines,
+    archivedDeadlineCount,
     hearings,
     members: memberRows.map((row) => row.user),
     canManageDeadlines: canManageDeadlines(currentUser),
@@ -289,6 +299,7 @@ const emptyCaseDetail: CaseDetailData = {
   canManageReferences: false,
   deadlinesEnabled: false,
   deadlines: [],
+  archivedDeadlineCount: 0,
   hearings: [],
   members: [],
   canManageDeadlines: false,
@@ -332,6 +343,7 @@ export default async function CaseDetailPage({
     canManageReferences,
     deadlinesEnabled,
     deadlines,
+    archivedDeadlineCount,
     hearings,
     members,
     canManageDeadlines: canManageDeadlinesFlag,
@@ -537,6 +549,7 @@ export default async function CaseDetailPage({
             <CaseDeadlinesSection
               caseId={legalCase.id}
               deadlines={deadlines}
+              archivedDeadlineCount={archivedDeadlineCount}
               hearings={hearings}
               members={members}
               canManage={canManageDeadlinesFlag}

@@ -404,6 +404,8 @@ model User {
   reviewedAmlAssessments      AmlAssessment[]           @relation("AmlAssessmentReviewedBy")
   responsibleDeadlines        Deadline[]                @relation("DeadlineResponsibleUser")
   createdDeadlines            Deadline[]                @relation("DeadlineCreatedBy")
+  completedDeadlines          Deadline[]                @relation("DeadlineCompletedBy")
+  calendarFeeds               CalendarFeed[]            @relation("CalendarFeedUser")
   responsibleCourtHearings    CourtHearing[]            @relation("CourtHearingResponsibleUser")
   createdCourtHearings        CourtHearing[]            @relation("CourtHearingCreatedBy")
   createdDocuments            Document[]                @relation("DocumentCreatedBy")
@@ -1326,6 +1328,7 @@ model Organization {
   amlAssessments            AmlAssessment[]
   deadlines                 Deadline[]
   courtHearings             CourtHearing[]
+  calendarFeeds             CalendarFeed[]
   documents                 Document[]
   documentVersions          DocumentVersion[]
   documentTemplates         DocumentTemplate[]
@@ -2078,7 +2081,12 @@ model Deadline {
   responsibleUserId   String?
   sourceDataMessageId String? // L-6: z které DZ lhůta vznikla
   note                String?
+  // Splnění povinnosti vázané na lhůtu: status COMPLETED + datum splnění
+  // (zadané advokátem, UTC půlnoc), kdo ji označil a volitelná poznámka.
+  // Splněnou lhůtu lze archivovat (archivedAt) a zase obnovit.
   completedAt         DateTime?
+  completedById       String?
+  completionNote      String?
   createdById         String?
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt
@@ -2089,14 +2097,48 @@ model Deadline {
   responsibleUser   User?        @relation("DeadlineResponsibleUser", fields: [responsibleUserId], references: [id], onDelete: SetNull)
   sourceDataMessage DataMessage? @relation("DeadlineSourceDataMessage", fields: [sourceDataMessageId], references: [id], onDelete: SetNull)
   createdBy         User?        @relation("DeadlineCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  completedBy       User?        @relation("DeadlineCompletedBy", fields: [completedById], references: [id], onDelete: SetNull)
 
   @@index([organizationId])
   @@index([caseId])
   @@index([responsibleUserId])
+  @@index([completedById])
   @@index([status])
   @@index([dueDate])
   @@index([sourceDataMessageId])
   @@map("deadlines")
+}
+
+// Osobní Outlook (ICS) kalendář uživatele – jen pro čtení, vidí ho jen jeho
+// vlastník. Tajný odkaz je šifrovaný DATA_ENCRYPTION_KEY (isEncrypted=false jen
+// jako nouzový fallback bez klíče). icsBody je cache posledního úspěšného
+// stažení; obnovuje se při otevření kalendáře (> 10 min) a v cronu.
+model CalendarFeed {
+  id              String    @id @default(cuid())
+  organizationId  String
+  userId          String
+  provider        String    @default("OUTLOOK_ICS")
+  secretUrl       String // v1.gcm$… blob (isEncrypted) nebo nouzově prostý https odkaz
+  isEncrypted     Boolean   @default(false)
+  urlHint         String // "outlook.office365.com/…/calendar.ics" – jediné, co UI ukazuje
+  icsBody         String? // poslední úspěšně stažený ICS (≤ 5 MB)
+  etag            String?
+  lastModified    String?
+  fetchedAt       DateTime? // poslední úspěšné stažení
+  lastAttemptAt   DateTime?
+  lastErrorCode   String? // kód IcsFetchError; text se mapuje v UI
+  lastErrorStatus Int?
+  refreshLockedAt DateTime? // zámek proti souběžnému obnovení
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation("CalendarFeedUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+  @@index([fetchedAt])
+  @@map("calendarFeeds")
 }
 
 // A court hearing on a case. Surfaced in /calendar via the calendar-events seam.

@@ -214,6 +214,31 @@ async function main() {
       await prisma.subject.deleteMany({ where: { id: { in: staleSubjectIds } } });
     }
 
+    // Deadlines created by deadlines-fulfilment.spec.ts (+ their audit rows
+    // and queued reminders).
+    const staleDeadlineIds = (
+      await prisma.deadline.findMany({
+        where: { title: { startsWith: E2E_PREFIX } },
+        select: { id: true },
+      })
+    ).map((deadline) => deadline.id);
+    if (staleDeadlineIds.length > 0) {
+      await prisma.auditLog.deleteMany({
+        where: { entityType: "Deadline", entityId: { in: staleDeadlineIds } },
+      });
+      await prisma.notification.deleteMany({
+        where: { entityType: "Deadline", entityId: { in: staleDeadlineIds } },
+      });
+      await prisma.deadline.deleteMany({ where: { id: { in: staleDeadlineIds } } });
+    }
+    await prisma.courtHearing.deleteMany({
+      where: { court: { startsWith: E2E_PREFIX } },
+    });
+
+    // Personal Outlook feeds (calendar-outlook.spec.ts injects them). The
+    // seed has none, so the disposable E2E database starts without any.
+    await prisma.calendarFeed.deleteMany({});
+
     // Users created by users-invitations.spec.ts (e-mail `e2e-…`). Their
     // memberships, invitation tokens and personal prefs cascade; audit rows
     // about them are dropped explicitly (rows they authored are SetNull).

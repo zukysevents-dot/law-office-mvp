@@ -1,17 +1,21 @@
+import Link from "next/link";
+
 import {
   cancelCourtHearing,
   cancelDeadline,
-  completeDeadline,
   createCourtHearing,
   createDeadline,
 } from "@/app/actions/deadlines";
+import { DeadlineFulfilDialog } from "@/components/deadlines/deadline-fulfil-dialog";
+import { FulfilledDeadlineActions } from "@/components/deadlines/deadline-row-actions";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
 import { Section } from "@/components/section";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialogButton } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { DeadlineType } from "@/generated/prisma/enums";
-import { formatDateTime, formatDateUtc } from "@/lib/format";
+import { formatDateTimeUtc, formatDateUtc } from "@/lib/format";
 import { deadlineStatusLabels, deadlineTypeLabels } from "@/lib/labels";
 import { deadlineStatusTone, deadlineTypeTone } from "@/lib/status-tones";
 
@@ -21,7 +25,10 @@ type DeadlineRow = {
   status: "OPEN" | "COMPLETED" | "CANCELLED";
   title: string;
   dueDate: Date;
+  completedAt: Date | null;
+  completionNote: string | null;
   responsibleUser: { name: string } | null;
+  completedBy: { name: string } | null;
 };
 
 type HearingRow = {
@@ -43,12 +50,14 @@ function nowMs(): number {
 export function CaseDeadlinesSection({
   caseId,
   deadlines,
+  archivedDeadlineCount = 0,
   hearings,
   members,
   canManage,
 }: {
   caseId: string;
   deadlines: DeadlineRow[];
+  archivedDeadlineCount?: number;
   hearings: HearingRow[];
   members: Member[];
   canManage: boolean;
@@ -94,33 +103,53 @@ export function CaseDeadlinesSection({
                         <Badge tone={deadlineStatusTone(deadline.status)}>
                           {deadlineStatusLabels[deadline.status]}
                         </Badge>
+                        {deadline.status === "COMPLETED" ? (
+                          <p className="mt-1 text-xs text-[#566673]">
+                            Splněno {formatDateUtc(deadline.completedAt)}
+                            {deadline.completedBy
+                              ? ` · ${deadline.completedBy.name}`
+                              : ""}
+                          </p>
+                        ) : null}
+                        {deadline.status === "COMPLETED" && deadline.completionNote ? (
+                          <p className="mt-0.5 max-w-xs whitespace-pre-line break-words text-xs text-[#566673]">
+                            {deadline.completionNote}
+                          </p>
+                        ) : null}
                       </td>
                       <td>{deadline.responsibleUser?.name ?? "—"}</td>
                       {canManage ? (
                         <td>
                           {deadline.status === "OPEN" ? (
-                            <div className="flex gap-2">
-                              <form action={completeDeadline}>
-                                <input
-                                  type="hidden"
-                                  name="deadlineId"
-                                  value={deadline.id}
-                                />
-                                <Button type="submit" variant="secondary">
-                                  Splnit
-                                </Button>
-                              </form>
+                            <div className="flex flex-wrap gap-2">
+                              <DeadlineFulfilDialog
+                                deadline={{
+                                  id: deadline.id,
+                                  title: deadline.title,
+                                  dueDateLabel: formatDateUtc(deadline.dueDate),
+                                  overdue,
+                                }}
+                              />
                               <form action={cancelDeadline}>
                                 <input
                                   type="hidden"
                                   name="deadlineId"
                                   value={deadline.id}
                                 />
-                                <Button type="submit" variant="ghost">
-                                  Zrušit
-                                </Button>
+                                <ConfirmDialogButton
+                                  label="Zrušit"
+                                  title="Zrušit lhůtu"
+                                  message={`Zrušit lhůtu „${deadline.title}“? Přestane se hlídat a zmizí z kalendáře. Zrušení zůstane v auditní stopě.`}
+                                  confirmLabel="Zrušit lhůtu"
+                                  cancelLabel="Ponechat"
+                                  pendingLabel="Ruším…"
+                                  variant="ghost"
+                                  className="h-9 whitespace-nowrap px-3"
+                                />
                               </form>
                             </div>
+                          ) : deadline.status === "COMPLETED" ? (
+                            <FulfilledDeadlineActions deadlineId={deadline.id} />
                           ) : (
                             "—"
                           )}
@@ -135,6 +164,16 @@ export function CaseDeadlinesSection({
         ) : (
           <EmptyState>Spis zatím nemá evidované lhůty.</EmptyState>
         )}
+        {archivedDeadlineCount > 0 ? (
+          <p className="mt-3 text-sm">
+            <Link
+              href={`/deadlines?view=archived&caseId=${encodeURIComponent(caseId)}`}
+              className="font-medium text-[#0e1822] underline underline-offset-2"
+            >
+              Archivované lhůty ({archivedDeadlineCount})
+            </Link>
+          </p>
+        ) : null}
 
         {canManage ? (
           <form action={createDeadline} className="mt-4 grid gap-4 sm:max-w-2xl">
@@ -209,7 +248,7 @@ export function CaseDeadlinesSection({
                 {hearings.map((hearing) => (
                   <tr key={hearing.id}>
                     <td className="font-medium text-stone-950">{hearing.court}</td>
-                    <td>{formatDateTime(hearing.hearingAt)}</td>
+                    <td>{formatDateTimeUtc(hearing.hearingAt)}</td>
                     <td>{hearing.room ?? "—"}</td>
                     <td>{hearing.responsibleUser?.name ?? "—"}</td>
                     {canManage ? (
@@ -220,9 +259,15 @@ export function CaseDeadlinesSection({
                             name="hearingId"
                             value={hearing.id}
                           />
-                          <Button type="submit" variant="ghost">
-                            Zrušit
-                          </Button>
+                          <ConfirmDialogButton
+                            label="Zrušit"
+                            title="Zrušit soudní jednání"
+                            message="Zrušit toto soudní jednání? Zmizí z kalendáře a přestanou chodit připomínky."
+                            confirmLabel="Zrušit jednání"
+                            cancelLabel="Ponechat"
+                            pendingLabel="Ruším…"
+                            variant="ghost"
+                          />
                         </form>
                       </td>
                     ) : null}

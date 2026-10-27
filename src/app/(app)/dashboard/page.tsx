@@ -11,6 +11,8 @@ import {
 } from "lucide-react";
 
 import { CalendarView } from "@/components/calendar/calendar-view";
+import { getOutlookFeedSummary } from "@/lib/calendar/outlook-feed.server";
+import type { OutlookFeedSummary } from "@/lib/calendar/outlook-summary";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
 import { StatCard } from "@/components/stat-card";
@@ -199,6 +201,7 @@ type DashboardData = {
   canViewRates: boolean;
   canApprove: boolean;
   calendarDefaultView: CalendarDefaultView;
+  outlook: OutlookFeedSummary | null;
 };
 
 const fallbackData: DashboardData = {
@@ -224,6 +227,7 @@ const fallbackData: DashboardData = {
   canViewRates: false,
   canApprove: false,
   calendarDefaultView: "dayGridMonth",
+  outlook: null,
 };
 
 function subjectFromTask(task: DashboardData["myTasks"][number]) {
@@ -791,6 +795,7 @@ function renderWidget(widget: DashboardWidgetView, data: DashboardData) {
           compact
           title={widget.title}
           initialView={data.calendarDefaultView}
+          outlook={data.outlook}
         />
       );
     case DashboardWidgetType.DEADLINES_PREVIEW:
@@ -1223,6 +1228,7 @@ export default async function DashboardPage() {
       calendarDefaultView: normalizeCalendarView(
         notificationPreference?.calendarDefaultView,
       ),
+      outlook: await getOutlookFeedSummary(currentUser),
     };
   });
 

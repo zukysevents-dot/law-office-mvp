@@ -1,9 +1,11 @@
 /**
  * Unified calendar event model + aggregator (Fáze 2L).
  *
- * This is the single seam every calendar source flows through. Today it surfaces
- * task deadlines (procesní/interní lhůty); future sources — Outlook events, and
- * later meetings (schůzky) — plug in here only, so the page and UI never change.
+ * This is the single seam the office's calendar sources flow through: task
+ * deadlines, watched deadlines (Lhůtník) and court hearings. The personal
+ * Outlook (ICS) feed is a separate event source in the view (own toggle, own
+ * error handling, strictly per user) — see lib/calendar/outlook-feed.server.ts
+ * — but shares the serialized event shape below.
  */
 
 import type { BadgeTone } from "@/components/ui/badge";
@@ -20,6 +22,7 @@ import {
   deadlineVisibilityWhere,
   taskVisibilityWhere,
 } from "@/lib/permissions";
+import { calendarDeadlineWhere } from "@/lib/deadlines";
 import { getPrisma } from "@/lib/prisma";
 import { deadlineTypeTone, taskDeadlineTypeTone } from "@/lib/status-tones";
 
@@ -40,10 +43,13 @@ export type CalendarEvent = {
   id: string;
   title: string;
   date: Date;
+  /** Exclusive end (all-day: the day after the last day). */
+  end?: Date;
   allDay: boolean;
   href?: string;
   tone: BadgeTone;
-  kind?: "task" | "deadline" | "hearing";
+  kind?: "task" | "deadline" | "hearing" | "outlook";
+  location?: string;
   deadlineType?: TaskDeadlineType;
   status?: TaskStatus;
   priority?: TaskPriority;
@@ -52,15 +58,35 @@ export type CalendarEvent = {
 };
 
 /** Wire form for crossing the Server→Client boundary (Date → ISO string). */
-export type SerializedCalendarEvent = Omit<CalendarEvent, "date"> & {
+export type SerializedCalendarEvent = Omit<CalendarEvent, "date" | "end"> & {
   dateIso: string;
+  /** FullCalendar value: "YYYY-MM-DD" (all-day) or "YYYY-MM-DDTHH:mm:ss". */
+  start: string;
+  end?: string;
 };
+
+/**
+ * FullCalendar runs with timeZone="UTC" over the app's "wall clock pinned to
+ * UTC" values (date-only fields at UTC midnight, datetime-local inputs pinned
+ * by form.ts). So the wire value is the UTC calendar date for all-day events
+ * and the UTC wall clock WITHOUT a zone suffix for timed ones — sending only
+ * the date (as before) dropped the time of court hearings.
+ */
+export function toCalendarWireDate(date: Date, allDay: boolean): string {
+  const iso = date.toISOString();
+  return allDay ? iso.slice(0, 10) : iso.slice(0, 19);
+}
 
 export function serializeCalendarEvent(
   event: CalendarEvent,
 ): SerializedCalendarEvent {
-  const { date, ...rest } = event;
-  return { ...rest, dateIso: date.toISOString() };
+  const { date, end, ...rest } = event;
+  return {
+    ...rest,
+    dateIso: date.toISOString(),
+    start: toCalendarWireDate(date, event.allDay),
+    ...(end ? { end: toCalendarWireDate(end, event.allDay) } : {}),
+  };
 }
 
 async function getTaskDeadlineEvents(
@@ -111,8 +137,8 @@ async function getTaskDeadlineEvents(
 }
 
 // F4 / L-4: watched deadlines (Deadline) within the window. CANCELLED deadlines
-// are soft-deleted (archivedAt set) so the archivedAt filter excludes them;
-// COMPLETED ones stay visible and the view greys them via status === "COMPLETED".
+// are hidden; fulfilled (COMPLETED) ones stay visible — even once archived —
+// and the view greys them via status === "COMPLETED" (calendarDeadlineWhere).
 async function getDeadlineEvents(
   user: CalendarUser,
   range: CalendarRange,
@@ -120,10 +146,8 @@ async function getDeadlineEvents(
   const prisma = getPrisma();
   const deadlines = await prisma.deadline.findMany({
     where: andWhere(
-      {
-        archivedAt: null,
-        dueDate: { gte: range.start, lt: range.end },
-      },
+      calendarDeadlineWhere(),
+      { dueDate: { gte: range.start, lt: range.end } },
       deadlineVisibilityWhere(user),
     ),
     orderBy: { dueDate: "asc" },
@@ -141,7 +165,10 @@ async function getDeadlineEvents(
 
   return deadlines.map((deadline) => ({
     id: `deadline:${deadline.id}`,
-    title: `Lhůta: ${deadline.title}`,
+    title:
+      deadline.status === DeadlineStatus.COMPLETED
+        ? `Lhůta (splněno): ${deadline.title}`
+        : `Lhůta: ${deadline.title}`,
     date: deadline.dueDate,
     allDay: true,
     href: `/cases/${deadline.case.id}`,

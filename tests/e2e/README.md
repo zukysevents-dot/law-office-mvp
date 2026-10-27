@@ -67,6 +67,8 @@ s heslem `demo1234` (viz `SEED_USER_PASSWORD`).
 | `billing-approvals.spec.ts` | fronta ke schválení: filtry v URL, celý popis úkonu, hromadné schválení/zamítnutí, vstup z výkazů, role, mobil |
 | `teams-and-assignees.spec.ts` | Týmy a řešitelé: založení a přejmenování týmu, duplicitní název, hromadné přiřazení / odebrání týmu (potvrzení), sloupec a filtr „Řešitelé“, detail projektu a případu (zdědění řešitelé), notifikace, audit |
 | `users-invitations.spec.ts` | založení uživatele, pozvánka (SMTP vypnuté), znovuodeslání, `/set-password` |
+| `deadlines-fulfilment.spec.ts` | lhůty: „Splněno…“ s poznámkou, „Splnit a archivovat“, záložky Aktivní/Splněné/Archiv, obnovení, vrácení mezi aktivní, „Později“, žádná upozornění po splnění, role, detail spisu, kalendář, audit |
+| `calendar-outlook.spec.ts` | Outlook (ICS): návod a české chyby, SSRF ochrana (jen IP adresy, bez sítě), události z vloženého feedu (čas, celodenní, opakování), přepínač, detail jen pro čtení, izolace mezi uživateli, maska odkazu, odpojení; čas soudního jednání |
 
 Pomocné funkce jsou v `tests/e2e/support/helpers.ts`.
 

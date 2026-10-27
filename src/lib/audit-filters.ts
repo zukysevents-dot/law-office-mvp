@@ -28,6 +28,9 @@ export const AUDIT_ENTITY_TYPES = [
   "RolePermission",
   "UserPermission",
   "UserCapabilityGrant",
+  "Deadline",
+  "CourtHearing",
+  "CalendarFeed",
 ] as const;
 
 export const AUDIT_ACTIONS = [
@@ -57,6 +60,14 @@ export const AUDIT_ACTIONS = [
   "RESET",
   "ASSIGN",
   "REMOVE",
+  "COMPLETE",
+  "COMPLETE_ARCHIVE",
+  "REOPEN",
+  "CANCEL",
+  "CREATE_FROM_DS",
+  "CONNECT",
+  "DISCONNECT",
+  "UPDATE_CALENDAR_VIEW",
 ] as const;
 
 export const auditEntityTypeLabels: Record<string, string> = {
@@ -84,6 +95,9 @@ export const auditEntityTypeLabels: Record<string, string> = {
   RolePermission: "Oprávnění role",
   UserPermission: "Oprávnění uživatele",
   UserCapabilityGrant: "Granty uživatele (starší)",
+  Deadline: "Lhůta",
+  CourtHearing: "Soudní jednání",
+  CalendarFeed: "Outlook kalendář",
 };
 
 export const auditActionLabels: Record<string, string> = {
@@ -113,6 +127,14 @@ export const auditActionLabels: Record<string, string> = {
   RESET: "Obnovení výchozích",
   ASSIGN: "Přiřazení",
   REMOVE: "Odebrání",
+  COMPLETE: "Splnění",
+  COMPLETE_ARCHIVE: "Splnění a archivace",
+  REOPEN: "Vrácení mezi aktivní",
+  CANCEL: "Zrušení",
+  CREATE_FROM_DS: "Vytvoření z datové zprávy",
+  CONNECT: "Propojení",
+  DISCONNECT: "Odpojení",
+  UPDATE_CALENDAR_VIEW: "Změna zobrazení kalendáře",
 };
 
 export function auditActionLabel(value: string) {

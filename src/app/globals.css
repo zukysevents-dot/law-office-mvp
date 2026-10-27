@@ -310,6 +310,22 @@ tbody tr:hover {
   text-decoration: line-through;
 }
 
+/* Personal Outlook events (read-only ICS feed): Microsoft blue with a strong
+   left edge, so they never look like the office's own deadlines. */
+.calendar-shell .fc-event-outlook {
+  border-left-width: 3px;
+  border-left-color: #0078d4;
+}
+
+.calendar-shell .fc-daygrid-dot-event.fc-event-outlook {
+  background: #e6f0fa;
+  color: #0b3a6e;
+}
+
+.calendar-shell .fc-daygrid-dot-event.fc-event-outlook .fc-daygrid-event-dot {
+  border-color: #0078d4;
+}
+
 /* Product workspace: the same restrained orbital glow used in the landing hero,
    softened for long working sessions and kept behind all content. */
 .app-shell {

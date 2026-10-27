@@ -81,6 +81,26 @@ export function formatDateUtc(value: Date | string | null | undefined) {
   return utcDateFormatter.format(new Date(value));
 }
 
+const utcDateTimeFormatter = new Intl.DateTimeFormat("cs-CZ", {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  timeZone: "UTC",
+});
+
+// Use for datetime-local fields (court hearings, …): form.ts pins the entered
+// wall-clock time to UTC, so it must be rendered in UTC to show what was typed
+// (formatDateTime would shift it by the Prague offset).
+export function formatDateTimeUtc(value: Date | string | null | undefined) {
+  if (!value) {
+    return "—";
+  }
+
+  return utcDateTimeFormatter.format(new Date(value));
+}
+
 export function formatCaseLabel(
   legalCase: { name: string; fileNumber?: string | null } | null | undefined,
   fallback = "—",

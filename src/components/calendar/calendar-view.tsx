@@ -1,12 +1,19 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import nextDynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import type {
   EventClickArg,
   EventInput,
   EventSourceFuncArg,
+  EventSourceInput,
 } from "@fullcalendar/core";
 import csLocale from "@fullcalendar/core/locales/cs";
 import dayGridPlugin from "@fullcalendar/daygrid";
@@ -14,8 +21,22 @@ import listPlugin from "@fullcalendar/list";
 import timeGridPlugin from "@fullcalendar/timegrid";
 
 import type { BadgeTone } from "@/components/ui/badge";
-import { fetchCalendarEvents } from "@/app/actions/calendar";
+import {
+  fetchCalendarEvents,
+  fetchOutlookCalendarEvents,
+} from "@/app/actions/calendar";
+import { OutlookConnectButton } from "@/components/calendar/outlook-connect-button";
+import {
+  OutlookEventDialog,
+  type OutlookEventDetail,
+} from "@/components/calendar/outlook-event-dialog";
 import type { SerializedCalendarEvent } from "@/lib/calendar-events";
+import { requestOutlookRefresh } from "@/lib/calendar/outlook-refresh-client";
+import type {
+  OutlookFeedSummary,
+  OutlookRefreshResponse,
+} from "@/lib/calendar/outlook-summary";
+import { toDisplayWallIso } from "@/lib/calendar/windows-time-zones";
 import type { CalendarDefaultView } from "@/lib/calendar-view";
 import { useDismissOnOutside } from "@/lib/use-dismiss-on-outside";
 
@@ -49,20 +70,83 @@ const TONE_COLORS: Record<BadgeTone, { bg: string; border: string; text: string 
   purple: { bg: "#f5f3ff", border: "#ddd6fe", text: "#4c1d95" },
 };
 
+// The grid shows Prague wall clock pinned to UTC (timeZone="UTC"), so "now"
+// (today highlight, now indicator) must be the Prague wall clock too.
+function pragueNow() {
+  return toDisplayWallIso(new Date());
+}
+
+// Outlook events: Microsoft's blue, so they are told apart at a glance.
+const OUTLOOK_COLORS = { bg: "#e6f0fa", border: "#0078d4", text: "#0b3a6e" };
+
 function toEventInput(event: SerializedCalendarEvent): EventInput {
-  const colors = TONE_COLORS[event.tone] ?? TONE_COLORS.neutral;
+  const outlook = event.kind === "outlook";
+  const colors = outlook
+    ? OUTLOOK_COLORS
+    : (TONE_COLORS[event.tone] ?? TONE_COLORS.neutral);
+  const classNames: string[] = [];
+  if (event.status === "COMPLETED") {
+    classNames.push("fc-event-done");
+  }
+  if (outlook) {
+    classNames.push("fc-event-outlook");
+  }
   return {
     id: event.id,
-    // Date-only string keeps the deadline on its stored UTC day (all-day),
-    // independent of the viewer's timezone.
-    start: event.dateIso.slice(0, 10),
+    // Server-computed wire values: the stored UTC day for all-day events,
+    // the UTC-pinned wall clock (no zone suffix) for timed ones — FullCalendar
+    // runs with timeZone="UTC", so neither shifts with the viewer's zone.
+    start: event.start ?? event.dateIso.slice(0, 10),
+    end: event.end,
     allDay: event.allDay,
     title: event.title,
     backgroundColor: colors.bg,
     borderColor: colors.border,
     textColor: colors.text,
-    classNames: event.status === "COMPLETED" ? ["fc-event-done"] : [],
-    extendedProps: { href: event.href },
+    classNames,
+    editable: false,
+    extendedProps: {
+      href: event.href,
+      kind: event.kind,
+      location: event.location,
+      startWire: event.start,
+      endWire: event.end,
+    },
+  };
+}
+
+// „Outlook" legend toggle, remembered per browser. useSyncExternalStore keeps
+// the server render (always "on") and the stored value hydration-safe.
+const OUTLOOK_TOGGLE_KEY = "iv.calendar.outlook";
+const OUTLOOK_TOGGLE_EVENT = "iv-calendar-outlook-toggle";
+
+// Fallback when localStorage is blocked: the choice lives for this page only.
+let outlookToggleFallback = true;
+
+function outlookToggleSnapshot(): boolean {
+  try {
+    return window.localStorage.getItem(OUTLOOK_TOGGLE_KEY) !== "0";
+  } catch {
+    return outlookToggleFallback;
+  }
+}
+
+function writeOutlookToggle(on: boolean) {
+  outlookToggleFallback = on;
+  try {
+    window.localStorage.setItem(OUTLOOK_TOGGLE_KEY, on ? "1" : "0");
+  } catch {
+    // Storage blocked (private mode…) — the fallback above keeps it working.
+  }
+  window.dispatchEvent(new Event(OUTLOOK_TOGGLE_EVENT));
+}
+
+function subscribeOutlookToggle(callback: () => void) {
+  window.addEventListener("storage", callback);
+  window.addEventListener(OUTLOOK_TOGGLE_EVENT, callback);
+  return () => {
+    window.removeEventListener("storage", callback);
+    window.removeEventListener(OUTLOOK_TOGGLE_EVENT, callback);
   };
 }
 
@@ -70,13 +154,75 @@ export function CalendarView({
   compact = false,
   title,
   initialView = "dayGridMonth",
+  outlook = null,
 }: {
   compact?: boolean;
   title?: string;
   initialView?: CalendarDefaultView;
+  /** The viewer's own Outlook connection (null = feature unavailable). */
+  outlook?: OutlookFeedSummary | null;
 } = {}) {
   const router = useRouter();
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [outlookError, setOutlookError] = useState<string | null>(null);
+  const [outlookSummary, setOutlookSummary] = useState(outlook);
+  const [previousOutlookProp, setPreviousOutlookProp] = useState(outlook);
+  // Bumping the version gives the Outlook source a new id → FullCalendar
+  // refetches just that source (next/dynamic doesn't forward refs to getApi()).
+  const [outlookVersion, setOutlookVersion] = useState(0);
+  const [outlookEvent, setOutlookEvent] = useState<OutlookEventDetail | null>(null);
+  const showOutlook = useSyncExternalStore(
+    subscribeOutlookToggle,
+    outlookToggleSnapshot,
+    () => true,
+  );
+
+  // The page re-rendered after connect/disconnect/replace → new summary and a
+  // fresh Outlook fetch.
+  if (outlook !== previousOutlookProp) {
+    setPreviousOutlookProp(outlook);
+    setOutlookSummary(outlook);
+    setOutlookVersion((version) => version + 1);
+  }
+
+  const outlookConnected = Boolean(outlookSummary?.connected);
+  const outlookStale = Boolean(outlookSummary?.connected && outlookSummary.stale);
+
+  // A fresh summary from a refresh (background or „Obnovit teď"): show its
+  // state and refetch only the Outlook source when new data may have arrived.
+  // Ignored once the user disconnected meanwhile.
+  const applyRefresh = useCallback((result: OutlookRefreshResponse) => {
+    setOutlookSummary((current) => (current?.connected ? result.summary : current));
+    if (result.outcome === "refreshed") {
+      setOutlookVersion((version) => version + 1);
+    }
+  }, []);
+
+  // A stale cache (> 10 min) is refreshed in the background once per mount;
+  // the cached events are already shown meanwhile. requestOutlookRefresh is a
+  // plain fetch to a Route Handler — never a server action, which would queue
+  // every event fetch of the calendar behind the up-to-10-s ICS download.
+  useEffect(() => {
+    if (!outlookStale) {
+      return;
+    }
+    requestOutlookRefresh(false)
+      .then((result) => {
+        if (result) {
+          applyRefresh(result);
+        }
+      })
+      .catch(() => {
+        // Non-blocking: the cached events stay visible.
+      });
+    // Only on mount / when the connection itself changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [outlookConnected]);
+
+  const handleOutlookSummaryChange = useCallback((fresh: OutlookFeedSummary) => {
+    setOutlookSummary(fresh);
+    setOutlookVersion((version) => version + 1);
+  }, []);
 
   // FullCalendar's "+N další" popover closes itself on an outside mousedown,
   // but the click then went through to whatever was underneath (e.g. an event
@@ -112,9 +258,57 @@ export function CalendarView({
     [],
   );
 
+  const loadOutlook = useCallback(
+    (
+      info: EventSourceFuncArg,
+      success: (events: EventInput[]) => void,
+    ) => {
+      setOutlookError(null);
+      fetchOutlookCalendarEvents(info.startStr, info.endStr)
+        .then((events) => success(events.map(toEventInput)))
+        .catch(() => {
+          // Never the blocking red alert: the office calendar still works.
+          setOutlookError("Události z Outlooku se teď nepodařilo načíst.");
+          success([]);
+        });
+    },
+    [],
+  );
+
+  const iuriverseSource = useMemo<EventSourceInput>(
+    () => ({ id: "iuriverse", events: loadEvents }),
+    [loadEvents],
+  );
+
+  const eventSources = useMemo<EventSourceInput[]>(
+    () =>
+      outlookConnected && showOutlook
+        ? [
+            iuriverseSource,
+            {
+              id: `outlook-${outlookVersion}`,
+              events: loadOutlook,
+              editable: false,
+              className: "fc-event-outlook",
+            },
+          ]
+        : [iuriverseSource],
+    [iuriverseSource, loadOutlook, outlookConnected, outlookVersion, showOutlook],
+  );
+
   const handleEventClick = useCallback(
     (arg: EventClickArg) => {
       arg.jsEvent.preventDefault();
+      if (arg.event.extendedProps.kind === "outlook") {
+        setOutlookEvent({
+          title: arg.event.title,
+          allDay: arg.event.allDay,
+          start: (arg.event.extendedProps.startWire as string | undefined) ?? arg.event.startStr,
+          end: arg.event.extendedProps.endWire as string | undefined,
+          location: arg.event.extendedProps.location as string | undefined,
+        });
+        return;
+      }
       const href = arg.event.extendedProps.href as string | undefined;
       if (href) {
         router.push(href);
@@ -128,7 +322,7 @@ export function CalendarView({
       {title ? (
         <h2 className="text-lg font-semibold text-[#0e1822]">{title}</h2>
       ) : null}
-      <div className="flex flex-wrap items-center gap-4 text-xs text-[#566673]">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-[#566673]">
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-full bg-red-300" aria-hidden="true" />
           Procesní lhůta
@@ -140,7 +334,47 @@ export function CalendarView({
           />
           Interní lhůta
         </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-full bg-violet-300" aria-hidden="true" />
+          Soudní jednání
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-full bg-stone-300" aria-hidden="true" />
+          <span className="line-through">Splněná lhůta</span>
+        </span>
+        {outlookConnected ? (
+          <label className="inline-flex cursor-pointer items-center gap-1.5 font-medium text-[#0b3a6e]">
+            <input
+              type="checkbox"
+              checked={showOutlook}
+              onChange={(event) => writeOutlookToggle(event.target.checked)}
+              className="h-4 w-4 accent-[#0078d4]"
+            />
+            <span
+              className="h-2.5 w-2.5 rounded-full bg-[#0078d4]"
+              aria-hidden="true"
+            />
+            Outlook
+          </label>
+        ) : null}
+        {!compact && outlookSummary ? (
+          <span className="ml-auto">
+            <OutlookConnectButton
+              summary={outlookSummary}
+              onSummaryChange={handleOutlookSummaryChange}
+            />
+          </span>
+        ) : null}
       </div>
+
+      {outlookError && showOutlook ? (
+        <p
+          role="status"
+          className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+        >
+          {outlookError}
+        </p>
+      ) : null}
 
       {loadError ? (
         <div
@@ -178,15 +412,18 @@ export function CalendarView({
             month: "Měsíc",
             week: "Týden",
             day: "Den",
-            list: "Agenda",
+            // buttonText.list beats views.*.buttonText in FullCalendar, so
+            // the year list must be named here (settings calls it „Rok").
+            list: compact ? "Agenda" : "Rok",
           }}
-          views={{ listYear: { buttonText: "Rok" } }}
-          events={loadEvents}
+          eventSources={eventSources}
+          editable={false}
           eventClick={handleEventClick}
           dayMaxEvents
           closeHint="Zavřít"
           moreLinkHint={(count: number) => `Zobrazit další události (${count})`}
           nowIndicator
+          now={pragueNow}
           stickyHeaderDates
           expandRows
           slotLabelFormat={{
@@ -197,6 +434,7 @@ export function CalendarView({
           }}
         />
       </div>
+      <OutlookEventDialog event={outlookEvent} onClose={() => setOutlookEvent(null)} />
     </section>
   );
 }

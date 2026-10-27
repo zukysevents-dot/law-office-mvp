@@ -2,6 +2,11 @@ import Link from "next/link";
 import { Plus } from "lucide-react";
 
 import { createDeadline } from "@/app/actions/deadlines";
+import { DeadlineFulfilDialog } from "@/components/deadlines/deadline-fulfil-dialog";
+import {
+  ArchivedDeadlineActions,
+  FulfilledDeadlineActions,
+} from "@/components/deadlines/deadline-row-actions";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
@@ -14,8 +19,15 @@ import { DeadlineStatus, DeadlineType, ModuleKey } from "@/generated/prisma/enum
 import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import { assertModuleEnabled } from "@/lib/entitlements";
-import { formatDateTime, formatDateUtc } from "@/lib/format";
-import { deadlineTypeLabels } from "@/lib/labels";
+import {
+  DEADLINE_LIST_VIEWS,
+  deadlineListViewLabels,
+  deadlineListWhere,
+  normalizeDeadlineListView,
+  type DeadlineListView,
+} from "@/lib/deadlines";
+import { formatDateTime, formatDateTimeUtc, formatDateUtc } from "@/lib/format";
+import { deadlineStatusLabels, deadlineTypeLabels } from "@/lib/labels";
 import {
   andWhere,
   canManageDeadlines,
@@ -24,7 +36,8 @@ import {
   deadlineVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
-import { deadlineTypeTone } from "@/lib/status-tones";
+import { deadlineStatusTone, deadlineTypeTone } from "@/lib/status-tones";
+import { cn } from "@/lib/utils";
 import { AccessDenied } from "@/components/access-denied";
 import { moduleAccessDenial } from "@/lib/module-access.server";
 
@@ -35,6 +48,7 @@ const UPCOMING_WINDOW_DAYS = 30;
 const deadlineInclude = {
   case: { select: { id: true, name: true } },
   responsibleUser: { select: { name: true } },
+  completedBy: { select: { name: true } },
 } satisfies Prisma.DeadlineInclude;
 
 const hearingInclude = {
@@ -46,24 +60,45 @@ type DeadlineRow = Prisma.DeadlineGetPayload<{ include: typeof deadlineInclude }
 type HearingRow = Prisma.CourtHearingGetPayload<{ include: typeof hearingInclude }>;
 
 type Data = {
+  view: DeadlineListView;
   overdue: DeadlineRow[];
   upcoming: DeadlineRow[];
+  later: DeadlineRow[];
+  fulfilled: DeadlineRow[];
+  archived: DeadlineRow[];
   hearings: HearingRow[];
   cases: Array<{ id: string; name: string; project: { name: string } }>;
   members: Array<{ id: string; name: string }>;
   canManage: boolean;
+  /** Lists narrowed to one case (link from the case detail). */
+  caseFilter: { id: string; name: string } | null;
 };
 
 const emptyData: Data = {
+  view: "active",
   overdue: [],
   upcoming: [],
+  later: [],
+  fulfilled: [],
+  archived: [],
   hearings: [],
   cases: [],
   members: [],
   canManage: false,
+  caseFilter: null,
 };
 
-function deadlineRows(rows: DeadlineRow[]) {
+const caseLinkClass = "text-[#0e1822] underline-offset-2 hover:underline";
+
+function ActiveDeadlineTable({
+  rows,
+  canManage,
+  overdue = false,
+}: {
+  rows: DeadlineRow[];
+  canManage: boolean;
+  overdue?: boolean;
+}) {
   return (
     <div className="table-scroll">
       <table className="w-max min-w-full">
@@ -74,6 +109,7 @@ function deadlineRows(rows: DeadlineRow[]) {
             <th>Spis</th>
             <th>Termín</th>
             <th>Odpovědný</th>
+            {canManage ? <th>Akce</th> : null}
           </tr>
         </thead>
         <tbody>
@@ -86,15 +122,27 @@ function deadlineRows(rows: DeadlineRow[]) {
                 </Badge>
               </td>
               <td>
-                <Link
-                  href={`/cases/${deadline.case.id}`}
-                  className="text-[#0e1822] underline-offset-2 hover:underline"
-                >
+                <Link href={`/cases/${deadline.case.id}`} className={caseLinkClass}>
                   {deadline.case.name}
                 </Link>
               </td>
-              <td>{formatDateUtc(deadline.dueDate)}</td>
+              <td className={overdue ? "font-semibold text-red-700" : undefined}>
+                {formatDateUtc(deadline.dueDate)}
+              </td>
               <td>{deadline.responsibleUser?.name ?? "—"}</td>
+              {canManage ? (
+                <td>
+                  <DeadlineFulfilDialog
+                    deadline={{
+                      id: deadline.id,
+                      title: deadline.title,
+                      caseName: deadline.case.name,
+                      dueDateLabel: formatDateUtc(deadline.dueDate),
+                      overdue,
+                    }}
+                  />
+                </td>
+              ) : null}
             </tr>
           ))}
         </tbody>
@@ -103,7 +151,137 @@ function deadlineRows(rows: DeadlineRow[]) {
   );
 }
 
-export default async function DeadlinesPage() {
+function ClosedDeadlineTable({
+  rows,
+  canManage,
+  archived,
+}: {
+  rows: DeadlineRow[];
+  canManage: boolean;
+  archived: boolean;
+}) {
+  return (
+    <div className="table-scroll">
+      <table className="w-max min-w-full">
+        <thead>
+          <tr>
+            <th>Lhůta</th>
+            <th>Typ</th>
+            <th>Spis</th>
+            <th>Termín</th>
+            <th>Stav</th>
+            <th>Splněno dne</th>
+            <th>Splnil(a)</th>
+            <th>Poznámka</th>
+            {archived ? <th>Archivováno</th> : null}
+            {canManage ? <th>Akce</th> : null}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((deadline) => {
+            const fulfilled = deadline.status === DeadlineStatus.COMPLETED;
+            return (
+              <tr key={deadline.id}>
+                <td className="font-medium text-stone-950">{deadline.title}</td>
+                <td>
+                  <Badge tone={deadlineTypeTone(deadline.type)}>
+                    {deadlineTypeLabels[deadline.type]}
+                  </Badge>
+                </td>
+                <td>
+                  <Link href={`/cases/${deadline.case.id}`} className={caseLinkClass}>
+                    {deadline.case.name}
+                  </Link>
+                </td>
+                <td>{formatDateUtc(deadline.dueDate)}</td>
+                <td>
+                  <Badge tone={deadlineStatusTone(deadline.status)}>
+                    {deadlineStatusLabels[deadline.status]}
+                  </Badge>
+                </td>
+                <td>{fulfilled ? formatDateUtc(deadline.completedAt) : "—"}</td>
+                <td>{fulfilled ? (deadline.completedBy?.name ?? "—") : "—"}</td>
+                <td className="max-w-xs whitespace-pre-line break-words">
+                  {fulfilled ? (deadline.completionNote ?? "—") : "—"}
+                </td>
+                {/* A real timestamp (not a calendar day) → Prague time. */}
+                {archived ? <td>{formatDateTime(deadline.archivedAt)}</td> : null}
+                {canManage ? (
+                  <td>
+                    {fulfilled ? (
+                      archived ? (
+                        <ArchivedDeadlineActions deadlineId={deadline.id} />
+                      ) : (
+                        <FulfilledDeadlineActions deadlineId={deadline.id} />
+                      )
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                ) : null}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function deadlinesHref(view: DeadlineListView, caseId?: string | null) {
+  const params = new URLSearchParams();
+  if (view !== "active") {
+    params.set("view", view);
+  }
+  if (caseId) {
+    params.set("caseId", caseId);
+  }
+  const query = params.toString();
+  return query ? `/deadlines?${query}` : "/deadlines";
+}
+
+function ViewTabs({
+  view,
+  caseId,
+}: {
+  view: DeadlineListView;
+  caseId?: string | null;
+}) {
+  return (
+    <nav aria-label="Zobrazení lhůt" className="flex flex-wrap gap-2">
+      {DEADLINE_LIST_VIEWS.map((option) => {
+        const current = option === view;
+        return (
+          <Link
+            key={option}
+            href={deadlinesHref(option, caseId)}
+            aria-current={current ? "page" : undefined}
+            className={cn(
+              "inline-flex h-10 items-center rounded-md border px-4 text-sm font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0e1822]",
+              current
+                ? "border-[#0e1822] bg-[#0e1822] text-white"
+                : "border-[#dce4e8] bg-white text-[#0e1822] hover:border-[#17A2A2]",
+            )}
+          >
+            {deadlineListViewLabels[option]}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
+export default async function DeadlinesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ view?: string | string[]; caseId?: string | string[] }>;
+}) {
+  const params = await searchParams;
+  const view = normalizeDeadlineListView(
+    Array.isArray(params.view) ? params.view[0] : params.view,
+  );
+  const rawCaseId = (Array.isArray(params.caseId) ? params.caseId[0] : params.caseId)?.trim();
+  const requestedCaseId = rawCaseId && rawCaseId.length <= 64 ? rawCaseId : null;
   const accessUser = await getCurrentUser();
   const accessDenied = await moduleAccessDenial(accessUser, "module.deadlines");
   if (accessDenied) {
@@ -120,81 +298,120 @@ export default async function DeadlinesPage() {
       now.getTime() + UPCOMING_WINDOW_DAYS * 24 * 60 * 60 * 1000,
     );
 
-    const [overdue, upcoming, hearings, cases, memberRows] = await Promise.all([
+    // Optional case filter — only a case the viewer may see.
+    const caseFilter = requestedCaseId
+      ? await prisma.case.findFirst({
+          where: andWhere<Prisma.CaseWhereInput>(
+            { id: requestedCaseId },
+            caseVisibilityWhere(currentUser),
+          ),
+          select: { id: true, name: true },
+        })
+      : null;
+    const visibility = andWhere<Prisma.DeadlineWhereInput>(
+      deadlineVisibilityWhere(currentUser),
+      caseFilter ? { caseId: caseFilter.id } : {},
+    );
+    const activeWhere = deadlineListWhere("active");
+    const listDeadlines = (where: Prisma.DeadlineWhereInput, orderBy: Prisma.DeadlineOrderByWithRelationInput) =>
       prisma.deadline.findMany({
-        where: andWhere(
-          {
-            archivedAt: null,
-            status: DeadlineStatus.OPEN,
-            dueDate: { lt: now },
-          },
-          deadlineVisibilityWhere(currentUser),
-        ),
+        where: andWhere(where, visibility),
         include: deadlineInclude,
-        orderBy: { dueDate: "asc" },
+        orderBy,
         take: 500,
-      }),
-      prisma.deadline.findMany({
-        where: andWhere(
-          {
-            archivedAt: null,
-            status: DeadlineStatus.OPEN,
-            dueDate: { gte: now, lte: soon },
-          },
-          deadlineVisibilityWhere(currentUser),
-        ),
-        include: deadlineInclude,
-        orderBy: { dueDate: "asc" },
-        take: 500,
-      }),
-      prisma.courtHearing.findMany({
-        where: andWhere(
-          { archivedAt: null, hearingAt: { gte: now, lte: soon } },
-          courtHearingVisibilityWhere(currentUser),
-        ),
-        include: hearingInclude,
-        orderBy: { hearingAt: "asc" },
-        take: 500,
-      }),
-      prisma.case.findMany({
-        where: andWhere(
-          { archivedAt: null },
-          caseVisibilityWhere(currentUser),
-        ),
-        orderBy: [{ project: { name: "asc" } }, { name: "asc" }],
-        select: { id: true, name: true, project: { select: { name: true } } },
-        take: 1000,
-      }),
-      prisma.organizationMember.findMany({
-        where: {
-          organizationId: currentUser.organizationId,
-          status: "ACTIVE",
-        },
-        orderBy: { user: { name: "asc" } },
-        select: { user: { select: { id: true, name: true } } },
-      }),
+      });
+    const none = Promise.resolve([] as DeadlineRow[]);
+    // Hearings and the create form (cases, members) render only on „Aktivní".
+    const activeView = view === "active";
+    const formNeeded = activeView && canManageDeadlines(currentUser);
+
+    const [
+      overdue,
+      upcoming,
+      later,
+      fulfilled,
+      archived,
+      hearings,
+      cases,
+      memberRows,
+    ] = await Promise.all([
+      view === "active"
+        ? listDeadlines({ ...activeWhere, dueDate: { lt: now } }, { dueDate: "asc" })
+        : none,
+      view === "active"
+        ? listDeadlines(
+            { ...activeWhere, dueDate: { gte: now, lte: soon } },
+            { dueDate: "asc" },
+          )
+        : none,
+      view === "active"
+        ? listDeadlines({ ...activeWhere, dueDate: { gt: soon } }, { dueDate: "asc" })
+        : none,
+      view === "fulfilled"
+        ? listDeadlines(deadlineListWhere("fulfilled"), { completedAt: "desc" })
+        : none,
+      view === "archived"
+        ? listDeadlines(deadlineListWhere("archived"), { archivedAt: "desc" })
+        : none,
+      activeView
+        ? prisma.courtHearing.findMany({
+            where: andWhere(
+              { archivedAt: null, hearingAt: { gte: now, lte: soon } },
+              courtHearingVisibilityWhere(currentUser),
+            ),
+            include: hearingInclude,
+            orderBy: { hearingAt: "asc" },
+            take: 500,
+          })
+        : Promise.resolve([] as HearingRow[]),
+      formNeeded
+        ? prisma.case.findMany({
+            where: andWhere(
+              { archivedAt: null },
+              caseVisibilityWhere(currentUser),
+            ),
+            orderBy: [{ project: { name: "asc" } }, { name: "asc" }],
+            select: { id: true, name: true, project: { select: { name: true } } },
+            take: 1000,
+          })
+        : Promise.resolve([] as Data["cases"]),
+      formNeeded
+        ? prisma.organizationMember.findMany({
+            where: {
+              organizationId: currentUser.organizationId,
+              status: "ACTIVE",
+            },
+            orderBy: { user: { name: "asc" } },
+            select: { user: { select: { id: true, name: true } } },
+          })
+        : Promise.resolve([] as Array<{ user: { id: string; name: string } }>),
     ]);
 
     return {
+      view,
       overdue,
       upcoming,
+      later,
+      fulfilled,
+      archived,
       hearings,
       cases,
       members: memberRows.map((row) => row.user),
       canManage: canManageDeadlines(currentUser),
+      caseFilter,
     };
   });
 
-  const data = result.data ?? emptyData;
+  const data = result.data ?? { ...emptyData, view };
 
   return (
     <>
       <PageHeader
         title="Lhůtník"
-        description="Lhůty po termínu, blížící se lhůty a nadcházející soudní jednání."
+        description="Aktivní lhůty, splněné a archivované lhůty a nadcházející soudní jednání."
         action={
           data.canManage ? (
-            <ButtonLink href="#new-deadline">
+            <ButtonLink href="/deadlines#new-deadline">
               <Plus className="h-4 w-4" aria-hidden="true" />
               Nová lhůta
             </ButtonLink>
@@ -203,7 +420,7 @@ export default async function DeadlinesPage() {
       />
       <DatabaseNotice databaseReady={result.databaseReady} error={result.error} />
 
-      {data.canManage ? (
+      {data.canManage && data.view === "active" ? (
         <Section title="Nová lhůta" id="new-deadline" className="scroll-mt-6">
           <form action={createDeadline} className="grid gap-4">
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -262,22 +479,82 @@ export default async function DeadlinesPage() {
         </Section>
       ) : null}
 
-      <Section title="Po termínu">
-        {data.overdue.length > 0 ? (
-          deadlineRows(data.overdue)
-        ) : (
-          <EmptyState>Žádné lhůty po termínu.</EmptyState>
-        )}
-      </Section>
+      <ViewTabs view={data.view} caseId={data.caseFilter?.id} />
 
-      <Section title={`Blíží se (do ${UPCOMING_WINDOW_DAYS} dní)`}>
-        {data.upcoming.length > 0 ? (
-          deadlineRows(data.upcoming)
-        ) : (
-          <EmptyState>Žádné lhůty v nejbližších dnech.</EmptyState>
-        )}
-      </Section>
+      {data.caseFilter ? (
+        <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-[#2c3a45]">
+          <span>
+            Jen lhůty spisu{" "}
+            <Link href={`/cases/${data.caseFilter.id}`} className={caseLinkClass}>
+              <strong className="font-semibold">{data.caseFilter.name}</strong>
+            </Link>
+          </span>
+          <Link
+            href={deadlinesHref(data.view)}
+            className="font-medium text-[#0e1822] underline underline-offset-2"
+          >
+            Zobrazit lhůty všech spisů
+          </Link>
+        </p>
+      ) : null}
 
+      {data.view === "active" ? (
+        <>
+          <Section title="Po termínu">
+            {data.overdue.length > 0 ? (
+              <ActiveDeadlineTable rows={data.overdue} canManage={data.canManage} overdue />
+            ) : (
+              <EmptyState>Žádné lhůty po termínu.</EmptyState>
+            )}
+          </Section>
+
+          <Section title={`Blíží se (do ${UPCOMING_WINDOW_DAYS} dní)`}>
+            {data.upcoming.length > 0 ? (
+              <ActiveDeadlineTable rows={data.upcoming} canManage={data.canManage} />
+            ) : (
+              <EmptyState>Žádné lhůty v nejbližších dnech.</EmptyState>
+            )}
+          </Section>
+
+          <Section title="Později">
+            {data.later.length > 0 ? (
+              <ActiveDeadlineTable rows={data.later} canManage={data.canManage} />
+            ) : (
+              <EmptyState>Žádné další naplánované lhůty.</EmptyState>
+            )}
+          </Section>
+        </>
+      ) : null}
+
+      {data.view === "fulfilled" ? (
+        <Section title="Splněné lhůty">
+          {data.fulfilled.length > 0 ? (
+            <ClosedDeadlineTable
+              rows={data.fulfilled}
+              canManage={data.canManage}
+              archived={false}
+            />
+          ) : (
+            <EmptyState>Zatím žádné splněné lhůty.</EmptyState>
+          )}
+        </Section>
+      ) : null}
+
+      {data.view === "archived" ? (
+        <Section title="Archiv lhůt">
+          {data.archived.length > 0 ? (
+            <ClosedDeadlineTable
+              rows={data.archived}
+              canManage={data.canManage}
+              archived
+            />
+          ) : (
+            <EmptyState>Archiv je prázdný.</EmptyState>
+          )}
+        </Section>
+      ) : null}
+
+      {data.view === "active" ? (
       <Section title={`Nadcházející soudní jednání (do ${UPCOMING_WINDOW_DAYS} dní)`}>
         {data.hearings.length > 0 ? (
           <div className="table-scroll">
@@ -296,14 +573,11 @@ export default async function DeadlinesPage() {
                   <tr key={hearing.id}>
                     <td className="font-medium text-stone-950">{hearing.court}</td>
                     <td>
-                      <Link
-                        href={`/cases/${hearing.case.id}`}
-                        className="text-[#0e1822] underline-offset-2 hover:underline"
-                      >
+                      <Link href={`/cases/${hearing.case.id}`} className={caseLinkClass}>
                         {hearing.case.name}
                       </Link>
                     </td>
-                    <td>{formatDateTime(hearing.hearingAt)}</td>
+                    <td>{formatDateTimeUtc(hearing.hearingAt)}</td>
                     <td>{hearing.room ?? "—"}</td>
                     <td>{hearing.responsibleUser?.name ?? "—"}</td>
                   </tr>
@@ -315,6 +589,7 @@ export default async function DeadlinesPage() {
           <EmptyState>Žádná nadcházející jednání.</EmptyState>
         )}
       </Section>
+      ) : null}
     </>
   );
 }
