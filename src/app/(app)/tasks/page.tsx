@@ -8,16 +8,17 @@ import {
   Save,
 } from "lucide-react";
 
-import { createTask, updateTaskStatus } from "@/app/actions/tasks";
+import { updateTaskStatus } from "@/app/actions/tasks";
 import { CascadingMatterSelect } from "@/components/cascading-matter-select";
 import { ColumnVisibilityPanel } from "@/components/column-visibility-panel";
-import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
+import { Field, SelectInput, TextInput } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
 import { RowClickNav } from "@/components/row-click-nav";
 import { Section } from "@/components/section";
 import { StatCard } from "@/components/stat-card";
-import { TaskPeopleFields } from "@/components/task-people-fields";
+import { TaskCreateForm } from "@/components/task-create-form";
 import { TaskStatusLegend } from "@/components/task-status-legend";
+import { TaskWorkLogDialog } from "@/components/task-work-log-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
@@ -33,11 +34,9 @@ import {
   archiveFilterValue,
 } from "@/lib/archive-filter";
 import { summarizeLabels } from "@/lib/assignments";
-import { getTeamOptionsWithMembers } from "@/lib/assignments-overview.server";
 import { getCurrentUser } from "@/lib/auth";
 import { statusCount } from "@/lib/dashboard/task-counts";
 import { safeQuery } from "@/lib/db-safe";
-import { getOrgUserOptions } from "@/lib/org-users";
 import { formatDate, formatDateUtc } from "@/lib/format";
 import {
   options,
@@ -45,16 +44,19 @@ import {
   taskPriorityLabels,
   taskStatusLabels,
 } from "@/lib/labels";
+import { canAccessModule } from "@/lib/module-access.server";
 import {
   andWhere,
   canWorkOnTask,
-  caseVisibilityWhere,
-  projectVisibilityWhere,
-  subjectVisibilityWhere,
   taskVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
-import { filterFormKey } from "@/lib/search-params";
+import { filterFormKey, hrefWithout } from "@/lib/search-params";
+import {
+  emptyTaskFormOptions,
+  loadTaskFormOptions,
+  type TaskFormOptions,
+} from "@/lib/tasks/task-form-options.server";
 import {
   isTaskOverdue,
   taskDeadlineTypeTone,
@@ -85,6 +87,7 @@ type TasksProps = {
     priority?: string;
     assignedToId?: string;
     supervisorId?: string;
+    createdById?: string;
     responsibleUserId?: string;
     subjectId?: string;
     projectId?: string;
@@ -93,6 +96,7 @@ type TasksProps = {
     overdue?: string;
     sort?: string;
     archive?: string;
+    logWork?: string;
   }>;
 };
 
@@ -121,21 +125,15 @@ type TaskRow = {
   responsibleUser: { name: string } | null;
   people: TaskPeopleView;
   canWork: boolean;
+  /** Počet odložení termínu (štítek „odloženo N×“). */
+  postponeCount: number;
 };
 
 type TasksPageData = {
   tasks: TaskRow[];
   truncated: boolean;
-  users: Array<{ id: string; name: string }>;
-  teams: Awaited<ReturnType<typeof getTeamOptionsWithMembers>>;
-  subjects: Array<{ id: string; name: string }>;
-  projects: Array<{ id: string; name: string; mainSubjectId: string }>;
-  cases: Array<{
-    id: string;
-    name: string;
-    projectId: string;
-    project: { name: string };
-  }>;
+  formOptions: TaskFormOptions;
+  canLogWork: boolean;
   cards: {
     review: number;
     waitingClient: number;
@@ -238,6 +236,8 @@ export default async function TasksPage({ searchParams }: TasksProps) {
   const deadlineType = validEnum(TaskDeadlineType, params.deadlineType);
   const assignedToId = validId(params.assignedToId);
   const supervisorId = validId(params.supervisorId);
+  const createdById = validId(params.createdById);
+  const logWorkTaskId = validId(params.logWork);
   const responsibleUserId = params.responsibleUserId ?? "";
   const subjectId = params.subjectId ?? "";
   const projectId = params.projectId ?? "";
@@ -250,11 +250,8 @@ export default async function TasksPage({ searchParams }: TasksProps) {
   const result = await safeQuery<TasksPageData>(
     {
       tasks: [],
-      users: [],
-      teams: [],
-      subjects: [],
-      projects: [],
-      cases: [],
+      formOptions: emptyTaskFormOptions,
+      canLogWork: false,
       truncated: false,
       cards: { review: 0, waitingClient: 0, waitingCounterparty: 0, overdue: 0 },
       tableView: getDefaultTableView("tasks"),
@@ -277,6 +274,7 @@ export default async function TasksPage({ searchParams }: TasksProps) {
             ? { deadlineType: deadlineType as TaskDeadlineType }
             : {}),
           ...(responsibleUserId ? { responsibleUserId } : {}),
+          ...(createdById ? { createdById } : {}),
           ...(projectId ? { projectId } : {}),
           ...(caseId ? { caseId } : {}),
           // "Po termínu" card links here: overdue = past deadline and not yet
@@ -306,11 +304,8 @@ export default async function TasksPage({ searchParams }: TasksProps) {
 
       const [
         tasks,
-        users,
-        teams,
-        subjects,
-        projects,
-        cases,
+        formOptions,
+        canLogWork,
         statusGroups,
         overdue,
       ] = await Promise.all([
@@ -360,39 +355,13 @@ export default async function TasksPage({ searchParams }: TasksProps) {
             responsibleUser: { select: { name: true } },
             // Řešitelé + dohled (obsahuje i userId/role pro canWorkOnTask).
             ...taskPeopleSelect,
+            _count: {
+              select: { events: { where: { type: "DEADLINE_POSTPONED" } } },
+            },
           },
         }),
-        getOrgUserOptions(currentUser),
-        getTeamOptionsWithMembers(prisma, currentUser.organizationId),
-        prisma.subject.findMany({
-          where: andWhere(
-            { archivedAt: null },
-            subjectVisibilityWhere(currentUser),
-          ),
-          orderBy: { name: "asc" },
-          select: { id: true, name: true },
-        }),
-        prisma.project.findMany({
-          where: andWhere(
-            { archivedAt: null },
-            projectVisibilityWhere(currentUser),
-          ),
-          orderBy: { name: "asc" },
-          select: { id: true, name: true, mainSubjectId: true },
-        }),
-        prisma.case.findMany({
-          where: andWhere(
-            { archivedAt: null },
-            caseVisibilityWhere(currentUser),
-          ),
-          orderBy: { name: "asc" },
-          select: {
-            id: true,
-            name: true,
-            projectId: true,
-            project: { select: { name: true } },
-          },
-        }),
+        loadTaskFormOptions(prisma, currentUser),
+        canAccessModule(currentUser, "module.workLogs"),
         // One grouped scan covers the three status cards; overdue keeps its own
         // count because it filters on deadline rather than a single status.
         prisma.task.groupBy({
@@ -415,18 +384,16 @@ export default async function TasksPage({ searchParams }: TasksProps) {
       );
 
       return {
-        tasks: visibleTasks.map((task) => ({
+        tasks: visibleTasks.map(({ _count, ...task }) => ({
           ...task,
           people: taskPeopleFromRecord(task),
           // Inline změna statusu: řešitelé, zadavatel, odpovědná osoba i dohled.
           canWork: canWorkOnTask(currentUser, task),
+          postponeCount: _count.events,
         })),
         truncated,
-        users,
-        teams,
-        subjects,
-        projects,
-        cases,
+        formOptions,
+        canLogWork,
         cards: {
           review: statusCount(statusGroups, TaskStatus.FOR_REVIEW),
           waitingClient: statusCount(statusGroups, TaskStatus.WAITING_FOR_CLIENT),
@@ -442,6 +409,12 @@ export default async function TasksPage({ searchParams }: TasksProps) {
     },
   );
   const visibleColumnSet = new Set(result.data.tableView.visibleColumns);
+  const { users, subjects, projects, cases } = result.data.formOptions;
+  // Dialog „Vykázat práci“ (?logWork=<id>) se zavře / po uložení vrátí na
+  // stejný filtrovaný seznam.
+  const listHref = hrefWithout("/tasks", params, ["logWork"]);
+  const logWorkHref = (taskId: string) =>
+    hrefWithout("/tasks", params, ["logWork"], { logWork: taskId });
 
   return (
     <>
@@ -495,7 +468,7 @@ export default async function TasksPage({ searchParams }: TasksProps) {
       </div>
       <Section>
         <form
-          key={filterFormKey(params)}
+          key={filterFormKey(params, ["logWork"])}
           className="grid gap-3 lg:grid-cols-4 xl:grid-cols-5"
         >
           <Field label="Status">
@@ -519,9 +492,9 @@ export default async function TasksPage({ searchParams }: TasksProps) {
             </SelectInput>
           </Field>
           <CascadingMatterSelect
-            subjects={result.data.subjects}
-            projects={result.data.projects}
-            cases={result.data.cases.map((legalCase) => ({
+            subjects={subjects}
+            projects={projects}
+            cases={cases.map((legalCase) => ({
               id: legalCase.id,
               name: legalCase.name,
               projectId: legalCase.projectId,
@@ -535,7 +508,7 @@ export default async function TasksPage({ searchParams }: TasksProps) {
           <Field label="Řešitel">
             <SelectInput name="assignedToId" defaultValue={assignedToId}>
               <option value="">Všichni řešitelé</option>
-              {result.data.users.map((user) => (
+              {users.map((user) => (
                 <option key={user.id} value={user.id}>
                   {user.name}
                 </option>
@@ -545,7 +518,17 @@ export default async function TasksPage({ searchParams }: TasksProps) {
           <Field label="Dohled">
             <SelectInput name="supervisorId" defaultValue={supervisorId}>
               <option value="">Bez filtru dohledu</option>
-              {result.data.users.map((user) => (
+              {users.map((user) => (
+                <option key={user.id} value={user.id}>
+                  {user.name}
+                </option>
+              ))}
+            </SelectInput>
+          </Field>
+          <Field label="Zadavatel">
+            <SelectInput name="createdById" defaultValue={createdById}>
+              <option value="">Všichni zadavatelé</option>
+              {users.map((user) => (
                 <option key={user.id} value={user.id}>
                   {user.name}
                 </option>
@@ -555,7 +538,7 @@ export default async function TasksPage({ searchParams }: TasksProps) {
           <Field label="Odpovědná osoba">
             <SelectInput name="responsibleUserId" defaultValue={responsibleUserId}>
               <option value="">Všechny osoby</option>
-              {result.data.users.map((user) => (
+              {users.map((user) => (
                 <option key={user.id} value={user.id}>
                   {user.name}
                 </option>
@@ -597,6 +580,7 @@ export default async function TasksPage({ searchParams }: TasksProps) {
           priority ||
           assignedToId ||
           supervisorId ||
+          createdById ||
           responsibleUserId ||
           subjectId ||
           projectId ||
@@ -760,6 +744,11 @@ export default async function TasksPage({ searchParams }: TasksProps) {
                         }
                       >
                         {formatDateUtc(task.deadline)}
+                        {task.postponeCount > 0 ? (
+                          <Badge tone="amber" className="ml-2 whitespace-nowrap">
+                            odloženo {task.postponeCount}×
+                          </Badge>
+                        ) : null}
                       </td>
                     ) : null}
                     {visibleColumnSet.has("sharePointUrl") ? (
@@ -774,13 +763,33 @@ export default async function TasksPage({ searchParams }: TasksProps) {
                       <td>{formatDate(task.updatedAt)}</td>
                     ) : null}
                     <td>
-                      <ButtonLink
-                        href={`/tasks/${task.id}`}
-                        variant="ghost"
-                        className="h-8 px-3"
-                      >
-                        Podrobnosti
-                      </ButtonLink>
+                      <div className="flex flex-wrap gap-2">
+                        <ButtonLink
+                          href={`/tasks/${task.id}`}
+                          variant="ghost"
+                          className="h-8 px-3"
+                        >
+                          Podrobnosti
+                        </ButtonLink>
+                        {result.data.canLogWork ? (
+                          <ButtonLink
+                            href={logWorkHref(task.id)}
+                            variant="ghost"
+                            className="h-8 whitespace-nowrap px-3"
+                            title="Vykázat práci k úkolu"
+                          >
+                            Vykázat práci
+                          </ButtonLink>
+                        ) : null}
+                        <ButtonLink
+                          href={`/tasks/new?duplicate=${task.id}`}
+                          variant="ghost"
+                          className="h-8 px-3"
+                          title="Duplikovat úkol (uložit jako nový)"
+                        >
+                          Duplikovat
+                        </ButtonLink>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -793,76 +802,16 @@ export default async function TasksPage({ searchParams }: TasksProps) {
         )}
       </Section>
       <Section title="Nový úkol" id="new-task" className="scroll-mt-6">
-        <form action={createTask} className="grid gap-4">
-          <div className="grid gap-4 md:grid-cols-3">
-            <Field label="Název úkolu" className="md:col-span-2">
-              <TextInput name="title" required />
-            </Field>
-            <Field label="Priorita">
-              <SelectInput name="priority" defaultValue="STANDARD">
-                {options.taskPriorities.map((priorityItem) => (
-                  <option key={priorityItem} value={priorityItem}>
-                    {taskPriorityLabels[priorityItem]}
-                  </option>
-                ))}
-              </SelectInput>
-            </Field>
-          </div>
-          <TaskPeopleFields
-            users={result.data.users}
-            teams={result.data.teams}
-            defaultResponsibleUserId={result.data.currentUserId}
-          />
-          {/* Cascading: pick the client first, then only their projects, then
-              only that project's cases. Project can arrive pre-filled via
-              ?projectId= when creating from a project. */}
-          <CascadingMatterSelect
-            subjects={result.data.subjects}
-            projects={result.data.projects}
-            cases={result.data.cases.map((legalCase) => ({
-              id: legalCase.id,
-              name: legalCase.name,
-              projectId: legalCase.projectId,
-              projectName: legalCase.project.name,
-            }))}
-            defaultProjectId={projectId}
-            defaultCaseId={caseId}
-          />
-          <div className="grid gap-4 md:grid-cols-3">
-            <Field label="Typ lhůty">
-              <SelectInput name="deadlineType" defaultValue="INTERNAL">
-                {options.taskDeadlineTypes.map((type) => (
-                  <option key={type} value={type}>
-                    {taskDeadlineTypeLabels[type]}
-                  </option>
-                ))}
-              </SelectInput>
-            </Field>
-            <Field label="Začátek">
-              <TextInput
-                name="startDate"
-                type="date"
-                defaultValue={now.toISOString().slice(0, 10)}
-              />
-            </Field>
-            <Field label="Deadline">
-              <TextInput name="deadline" type="date" />
-            </Field>
-          </div>
-          <Field label="Krátký popis">
-            <TextInput name="shortDescription" />
-          </Field>
-          <Field label="Detailní popis">
-            <TextArea name="detailedDescription" />
-          </Field>
-          <Field label="SharePoint URL">
-            <TextInput name="sharepointUrl" type="url" />
-          </Field>
-          <div>
-            <Button type="submit" pendingLabel="Vytvářím…">Vytvořit úkol</Button>
-          </div>
-        </form>
+        <TaskCreateForm
+          options={result.data.formOptions}
+          currentUserId={result.data.currentUserId}
+          defaultProjectId={projectId}
+          defaultCaseId={caseId}
+        />
       </Section>
+      {result.data.canLogWork && logWorkTaskId ? (
+        <TaskWorkLogDialog taskId={logWorkTaskId} closeHref={listHref} />
+      ) : null}
     </>
   );
 }

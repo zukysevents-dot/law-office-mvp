@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/page-header";
 import { RowClickNav } from "@/components/row-click-nav";
 import { Section } from "@/components/section";
 import { TaskStatusLegend } from "@/components/task-status-legend";
+import { TaskWorkLogDialog } from "@/components/task-work-log-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
@@ -43,6 +44,7 @@ import {
   type MyTaskRole,
 } from "@/lib/tasks/task-people";
 import { getPrisma } from "@/lib/prisma";
+import { hrefWithout } from "@/lib/search-params";
 import {
   isTaskOverdue,
   taskDeadlineTypeTone,
@@ -50,7 +52,10 @@ import {
   taskStatusTone,
 } from "@/lib/status-tones";
 import { AccessDenied } from "@/components/access-denied";
-import { moduleAccessDenial } from "@/lib/module-access.server";
+import {
+  canAccessModule,
+  moduleAccessDenial,
+} from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -62,6 +67,7 @@ type MyTasksProps = {
     overdue?: string;
     sort?: string;
     role?: string;
+    logWork?: string;
   }>;
 };
 
@@ -81,7 +87,9 @@ type MyTasksData = {
     assigneeNames: string;
     myRoles: MyTaskRole[];
     canWork: boolean;
+    postponeCount: number;
   }>;
+  canLogWork: boolean;
 };
 
 const sortLabels = {
@@ -126,10 +134,14 @@ export default async function MyTasksPage({ searchParams }: MyTasksProps) {
   const overdueOnly = params.overdue === "1" || params.overdue === "true";
   const sort = params.sort ?? "deadline";
   const role = parseMyTaskRole(params.role);
+  const logWorkTaskId =
+    params.logWork && /^[A-Za-z0-9_-]{1,64}$/.test(params.logWork)
+      ? params.logWork
+      : "";
   const now = new Date();
 
   const result = await safeQuery<MyTasksData>(
-    { userName: "Aktuální uživatel", tasks: [] },
+    { userName: "Aktuální uživatel", tasks: [], canLogWork: false },
     async () => {
       const prisma = getPrisma();
       const currentUser = await getCurrentUser();
@@ -162,22 +174,31 @@ export default async function MyTasksPage({ searchParams }: MyTasksProps) {
           createdBy: { select: { name: true } },
           responsibleUser: { select: { name: true } },
           ...taskPeopleSelect,
+          _count: {
+            select: { events: { where: { type: "DEADLINE_POSTPONED" } } },
+          },
         },
         take: 500,
       });
+      const canLogWork = await canAccessModule(currentUser, "module.workLogs");
 
       return {
         userName: currentUser.name,
-        tasks: tasks.map((task) => ({
+        tasks: tasks.map(({ _count, ...task }) => ({
           ...task,
           assigneeNames: formatAssigneeNames(taskPeopleFromRecord(task).assignees),
           myRoles: myTaskRoles(task, currentUser.id),
           canWork: canWorkOnTask(currentUser, task),
+          postponeCount: _count.events,
         })),
+        canLogWork,
       };
     },
   );
 
+  const listHref = hrefWithout("/tasks/my", params, ["logWork"]);
+  const logWorkHref = (taskId: string) =>
+    hrefWithout("/tasks/my", params, ["logWork"], { logWork: taskId });
   const hasFilters =
     Boolean(status || priority || deadlineType || overdueOnly || role) ||
     sort !== "deadline";
@@ -280,6 +301,7 @@ export default async function MyTasksPage({ searchParams }: MyTasksProps) {
                     <th>Typ lhůty</th>
                     <th>Deadline</th>
                     <th>Status</th>
+                    <th>Akce</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -339,6 +361,11 @@ export default async function MyTasksPage({ searchParams }: MyTasksProps) {
                         }
                       >
                         {formatDateUtc(task.deadline)}
+                        {task.postponeCount > 0 ? (
+                          <Badge tone="amber" className="ml-2 whitespace-nowrap">
+                            odloženo {task.postponeCount}×
+                          </Badge>
+                        ) : null}
                       </td>
                       <td className="min-w-72">
                         {task.canWork ? (
@@ -374,6 +401,28 @@ export default async function MyTasksPage({ searchParams }: MyTasksProps) {
                           {taskStatusLabels[task.status]}
                         </Badge>
                       </td>
+                      <td>
+                        <div className="flex flex-wrap gap-2">
+                          {result.data.canLogWork ? (
+                            <ButtonLink
+                              href={logWorkHref(task.id)}
+                              variant="ghost"
+                              className="h-8 whitespace-nowrap px-3"
+                              title="Vykázat práci k úkolu"
+                            >
+                              Vykázat práci
+                            </ButtonLink>
+                          ) : null}
+                          <ButtonLink
+                            href={`/tasks/new?duplicate=${task.id}`}
+                            variant="ghost"
+                            className="h-8 px-3"
+                            title="Duplikovat úkol (uložit jako nový)"
+                          >
+                            Duplikovat
+                          </ButtonLink>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -384,6 +433,9 @@ export default async function MyTasksPage({ searchParams }: MyTasksProps) {
           <EmptyState>Žádné úkoly neodpovídají filtrům.</EmptyState>
         )}
       </Section>
+      {result.data.canLogWork && logWorkTaskId ? (
+        <TaskWorkLogDialog taskId={logWorkTaskId} closeHref={listHref} />
+      ) : null}
     </>
   );
 }

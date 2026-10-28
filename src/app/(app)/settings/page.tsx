@@ -346,6 +346,11 @@ export default async function SettingsPage() {
                 defaultChecked={preference.taskOverdueEmail}
               />
               <PreferenceCheckbox
+                name="taskDeadlineChangedEmail"
+                label="Odložení nebo změna termínu úkolu"
+                defaultChecked={preference.taskDeadlineChangedEmail}
+              />
+              <PreferenceCheckbox
                 name="taskForReviewEmail"
                 label="Úkol předaný ke kontrole"
                 defaultChecked={preference.taskForReviewEmail}

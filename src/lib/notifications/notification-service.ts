@@ -11,6 +11,7 @@ import {
   type RecipientNotice,
 } from "@/lib/assignments";
 import { taskStatusLabels } from "@/lib/labels";
+import { formatTaskDeadline } from "@/lib/tasks/deadline-history";
 import {
   taskCommentRecipients,
   taskCreatedRecipients,
@@ -63,6 +64,7 @@ export type NotificationPreferenceShape = {
   matterAssignedEmail: boolean;
   taskCommentedEmail: boolean;
   taskOverdueEmail: boolean;
+  taskDeadlineChangedEmail: boolean;
 };
 
 export type NotificationPayload = {
@@ -101,6 +103,7 @@ const defaultPreference: NotificationPreferenceShape = {
   matterAssignedEmail: true,
   taskCommentedEmail: true,
   taskOverdueEmail: true,
+  taskDeadlineChangedEmail: true,
 };
 
 export function uniqueRecipients(
@@ -174,6 +177,11 @@ export function preferenceAllows(
 
   if (type === NotificationType.TASK_OVERDUE) {
     return current.taskOverdueEmail;
+  }
+
+  if (type === NotificationType.TASK_DEADLINE_CHANGED) {
+    // Starší řádek preferencí (před migrací načtený bez sloupce) = zapnuto.
+    return current.taskDeadlineChangedEmail ?? true;
   }
 
   return false;
@@ -600,6 +608,126 @@ export async function queueTaskStatusNotifications({
       entityId: task.id,
     });
   }
+}
+
+export type TaskDeadlineChangeMode = "postpone" | "edit";
+
+// Text e-mailu o odložení / změně termínu (čistá funkce, unit test).
+export function formatTaskDeadlineChangedNotification({
+  title,
+  oldDeadline,
+  newDeadline,
+  reason,
+  actorName,
+  mode,
+}: {
+  title: string;
+  oldDeadline: Date | null;
+  newDeadline: Date | null;
+  reason?: string | null;
+  actorName: string;
+  mode: TaskDeadlineChangeMode;
+}) {
+  const from = formatTaskDeadline(oldDeadline);
+  const to = formatTaskDeadline(newDeadline);
+  const postponed =
+    Boolean(oldDeadline && newDeadline) &&
+    (newDeadline as Date).getTime() > (oldDeadline as Date).getTime();
+  let sentence: string;
+  if (mode === "postpone") {
+    sentence = `Termín úkolu byl odložen z ${from} na ${to}.`;
+  } else if (oldDeadline && newDeadline) {
+    sentence = postponed
+      ? `Termín úkolu byl při úpravě odložen z ${from} na ${to}.`
+      : `Termín úkolu byl při úpravě změněn z ${from} na ${to}.`;
+  } else if (newDeadline) {
+    sentence = `Úkolu byl nastaven termín ${to}.`;
+  } else {
+    sentence = `Termín úkolu (${from}) byl odstraněn.`;
+  }
+  const lines = [sentence];
+  if (reason) {
+    lines.push(`Důvod: ${reason}`);
+  }
+  lines.push(`${mode === "postpone" ? "Odložil(a)" : "Změnil(a)"}: ${actorName}.`);
+  return {
+    subject:
+      mode === "postpone"
+        ? `Odložení úkolu: ${title}`
+        : `Změna termínu úkolu: ${title}`,
+    message: lines.join("\n"),
+  };
+}
+
+// Odložení nebo změna termínu: řešitelé, dohled, odpovědná osoba a zadavatel
+// (bez autora změny). Bez dedupe klíče — každé odložení je nová událost.
+export async function queueTaskDeadlineChangedNotifications({
+  task,
+  oldDeadline,
+  newDeadline,
+  reason,
+  actorUserId,
+  actorName,
+  mode,
+}: {
+  task: TaskNotificationTask;
+  oldDeadline: Date | null;
+  newDeadline: Date | null;
+  reason?: string | null;
+  actorUserId: string;
+  actorName: string;
+  mode: TaskDeadlineChangeMode;
+}) {
+  const { subject, message } = formatTaskDeadlineChangedNotification({
+    title: task.title,
+    oldDeadline,
+    newDeadline,
+    reason,
+    actorName,
+    mode,
+  });
+  return queueInternalNotification({
+    toUserIds: taskStatusRecipients(task),
+    actorUserId,
+    type: NotificationType.TASK_DEADLINE_CHANGED,
+    subject,
+    body: formatTaskNotificationBody({ title: task.title, message, taskId: task.id }),
+    entityType: "Task",
+    entityId: task.id,
+  });
+}
+
+// Po změně termínu úkolu (v transakci té změny):
+//  (a) nevyřízená upozornění „blíží se deadline“ / „po termínu“ na starý termín
+//      se už neodešlou (SKIPPED, lastError TASK_DEADLINE_CHANGED);
+//  (b) dedupe klíč připomínky „blíží se deadline“ (bez data v klíči) se uvolní,
+//      takže plánovač připomínku k NOVÉMU termínu znovu zařadí. Řádek zůstává
+//      jako historie. Formát klíče se nemění (žádná vlna duplicit po nasazení).
+// Klíč „po termínu“ datum obsahuje (taskOverdueDedupeKey), uvolňovat ho netřeba.
+export async function rearmTaskDeadlineNotifications(
+  tx: Prisma.TransactionClient,
+  taskId: string,
+) {
+  await tx.notification.updateMany({
+    where: {
+      entityType: "Task",
+      entityId: taskId,
+      status: NotificationStatus.PENDING,
+      type: {
+        in: [NotificationType.TASK_DEADLINE_SOON, NotificationType.TASK_OVERDUE],
+      },
+    },
+    data: { status: NotificationStatus.SKIPPED, lastError: "TASK_DEADLINE_CHANGED" },
+  });
+  await tx.notification.updateMany({
+    where: {
+      entityType: "Task",
+      entityId: taskId,
+      type: NotificationType.TASK_DEADLINE_SOON,
+      dedupeKey: { not: null },
+    },
+    data: { dedupeKey: null },
+  });
 }
 
 export async function sendPendingNotifications(limit = DEFAULT_SEND_LIMIT) {

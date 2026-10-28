@@ -14,7 +14,9 @@ import {
   requiredDate,
   requiredNumber,
   requiredString,
+  safeInternalRedirectPath,
 } from "@/lib/form";
+import { stripDialogParams } from "@/lib/search-params";
 import {
   andWhere,
   assertCanEditRecord,
@@ -157,6 +159,8 @@ export async function createWorkLog(formData: FormData) {
       newValue: {
         subjectId: workLog.subjectId,
         projectId: workLog.projectId,
+        caseId: workLog.caseId,
+        taskId: workLog.taskId,
         hours: workLog.hours.toString(),
         hourlyRate: workLog.hourlyRate?.toString() ?? null,
         amountCzk: workLog.amountCzk?.toString() ?? null,
@@ -167,7 +171,19 @@ export async function createWorkLog(formData: FormData) {
   });
 
   revalidatePath("/work-logs");
-  redirect("/work-logs");
+  if (workLog.taskId) {
+    // „Vykázat práci“ u úkolu: detail úkolu ukáže nový výkaz hned.
+    revalidatePath(`/tasks/${workLog.taskId}`);
+    revalidatePath("/tasks");
+    revalidatePath("/tasks/my");
+  }
+  // Návrat tam, odkud byl dialog otevřen (jen interní cesta → žádný open
+  // redirect), bez parametrů, které by dialog otevřely znovu.
+  redirect(
+    stripDialogParams(
+      safeInternalRedirectPath(optionalString(formData, "returnTo"), "/work-logs"),
+    ),
+  );
 }
 
 function sameNumber(

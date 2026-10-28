@@ -33,6 +33,43 @@ export async function getOrgUserOptions(
   });
 }
 
+// Všichni členové kanceláře volajícího včetně neaktivních (odešlých) — pro
+// filtry historických záznamů (archiv úkolů: zadavatel, řešitel, dohled), kde
+// i bývalý kolega musí jít vybrat. Pro výběr osob do nového záznamu použijte
+// getOrgUserOptions (jen aktivní).
+export async function getOrgUserFilterOptions(
+  currentUser: OrgScopedUser,
+): Promise<Array<{ id: string; name: string; active: boolean }>> {
+  if (!currentUser.organizationId) {
+    return [];
+  }
+
+  const users = await getPrisma().user.findMany({
+    where: {
+      memberships: { some: { organizationId: currentUser.organizationId } },
+    },
+    orderBy: { name: "asc" },
+    select: {
+      id: true,
+      name: true,
+      active: true,
+      memberships: {
+        where: { organizationId: currentUser.organizationId },
+        select: { status: true },
+      },
+    },
+  });
+  return users.map((user) => ({
+    id: user.id,
+    name: user.name,
+    active:
+      user.active &&
+      user.memberships.some(
+        (membership) => membership.status === OrganizationMemberStatus.ACTIVE,
+      ),
+  }));
+}
+
 // Guard for user-valued foreign keys taken from FormData (task assignee /
 // responsible, password reset target, …). Throws unless `userId` belongs to an
 // ACTIVE member of `organizationId`, so a crafted POST can't point at a user

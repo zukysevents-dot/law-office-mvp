@@ -1,16 +1,12 @@
 import { ClipboardCheck, Copy, FileText, Plus } from "lucide-react";
 
-import {
-  archiveWorkLog,
-  createWorkLog,
-  restoreWorkLog,
-} from "@/app/actions/work-logs";
+import { archiveWorkLog, restoreWorkLog } from "@/app/actions/work-logs";
 import { ArchiveActionForm } from "@/components/archive-action-form";
 import { CascadingMatterSelect } from "@/components/cascading-matter-select";
 import { ColumnVisibilityPanel } from "@/components/column-visibility-panel";
-import { WorkLogCategoryFields } from "@/components/work-log-category-fields";
 import { WorkLogCreateDialog } from "@/components/work-log-create-dialog";
-import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
+import { WorkLogCreateForm } from "@/components/work-log-create-form";
+import { Field, SelectInput, TextInput } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
 import { Badge } from "@/components/ui/badge";
@@ -58,9 +54,13 @@ import type { TableViewState } from "@/lib/table-view-preferences";
 import { BillingStatus, ModuleKey } from "@/generated/prisma/enums";
 import {
   buildWorkLogDuplicatePrefill,
-  todayDateInputValue,
   type WorkLogDuplicatePrefill,
 } from "@/lib/work-logs/duplicate";
+import {
+  emptyWorkLogFormOptions,
+  loadWorkLogFormOptions,
+  type WorkLogFormOptions,
+} from "@/lib/work-logs/create-form.server";
 import {
   andWhere,
   billingApproverWorkLogWhere,
@@ -68,10 +68,6 @@ import {
   canEditRecord,
   canSetBillableStatus,
   canViewRates,
-  caseVisibilityWhere,
-  projectVisibilityWhere,
-  subjectVisibilityWhere,
-  taskVisibilityWhere,
   workLogVisibilityWhere,
 } from "@/lib/permissions";
 import { AccessDenied } from "@/components/access-denied";
@@ -131,7 +127,7 @@ type WorkLogsPageData = {
   approvalQueueCount: number | null;
   /** undefined = no ?duplicate, null = source not found / not visible. */
   duplicatePrefill: WorkLogDuplicatePrefill | null | undefined;
-  timeIncrementMinutes: number;
+  formOptions: WorkLogFormOptions;
   // Souhrn hodin přihlášeného uživatele (jeho vlastní výkazy).
   monthSummary: {
     billable: number;
@@ -204,7 +200,7 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
       canApprove: false,
       approvalQueueCount: null,
       duplicatePrefill: undefined,
-      timeIncrementMinutes: 15,
+      formOptions: emptyWorkLogFormOptions,
       monthSummary: { billable: 0, needsApproval: 0, internal: 0, total: 0 },
       weekHours: 0,
       weeklyTarget: null,
@@ -241,15 +237,11 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
       const nextWeekStart = new Date(weekStartMs + 7 * DAY_MS);
       const [
         workLogs,
-        subjects,
-        projects,
-        cases,
-        tasks,
+        formOptions,
         users,
         monthGroups,
         weekAgg,
         hoursPlan,
-        organization,
         approvalQueueCount,
         duplicateSource,
       ] = await Promise.all([
@@ -311,54 +303,7 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
             user: { select: { name: true } },
           },
         }),
-        prisma.subject.findMany({
-          where: andWhere(
-            { archivedAt: null },
-            subjectVisibilityWhere(currentUser),
-          ),
-          orderBy: { name: "asc" },
-          select: { id: true, name: true, ico: true },
-        }),
-        prisma.project.findMany({
-          where: andWhere(
-            { archivedAt: null },
-            projectVisibilityWhere(currentUser),
-          ),
-          orderBy: { name: "asc" },
-          select: { id: true, name: true, mainSubjectId: true },
-        }),
-        prisma.case.findMany({
-          where: andWhere(
-            { archivedAt: null },
-            caseVisibilityWhere(currentUser),
-          ),
-          orderBy: { name: "asc" },
-          select: {
-            id: true,
-            name: true,
-            projectId: true,
-            project: { select: { name: true } },
-          },
-        }),
-        prisma.task.findMany({
-          where: andWhere(
-            { archivedAt: null },
-            taskVisibilityWhere(currentUser),
-          ),
-          orderBy: { createdAt: "desc" },
-          select: {
-            id: true,
-            title: true,
-            projectId: true,
-            caseId: true,
-            // „Moje úkoly“ ve výběru: hlavní řešitel nebo řádek řešitele/dohledu.
-            assignedToId: true,
-            assignees: {
-              where: { userId: currentUser.id },
-              select: { userId: true },
-            },
-          },
-        }),
+        loadWorkLogFormOptions(prisma, currentUser),
         getOrgUserOptions(currentUser),
         prisma.workLog.groupBy({
           by: ["billingStatus", "approvalStatus"],
@@ -380,10 +325,6 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
         prisma.userHoursPlan.findUnique({
           where: { userId: currentUser.id },
           select: { weeklyHoursTarget: true, monthlyHoursTarget: true },
-        }),
-        prisma.organization.findUnique({
-          where: { id: currentUser.organizationId },
-          select: { billingTimeIncrementMinutes: true },
         }),
         canApprove &&
         (await isModuleEnabled(currentUser.organizationId, ModuleKey.BILLING))
@@ -437,6 +378,7 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
         total,
       };
       const weekHours = Number(weekAgg._sum.hours ?? 0);
+      const { subjects, projects, cases, tasks } = formOptions;
       // Only matters the user can still pick (visible + not archived) are
       // prefilled; the copy is validated again by createWorkLog.
       const duplicatePrefill = duplicateId
@@ -464,17 +406,11 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
           ...workLog,
           canEdit: canEditRecord(currentUser, "WorkLog", workLog),
         })),
+        formOptions,
         subjects,
         projects,
         cases,
-        tasks: tasks.map((task) => ({
-          id: task.id,
-          title: task.title,
-          projectId: task.projectId,
-          caseId: task.caseId,
-          mine:
-            task.assignedToId === currentUser.id || task.assignees.length > 0,
-        })),
+        tasks,
         users,
         tableView,
         canArchive: canArchiveRecords(currentUser),
@@ -483,8 +419,6 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
         canApprove,
         approvalQueueCount,
         duplicatePrefill,
-        timeIncrementMinutes:
-          organization?.billingTimeIncrementMinutes ?? 15,
         monthSummary,
         weekHours,
         weeklyTarget:
@@ -506,12 +440,6 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
     tableView = restrictTableView(tableView, ["approvalStatus"]);
   }
   const visibleColumnSet = new Set(tableView.visibleColumns);
-  const billingStatusChoices = [
-    BillingStatus.BILLABLE,
-    BillingStatus.INTERNAL_NON_BILLABLE,
-  ];
-  const defaultBillingStatus = BillingStatus.BILLABLE;
-  const timeIncrementHours = result.data.timeIncrementMinutes === 6 ? 0.1 : 0.25;
   // % plnění týdenního a měsíčního plánu hodin (null = plán nenastaven).
   const weekPct = fulfillmentPercent(
     result.data.weekHours,
@@ -910,107 +838,15 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
               : undefined
         }
       >
-        {/* key: switching ?duplicate=a → b re-mounts the uncontrolled defaults. */}
-        <form
-          key={duplicateId || "new"}
-          action={createWorkLog}
-          className="grid gap-4"
-        >
-          {duplicatePrefill ? (
-            <input type="hidden" name="sourceWorkLogId" value={duplicateId} />
-          ) : null}
-          {/* Cascading subject → project → case → task. Choosing a project/case
-              narrows the task list to only that matter's tasks. */}
-          <CascadingMatterSelect
-            subjects={result.data.subjects.map((subject) => ({
-              id: subject.id,
-              name: subject.ico
-                ? `${subject.name}, IČO ${subject.ico}`
-                : subject.name,
-            }))}
-            projects={result.data.projects}
-            cases={result.data.cases.map((legalCase) => ({
-              id: legalCase.id,
-              name: legalCase.name,
-              projectId: legalCase.projectId,
-              projectName: legalCase.project.name,
-            }))}
-            tasks={result.data.tasks}
-            includeTask
-            subjectLabel="Subjekt"
-            defaultSubjectId={duplicatePrefill?.subjectId}
-            defaultProjectId={duplicatePrefill?.projectId}
-            defaultCaseId={duplicatePrefill?.caseId}
-            defaultTaskId={duplicatePrefill?.taskId}
-          />
-          <div
-            className={
-              result.data.canViewRates
-                ? "grid gap-4 md:grid-cols-3"
-                : "grid gap-4 md:grid-cols-2"
-            }
-          >
-            <Field label="Datum práce">
-              <TextInput
-                name="workDate"
-                type="date"
-                defaultValue={todayDateInputValue()}
-                required
-              />
-            </Field>
-            <Field label="Hodiny">
-              <TextInput
-                name="hours"
-                type="number"
-                min="0"
-                step={timeIncrementHours}
-                required
-                defaultValue={duplicatePrefill?.hours ?? hoursPrefill}
-              />
-            </Field>
-            {/* Rate is hidden during reporting for non-partners — it is derived
-                from the case/project and they shouldn't see (or set) pricing. */}
-            {result.data.canViewRates ? (
-              <Field label="Sazba">
-                <TextInput
-                  name="hourlyRate"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  defaultValue={duplicatePrefill?.hourlyRate ?? ""}
-                />
-              </Field>
-            ) : null}
-          </div>
-          {/* Interní hodiny nabízejí interní kategorie místo právní oblasti. */}
-          <WorkLogCategoryFields
-            billingStatusOptions={billingStatusChoices.map((status) => ({
-              value: status,
-              label: billingStatusLabels[status],
-            }))}
-            defaultBillingStatus={
-              duplicatePrefill?.billingStatus ?? defaultBillingStatus
-            }
-            defaultLegalArea={duplicatePrefill?.legalArea ?? ""}
-            defaultInternalCategory={duplicatePrefill?.internalCategory ?? ""}
-            legalAreas={legalAreaOptions}
-            internalCategories={options.internalTaskCategories.map((category) => ({
-              value: category,
-              label: internalTaskCategoryLabels[category],
-            }))}
-          />
-          <Field label="Popis práce">
-            <TextArea
-              name="description"
-              defaultValue={duplicatePrefill?.description ?? ""}
-            />
-          </Field>
-          <div className="flex flex-wrap gap-2">
-            <Button type="submit" pendingLabel="Vytvářím…">
-              {isDuplicate ? "Vytvořit kopii výkazu" : "Vytvořit výkaz"}
-            </Button>
-          </div>
-        </form>
+        <WorkLogCreateForm
+          formKey={duplicateId || "new"}
+          options={result.data.formOptions}
+          sourceWorkLogId={duplicatePrefill ? duplicateId : undefined}
+          prefill={
+            duplicatePrefill ?? (hoursPrefill ? { hours: hoursPrefill } : null)
+          }
+          submitLabel={isDuplicate ? "Vytvořit kopii výkazu" : "Vytvořit výkaz"}
+        />
       </WorkLogCreateDialog>
     </>
   );
