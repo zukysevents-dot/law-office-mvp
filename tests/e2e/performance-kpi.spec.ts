@@ -281,6 +281,56 @@ test("dashboard: sloupce hodin mají výšku, cílové značky a přepínač Tý
     const currentWeek = monthPanel.locator('[data-kpi-current="true"]');
     expect(await barHeight(currentWeek.locator('[data-kpi="bar-billable"]'))).toBeGreaterThan(0);
 
+    // Rozložení podle šířky widgetu, ne viewportu (UAT r1): na desktopu
+    // 1440 px je u „Celá šířka“ dlaždice vedle grafu, u „Malý“ pod grafem
+    // a sloupce i souhrn zůstanou vidět.
+    const setWidgetSize = (size: string) =>
+      withDb((db) =>
+        db.query(
+          `update "dashboardWidgets" set size = $2 where "userId" = $1 and type = 'WEEKLY_HOURS_CHART'`,
+          [ids.lawyer, size],
+        ),
+      );
+    const originalSize = await withDb(async (db) => {
+      const result = await db.query(
+        `select size from "dashboardWidgets" where "userId" = $1 and type = 'WEEKLY_HOURS_CHART'`,
+        [ids.lawyer],
+      );
+      return String(result.rows[0]?.size ?? "FULL");
+    });
+    const tile = widget.getByRole("link", { name: /Moje hodiny tento měsíc/ });
+    const chart = widget.getByRole("tabpanel").locator("[data-kpi-chart]");
+    try {
+      await setWidgetSize("FULL");
+      await lawyer.setViewportSize({ width: 1440, height: 900 });
+      await lawyer.reload();
+      await expect(chart).toBeVisible();
+      {
+        const [tileBox, chartBox] = [await tile.boundingBox(), await chart.boundingBox()];
+        expect(tileBox && chartBox && tileBox.x >= chartBox.x + chartBox.width - 1).toBe(true);
+      }
+      await setWidgetSize("SMALL");
+      for (const width of [1280, 1536]) {
+        await lawyer.setViewportSize({ width, height: 900 });
+        await lawyer.reload();
+        await expect(chart).toBeVisible();
+        const [tileBox, chartBox] = [await tile.boundingBox(), await chart.boundingBox()];
+        expect(tileBox && chartBox, `${width}px`).toBeTruthy();
+        expect(tileBox!.y, `${width}px: dlaždice pod grafem`).toBeGreaterThanOrEqual(
+          chartBox!.y + chartBox!.height - 1,
+        );
+        const smallBar = widget
+          .getByRole("tabpanel")
+          .locator(`[data-kpi-bucket="${today}"] [data-kpi="bar-billable"]`);
+        expect(await barHeight(smallBar), `${width}px`).toBeGreaterThan(0);
+        await expect(
+          widget.getByRole("tabpanel").locator('[data-kpi-summary="billable"]'),
+        ).toBeInViewport();
+      }
+    } finally {
+      await setWidgetSize(originalSize);
+    }
+
     // Mobil: graf se vejde, stránka neroluje do strany.
     await lawyer.setViewportSize({ width: 375, height: 812 });
     await lawyer.reload();

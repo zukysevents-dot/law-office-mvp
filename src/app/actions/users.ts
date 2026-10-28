@@ -402,6 +402,9 @@ export type HoursPlanFormState = {
   error?: string;
   // Mění se při každém odeslání (klient podle ní pozná nový výsledek).
   version: number;
+  // Uložené (sanitizované) cíle — klient podle nich srovná pole, např. 0 → prázdné
+  // („cíl zrušen“), aniž by čekal na reload.
+  saved?: HoursPlanTargets;
 };
 
 // Admin/partner nastaví plán hodin pracovníka (UserHoursPlan): týdenní a
@@ -491,7 +494,12 @@ export async function updateUserHoursPlan(
     revalidatePath("/dashboard");
     revalidatePath("/performance", "layout");
 
-    return { ok: true, message: "Plán hodin uložen.", version: Date.now() };
+    return {
+      ok: true,
+      message: "Plán hodin uložen.",
+      version: Date.now(),
+      saved: targets,
+    };
   } catch (error) {
     return {
       ok: false,

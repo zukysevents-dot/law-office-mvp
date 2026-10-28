@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  INVALID_PERIOD_MESSAGE,
+  invalidPeriodMessage,
+  type InvalidPeriodReason,
   parseIsoDate,
   resolvePerformancePeriod,
 } from "./period";
@@ -59,18 +60,23 @@ test("from/to without period → custom", () => {
 });
 
 test("invalid custom range falls back to current month with an error", () => {
-  for (const input of [
-    { period: "custom", from: "2025-03-09", to: "2025-03-03" }, // Od > Do
-    { period: "custom", from: "2025-13-01", to: "2025-03-03" }, // špatné datum
-    { period: "custom", from: "03.03.2025", to: "2025-03-09" }, // formát
-    { period: "custom", from: "2024-01-01", to: "2025-03-09" }, // > 366 dnů
-    { period: "custom" }, // nic
-  ]) {
+  const cases: Array<[Record<string, string>, InvalidPeriodReason]> = [
+    [{ period: "custom", from: "2025-03-09", to: "2025-03-03" }, "order"],
+    [{ period: "custom", from: "2025-13-01", to: "2025-03-03" }, "format"], // špatné datum
+    [{ period: "custom", from: "03.03.2025", to: "2025-03-09" }, "format"],
+    [{ period: "custom", from: "2024-01-01", to: "2025-03-09" }, "tooLong"], // > 366 dnů
+    [{ period: "custom" }, "missing"],
+  ];
+  for (const [input, reason] of cases) {
     const period = resolvePerformancePeriod(input, TODAY);
     assert.equal(period.kind, "month", JSON.stringify(input));
-    assert.equal(period.error, INVALID_PERIOD_MESSAGE);
+    assert.equal(period.error, invalidPeriodMessage(reason));
     assert.equal(iso(period.fromMs), "2026-10-01");
   }
+  assert.equal(
+    invalidPeriodMessage("order"),
+    "Neplatné období – datum Od je pozdější než Do. Zobrazen aktuální měsíc.",
+  );
 });
 
 test("custom with only Od → until today", () => {

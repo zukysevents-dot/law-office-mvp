@@ -145,7 +145,12 @@ export default async function PersonPerformancePage({ params, searchParams }: Pa
             {Object.entries(listParams).map(([key, value]) => (
               <input key={key} type="hidden" name={key} value={value} />
             ))}
-            <PeriodFields kind={period.kind} from={period.fromIso} to={period.toIso} />
+            <PeriodFields
+          kind={period.kind}
+          from={period.fromIso}
+          to={period.toIso}
+          anchor={period.params.anchor}
+        />
             <Button type="submit" variant="secondary">
               Použít
             </Button>

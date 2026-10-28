@@ -648,60 +648,79 @@ function renderWidget(widget: DashboardWidgetView, data: DashboardData) {
         month.summary.total,
         month.summary.totalTarget,
       );
+      const monthBillablePct = fulfillmentPercent(
+        month.summary.billable,
+        month.summary.billableTarget,
+      );
       return (
         <Section title={widget.title} data-widget="hours-kpi">
-          <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,3fr)_minmax(12rem,1fr)] xl:items-stretch">
-            <div className="min-w-0">
-              <HoursKpiTabs
-                tabs={[
-                  {
-                    id: "week",
-                    label: "Týden",
-                    content: (
-                      <HoursKpiChart
-                        caption="Vykázané hodiny tento týden po dnech"
-                        buckets={week.buckets}
-                        summary={week.summary}
-                        emptyHint={emptyHint("Tento týden")}
-                        planHint={planHint}
-                      />
-                    ),
-                  },
-                  {
-                    id: "month",
-                    label: "Měsíc",
-                    content: (
-                      <HoursKpiChart
-                        caption="Vykázané hodiny tento měsíc po týdnech"
-                        buckets={month.buckets}
-                        summary={month.summary}
-                        emptyHint={emptyHint("Tento měsíc")}
-                        planHint={planHint}
-                      />
-                    ),
-                  },
-                ]}
-              />
-            </div>
-            <Link
-              href="/work-logs"
-              className="group flex min-h-40 flex-col justify-between rounded-xl border border-emerald-900/15 bg-emerald-950 px-5 py-5 text-white transition hover:-translate-y-0.5 hover:bg-emerald-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-2"
-              aria-label={`Moje hodiny tento měsíc: ${formatHours(month.summary.total)} hodin, z toho fakturovatelné ${formatHours(month.summary.billable)} hodin. Otevřít výkazy práce.`}
+          {/* Rozložení podle šířky widgetu (container query), ne podle
+              viewportu: u velikosti „Malý“ je widget úzký i na širokém
+              monitoru, dlaždice proto musí zůstat pod grafem. */}
+          <div className="@container/hours-kpi min-w-0">
+            <div
+              className="grid min-w-0 gap-5 @3xl/hours-kpi:grid-cols-[minmax(0,3fr)_minmax(12rem,1fr)] @3xl/hours-kpi:items-stretch"
+              data-hours-kpi-layout
             >
-              <span className="text-sm font-semibold text-emerald-100">
-                Moje hodiny tento měsíc
-              </span>
-              <span className="mt-6 text-4xl font-semibold tracking-tight">
-                {formatHours(month.summary.total)} h
-              </span>
-              <span className="mt-2 text-sm text-emerald-100">
-                fakturovatelné {formatHours(month.summary.billable)} h
-                {monthPct != null ? ` · ${monthPct} % plánu` : ""}
-              </span>
-              <span className="mt-3 text-xs text-emerald-100/80 group-hover:text-white">
-                Otevřít výkazy práce →
-              </span>
-            </Link>
+              <div className="min-w-0">
+                <HoursKpiTabs
+                  tabs={[
+                    {
+                      id: "week",
+                      label: "Týden",
+                      content: (
+                        <HoursKpiChart
+                          caption="Vykázané hodiny tento týden po dnech"
+                          buckets={week.buckets}
+                          summary={week.summary}
+                          emptyHint={emptyHint("Tento týden")}
+                          planHint={planHint}
+                        />
+                      ),
+                    },
+                    {
+                      id: "month",
+                      label: "Měsíc",
+                      content: (
+                        <HoursKpiChart
+                          caption="Vykázané hodiny tento měsíc po týdnech"
+                          buckets={month.buckets}
+                          summary={month.summary}
+                          emptyHint={emptyHint("Tento měsíc")}
+                          planHint={planHint}
+                        />
+                      ),
+                    },
+                  ]}
+                />
+              </div>
+              <Link
+                href="/work-logs"
+                className="group flex min-h-40 flex-col justify-between rounded-xl border border-emerald-900/15 bg-emerald-950 px-5 py-5 text-white transition hover:-translate-y-0.5 hover:bg-emerald-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-2"
+                aria-label={`Moje hodiny tento měsíc: ${formatHours(month.summary.total)} hodin, z toho fakturovatelné ${formatHours(month.summary.billable)} hodin. Otevřít výkazy práce.`}
+              >
+                <span className="text-sm font-semibold text-emerald-100">
+                  Moje hodiny tento měsíc
+                </span>
+                <span className="mt-6 text-4xl font-semibold tracking-tight">
+                  {formatHours(month.summary.total)} h
+                </span>
+                <span className="mt-2 grid gap-0.5 text-sm text-emerald-100">
+                  {monthPct != null ? (
+                    <span>celkem {monthPct} % plánu</span>
+                  ) : null}
+                  <span>
+                    fakturovatelné {formatHours(month.summary.billable)} h
+                    {monthBillablePct != null
+                      ? ` · ${monthBillablePct} % cíle`
+                      : ""}
+                  </span>
+                </span>
+                <span className="mt-3 text-xs text-emerald-100/80 group-hover:text-white">
+                  Otevřít výkazy práce →
+                </span>
+              </Link>
+            </div>
           </div>
         </Section>
       );

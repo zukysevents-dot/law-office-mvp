@@ -9,7 +9,18 @@ export type PerformancePeriodKind = (typeof PERFORMANCE_PERIOD_KINDS)[number];
 
 export const MAX_CUSTOM_PERIOD_DAYS = 366;
 
-export const INVALID_PERIOD_MESSAGE = "Neplatné období – zobrazen aktuální měsíc.";
+export const INVALID_PERIOD_REASONS = {
+  missing: "vyplňte datum Od nebo Do",
+  format: "datum Od nebo Do není platné",
+  order: "datum Od je pozdější než Do",
+  tooLong: `vlastní období může mít nejvýše ${MAX_CUSTOM_PERIOD_DAYS} dní`,
+} as const;
+export type InvalidPeriodReason = keyof typeof INVALID_PERIOD_REASONS;
+
+// Hláška u neplatného vlastního období: proč je neplatné + co se zobrazilo.
+export function invalidPeriodMessage(reason: InvalidPeriodReason) {
+  return `Neplatné období – ${INVALID_PERIOD_REASONS[reason]}. Zobrazen aktuální měsíc.`;
+}
 
 const MONTH_NAMES = [
   "Leden",
@@ -226,23 +237,26 @@ export function resolvePerformancePeriod(
   const rawTo = input.to?.trim() ?? "";
   let fromMs = rawFrom ? parseIsoDate(rawFrom) : null;
   let toMs = rawTo ? parseIsoDate(rawTo) : null;
-  const malformed = (rawFrom && fromMs == null) || (rawTo && toMs == null) || (!rawFrom && !rawTo);
-  if (!malformed) {
-    if (fromMs == null && toMs != null) {
-      fromMs = monthStart(toMs);
-    }
-    if (toMs == null && fromMs != null) {
-      toMs = Math.max(fromMs, todayMs);
-    }
+  if (!rawFrom && !rawTo) {
+    return resolveMonth(todayMs, todayMs, invalidPeriodMessage("missing"));
   }
-  if (
-    malformed ||
-    fromMs == null ||
-    toMs == null ||
-    fromMs > toMs ||
-    (toMs - fromMs) / DAY_MS + 1 > MAX_CUSTOM_PERIOD_DAYS
-  ) {
-    return resolveMonth(todayMs, todayMs, INVALID_PERIOD_MESSAGE);
+  if ((rawFrom && fromMs == null) || (rawTo && toMs == null)) {
+    return resolveMonth(todayMs, todayMs, invalidPeriodMessage("format"));
+  }
+  if (fromMs == null && toMs != null) {
+    fromMs = monthStart(toMs);
+  }
+  if (toMs == null && fromMs != null) {
+    toMs = Math.max(fromMs, todayMs);
+  }
+  if (fromMs == null || toMs == null) {
+    return resolveMonth(todayMs, todayMs, invalidPeriodMessage("missing"));
+  }
+  if (fromMs > toMs) {
+    return resolveMonth(todayMs, todayMs, invalidPeriodMessage("order"));
+  }
+  if ((toMs - fromMs) / DAY_MS + 1 > MAX_CUSTOM_PERIOD_DAYS) {
+    return resolveMonth(todayMs, todayMs, invalidPeriodMessage("tooLong"));
   }
 
   const toExclusive = toMs + DAY_MS;

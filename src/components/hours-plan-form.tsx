@@ -60,6 +60,15 @@ export function HoursPlanForm({
 }) {
   const [values, setValues] = useState<Values>(() => toValues(initial));
   const [state, formAction] = useActionState(updateUserHoursPlan, initialState);
+  // Po úspěšném uložení srovnat pole s uloženou hodnotou (0 → prázdné = cíl
+  // zrušen). Úprava stavu při renderu podle nového výsledku akce (bez efektu).
+  const [syncedVersion, setSyncedVersion] = useState(state.version);
+  if (state.version !== syncedVersion) {
+    setSyncedVersion(state.version);
+    if (state.ok && state.saved) {
+      setValues(toValues(state.saved));
+    }
+  }
 
   return (
     <form

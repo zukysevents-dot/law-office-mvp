@@ -10,14 +10,19 @@ const KINDS: PerformancePeriodKind[] = ["week", "month", "quarter", "custom"];
 
 // Období + Od/Do. Vyplnění Od/Do přepne na „Vlastní“, výběr jiného období
 // pole Od/Do vyprázdní — formulář tak nikdy nepošle protichůdné hodnoty.
+// `anchor` (ukotvení minulého/budoucího týdne, měsíce, čtvrtletí z navigace
+// „← Předchozí / Další →“) se posílá dál, dokud uživatel druh období nezmění —
+// jinak by změna filtrů skočila zpět na aktuální období.
 export function PeriodFields({
   kind,
   from,
   to,
+  anchor,
 }: {
   kind: PerformancePeriodKind;
   from: string;
   to: string;
+  anchor?: string;
 }) {
   const [period, setPeriod] = useState<PerformancePeriodKind>(kind);
   const [range, setRange] = useState(
@@ -33,6 +38,9 @@ export function PeriodFields({
 
   return (
     <>
+      {anchor && period === kind && period !== "custom" ? (
+        <input type="hidden" name="anchor" value={anchor} />
+      ) : null}
       <Field label="Období">
         <SelectInput
           name="period"

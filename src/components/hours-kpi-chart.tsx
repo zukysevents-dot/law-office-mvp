@@ -161,20 +161,24 @@ export function HoursKpiChart({
           />
           Nefakturovatelné
         </li>
-        <li className="inline-flex items-center gap-1.5">
-          <LegendSwatch
-            className="w-4 border-t-2 border-dashed"
-            style={{ borderColor: TARGET_TOTAL_COLOR }}
-          />
-          Cíl celkem
-        </li>
-        <li className="inline-flex items-center gap-1.5">
-          <LegendSwatch
-            className="w-4 border-t-2 border-dotted"
-            style={{ borderColor: TARGET_BILLABLE_COLOR }}
-          />
-          Cíl fakturovatelných
-        </li>
+        {hasTotalTarget ? (
+          <li className="inline-flex items-center gap-1.5">
+            <LegendSwatch
+              className="w-4 border-t-2 border-dashed"
+              style={{ borderColor: TARGET_TOTAL_COLOR }}
+            />
+            Cíl celkem
+          </li>
+        ) : null}
+        {hasBillableTarget ? (
+          <li className="inline-flex items-center gap-1.5">
+            <LegendSwatch
+              className="w-4 border-t-2 border-dotted"
+              style={{ borderColor: TARGET_BILLABLE_COLOR }}
+            />
+            Cíl fakturovatelných
+          </li>
+        ) : null}
       </ul>
 
       <div className="grid min-w-0 grid-cols-[2rem_minmax(0,1fr)] gap-x-2">
@@ -257,7 +261,7 @@ export function HoursKpiChart({
                   {bucket.total > 0 ? (
                     <span
                       aria-hidden="true"
-                      className="absolute inset-x-0 mx-auto w-fit rounded-sm bg-white/85 px-0.5 text-center text-[11px] font-medium leading-none text-[#0e1822] tabular-nums"
+                      className="absolute inset-x-0 z-[1] mx-auto w-fit rounded-sm bg-white/90 px-0.5 text-center text-[11px] font-medium leading-none text-[#0e1822] tabular-nums"
                       style={{ bottom: `calc(${Math.min(stackTop, 92)}% + 6px)` }}
                     >
                       {formatHours(bucket.total)}

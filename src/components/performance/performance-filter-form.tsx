@@ -32,7 +32,12 @@ export function PerformanceFilterForm({
       {filters.sort !== "name" ? <input type="hidden" name="sort" value={filters.sort} /> : null}
       {filters.dir !== "asc" ? <input type="hidden" name="dir" value={filters.dir} /> : null}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-        <PeriodFields kind={period.kind} from={period.fromIso} to={period.toIso} />
+        <PeriodFields
+          kind={period.kind}
+          from={period.fromIso}
+          to={period.toIso}
+          anchor={period.params.anchor}
+        />
         <Field label="Tým">
           <SelectInput name="teamId" defaultValue={filters.teamId ?? ""}>
             <option value="">Všechny týmy</option>

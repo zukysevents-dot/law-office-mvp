@@ -43,7 +43,22 @@ async function ensureDatabaseExists() {
   }
 }
 
+// Pojistka: příprava maže data (plány hodin, login pokusy, audit KPI) bez
+// ohledu na prefix. Spustit ji jde jen proti databázi, jejíž název obsahuje
+// „e2e“ — omylem nastavená E2E_DATABASE_URL tak nesmaže vývojová ani
+// produkční data.
+function assertDisposableE2eDatabase() {
+  const url = new URL(E2E_DATABASE_URL);
+  const database = decodeURIComponent(url.pathname.replace(/^\//, ""));
+  if (!/e2e/i.test(database)) {
+    throw new Error(
+      `E2E_DATABASE_URL musí mířit na databázi s „e2e“ v názvu (je „${database}“).`,
+    );
+  }
+}
+
 async function main() {
+  assertDisposableE2eDatabase();
   await ensureDatabaseExists();
 
   run("npx", ["prisma", "migrate", "deploy"]);

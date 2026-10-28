@@ -41,10 +41,11 @@ const cellBase = "px-3 py-3 align-top text-sm";
 const ROW_HEADER_STYLE = {
   textTransform: "none",
   fontSize: "0.875rem",
-  background: "#ffffff",
 } as const;
+// Pozadí přes `!` (important): globální `th { background }` je mimo @layer
+// a přebil by běžné utility — inline styl by zase přebil hover řádku.
 const stickyCell =
-  "sticky left-0 z-[1] bg-white shadow-[1px_0_0_0_#e6ecef] group-hover:bg-[#f6f8f9]";
+  "sticky left-0 z-[1] bg-white! shadow-[1px_0_0_0_#e6ecef] group-hover:bg-[#f6f8f9]! group-focus-visible:bg-[#eef7f7]!";
 
 // „1 den“, „2 dny“, „5 dnů“, „1,5 dne“ (půldny u absencí).
 export function dayLabel(days: number) {
@@ -58,7 +59,7 @@ export function dayLabel(days: number) {
 function absenceTitle(byType: Record<string, number>) {
   const parts = Object.entries(byType).map(
     ([type, days]) =>
-      `${hrAbsenceTypeLabels[type as keyof typeof hrAbsenceTypeLabels] ?? type} ${formatHours(days)}`,
+      `${hrAbsenceTypeLabels[type as keyof typeof hrAbsenceTypeLabels] ?? type}: ${dayLabel(days)}`,
   );
   return parts.length > 0 ? parts.join(", ") : "Žádná absence v období";
 }
@@ -328,6 +329,10 @@ export function PerformanceTable({
           </tfoot>
         </table>
       </div>
+      <p className="mt-2 text-xs text-[#566673]" data-performance-total-note>
+        Řádek „Celkem“ sčítá hodnoty jednotlivých lidí – úkol s více řešiteli se
+        v počtech úkolů započítá u každého z nich.
+      </p>
     </RowClickNav>
   );
 }
