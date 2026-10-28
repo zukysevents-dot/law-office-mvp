@@ -127,10 +127,12 @@ function defaultDashboardWidgetData(userId: string) {
     },
     {
       userId,
-      type: DashboardWidgetType.WORK_LOGS_SUMMARY,
-      title: "Hodiny tento měsíc",
+      // Přehled hodin s grafem KPI (dříve legacy WORK_LOGS_SUMMARY, který se
+      // už v editoru dashboardu nenabízí).
+      type: DashboardWidgetType.WEEKLY_HOURS_CHART,
+      title: "Přehled hodin",
       position: 5,
-      size: DashboardWidgetSize.SMALL,
+      size: DashboardWidgetSize.FULL,
       visible: true,
       config: {},
     },

@@ -32,6 +32,11 @@ import {
   loadRolePermissions,
 } from "@/lib/permission-store.server";
 import { getPrisma } from "@/lib/prisma";
+import {
+  sanitizeHoursTarget,
+  validateHoursPlan,
+  type HoursPlanTargets,
+} from "@/lib/hours-plan";
 import { normalizeCalendarView } from "@/lib/calendar-view";
 import { setUserSessionCookie } from "@/lib/session-cookie";
 import {
@@ -391,79 +396,117 @@ export async function changeOwnPassword(formData: FormData) {
   redirect("/settings");
 }
 
-// Kladné hodiny, jinak null. Prázdné pole i zadaná 0 ruší cíl — ukládá se
-// jediná reprezentace „bez cíle" (NULL), konzistentně s fulfillmentPercent,
-// které cíl <= 0 bere jako nenastavený.
-function sanitizeHoursTarget(value: number | null) {
-  if (value == null || !Number.isFinite(value) || value <= 0) {
-    return null;
-  }
+export type HoursPlanFormState = {
+  ok: boolean;
+  message?: string;
+  error?: string;
+  // Mění se při každém odeslání (klient podle ní pozná nový výsledek).
+  version: number;
+  // Uložené (sanitizované) cíle — klient podle nich srovná pole, např. 0 → prázdné
+  // („cíl zrušen“), aniž by čekal na reload.
+  saved?: HoursPlanTargets;
+};
 
-  return value;
-}
+// Admin/partner nastaví plán hodin pracovníka (UserHoursPlan): týdenní a
+// měsíční cíl hodin celkem i fakturovatelných — „% plnění" na výkazech, graf
+// na dashboardu a stránka Výkonnost. Vrací výsledek pro useActionState (chyba
+// se ukáže pod řádkem a zadané hodnoty zůstanou), bez redirectu.
+export async function updateUserHoursPlan(
+  _previous: HoursPlanFormState,
+  formData: FormData,
+): Promise<HoursPlanFormState> {
+  try {
+    const prisma = getPrisma();
+    const currentUser = await getCurrentUser();
+    assertCanManageUsers(currentUser);
 
-// Admin/partner nastaví týdenní/měsíční plán hodin pracovníka (UserHoursPlan)
-// pro „% plnění" na výkazech a týdenní graf na dashboardu.
-export async function updateUserHoursPlan(formData: FormData) {
-  const prisma = getPrisma();
-  const currentUser = await getCurrentUser();
-  assertCanManageUsers(currentUser);
+    const userId = requiredString(formData, "userId");
 
-  const userId = requiredString(formData, "userId");
+    // userId přichází z FormData — assertCanManageUsers ověřuje jen roli, ne
+    // organizaci. Proto explicitně potvrdíme, že cílový uživatel je aktivním
+    // členem stejné kanceláře (jinak by ADMIN/PARTNER mohl zapsat plán
+    // uživateli jiné kanceláře). Uživatel nemá přímé organizationId — řeší se
+    // přes členství.
+    const membership = await prisma.organizationMember.findFirst({
+      where: {
+        userId,
+        organizationId: currentUser.organizationId,
+        status: OrganizationMemberStatus.ACTIVE,
+      },
+      select: { id: true },
+    });
+    if (!membership) {
+      return {
+        ok: false,
+        error: "Uživatel nepatří do vaší kanceláře.",
+        version: Date.now(),
+      };
+    }
 
-  // userId přichází z FormData — assertCanManageUsers ověřuje jen roli, ne
-  // organizaci. Proto explicitně potvrdíme, že cílový uživatel je aktivním
-  // členem stejné kanceláře (jinak by ADMIN/PARTNER mohl zapsat plán uživateli
-  // jiné kanceláře). Uživatel nemá přímé organizationId — řeší se přes členství.
-  const membership = await prisma.organizationMember.findFirst({
-    where: {
-      userId,
-      organizationId: currentUser.organizationId,
-      status: OrganizationMemberStatus.ACTIVE,
-    },
-    select: { id: true },
-  });
-  if (!membership) {
-    throw new Error("Uživatel nepatří do vaší kanceláře.");
-  }
+    const targets: HoursPlanTargets = {
+      weeklyTotal: sanitizeHoursTarget(optionalNumber(formData, "weeklyHoursTarget")),
+      weeklyBillable: sanitizeHoursTarget(
+        optionalNumber(formData, "weeklyBillableHoursTarget"),
+      ),
+      monthlyTotal: sanitizeHoursTarget(optionalNumber(formData, "monthlyHoursTarget")),
+      monthlyBillable: sanitizeHoursTarget(
+        optionalNumber(formData, "monthlyBillableHoursTarget"),
+      ),
+    };
+    const invalid = validateHoursPlan(targets);
+    if (invalid) {
+      return { ok: false, error: invalid, version: Date.now() };
+    }
 
-  const weeklyHoursTarget = sanitizeHoursTarget(
-    optionalNumber(formData, "weeklyHoursTarget"),
-  );
-  const monthlyHoursTarget = sanitizeHoursTarget(
-    optionalNumber(formData, "monthlyHoursTarget"),
-  );
+    const data = {
+      weeklyHoursTarget: targets.weeklyTotal,
+      monthlyHoursTarget: targets.monthlyTotal,
+      weeklyBillableHoursTarget: targets.weeklyBillable,
+      monthlyBillableHoursTarget: targets.monthlyBillable,
+    };
 
-  const previous = await prisma.userHoursPlan.findUnique({
-    where: { userId },
-  });
+    const previous = await prisma.userHoursPlan.findUnique({
+      where: { userId },
+    });
 
-  const plan = await prisma.userHoursPlan.upsert({
-    where: { userId },
-    update: { weeklyHoursTarget, monthlyHoursTarget },
-    create: {
-      userId,
-      organizationId: currentUser.organizationId ?? null,
-      weeklyHoursTarget,
-      monthlyHoursTarget,
-    },
-  });
+    const plan = await prisma.userHoursPlan.upsert({
+      where: { userId },
+      update: data,
+      create: {
+        userId,
+        organizationId: currentUser.organizationId ?? null,
+        ...data,
+      },
+    });
 
-  await prisma.auditLog.create({
-    data: {
+    await writeAuditLog({
       organizationId: currentUser.organizationId,
       entityType: "UserHoursPlan",
       entityId: plan.id,
-      action: "UPDATE",
+      action: previous ? "UPDATE" : "CREATE",
       changedById: currentUser.id,
-      oldValue: previous ? auditJson(previous) : undefined,
+      oldValue: previous ? auditJson(previous) : null,
       newValue: auditJson(plan),
-    },
-  });
+    });
 
-  revalidatePath("/settings");
-  revalidatePath("/work-logs");
-  revalidatePath("/dashboard");
+    revalidatePath("/settings");
+    revalidatePath("/work-logs");
+    revalidatePath("/dashboard");
+    revalidatePath("/performance", "layout");
+
+    return {
+      ok: true,
+      message: "Plán hodin uložen.",
+      version: Date.now(),
+      saved: targets,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Uložení se nezdařilo.",
+      version: Date.now(),
+    };
+  }
 }
 
 export async function updateNotificationPreference(formData: FormData) {

@@ -5,11 +5,11 @@ import {
   setUserPassword,
   updateCalendarPreference,
   updateNotificationPreference,
-  updateUserHoursPlan,
 } from "@/app/actions/users";
 import { OutlookCalendarPanel } from "@/components/calendar/outlook-calendar-panel";
 import { CreateUserForm } from "@/components/create-user-form";
 import { Field, SelectInput, TextInput } from "@/components/form-field";
+import { HoursPlanForm } from "@/components/hours-plan-form";
 import { PageHeader } from "@/components/page-header";
 import { ResendInvitationButton } from "@/components/resend-invitation-button";
 import { Section } from "@/components/section";
@@ -20,6 +20,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import { formatDate, formatDateTime } from "@/lib/format";
+import { hoursPlanFromRecord, type HoursPlanTargets } from "@/lib/hours-plan";
 import {
   mailConfigStatus,
   mailDisabledReasonLabel,
@@ -66,10 +67,7 @@ type SettingsData = {
     microsoftId: string | null;
     active: boolean;
     createdAt: Date;
-    hoursPlan: {
-      weeklyHoursTarget: number | null;
-      monthlyHoursTarget: number | null;
-    } | null;
+    hoursPlan: HoursPlanTargets;
     invitation: InvitationSummary;
   }>;
   auditLogCount: number;
@@ -201,6 +199,8 @@ export default async function SettingsPage() {
                   select: {
                     weeklyHoursTarget: true,
                     monthlyHoursTarget: true,
+                    weeklyBillableHoursTarget: true,
+                    monthlyBillableHoursTarget: true,
                   },
                 },
                 // Latest welcome invitation (column "Pozvánka").
@@ -244,18 +244,7 @@ export default async function SettingsPage() {
         users: users.map(({ invitationTokens, ...user }) => ({
           ...user,
           invitation: invitationTokens[0] ?? null,
-          hoursPlan: user.hoursPlan
-            ? {
-                weeklyHoursTarget:
-                  user.hoursPlan.weeklyHoursTarget != null
-                    ? Number(user.hoursPlan.weeklyHoursTarget)
-                    : null,
-                monthlyHoursTarget:
-                  user.hoursPlan.monthlyHoursTarget != null
-                    ? Number(user.hoursPlan.monthlyHoursTarget)
-                    : null,
-              }
-            : null,
+          hoursPlan: hoursPlanFromRecord(user.hoursPlan),
         })),
         auditLogCount,
         allowed,
@@ -651,51 +640,26 @@ export default async function SettingsPage() {
             </Section>
           ) : null}
           {result.data.users.length > 0 ? (
-            <Section title="Plán hodin pracovníků">
+            <Section
+              id="plan-hodin"
+              title="Plán hodin pracovníků (KPI)"
+              className="scroll-mt-20"
+            >
               <p className="mb-4 text-sm text-stone-600">
-                Týdenní a měsíční cíl vykázaných hodin pro „% plnění“ na
-                výkazech a týdenní graf na dashboardu. Prázdné pole cíl zruší.
+                Cíle vykázaných hodin (KPI) pro % plnění na dashboardu, ve
+                výkazech a na stránce Výkonnost. Fakturovatelné = výkazy
+                označené jako fakturovatelné (i čekající na schválení). Prázdné
+                pole cíl zruší.
               </p>
               <div className="grid gap-3">
                 {result.data.users.map((user) => (
-                  <form
+                  <HoursPlanForm
                     key={user.id}
-                    action={updateUserHoursPlan}
-                    className="grid items-end gap-3 rounded-md border border-stone-200 p-3 sm:grid-cols-[1fr_140px_140px_auto]"
-                  >
-                    <input type="hidden" name="userId" value={user.id} />
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-stone-950">
-                        {user.name}
-                      </p>
-                      <p className="truncate text-xs text-stone-500">
-                        {userRoleLabels[user.role]}
-                      </p>
-                    </div>
-                    <Field label="Týdně (h)">
-                      <TextInput
-                        name="weeklyHoursTarget"
-                        type="number"
-                        min={0}
-                        step="0.5"
-                        defaultValue={user.hoursPlan?.weeklyHoursTarget ?? undefined}
-                      />
-                    </Field>
-                    <Field label="Měsíčně (h)">
-                      <TextInput
-                        name="monthlyHoursTarget"
-                        type="number"
-                        min={0}
-                        step="0.5"
-                        defaultValue={
-                          user.hoursPlan?.monthlyHoursTarget ?? undefined
-                        }
-                      />
-                    </Field>
-                    <Button type="submit" variant="secondary" className="self-end">
-                      Uložit
-                    </Button>
-                  </form>
+                    userId={user.id}
+                    userName={user.name}
+                    roleLabel={userRoleLabels[user.role]}
+                    initial={user.hoursPlan}
+                  />
                 ))}
               </div>
             </Section>

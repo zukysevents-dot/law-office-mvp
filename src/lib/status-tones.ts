@@ -184,3 +184,20 @@ export function hrAbsenceStatusTone(status: HrAbsenceStatus): BadgeTone {
 
   return tones[status];
 }
+
+// % plnění KPI hodin: ≥ 100 % zelená, ≥ 75 % jantarová, jinak červená.
+export function fulfillmentTone(pct: number): BadgeTone {
+  if (pct >= 100) {
+    return "green";
+  }
+  if (pct >= 75) {
+    return "amber";
+  }
+  return "red";
+}
+
+// Vytížení na stránce Výkonnost: nízké zelená, střední jantarová, vysoké červená.
+export function workloadLevelTone(level: "LOW" | "MEDIUM" | "HIGH"): BadgeTone {
+  const tones = { LOW: "green", MEDIUM: "amber", HIGH: "red" } as const;
+  return tones[level];
+}

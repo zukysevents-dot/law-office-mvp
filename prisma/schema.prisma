@@ -1167,18 +1167,23 @@ model NotificationPreference {
   @@map("notificationPreferences")
 }
 
-// Cíl vykázaných hodin pracovníka (týden/měsíc) pro „% plnění" na výkazech
-// a týdenní graf na dashboardu. Satelit 1:1 na uživatele jako
+// Cíl vykázaných hodin pracovníka (týden/měsíc, celkem i fakturovatelné) pro
+// „% plnění" na výkazech, graf na dashboardu a stránku Výkonnost. Satelit 1:1 na uživatele jako
 // NotificationPreference. Cíle jsou volitelné — když nejsou nastavené,
 // % plnění se nepočítá. Liší se od HrEmployee.weeklyHours (smluvní úvazek).
 model UserHoursPlan {
-  id                 String   @id @default(cuid())
-  organizationId     String?
-  userId             String   @unique
-  weeklyHoursTarget  Decimal? @db.Decimal(6, 2)
-  monthlyHoursTarget Decimal? @db.Decimal(7, 2)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  id                         String   @id @default(cuid())
+  organizationId             String?
+  userId                     String   @unique
+  weeklyHoursTarget          Decimal? @db.Decimal(6, 2)
+  monthlyHoursTarget         Decimal? @db.Decimal(7, 2)
+  // KPI fakturovatelných hodin (NULL = nenastaveno) vedle celkového cíle.
+  // Fakturovatelné = výkazy BILLABLE (i čekající na schválení), viz
+  // isBillableKpiHours v src/lib/hours-plan.ts.
+  weeklyBillableHoursTarget  Decimal? @db.Decimal(6, 2)
+  monthlyBillableHoursTarget Decimal? @db.Decimal(7, 2)
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
 
   organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)

@@ -22,6 +22,8 @@ test("assignment and team changes are filterable", () => {
   assert.equal(auditEntityTypeLabels.ProjectTeamAssignment, "Tým u projektu");
   assert.equal(auditEntityTypeLabels.CaseTeamAssignment, "Tým u případu");
   assert.equal(auditEntityTypeLabels.ProjectAssignee, "Řešitel projektu");
+  assert.equal(auditEntityTypeLabels.UserHoursPlan, "Plán hodin (KPI)");
+  assert.equal(auditEntityTypeLabels.Performance, "Výkonnost");
   assert.equal(auditActionLabels.ASSIGN, "Přiřazení");
   const where = buildAuditWhere({
     entityType: "ProjectTeamAssignment",

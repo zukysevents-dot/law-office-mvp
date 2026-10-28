@@ -84,9 +84,21 @@ test("ADMIN column is not editable, other roles are", () => {
 });
 
 test("coming-soon permissions are hidden from the matrix", () => {
-  const editable = editablePermissionDefs().map((def) => def.key);
-  assert.equal(editable.includes("module.performance"), false);
-  assert.equal(editable.includes("module.projects"), true);
+  const editable = new Set(editablePermissionDefs().map((def) => def.key));
+  for (const def of PERMISSION_CATALOG) {
+    assert.equal(editable.has(def.key), !def.comingSoon, def.key);
+  }
+  assert.equal(editable.has("module.projects"), true);
+});
+
+test("Výkonnost (package 08) is a regular, editable module row", () => {
+  const def = PERMISSION_CATALOG.find((item) => item.key === "module.performance");
+  assert.ok(def);
+  assert.equal(def.comingSoon, undefined);
+  assert.equal(
+    editablePermissionDefs().some((item) => item.key === "module.performance"),
+    true,
+  );
 });
 
 test("value validation follows the permission kind", () => {

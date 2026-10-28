@@ -434,3 +434,17 @@ export const options = {
   projectStatuses: Object.values(ProjectStatus),
   caseStatuses: Object.values(CaseStatus),
 };
+
+// Stránka Výkonnost (balík 08).
+export const performancePeriodLabels = {
+  week: "Tento týden",
+  month: "Tento měsíc",
+  quarter: "Toto čtvrtletí",
+  custom: "Vlastní",
+} as const;
+
+export const workloadLevelLabels = {
+  LOW: "Nízké",
+  MEDIUM: "Střední",
+  HIGH: "Vysoké",
+} as const;
