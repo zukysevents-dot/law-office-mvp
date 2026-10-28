@@ -7,7 +7,7 @@ import { Field, SelectInput, TextInput } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
 import type { Prisma } from "@/generated/prisma/client";
@@ -169,16 +169,24 @@ export default async function HrEmployeesPage() {
                       ) : null}
                       {data.canManage ? (
                         <td>
-                          <form action={archiveEmployee}>
-                            <input
-                              type="hidden"
-                              name="employeeId"
-                              value={employee.id}
-                            />
-                            <Button type="submit" variant="ghost">
-                              Archivovat
-                            </Button>
-                          </form>
+                          <div className="flex flex-wrap gap-2">
+                            <ButtonLink
+                              href={`/hr/employees/${employee.id}`}
+                              variant="secondary"
+                            >
+                              Upravit
+                            </ButtonLink>
+                            <form action={archiveEmployee}>
+                              <input
+                                type="hidden"
+                                name="employeeId"
+                                value={employee.id}
+                              />
+                              <Button type="submit" variant="ghost">
+                                Archivovat
+                              </Button>
+                            </form>
+                          </div>
                         </td>
                       ) : null}
                     </tr>
@@ -232,10 +240,10 @@ export default async function HrEmployeesPage() {
                   </SelectInput>
                 </Field>
                 <Field label="Fond h/týden">
-                  <TextInput name="weeklyHours" type="number" defaultValue="40" required />
+                  <TextInput name="weeklyHours" type="number" min="0" max="168" step="any" defaultValue="40" required />
                 </Field>
                 <Field label="Fond h/den">
-                  <TextInput name="dailyHours" type="number" defaultValue="8" required />
+                  <TextInput name="dailyHours" type="number" min="0" max="24" step="any" defaultValue="8" required />
                 </Field>
                 <Field label="Nástup (volitelné)">
                   <TextInput name="startDate" type="date" />
@@ -283,10 +291,10 @@ export default async function HrEmployeesPage() {
                 <TextInput name="year" type="number" defaultValue={data.year} required />
               </Field>
               <Field label="Nárok (h)">
-                <TextInput name="entitlementHours" type="number" defaultValue="160" required />
+                <TextInput name="entitlementHours" type="number" min="0" step="any" defaultValue="160" required />
               </Field>
               <Field label="Převod (h)">
-                <TextInput name="carryoverHours" type="number" defaultValue="0" />
+                <TextInput name="carryoverHours" type="number" step="any" defaultValue="0" />
               </Field>
               <Button type="submit" variant="secondary">
                 Uložit nárok
