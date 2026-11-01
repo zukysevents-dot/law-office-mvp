@@ -12,6 +12,7 @@ import {
   CalendarClock,
   CalendarDays,
   CalendarOff,
+  CalendarRange,
   Clock3,
   Archive,
   FileSpreadsheet,
@@ -26,7 +27,9 @@ import {
   ListChecks,
   ListTodo,
   LogOut,
+  Megaphone,
   Menu,
+  MessageSquareText,
   Radar,
   Receipt,
   ScrollText,
@@ -124,6 +127,12 @@ const navSections: NavSection[] = [
       { href: "/tasks/archive", label: "Archiv úkolů", icon: Archive, permission: "module.tasks" },
       { href: "/work-logs", label: "Výkazy práce", icon: Clock3, permission: "module.workLogs" },
       {
+        href: "/feedback",
+        label: "Zpětná vazba",
+        icon: MessageSquareText,
+        permission: "module.workLogs",
+      },
+      {
         href: "/billing",
         label: "Fakturace",
         icon: Receipt,
@@ -151,8 +160,10 @@ const navSections: NavSection[] = [
   {
     title: "HR",
     items: [
+      { href: "/hr/news", label: "Aktuality", icon: Megaphone, permission: "module.hr" },
       { href: "/hr/employees", label: "Zaměstnanci", icon: Users, permission: "module.hr" },
       { href: "/hr/attendance", label: "Docházka", icon: CalendarClock, permission: "module.hr" },
+      { href: "/hr/planning", label: "Plánování", icon: CalendarRange, permission: "module.hr" },
       { href: "/hr/absences", label: "Absence", icon: CalendarOff, permission: "module.hr" },
       {
         href: "/hr/exports",

@@ -34,6 +34,8 @@ export const AUDIT_ENTITY_TYPES = [
   "CalendarFeed",
   "UserHoursPlan",
   "Performance",
+  "MatterComment",
+  "WorkFeedback",
 ] as const;
 
 export const AUDIT_ACTIONS = [
@@ -105,6 +107,10 @@ export const auditEntityTypeLabels: Record<string, string> = {
   CalendarFeed: "Outlook kalendář",
   UserHoursPlan: "Plán hodin (KPI)",
   Performance: "Výkonnost",
+  MatterComment: "Komentář projektu / případu",
+  WorkFeedback: "Zpětná vazba",
+  HrNews: "Aktualita",
+  HrPresencePlan: "Plán přítomnosti",
 };
 
 export const auditActionLabels: Record<string, string> = {

@@ -16,6 +16,10 @@ import { CaseDeadlinesSection } from "@/components/case-deadlines-section";
 import { deadlineExtensionsSelect } from "@/components/deadlines/deadline-extension-history";
 import { DueDateText } from "@/components/due-date-text";
 import { CaseDocumentsSection } from "@/components/case-documents-section";
+import {
+  MatterCommentsSection,
+  type MatterCommentRow,
+} from "@/components/matter-comments-section";
 import { Field, SelectInput, TextArea } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
 import { ReferenceForm } from "@/components/reference-form";
@@ -50,6 +54,7 @@ import {
   canManagePortal,
   canManageReferences,
   canArchiveRecords,
+  canEditAuthoredEntry,
   canEditRecord,
   canOpenAssignments,
   canViewRates,
@@ -58,6 +63,7 @@ import {
   deadlineVisibilityWhere,
   documentTemplateVisibilityWhere,
   documentVisibilityWhere,
+  matterCommentVisibilityWhere,
   referenceVisibilityWhere,
   subjectVisibilityWhere,
   taskVisibilityWhere,
@@ -84,7 +90,7 @@ async function loadCase(id: string) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
 
-  const [legalCase, subjects, assigneeCandidates, teamOptions] = await Promise.all([
+  const [legalCase, subjects, assigneeCandidates, teamOptions, commentRows] = await Promise.all([
     prisma.case.findFirst({
       where: andWhere({ id }, caseVisibilityWhere(currentUser)),
       include: {
@@ -163,7 +169,33 @@ async function loadCase(id: string) {
     // Kandidáti na řešitele = aktivní členové a aktivní týmy téže kanceláře.
     getOrgUserOptions(currentUser),
     getTeamOptions(prisma, currentUser.organizationId),
+    prisma.matterComment.findMany({
+      where: andWhere(
+        { caseId: id, archivedAt: null },
+        matterCommentVisibilityWhere(currentUser),
+      ),
+      orderBy: { createdAt: "desc" },
+      take: 200,
+      select: {
+        id: true,
+        organizationId: true,
+        authorId: true,
+        body: true,
+        createdAt: true,
+        editedAt: true,
+        author: { select: { name: true } },
+      },
+    }),
   ]);
+
+  const comments: MatterCommentRow[] = commentRows.map((comment) => ({
+    id: comment.id,
+    body: comment.body,
+    createdAt: comment.createdAt,
+    editedAt: comment.editedAt,
+    author: comment.author,
+    canEdit: canEditAuthoredEntry(currentUser, comment),
+  }));
 
   const deadlinesEnabled =
     legalCase != null &&
@@ -273,6 +305,7 @@ async function loadCase(id: string) {
 
   return {
     legalCase,
+    comments,
     subjects,
     assigneeCandidates,
     teamOptions,
@@ -298,6 +331,7 @@ type CaseDetailData = Awaited<ReturnType<typeof loadCase>>;
 
 const emptyCaseDetail: CaseDetailData = {
   legalCase: null,
+  comments: [],
   subjects: [],
   assigneeCandidates: [],
   teamOptions: [],
@@ -342,6 +376,7 @@ export default async function CaseDetailPage({
 
   const {
     legalCase,
+    comments,
     subjects,
     assigneeCandidates,
     teamOptions,
@@ -366,7 +401,7 @@ export default async function CaseDetailPage({
     <>
       <PageHeader
         title={legalCase?.name ?? "Detail případu"}
-        description="Případový kontext, role subjektů, reference a související úkoly."
+        description="Případový kontext, role subjektů, komentáře, reference a související úkoly."
         action={
           legalCase ? (
             <>
@@ -563,6 +598,11 @@ export default async function CaseDetailPage({
               canManage={canManageDeadlinesFlag}
             />
           ) : null}
+          <MatterCommentsSection
+            kind="case"
+            parentId={legalCase.id}
+            comments={comments}
+          />
           <Section title="Úkoly případu">
             {legalCase.tasks.length > 0 ? (
               <div className="table-scroll">

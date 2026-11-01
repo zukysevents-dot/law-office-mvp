@@ -14,6 +14,8 @@ import {
   HrAbsenceType,
   HrAttendanceSource,
   HrEmploymentType,
+  HrNewsAudience,
+  HrPresenceStatus,
   InternalTaskCategory,
   InvoiceStatus,
   ModuleKey,
@@ -168,6 +170,18 @@ export const hrAbsenceStatusLabels: Record<HrAbsenceStatus, string> = {
 export const hrAttendanceSourceLabels: Record<HrAttendanceSource, string> = {
   MANUAL: "Ruční",
   IMPORT: "Import",
+};
+
+export const hrNewsAudienceLabels: Record<HrNewsAudience, string> = {
+  ALL: "Celá kancelář",
+  ROLES: "Vybrané role",
+  USERS: "Konkrétní kolegové",
+};
+
+export const hrPresenceStatusLabels: Record<HrPresenceStatus, string> = {
+  OFFICE: "V kanceláři",
+  HOME_OFFICE: "Home office",
+  OUT_OF_OFFICE: "Mimo kancelář",
 };
 
 // Per-user exception on Nastavení → Oprávnění → výjimky uživatele.

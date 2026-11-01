@@ -63,6 +63,7 @@ export const FUNCTION_PERMISSION_KEYS = [
   "function.manageAml",
   "function.managePortal",
   "function.manageHr",
+  "function.manageNews",
   "function.viewTeamReports",
   "function.manageUsers",
   "function.manageOrganization",
@@ -538,6 +539,14 @@ export const PERMISSION_CATALOG: readonly PermissionDef[] = [
     label: "Spravuje HR a docházku",
     description:
       "Všichni zaměstnanci, schvalování absencí, mzdový export.",
+    defaults: LEADERSHIP,
+  },
+  {
+    kind: "function",
+    key: "function.manageNews",
+    label: "Přidává aktuality",
+    description:
+      "Zveřejňuje, upravuje a archivuje aktuality v HR – pro celou kancelář, vybrané role nebo konkrétní kolegy.",
     defaults: LEADERSHIP,
   },
   {

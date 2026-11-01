@@ -103,6 +103,9 @@ async function main() {
 
     // Drop leftovers from previous runs. Only `e2e-` prefixed rows, never seed
     // or developer data.
+    // Komentáře projektů/případů a zpětná vazba (comments-and-feedback.spec.ts).
+    await prisma.matterComment.deleteMany({ where: { body: { contains: E2E_PREFIX } } });
+    await prisma.workFeedback.deleteMany({ where: { body: { contains: E2E_PREFIX } } });
     const staleTaskIds = (
       await prisma.task.findMany({
         where: { title: { startsWith: E2E_PREFIX } },
