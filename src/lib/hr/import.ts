@@ -217,8 +217,11 @@ export function parseAttendanceCsv(csv: string): ParsedAttendanceRow[] {
         throw new Error(`Řádek ${line}: příchod a odchod nesmí být stejný.`);
       }
       // A lower checkout time is a night shift ending on the following day.
+      // Resolve the wall clock on that next day (not +24 h), so a night across
+      // the DST switch still lands on the typed time.
       if (checkOut < checkIn) {
-        checkOut = new Date(checkOut.getTime() + 24 * 60 * 60 * 1000);
+        const nextDay = new Date(workDate.getTime() + 24 * 60 * 60 * 1000);
+        checkOut = parseWallClock(checkOutValue, nextDay, line, "odchod");
       }
       const breakValue = columnsByName
         ? valueAt(columns, columnsByName, "breakHours")
