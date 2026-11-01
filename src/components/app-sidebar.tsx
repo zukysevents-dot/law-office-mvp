@@ -29,6 +29,7 @@ import {
   LogOut,
   Megaphone,
   Menu,
+  MessageSquareText,
   Radar,
   Receipt,
   ScrollText,
@@ -125,6 +126,12 @@ const navSections: NavSection[] = [
       { href: "/tasks/my", label: "Moje úkoly", icon: ListChecks, permission: "module.tasks" },
       { href: "/tasks/archive", label: "Archiv úkolů", icon: Archive, permission: "module.tasks" },
       { href: "/work-logs", label: "Výkazy práce", icon: Clock3, permission: "module.workLogs" },
+      {
+        href: "/feedback",
+        label: "Zpětná vazba",
+        icon: MessageSquareText,
+        permission: "module.workLogs",
+      },
       {
         href: "/billing",
         label: "Fakturace",

@@ -10,6 +10,10 @@ import {
 import { addProjectSubjectRelation } from "@/app/actions/subject-relations";
 import { ArchiveActionForm } from "@/components/archive-action-form";
 import { AssigneeSection } from "@/components/assignee-section";
+import {
+  MatterCommentsSection,
+  type MatterCommentRow,
+} from "@/components/matter-comments-section";
 import { ArchiveNotice } from "@/components/archive-notice";
 import { Field, SelectInput, TextArea } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
@@ -39,11 +43,13 @@ import { safeQuery } from "@/lib/db-safe";
 import {
   andWhere,
   canArchiveRecords,
+  canEditAuthoredEntry,
   canEditRecord,
   canManageReferences,
   canOpenAssignments,
   canViewRates,
   caseVisibilityWhere,
+  matterCommentVisibilityWhere,
   projectVisibilityWhere,
   referenceVisibilityWhere,
   subjectVisibilityWhere,
@@ -71,7 +77,7 @@ async function loadProject(id: string) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
 
-  const [project, subjects, users, teamOptions] = await Promise.all([
+  const [project, subjects, users, teamOptions, commentRows] = await Promise.all([
     prisma.project.findFirst({
       where: andWhere({ id }, projectVisibilityWhere(currentUser)),
       include: {
@@ -149,10 +155,37 @@ async function loadProject(id: string) {
     // Kandidáti na řešitele = aktivní členové a aktivní týmy téže kanceláře.
     getOrgUserOptions(currentUser),
     getTeamOptions(prisma, currentUser.organizationId),
+    prisma.matterComment.findMany({
+      where: andWhere(
+        { projectId: id, archivedAt: null },
+        matterCommentVisibilityWhere(currentUser),
+      ),
+      orderBy: { createdAt: "desc" },
+      take: 200,
+      select: {
+        id: true,
+        organizationId: true,
+        authorId: true,
+        body: true,
+        createdAt: true,
+        editedAt: true,
+        author: { select: { name: true } },
+      },
+    }),
   ]);
+
+  const comments: MatterCommentRow[] = commentRows.map((comment) => ({
+    id: comment.id,
+    body: comment.body,
+    createdAt: comment.createdAt,
+    editedAt: comment.editedAt,
+    author: comment.author,
+    canEdit: canEditAuthoredEntry(currentUser, comment),
+  }));
 
   return {
     project,
+    comments,
     subjects,
     users,
     teamOptions,
@@ -167,6 +200,7 @@ type ProjectDetailData = Awaited<ReturnType<typeof loadProject>>;
 
 const emptyProjectDetail: ProjectDetailData = {
   project: null,
+  comments: [],
   subjects: [],
   users: [],
   teamOptions: [],
@@ -200,6 +234,7 @@ export default async function ProjectDetailPage({
 
   const {
     project,
+    comments,
     subjects,
     users,
     teamOptions,
@@ -213,7 +248,7 @@ export default async function ProjectDetailPage({
     <>
       <PageHeader
         title={project?.name ?? "Detail projektu"}
-        description="Projektový kontext, případy, úkoly, reference a poslední výkazy práce."
+        description="Projektový kontext, komentáře, případy, úkoly, reference a poslední výkazy práce."
         action={
           project ? (
             <>
@@ -398,6 +433,11 @@ export default async function ProjectDetailPage({
               </form>
             </Section>
           ) : null}
+          <MatterCommentsSection
+            kind="project"
+            parentId={project.id}
+            comments={comments}
+          />
           <Section title="Případy">
             {project.cases.length > 0 ? (
               <div className="table-scroll">
