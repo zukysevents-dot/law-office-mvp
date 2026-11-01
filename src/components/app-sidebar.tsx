@@ -12,6 +12,7 @@ import {
   CalendarClock,
   CalendarDays,
   CalendarOff,
+  CalendarRange,
   Clock3,
   Archive,
   FileSpreadsheet,
@@ -26,6 +27,7 @@ import {
   ListChecks,
   ListTodo,
   LogOut,
+  Megaphone,
   Menu,
   Radar,
   Receipt,
@@ -151,8 +153,10 @@ const navSections: NavSection[] = [
   {
     title: "HR",
     items: [
+      { href: "/hr/news", label: "Aktuality", icon: Megaphone, permission: "module.hr" },
       { href: "/hr/employees", label: "Zaměstnanci", icon: Users, permission: "module.hr" },
       { href: "/hr/attendance", label: "Docházka", icon: CalendarClock, permission: "module.hr" },
+      { href: "/hr/planning", label: "Plánování", icon: CalendarRange, permission: "module.hr" },
       { href: "/hr/absences", label: "Absence", icon: CalendarOff, permission: "module.hr" },
       {
         href: "/hr/exports",
