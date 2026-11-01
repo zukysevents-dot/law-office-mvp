@@ -116,6 +116,11 @@ async function parseNewsForm(
     }
   }
 
+  const visibleUntil = optionalDate(formData, "visibleUntil");
+  if (visibleUntil && Number.isNaN(visibleUntil.getTime())) {
+    throw new Error("Zadejte platné datum, do kdy se má aktualita zobrazovat.");
+  }
+
   return {
     title,
     body,
@@ -123,7 +128,7 @@ async function parseNewsForm(
     roles: audience.roles,
     userIds: audience.userIds,
     pinned: checkboxValue(formData, "pinned"),
-    visibleUntil: optionalDate(formData, "visibleUntil"),
+    visibleUntil,
   };
 }
 

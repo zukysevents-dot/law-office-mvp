@@ -35,6 +35,7 @@ type Ids = {
   trainee: string;
   traineeEmployee: string;
   lawyerEmployee: string;
+  partnerEmployee: string;
   createdEmployees: string[];
   absenceId: string;
 };
@@ -61,15 +62,17 @@ test.beforeAll(async () => {
       `select u.id, u.email, m."organizationId" from users u
          join "organizationMembers" m on m."userId" = u.id
         where u.email = any($1)`,
-      [[E2E_USERS.lawyer.email, E2E_USERS.trainee.email]],
+      [[E2E_USERS.lawyer.email, E2E_USERS.trainee.email, E2E_USERS.partner.email]],
     );
     const byEmail = new Map(users.rows.map((row) => [row.email, row]));
     const trainee = byEmail.get(E2E_USERS.trainee.email);
     const lawyer = byEmail.get(E2E_USERS.lawyer.email);
+    const partner = byEmail.get(E2E_USERS.partner.email);
     const orgId = trainee.organizationId as string;
     const created: string[] = [];
     const traineeEmployee = await ensureCard(db, trainee.id, orgId, created);
     const lawyerEmployee = await ensureCard(db, lawyer.id, orgId, created);
+    const partnerEmployee = await ensureCard(db, partner.id, orgId, created);
     // Schválená nemoc koncipienta ve středu plánovaného týdne.
     const absenceId = `${E2E_PREFIX}abs-${Math.random().toString(36).slice(2, 10)}`;
     await db.query(
@@ -83,6 +86,7 @@ test.beforeAll(async () => {
       trainee: trainee.id,
       traineeEmployee,
       lawyerEmployee,
+      partnerEmployee,
       createdEmployees: created,
       absenceId,
     };
@@ -94,7 +98,7 @@ test.afterAll(async () => {
     await db.query(`delete from "hrNews" where title like $1`, [`${E2E_PREFIX}%`]);
     await db.query(
       `delete from "hrPresencePlans" where "employeeId" = any($1) and date >= '2030-01-07' and date < '2030-01-14'`,
-      [[ids.traineeEmployee, ids.lawyerEmployee]],
+      [[ids.traineeEmployee, ids.lawyerEmployee, ids.partnerEmployee]],
     );
     await db.query(`delete from "hrAbsenceRequests" where id = $1`, [ids.absenceId]);
     await db.query(`delete from "dashboardWidgets" where "userId" = $1 and type = 'HR_NEWS'`, [
@@ -269,5 +273,33 @@ test("kolega vidí plán koncipienta, ale ne typ jeho absence", async ({ browser
   // Cizí plán upravit nejde ani podvrženým parametrem.
   await page.goto(`/hr/planning?week=${WEEK}&employee=${ids.traineeEmployee}`);
   await expect(page.getByRole("heading", { name: "Můj plán" })).toBeVisible();
+  await page.context().close();
+});
+
+test("správce HR přepne na plán kolegy a formulář ukáže jeho dny, ne své", async ({
+  browser,
+}) => {
+  const page = await pageAs(browser, "partner");
+  await page.goto(`/hr/planning?week=${WEEK}`);
+  await expectNoErrorPage(page);
+  const form = page.getByTestId("presence-plan-form");
+  const monday = form.locator('[data-testid="presence-plan-day"][data-date="2030-01-07"]');
+
+  await monday.locator("select").selectOption("OUT_OF_OFFICE");
+  await submitAndAwaitAction(page, form.getByRole("button", { name: "Uložit plán týdne" }));
+  await expect(page.getByRole("status").filter({ hasText: "Plán byl uložen" })).toBeVisible();
+  // Po uložení select ukazuje uložený stav (reset formuláře ho nevrátí).
+  await expect(monday.locator("select")).toHaveValue("OUT_OF_OFFICE");
+
+  // Klientská navigace na plán koncipienta: stejné dny, jiný zaměstnanec —
+  // formulář musí ukázat jeho plán (V kanceláři), ne partnerův.
+  await page
+    .getByTestId("presence-team-table")
+    .locator(`a[href*="employee=${ids.traineeEmployee}"]`)
+    .click();
+  await expect(page.getByRole("heading", { name: /^Plán: / })).toBeVisible();
+  await expect(form.locator('input[name="employeeId"]')).toHaveValue(ids.traineeEmployee);
+  await expect(monday.locator("select")).toHaveValue("OFFICE");
+  await expect(monday.getByLabel("Poznámka (volitelné)")).toHaveValue("porada v 9:00");
   await page.context().close();
 });

@@ -215,7 +215,20 @@ export default async function HrPlanningPage({ searchParams }: PageProps) {
               Plán byl uložen.
             </p>
           ) : null}
-          <form action={savePresencePlan} className="grid gap-3" data-testid="presence-plan-form">
+          {/* key: pole jsou nekontrolovaná (defaultValue) a React u <select>
+              změnu defaultValue po připojení nepropíše. Bez klíče by po
+              přepnutí na plán kolegy (stejné dny, klientská navigace) zůstaly
+              v selectech hodnoty předchozího zaměstnance a uložení by je
+              zapsalo k němu. Klíč = zaměstnanec + týden + uložený stav dnů,
+              takže se formulář přemountuje i po změně plánu na serveru. */}
+          <form
+            key={`${editableRow.employee.id}|${weekKey}|${editableRow.cells
+              .map((cell) => `${cell.source}:${cell.kind}:${cell.note ?? ""}`)
+              .join(";")}`}
+            action={savePresencePlan}
+            className="grid gap-3"
+            data-testid="presence-plan-form"
+          >
             <input type="hidden" name="employeeId" value={editableRow.employee.id} />
             <input type="hidden" name="week" value={weekKey} />
             <div className="grid gap-2">
