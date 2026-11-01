@@ -15,7 +15,10 @@ export function roundHoursToIncrement(
 ): number {
   const normalizedMinutes = normalizeBillingTimeIncrement(incrementMinutes);
   const incrementHours = normalizedMinutes / 60;
-  const rounded = Math.round(hours / incrementHours) * incrementHours;
+  // toFixed: 0.35 / 0.1 = 3.4999999999999996 by jinak spadlo dolů (0,3 h místo
+  // 0,4 h) — poloviny kroku se zaokrouhlují nahoru stejně pro každou hodnotu.
+  const rounded =
+    Math.round(Number((hours / incrementHours).toFixed(9))) * incrementHours;
 
   return Number(Math.max(incrementHours, rounded).toFixed(2));
 }

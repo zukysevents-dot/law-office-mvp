@@ -81,6 +81,7 @@ export function WorkLogCreateForm({
         }))}
         tasks={options.tasks}
         includeTask
+        requireCaseForCaseClients
         subjectLabel="Subjekt"
         defaultSubjectId={prefill?.subjectId}
         defaultProjectId={prefill?.projectId}

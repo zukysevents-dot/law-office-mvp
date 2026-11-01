@@ -249,6 +249,45 @@ function taskClientSubjectIds(
   return projectClientSubjectIds(projects, taskProjectId(task, cases));
 }
 
+/**
+ * Klient, který je ke spisu přidaný jen na některých případech (ne na
+ * projektu), se dá vykázat jen s případem — server výkaz jen na projekt
+ * odmítne. Formulář výkazu pak případ vyžaduje.
+ */
+export function subjectNeedsCase(
+  selection: { subjectId: string; projectId: string },
+  lists: Pick<MatterCascadeLists, "projects" | "cases">,
+): boolean {
+  const { subjectId, projectId } = selection;
+  if (!subjectId || !projectId) {
+    return false;
+  }
+  if (projectClientSubjectIds(lists.projects, projectId).includes(subjectId)) {
+    return false;
+  }
+  return lists.cases.some(
+    (legalCase) =>
+      legalCase.projectId === projectId &&
+      (legalCase.clientSubjectIds ?? []).includes(subjectId),
+  );
+}
+
+/** Jediný případ projektu, kde je zvolený klient přidaný, se doplní sám. */
+function withSingleClientCase(
+  next: { subjectId: string; projectId: string; caseId: string },
+  lists: MatterCascadeLists,
+) {
+  if (next.caseId || !subjectNeedsCase(next, lists)) {
+    return next;
+  }
+  const clientCases = lists.cases.filter(
+    (legalCase) =>
+      legalCase.projectId === next.projectId &&
+      (legalCase.clientSubjectIds ?? []).includes(next.subjectId),
+  );
+  return clientCases.length === 1 ? { ...next, caseId: clientCases[0].id } : next;
+}
+
 /** Ponechá zvoleného klienta, pokud je klientem spisu, jinak hlavní klient. */
 function keepOrMainSubject(
   current: string,
@@ -306,7 +345,7 @@ export function nextSelectionOnSubjectChange(
     caseClientSubjectIds(lists.cases, lists.projects, state.caseId).includes(subjectId) &&
     (!projectId || caseProject(lists.cases, state.caseId) === projectId);
   const caseId = caseKept ? state.caseId : "";
-  const next = { subjectId, projectId, caseId };
+  const next = withSingleClientCase({ subjectId, projectId, caseId }, lists);
   const task = lists.tasks?.find((item) => item.id === state.taskId);
   return {
     ...next,
@@ -341,7 +380,7 @@ export function nextSelectionOnProjectChange(
     !subjectReached ||
     caseClientSubjectIds(lists.cases, lists.projects, state.caseId).includes(subjectId);
   const caseId = caseInProject && caseFitsSubject ? state.caseId : "";
-  const next = { subjectId, projectId, caseId };
+  const next = withSingleClientCase({ subjectId, projectId, caseId }, lists);
   const task = lists.tasks?.find((item) => item.id === state.taskId);
   return {
     ...next,

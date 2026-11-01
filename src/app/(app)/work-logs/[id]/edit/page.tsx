@@ -254,6 +254,7 @@ export default async function WorkLogEditPage({ params }: WorkLogEditProps) {
               }))}
               tasks={tasks}
               includeTask
+              requireCaseForCaseClients
               subjectLabel="Subjekt"
               subjectPlaceholder="Bez subjektu"
               defaultSubjectId={workLog.subjectId ?? ""}

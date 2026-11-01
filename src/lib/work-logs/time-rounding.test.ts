@@ -28,6 +28,11 @@ test("roundHoursToIncrement nevrací plovoucí šum", () => {
   assert.equal(roundHoursToIncrement(0.29, 6), 0.3);
   assert.equal(roundHoursToIncrement(0.7, 6), 0.7);
   assert.equal(roundHoursToIncrement(1.0 / 3, 6), 0.3);
+  // poloviny kroku nahoru i tam, kde dělení na plovoucí čárce vyjde těsně pod
+  assert.equal(roundHoursToIncrement(0.35, 6), 0.4);
+  assert.equal(roundHoursToIncrement(1.15, 6), 1.2);
+  assert.equal(roundHoursToIncrement(2.05, 6), 2.1);
+  assert.equal(roundHoursToIncrement(1.125, 15), 1.25);
 });
 
 test("incrementHours podle nastavení kanceláře", () => {

@@ -12,6 +12,7 @@ import {
   nextSelectionOnSubjectChange,
   nextSelectionOnTaskChange,
   projectsForSubject,
+  subjectNeedsCase,
   tasksForSelection,
   type MatterCascadeLists,
   type MatterCascadeState,
@@ -60,6 +61,7 @@ export function CascadingMatterSelect({
   requireSubject = false,
   requireProject = false,
   requireCase = false,
+  requireCaseForCaseClients = false,
   defaultSubjectId = "",
   defaultProjectId = "",
   defaultCaseId = "",
@@ -82,6 +84,11 @@ export function CascadingMatterSelect({
   requireSubject?: boolean;
   requireProject?: boolean;
   requireCase?: boolean;
+  /**
+   * Výkazy práce: klient přidaný jen k některým případům projektu se dá
+   * vykázat jen s případem — výběr případu je pak povinný.
+   */
+  requireCaseForCaseClients?: boolean;
   defaultSubjectId?: string;
   defaultProjectId?: string;
   defaultCaseId?: string;
@@ -146,6 +153,10 @@ export function CascadingMatterSelect({
                 : "md:grid-cols-2"
           }`;
 
+  const caseRequired =
+    requireCase ||
+    (requireCaseForCaseClients && subjectNeedsCase(selection, lists));
+
   const subjectEmpty =
     subjectPlaceholder ?? (filterMode ? "Všichni klienti" : "Vyberte klienta");
   const projectEmpty =
@@ -159,7 +170,7 @@ export function CascadingMatterSelect({
     casePlaceholder ??
     (filterMode
       ? "Všechny případy"
-      : requireCase
+      : caseRequired
         ? "Vyberte případ"
         : "Bez případu");
 
@@ -210,7 +221,7 @@ export function CascadingMatterSelect({
           <SelectInput
             name="caseId"
             value={selection.caseId}
-            required={requireCase}
+            required={caseRequired}
             onChange={(event) => {
               const value = event.target.value;
               setSelection((state) =>
