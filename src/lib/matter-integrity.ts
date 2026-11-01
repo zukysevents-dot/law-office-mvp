@@ -22,6 +22,13 @@ export type MatterFacts = {
     caseProjectId: string | null;
     mainSubjectId: string | null;
   } | null;
+  /**
+   * Další klienti spisu (SubjectRelation s rolí Klient na vybraném projektu
+   * nebo případu). Kromě hlavního klienta projektu lze záznam vést i na
+   * kteréhokoli z nich — volající je předává jen tam, kde to dává smysl
+   * (výkazy práce, faktury).
+   */
+  additionalClientSubjectIds?: string[];
 };
 
 export type ResolvedMatterSelection = {
@@ -113,18 +120,28 @@ export function resolveMatterSelection(
     throw new Error("Vybrané vazby odkazují na různé subjekty.");
   }
 
+  const requestedIsAdditionalClient =
+    Boolean(requestedSubjectId) &&
+    Boolean(canonicalSubjectId) &&
+    (facts.additionalClientSubjectIds ?? []).includes(requestedSubjectId!);
+
   if (
     requestedSubjectId &&
     canonicalSubjectId &&
-    requestedSubjectId !== canonicalSubjectId
+    requestedSubjectId !== canonicalSubjectId &&
+    !requestedIsAdditionalClient
   ) {
     throw new Error(
-      "Vybraný subjekt neodpovídá klientovi vybraného projektu.",
+      facts.additionalClientSubjectIds
+        ? "Vybraný subjekt není klientem vybraného projektu ani případu. Přidejte ho ke spisu s rolí Klient, nebo vyberte jiného klienta."
+        : "Vybraný subjekt neodpovídá klientovi vybraného projektu.",
     );
   }
 
   return {
-    subjectId: canonicalSubjectId ?? requestedSubjectId,
+    subjectId: requestedIsAdditionalClient
+      ? requestedSubjectId
+      : (canonicalSubjectId ?? requestedSubjectId),
     projectId: resolvedProjectId ?? requestedProjectId,
     caseId: resolvedCaseId ?? requestedCaseId,
     taskId: requestedTaskId,

@@ -68,14 +68,22 @@ export type ApprovalQueueData = {
   /** Whether rates are shown (and editable) on the cards. */
   showRates: boolean;
   users: Array<{ id: string; name: string }>;
+  /** Krok vykazování kanceláře v minutách (6 = 0,1 h, 15 = 0,25 h). */
+  timeIncrementMinutes: number;
   options: {
     subjects: Array<{ id: string; name: string }>;
-    projects: Array<{ id: string; name: string; mainSubjectId: string }>;
+    projects: Array<{
+      id: string;
+      name: string;
+      mainSubjectId: string;
+      clientSubjectIds?: string[];
+    }>;
     cases: Array<{
       id: string;
       name: string;
       projectId: string;
       projectName: string;
+      clientSubjectIds?: string[];
     }>;
     users: Array<{ id: string; name: string }>;
   };
@@ -94,7 +102,7 @@ export async function loadApprovalQueue(
   const scope = approvalScopeWhere(user, access);
   const where = andWhere(scope, approvalFilterWhere(filters));
 
-  const [rows, aggregate, groups, orgUsers] = await Promise.all([
+  const [rows, aggregate, groups, orgUsers, organization] = await Promise.all([
     prisma.workLog.findMany({
       where,
       orderBy: [{ workDate: "desc" }, { createdAt: "desc" }],
@@ -114,17 +122,36 @@ export async function loadApprovalQueue(
       where: scope,
     }),
     getOrgUserOptions(user),
+    prisma.organization.findUnique({
+      where: { id: user.organizationId },
+      select: { billingTimeIncrementMinutes: true },
+    }),
   ]);
 
   const caseIds = new Set<string>();
   const projectIds = new Set<string>();
   const subjectIds = new Set<string>();
   const userIds = new Set<string>();
+  // Klienti, na které ve frontě opravdu jsou výkazy daného projektu / případu
+  // (i další klienti spisu, nejen hlavní) — kaskáda filtru je pak nabídne.
+  const projectClients = new Map<string, Set<string>>();
+  const caseClients = new Map<string, Set<string>>();
+  const addClient = (
+    map: Map<string, Set<string>>,
+    key: string | null,
+    subjectId: string | null,
+  ) => {
+    if (!key || !subjectId) return;
+    const set = map.get(key) ?? new Set<string>();
+    set.add(subjectId);
+    map.set(key, set);
+  };
   for (const group of groups) {
     if (group.caseId) caseIds.add(group.caseId);
     if (group.projectId) projectIds.add(group.projectId);
     if (group.subjectId) subjectIds.add(group.subjectId);
     if (group.userId) userIds.add(group.userId);
+    addClient(group.caseId ? caseClients : projectClients, group.caseId ?? group.projectId, group.subjectId);
   }
 
   const cases = caseIds.size
@@ -192,17 +219,24 @@ export async function loadApprovalQueue(
     access,
     showRates,
     users: orgUsers,
+    timeIncrementMinutes: organization?.billingTimeIncrementMinutes ?? 15,
     options: {
       subjects: subjects.map((subject) => ({
         id: subject.id,
         name: subject.ico ? `${subject.name}, IČO ${subject.ico}` : subject.name,
       })),
-      projects,
+      projects: projects.map((project) => ({
+        ...project,
+        clientSubjectIds: [...(projectClients.get(project.id) ?? [])].filter(
+          (id) => id !== project.mainSubjectId,
+        ),
+      })),
       cases: cases.map((legalCase) => ({
         id: legalCase.id,
         name: legalCase.name,
         projectId: legalCase.projectId,
         projectName: legalCase.project.name,
+        clientSubjectIds: [...(caseClients.get(legalCase.id) ?? [])],
       })),
       users: orgUsers.filter((option) => userIds.has(option.id)),
     },

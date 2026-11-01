@@ -39,6 +39,7 @@ const emptyQueue: ApprovalQueueData = {
   access: { canApproveAll: false, canApprove: false },
   showRates: false,
   users: [],
+  timeIncrementMinutes: 15,
   options: { subjects: [], projects: [], cases: [], users: [] },
 };
 
@@ -200,6 +201,7 @@ export async function ApprovalQueuePage({
           showRates={data.showRates}
           totals={data.totals}
           capped={data.capped}
+          timeIncrementMinutes={data.timeIncrementMinutes}
         />
       </Section>
     </>

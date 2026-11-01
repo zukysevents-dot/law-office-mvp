@@ -1,18 +1,37 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Play, Square, Timer, X } from "lucide-react";
+import { Pause, Play, Square, Timer, X } from "lucide-react";
 
-const STORAGE_KEY = "wl-timer";
+import {
+  parseTimerState,
+  pauseTimer,
+  resumeTimer,
+  serializeTimerState,
+  startTimer,
+  TIMER_STORAGE_KEY,
+  timerElapsedMs,
+  type TimerState,
+} from "@/lib/work-logs/timer";
+import { roundHoursToIncrement } from "@/lib/work-logs/time-rounding";
 
-function readStart(): number | null {
+function readTimer(): TimerState | null {
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const value = Number(raw);
-    return Number.isFinite(value) ? value : null;
+    return parseTimerState(window.localStorage.getItem(TIMER_STORAGE_KEY));
   } catch {
     return null;
+  }
+}
+
+function writeTimer(state: TimerState | null) {
+  try {
+    if (state) {
+      window.localStorage.setItem(TIMER_STORAGE_KEY, serializeTimerState(state));
+    } else {
+      window.localStorage.removeItem(TIMER_STORAGE_KEY);
+    }
+  } catch {
+    // ignore storage failures — timer just won't survive navigation
   }
 }
 
@@ -25,11 +44,12 @@ function formatElapsed(ms: number) {
   return `${pad(h)}:${pad(m)}:${pad(s)}`;
 }
 
-// A stopwatch that survives navigation by keeping the start timestamp in
-// localStorage (the app-shell layout persists across client navigations; a full
-// reload re-reads it). Stopping rounds elapsed time to the nearest quarter hour
-// and opens the work-log form pre-filled via ?hours — the single most repeated
-// daily action, with zero manual time math.
+// A stopwatch that survives navigation by keeping its state in localStorage
+// (the app-shell layout persists across client navigations; a full reload
+// re-reads it). It can be paused and resumed — paused time is not counted
+// (src/lib/work-logs/timer.ts). Stopping rounds the measured time to the
+// office's billing increment and opens the work-log form pre-filled via
+// ?hours — the single most repeated daily action, with zero manual time math.
 export function FloatingTimer({
   incrementMinutes = 15,
 }: {
@@ -37,61 +57,70 @@ export function FloatingTimer({
 }) {
   // ready guards against a hydration mismatch: localStorage is client-only, so
   // both the server and the first client render show nothing.
-  const [state, setState] = useState<{ ready: boolean; startedAt: number | null }>({
+  const [state, setState] = useState<{ ready: boolean; timer: TimerState | null }>({
     ready: false,
-    startedAt: null,
+    timer: null,
   });
   const [now, setNow] = useState(0);
 
   useEffect(() => {
     // One-time read of the persisted timer after mount.
     /* eslint-disable react-hooks/set-state-in-effect */
-    setState({ ready: true, startedAt: readStart() });
+    setState({ ready: true, timer: readTimer() });
     setNow(Date.now());
     /* eslint-enable react-hooks/set-state-in-effect */
+
+    // Pauza / pokračování v jiné záložce se projeví i tady.
+    function onStorage(event: StorageEvent) {
+      if (event.key === TIMER_STORAGE_KEY || event.key === null) {
+        setState({ ready: true, timer: readTimer() });
+        setNow(Date.now());
+      }
+    }
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, []);
 
+  const running = state.timer?.status === "running";
   useEffect(() => {
-    if (state.startedAt === null) return;
+    if (!running) return;
     const id = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(id);
-  }, [state.startedAt]);
+  }, [running]);
 
   if (!state.ready) return null;
 
+  function update(timer: TimerState | null) {
+    writeTimer(timer);
+    setState({ ready: true, timer });
+    setNow(Date.now());
+  }
+
   function start() {
-    const ts = Date.now();
-    try {
-      window.localStorage.setItem(STORAGE_KEY, String(ts));
-    } catch {
-      // ignore storage failures — timer just won't survive navigation
-    }
-    setState({ ready: true, startedAt: ts });
-    setNow(ts);
+    update(startTimer(Date.now()));
+  }
+
+  function pause() {
+    if (state.timer) update(pauseTimer(state.timer, Date.now()));
+  }
+
+  function resume() {
+    if (state.timer) update(resumeTimer(state.timer, Date.now()));
   }
 
   function clear() {
-    try {
-      window.localStorage.removeItem(STORAGE_KEY);
-    } catch {
-      // ignore
-    }
-    setState({ ready: true, startedAt: null });
+    update(null);
   }
 
   function stopAndLog() {
-    if (state.startedAt === null) return;
-    const elapsedH = (Date.now() - state.startedAt) / 3_600_000;
-    const incrementHours = incrementMinutes === 6 ? 0.1 : 0.25;
-    const hours = Math.max(
-      incrementHours,
-      Math.round(elapsedH / incrementHours) * incrementHours,
-    );
+    if (!state.timer) return;
+    const elapsedH = timerElapsedMs(state.timer, Date.now()) / 3_600_000;
+    const hours = roundHoursToIncrement(elapsedH, incrementMinutes);
     clear();
     window.location.href = `/work-logs?new=1&hours=${hours}`;
   }
 
-  if (state.startedAt === null) {
+  if (state.timer === null) {
     return (
       <div className="no-print fixed bottom-4 right-4 z-40">
         <button
@@ -106,12 +135,50 @@ export function FloatingTimer({
     );
   }
 
+  const paused = state.timer.status === "paused";
+
   return (
-    <div className="no-print fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full bg-[#0e1822] py-2 pl-4 pr-2 text-white shadow-lg">
+    <div
+      data-testid="floating-timer"
+      data-timer-status={state.timer.status}
+      className="no-print fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full bg-[#0e1822] py-2 pl-4 pr-2 text-white shadow-lg"
+    >
       <span className="flex items-center gap-2 tabular-nums">
-        <Play className="h-3.5 w-3.5 fill-current" aria-hidden="true" />
-        {formatElapsed(now - state.startedAt)}
+        {paused ? (
+          <Pause className="h-3.5 w-3.5 fill-current text-amber-300" aria-hidden="true" />
+        ) : (
+          <Play className="h-3.5 w-3.5 fill-current" aria-hidden="true" />
+        )}
+        <span data-testid="floating-timer-elapsed">
+          {formatElapsed(timerElapsedMs(state.timer, now))}
+        </span>
+        {paused ? (
+          <span className="hidden text-xs font-medium text-amber-300 sm:inline">
+            Pozastaveno
+          </span>
+        ) : null}
       </span>
+      {paused ? (
+        <button
+          type="button"
+          onClick={resume}
+          aria-label="Pokračovat ve stopkách"
+          className="inline-flex h-8 items-center gap-1.5 rounded-full px-2 text-xs font-medium text-white transition hover:bg-white/10 sm:px-3"
+        >
+          <Play className="h-3.5 w-3.5 fill-current" aria-hidden="true" />
+          <span className="hidden sm:inline">Pokračovat</span>
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={pause}
+          aria-label="Pozastavit stopky"
+          className="inline-flex h-8 items-center gap-1.5 rounded-full px-2 text-xs font-medium text-white transition hover:bg-white/10 sm:px-3"
+        >
+          <Pause className="h-3.5 w-3.5 fill-current" aria-hidden="true" />
+          <span className="hidden sm:inline">Pozastavit</span>
+        </button>
+      )}
       <button
         type="button"
         onClick={stopAndLog}

@@ -37,12 +37,18 @@ export const dynamic = "force-dynamic";
 type NewInvoiceData = {
   allowed: boolean;
   subjects: Array<{ id: string; name: string; ico: string | null }>;
-  projects: Array<{ id: string; name: string; mainSubjectId: string }>;
+  projects: Array<{
+    id: string;
+    name: string;
+    mainSubjectId: string;
+    clientSubjectIds: string[];
+  }>;
   cases: Array<{
     id: string;
     name: string;
     projectId: string;
     project: { name: string; mainSubjectId: string };
+    clientSubjectIds: string[];
   }>;
   workLogs: BillingWorkLog[];
   selectedSubjectId: string;
@@ -98,7 +104,8 @@ export default async function NewInvoicePage({ searchParams }: NewInvoiceProps) 
         invoiceableWorkLogWhere,
         workLogVisibilityWhere(currentUser),
       );
-      const [subjects, projects, cases, issuers, profile] = await Promise.all([
+      const [subjects, rawProjects, rawCases, issuers, profile, matterClients] =
+        await Promise.all([
         prisma.subject.findMany({
           where: {
             organizationId: currentUser.organizationId,
@@ -143,7 +150,38 @@ export default async function NewInvoicePage({ searchParams }: NewInvoiceProps) 
           where: { organizationId: currentUser.organizationId },
           select: { legalName: true },
         }),
+        // Více klientů na spisu: na čí výkazy se v projektu / případu dá
+        // fakturovat (i další klienti spisu, nejen hlavní klient projektu).
+        prisma.workLog.groupBy({
+          by: ["subjectId", "projectId", "caseId"],
+          where: invoiceableVisible,
+        }),
       ]);
+      const clientsOf = (
+        key: "projectId" | "caseId",
+        id: string,
+        mainSubjectId: string | null,
+      ) => [
+        ...new Set(
+          matterClients
+            .filter(
+              (group) =>
+                group[key] === id &&
+                (key === "caseId" || group.caseId === null) &&
+                group.subjectId &&
+                group.subjectId !== mainSubjectId,
+            )
+            .map((group) => group.subjectId as string),
+        ),
+      ];
+      const projects = rawProjects.map((project) => ({
+        ...project,
+        clientSubjectIds: clientsOf("projectId", project.id, project.mainSubjectId),
+      }));
+      const cases = rawCases.map((legalCase) => ({
+        ...legalCase,
+        clientSubjectIds: clientsOf("caseId", legalCase.id, legalCase.project.mainSubjectId),
+      }));
 
       const matter = normalizeInvoiceMatter(
         {
@@ -156,6 +194,7 @@ export default async function NewInvoicePage({ searchParams }: NewInvoiceProps) 
           id: legalCase.id,
           projectId: legalCase.projectId,
           mainSubjectId: legalCase.project.mainSubjectId,
+          clientSubjectIds: legalCase.clientSubjectIds,
         })),
       );
 
@@ -237,6 +276,7 @@ export default async function NewInvoicePage({ searchParams }: NewInvoiceProps) 
                 name: legalCase.name,
                 projectId: legalCase.projectId,
                 projectName: legalCase.project.name,
+                clientSubjectIds: legalCase.clientSubjectIds,
               }))}
               defaultSubjectId={data.selectedSubjectId}
               defaultProjectId={data.selectedProjectId}

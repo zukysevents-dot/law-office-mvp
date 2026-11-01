@@ -130,7 +130,7 @@ export const dashboardTableColumns: Partial<
     { key: "description", label: "Popis" },
     { key: "legalArea", label: "Právní oblast" },
     { key: "billingStatus", label: "Billing status" },
-    { key: "approvalStatus", label: "Approval status" },
+    { key: "approvalStatus", label: "Stav schválení" },
   ],
   [DashboardWidgetType.SUBJECTS_TABLE]: [
     { key: "name", label: "Název" },

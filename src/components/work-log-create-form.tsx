@@ -12,6 +12,7 @@ import {
 } from "@/lib/labels";
 import type { WorkLogFormOptions } from "@/lib/work-logs/create-form.server";
 import { todayDateInputValue } from "@/lib/work-logs/duplicate";
+import { hoursInputStep } from "@/lib/work-logs/time-rounding";
 
 export type WorkLogCreatePrefill = {
   subjectId?: string;
@@ -49,7 +50,13 @@ export function WorkLogCreateForm({
   submitLabel?: string;
   formKey?: string;
 }) {
-  const timeIncrementHours = options.timeIncrementMinutes === 6 ? 0.1 : 0.25;
+  // Předvyplněné hodiny (stopky, duplikace) mohou být z doby jiného kroku —
+  // krok je pak jemnější, aby formulář šel odeslat (server zaokrouhlí).
+  const prefillHours = prefill?.hours ? Number(prefill.hours) : null;
+  const hoursStep = hoursInputStep(
+    options.timeIncrementMinutes,
+    prefillHours !== null && Number.isFinite(prefillHours) ? prefillHours : null,
+  );
   return (
     // key: switching ?duplicate=a → b re-mounts the uncontrolled defaults.
     <form key={formKey} action={createWorkLog} className="grid gap-4">
@@ -70,9 +77,11 @@ export function WorkLogCreateForm({
           name: legalCase.name,
           projectId: legalCase.projectId,
           projectName: legalCase.project.name,
+          clientSubjectIds: legalCase.clientSubjectIds,
         }))}
         tasks={options.tasks}
         includeTask
+        requireCaseForCaseClients
         subjectLabel="Subjekt"
         defaultSubjectId={prefill?.subjectId}
         defaultProjectId={prefill?.projectId}
@@ -97,7 +106,7 @@ export function WorkLogCreateForm({
             name="hours"
             type="number"
             min="0"
-            step={timeIncrementHours}
+            step={hoursStep}
             required
             defaultValue={prefill?.hours}
           />

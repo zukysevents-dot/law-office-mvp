@@ -45,8 +45,11 @@ test("approvalFilterWhere: klient přes subjekt, projekt i případ (legacy výk
     {
       OR: [
         { subjectId: "s1" },
-        { project: { is: { mainSubjectId: "s1" } } },
-        { case: { is: { project: { is: { mainSubjectId: "s1" } } } } },
+        { subjectId: null, project: { is: { mainSubjectId: "s1" } } },
+        {
+          subjectId: null,
+          case: { is: { project: { is: { mainSubjectId: "s1" } } } },
+        },
       ],
     },
   );

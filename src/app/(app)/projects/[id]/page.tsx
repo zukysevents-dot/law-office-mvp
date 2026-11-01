@@ -401,6 +401,10 @@ export default async function ProjectDetailPage({
           {canEdit ? (
             <Section title="Přidat subjekt k projektu">
               <form action={addProjectSubjectRelation} className="grid gap-4">
+                <p className="text-sm text-stone-600">
+                  Na subjekty s rolí Klient lze vykazovat práci k projektu i ke
+                  všem jeho případům a vystavit jim fakturu.
+                </p>
                 <input type="hidden" name="projectId" value={project.id} />
                 <div className="grid gap-4 md:grid-cols-2">
                   <Field label="Subjekt">

@@ -10,6 +10,7 @@ import {
   nextSelectionOnSubjectChange,
   nextSelectionOnTaskChange,
   projectsForSubject,
+  subjectNeedsCase,
   tasksForSelection,
   type MatterCascadeLists,
 } from "./matter-cascade";
@@ -229,4 +230,169 @@ test("úkoly: „Moje úkoly“ nahoře, bez vlastních úkolů plochý seznam",
     { subjectId: "", projectId: "", caseId: "cA1" },
   );
   assert.equal(filtered[0]?.mine, true);
+});
+
+// Více klientů na spisu: projekt pM hlavního klienta M, další klient P na
+// projektu (platí pro všechny případy) a klient Q jen na případu cM2.
+const multiProjects = [
+  { id: "pM", mainSubjectId: "M", clientSubjectIds: ["P"] },
+  { id: "pO", mainSubjectId: "O" },
+];
+const multiCases = [
+  { id: "cM1", projectId: "pM" },
+  { id: "cM2", projectId: "pM", clientSubjectIds: ["Q"] },
+  { id: "cO", projectId: "pO" },
+];
+const multiTasks = [
+  { id: "tM1", projectId: null, caseId: "cM1" },
+  { id: "tM2", projectId: null, caseId: "cM2" },
+  { id: "tPM", projectId: "pM", caseId: null },
+];
+const multiLists: MatterCascadeLists = {
+  projects: multiProjects,
+  cases: multiCases,
+  tasks: multiTasks,
+};
+
+test("více klientů: další klient vidí projekt a případy spisu", () => {
+  assert.deepEqual(ids(projectsForSubject(multiProjects, "P", multiCases)), ["pM"]);
+  // Klient jen na případu vidí projekt (aby došel k případu) a jen ten případ.
+  assert.deepEqual(ids(projectsForSubject(multiProjects, "Q", multiCases)), ["pM"]);
+  assert.deepEqual(
+    ids(casesForSelection(multiCases, multiProjects, { subjectId: "Q", projectId: "" })),
+    ["cM2"],
+  );
+  assert.deepEqual(
+    ids(casesForSelection(multiCases, multiProjects, { subjectId: "Q", projectId: "pM" })),
+    ["cM2"],
+  );
+  assert.deepEqual(
+    ids(casesForSelection(multiCases, multiProjects, { subjectId: "P", projectId: "pM" })),
+    ["cM1", "cM2"],
+  );
+  // Hlavní klient vidí všechny případy projektu.
+  assert.deepEqual(
+    ids(casesForSelection(multiCases, multiProjects, { subjectId: "M", projectId: "pM" })),
+    ["cM1", "cM2"],
+  );
+  // Bez clientSubjectIds se nic nemění (projekt bez případů pro cizího klienta).
+  assert.deepEqual(ids(projectsForSubject(multiProjects, "Q")), []);
+});
+
+test("více klientů: úkoly podle dalšího klienta", () => {
+  assert.deepEqual(
+    ids(
+      tasksForSelection(multiTasks, multiCases, multiProjects, {
+        subjectId: "Q",
+        projectId: "",
+        caseId: "",
+      }),
+    ),
+    ["tM2"],
+  );
+  assert.deepEqual(
+    ids(
+      tasksForSelection(multiTasks, multiCases, multiProjects, {
+        subjectId: "P",
+        projectId: "",
+        caseId: "",
+      }),
+    ),
+    ["tM1", "tM2", "tPM"],
+  );
+});
+
+test("více klientů: výběr případu ponechá zvoleného dalšího klienta", () => {
+  assert.deepEqual(
+    nextSelectionOnCaseChange({ ...empty, subjectId: "Q" }, "cM2", multiLists),
+    { subjectId: "Q", projectId: "pM", caseId: "cM2", taskId: "" },
+  );
+  // Klient, který k případu nepatří, se nahradí hlavním klientem projektu.
+  assert.deepEqual(
+    nextSelectionOnCaseChange({ ...empty, subjectId: "Q" }, "cM1", multiLists),
+    { subjectId: "M", projectId: "pM", caseId: "cM1", taskId: "" },
+  );
+  assert.deepEqual(
+    nextSelectionOnCaseChange({ ...empty, subjectId: "P" }, "cM1", multiLists),
+    { subjectId: "P", projectId: "pM", caseId: "cM1", taskId: "" },
+  );
+});
+
+test("více klientů: změna klienta na dalšího klienta zachová spis", () => {
+  const state = { subjectId: "M", projectId: "pM", caseId: "cM2", taskId: "tM2" };
+  assert.deepEqual(nextSelectionOnSubjectChange(state, "Q", multiLists), {
+    subjectId: "Q",
+    projectId: "pM",
+    caseId: "cM2",
+    taskId: "tM2",
+  });
+  // Případ, kde Q klientem není, se nahradí jediným případem, kde klientem je;
+  // projekt zůstane.
+  const other = { subjectId: "M", projectId: "pM", caseId: "cM1", taskId: "tM1" };
+  assert.deepEqual(nextSelectionOnSubjectChange(other, "Q", multiLists), {
+    subjectId: "Q",
+    projectId: "pM",
+    caseId: "cM2",
+    taskId: "",
+  });
+  // Klient mimo spis vynuluje vše.
+  assert.deepEqual(nextSelectionOnSubjectChange(state, "O", multiLists), {
+    subjectId: "O",
+    projectId: "",
+    caseId: "",
+    taskId: "",
+  });
+});
+
+test("více klientů: výběr projektu / úkolu ponechá dalšího klienta", () => {
+  assert.deepEqual(
+    nextSelectionOnProjectChange({ ...empty, subjectId: "P" }, "pM", multiLists),
+    { subjectId: "P", projectId: "pM", caseId: "", taskId: "" },
+  );
+  assert.deepEqual(
+    nextSelectionOnProjectChange({ ...empty, subjectId: "P" }, "pO", multiLists),
+    { subjectId: "O", projectId: "pO", caseId: "", taskId: "" },
+  );
+  // Klient jen na cM2: případ cM1 při změně projektu nezůstane, doplní se cM2.
+  assert.deepEqual(
+    nextSelectionOnProjectChange(
+      { subjectId: "Q", projectId: "", caseId: "cM1", taskId: "" },
+      "pM",
+      multiLists,
+    ),
+    { subjectId: "Q", projectId: "pM", caseId: "cM2", taskId: "" },
+  );
+  assert.deepEqual(
+    nextSelectionOnTaskChange({ ...empty, subjectId: "Q" }, "tM2", multiLists),
+    { subjectId: "Q", projectId: "pM", caseId: "cM2", taskId: "tM2" },
+  );
+  assert.deepEqual(
+    nextSelectionOnTaskChange({ ...empty, subjectId: "Q" }, "tM1", multiLists),
+    { subjectId: "M", projectId: "pM", caseId: "cM1", taskId: "tM1" },
+  );
+});
+
+test("více klientů: klient jen na případu potřebuje případ", () => {
+  assert.equal(subjectNeedsCase({ subjectId: "Q", projectId: "pM" }, multiLists), true);
+  assert.equal(subjectNeedsCase({ subjectId: "P", projectId: "pM" }, multiLists), false);
+  assert.equal(subjectNeedsCase({ subjectId: "M", projectId: "pM" }, multiLists), false);
+  assert.equal(subjectNeedsCase({ subjectId: "Q", projectId: "" }, multiLists), false);
+  assert.equal(subjectNeedsCase({ subjectId: "", projectId: "pM" }, multiLists), false);
+
+  // Více případů klienta Q: nic se nedoplní, výběr zůstane na uživateli.
+  const twoCases: MatterCascadeLists = {
+    ...multiLists,
+    cases: [
+      ...multiCases,
+      { id: "cM3", projectId: "pM", clientSubjectIds: ["Q"] },
+    ],
+  };
+  assert.deepEqual(
+    nextSelectionOnProjectChange({ ...empty, subjectId: "Q" }, "pM", twoCases),
+    { subjectId: "Q", projectId: "pM", caseId: "", taskId: "" },
+  );
+  assert.deepEqual(
+    nextSelectionOnProjectChange({ ...empty, subjectId: "Q" }, "pM", multiLists),
+    { subjectId: "Q", projectId: "pM", caseId: "cM2", taskId: "" },
+  );
 });

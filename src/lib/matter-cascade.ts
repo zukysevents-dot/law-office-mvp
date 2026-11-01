@@ -4,9 +4,24 @@
 // choosing a client offers only that client's projects and cases, choosing a
 // project only its cases, choosing a deeper level back-fills the higher ones,
 // and changing a parent clears every child that no longer belongs to it.
+//
+// Více klientů na spisu: projekt i případ mohou kromě hlavního klienta projektu
+// nést další subjekty s rolí Klient (SubjectRelation). Volitelné
+// `clientSubjectIds` je seznam těchto dalších klientů — projektu (vazby na
+// projekt) a případu (vazby přímo na případ; klienti projektu platí i pro jeho
+// případy). Na kteréhokoli z nich lze vykázat práci. Bez `clientSubjectIds` se
+// chování nemění (jediný klient = hlavní klient projektu).
 
-export type CascadeProject = { id: string; mainSubjectId: string | null };
-export type CascadeCase = { id: string; projectId: string | null };
+export type CascadeProject = {
+  id: string;
+  mainSubjectId: string | null;
+  clientSubjectIds?: string[];
+};
+export type CascadeCase = {
+  id: string;
+  projectId: string | null;
+  clientSubjectIds?: string[];
+};
 export type CascadeTask = {
   id: string;
   projectId: string | null;
@@ -64,6 +79,70 @@ function caseProject(
   return cases.find((legalCase) => legalCase.id === caseId)?.projectId ?? null;
 }
 
+/** Klienti projektu: hlavní klient + další klienti z vazeb na projekt. */
+export function projectClientSubjectIds(
+  projects: CascadeProject[],
+  projectId: string | null | undefined,
+): string[] {
+  const project = projectId
+    ? projects.find((item) => item.id === projectId)
+    : undefined;
+  if (!project) {
+    return [];
+  }
+  return [
+    ...(project.mainSubjectId ? [project.mainSubjectId] : []),
+    ...(project.clientSubjectIds ?? []),
+  ];
+}
+
+/** Klienti případu: klienti jeho projektu + další klienti z vazeb na případ. */
+export function caseClientSubjectIds(
+  cases: CascadeCase[],
+  projects: CascadeProject[],
+  caseId: string | null | undefined,
+): string[] {
+  const legalCase = caseId ? cases.find((item) => item.id === caseId) : undefined;
+  if (!legalCase) {
+    return [];
+  }
+  return [
+    ...projectClientSubjectIds(projects, legalCase.projectId),
+    ...(legalCase.clientSubjectIds ?? []),
+  ];
+}
+
+function caseHasClient(
+  legalCase: CascadeCase,
+  projects: CascadeProject[],
+  subjectId: string,
+) {
+  return (
+    projectClientSubjectIds(projects, legalCase.projectId).includes(subjectId) ||
+    (legalCase.clientSubjectIds ?? []).includes(subjectId)
+  );
+}
+
+/**
+ * Subjekt je klientem projektu přímo, nebo klientem některého z jeho případů
+ * (pak projekt nabízíme, aby šlo dojít k případu).
+ */
+function projectReachesClient(
+  project: CascadeProject,
+  subjectId: string,
+  projects: CascadeProject[],
+  cases: CascadeCase[],
+) {
+  if (projectClientSubjectIds(projects, project.id).includes(subjectId)) {
+    return true;
+  }
+  return cases.some(
+    (legalCase) =>
+      legalCase.projectId === project.id &&
+      (legalCase.clientSubjectIds ?? []).includes(subjectId),
+  );
+}
+
 /** The project a task effectively belongs to (its case's project wins). */
 export function taskProjectId(task: CascadeTask, cases: CascadeCase[]): string | null {
   if (task.caseId) {
@@ -80,9 +159,12 @@ function isStandaloneTask(task: CascadeTask) {
 export function projectsForSubject<P extends CascadeProject>(
   projects: P[],
   subjectId: string,
+  cases: CascadeCase[] = [],
 ): P[] {
   return subjectId
-    ? projects.filter((project) => project.mainSubjectId === subjectId)
+    ? projects.filter((project) =>
+        projectReachesClient(project, subjectId, projects, cases),
+      )
     : projects;
 }
 
@@ -92,14 +174,29 @@ export function casesForSelection<C extends CascadeCase>(
   selection: { subjectId: string; projectId: string },
 ): C[] {
   if (selection.projectId) {
-    return cases.filter((legalCase) => legalCase.projectId === selection.projectId);
+    const projectCases = cases.filter(
+      (legalCase) => legalCase.projectId === selection.projectId,
+    );
+    // Vedlejší klient případu vidí jen „své“ případy projektu. Klient, který
+    // projektu vůbec nepatří (rozporný stav z URL), filtr nezužuje.
+    const subjectId = selection.subjectId;
+    const project = projects.find((item) => item.id === selection.projectId);
+    if (
+      subjectId &&
+      project &&
+      projectReachesClient(project, subjectId, projects, projectCases)
+    ) {
+      return projectCases.filter((legalCase) =>
+        caseHasClient(legalCase, projects, subjectId),
+      );
+    }
+    return projectCases;
   }
   if (selection.subjectId) {
-    const subjectProjects = new Set(
-      projectsForSubject(projects, selection.subjectId).map((project) => project.id),
-    );
+    const subjectId = selection.subjectId;
     return cases.filter(
-      (legalCase) => legalCase.projectId !== null && subjectProjects.has(legalCase.projectId),
+      (legalCase) =>
+        legalCase.projectId !== null && caseHasClient(legalCase, projects, subjectId),
     );
   }
   return cases;
@@ -115,17 +212,92 @@ export function tasksForSelection<T extends CascadeTask>(
     return tasks.filter((task) => task.caseId === selection.caseId);
   }
   if (selection.projectId) {
-    return tasks.filter((task) => taskProjectId(task, cases) === selection.projectId);
+    const projectTasks = tasks.filter(
+      (task) => taskProjectId(task, cases) === selection.projectId,
+    );
+    // Stejně jako u případů: vedlejší klient vidí jen úkoly „svých“ případů.
+    const subjectId = selection.subjectId;
+    const project = projects.find((item) => item.id === selection.projectId);
+    if (subjectId && project && projectReachesClient(project, subjectId, projects, cases)) {
+      return projectTasks.filter((task) =>
+        taskClientSubjectIds(task, cases, projects).includes(subjectId),
+      );
+    }
+    return projectTasks;
   }
   if (selection.subjectId) {
+    const subjectId = selection.subjectId;
     return tasks.filter((task) => {
       if (isStandaloneTask(task)) {
         return true;
       }
-      return projectSubject(projects, taskProjectId(task, cases)) === selection.subjectId;
+      return taskClientSubjectIds(task, cases, projects).includes(subjectId);
     });
   }
   return tasks;
+}
+
+/** Klienti, na které lze vykázat práci k úkolu (podle jeho případu/projektu). */
+function taskClientSubjectIds(
+  task: CascadeTask,
+  cases: CascadeCase[],
+  projects: CascadeProject[],
+): string[] {
+  if (task.caseId && cases.some((legalCase) => legalCase.id === task.caseId)) {
+    return caseClientSubjectIds(cases, projects, task.caseId);
+  }
+  return projectClientSubjectIds(projects, taskProjectId(task, cases));
+}
+
+/**
+ * Klient, který je ke spisu přidaný jen na některých případech (ne na
+ * projektu), se dá vykázat jen s případem — server výkaz jen na projekt
+ * odmítne. Formulář výkazu pak případ vyžaduje.
+ */
+export function subjectNeedsCase(
+  selection: { subjectId: string; projectId: string },
+  lists: Pick<MatterCascadeLists, "projects" | "cases">,
+): boolean {
+  const { subjectId, projectId } = selection;
+  if (!subjectId || !projectId) {
+    return false;
+  }
+  if (projectClientSubjectIds(lists.projects, projectId).includes(subjectId)) {
+    return false;
+  }
+  return lists.cases.some(
+    (legalCase) =>
+      legalCase.projectId === projectId &&
+      (legalCase.clientSubjectIds ?? []).includes(subjectId),
+  );
+}
+
+/** Jediný případ projektu, kde je zvolený klient přidaný, se doplní sám. */
+function withSingleClientCase(
+  next: { subjectId: string; projectId: string; caseId: string },
+  lists: MatterCascadeLists,
+) {
+  if (next.caseId || !subjectNeedsCase(next, lists)) {
+    return next;
+  }
+  const clientCases = lists.cases.filter(
+    (legalCase) =>
+      legalCase.projectId === next.projectId &&
+      (legalCase.clientSubjectIds ?? []).includes(next.subjectId),
+  );
+  return clientCases.length === 1 ? { ...next, caseId: clientCases[0].id } : next;
+}
+
+/** Ponechá zvoleného klienta, pokud je klientem spisu, jinak hlavní klient. */
+function keepOrMainSubject(
+  current: string,
+  allowed: string[],
+  fallback: string,
+): string {
+  if (current && allowed.includes(current)) {
+    return current;
+  }
+  return allowed[0] || fallback;
 }
 
 function taskFitsSelection(
@@ -163,16 +335,17 @@ export function nextSelectionOnSubjectChange(
   if (!subjectId) {
     return { subjectId: "", projectId: "", caseId: "", taskId: "" };
   }
+  const currentProject = lists.projects.find((item) => item.id === state.projectId);
   const projectKept =
-    Boolean(state.projectId) &&
-    projectSubject(lists.projects, state.projectId) === subjectId;
+    Boolean(currentProject) &&
+    projectReachesClient(currentProject!, subjectId, lists.projects, lists.cases);
   const projectId = projectKept ? state.projectId : "";
   const caseKept =
     Boolean(state.caseId) &&
-    projectSubject(lists.projects, caseProject(lists.cases, state.caseId)) === subjectId &&
+    caseClientSubjectIds(lists.cases, lists.projects, state.caseId).includes(subjectId) &&
     (!projectId || caseProject(lists.cases, state.caseId) === projectId);
   const caseId = caseKept ? state.caseId : "";
-  const next = { subjectId, projectId, caseId };
+  const next = withSingleClientCase({ subjectId, projectId, caseId }, lists);
   const task = lists.tasks?.find((item) => item.id === state.taskId);
   return {
     ...next,
@@ -185,14 +358,29 @@ export function nextSelectionOnProjectChange(
   projectId: string,
   lists: MatterCascadeLists,
 ): MatterCascadeState {
+  const project = lists.projects.find((item) => item.id === projectId);
+  // Zvolený (i vedlejší) klient zůstane, pokud k projektu patří; jinak se
+  // doplní hlavní klient projektu.
+  const subjectReached =
+    Boolean(project) &&
+    Boolean(state.subjectId) &&
+    projectReachesClient(project!, state.subjectId, lists.projects, lists.cases);
   const subjectId = projectId
-    ? projectSubject(lists.projects, projectId) || state.subjectId
+    ? subjectReached
+      ? state.subjectId
+      : projectSubject(lists.projects, projectId) || state.subjectId
     : state.subjectId;
-  const caseId =
-    projectId && state.caseId && caseProject(lists.cases, state.caseId) === projectId
-      ? state.caseId
-      : "";
-  const next = { subjectId, projectId, caseId };
+  // Případ zůstane, jen když patří k projektu a (je-li klient vedlejším
+  // klientem jen některých případů) i ke zvolenému klientovi.
+  const caseInProject =
+    Boolean(projectId) &&
+    Boolean(state.caseId) &&
+    caseProject(lists.cases, state.caseId) === projectId;
+  const caseFitsSubject =
+    !subjectReached ||
+    caseClientSubjectIds(lists.cases, lists.projects, state.caseId).includes(subjectId);
+  const caseId = caseInProject && caseFitsSubject ? state.caseId : "";
+  const next = withSingleClientCase({ subjectId, projectId, caseId }, lists);
   const task = lists.tasks?.find((item) => item.id === state.taskId);
   return {
     ...next,
@@ -214,7 +402,11 @@ export function nextSelectionOnCaseChange(
     };
   }
   const projectId = caseProject(lists.cases, caseId) || state.projectId;
-  const subjectId = projectSubject(lists.projects, projectId) || state.subjectId;
+  const subjectId = keepOrMainSubject(
+    state.subjectId,
+    caseClientSubjectIds(lists.cases, lists.projects, caseId),
+    projectSubject(lists.projects, projectId) || state.subjectId,
+  );
   const task = lists.tasks?.find((item) => item.id === state.taskId);
   return {
     subjectId,
@@ -239,7 +431,11 @@ export function nextSelectionOnTaskChange(
   }
   const projectId = taskProjectId(task, lists.cases) ?? state.projectId;
   return {
-    subjectId: projectSubject(lists.projects, projectId) || state.subjectId,
+    subjectId: keepOrMainSubject(
+      state.subjectId,
+      taskClientSubjectIds(task, lists.cases, lists.projects),
+      projectSubject(lists.projects, projectId) || state.subjectId,
+    ),
     projectId: projectId ?? "",
     caseId: task.caseId ?? "",
     taskId,

@@ -823,6 +823,12 @@ test("billingApproverWorkLogWhere covers direct, project, and case client", () =
   assert.equal(where.OR?.length, 3);
   assert.match(JSON.stringify(where), /billingApprovers/);
   assert.match(JSON.stringify(where), /u-approver/);
+  // Výkaz vedený na dalšího klienta spisu schvalují schvalovatelé toho
+  // klienta — klient projektu platí jen pro výkazy bez subjektu.
+  assert.deepEqual(
+    where.OR?.slice(1).map((branch) => (branch as { subjectId?: unknown }).subjectId),
+    [null, null],
+  );
 });
 
 test("invoiceVisibilityWhere: LAWYER gains assignee paths; juniors stay created-only", () => {

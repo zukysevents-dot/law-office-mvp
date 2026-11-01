@@ -843,6 +843,9 @@ export function workLogVisibilityWhere(
 
 // Work logs whose client explicitly assigned this user as a billing approver.
 // A log may carry the client directly or inherit it from its project/case.
+// The client is the log's own subject when it has one (it may be an additional
+// client of the matter, not the project's main client); only legacy logs
+// without a subject fall back to the project's main client.
 export function billingApproverWorkLogWhere(
   userId: string,
 ): Prisma.WorkLogWhereInput {
@@ -850,8 +853,9 @@ export function billingApproverWorkLogWhere(
   return {
     OR: [
       { subject: { is: assignment } },
-      { project: { is: { mainSubject: { is: assignment } } } },
+      { subjectId: null, project: { is: { mainSubject: { is: assignment } } } },
       {
+        subjectId: null,
         case: {
           is: { project: { is: { mainSubject: { is: assignment } } } },
         },

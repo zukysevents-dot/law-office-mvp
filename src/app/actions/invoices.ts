@@ -138,6 +138,11 @@ export async function createInvoiceFromWorkLogs(formData: FormData) {
                   mainSubjectId: legalCase.project.mainSubjectId,
                 }
               : null,
+            // Více klientů na spisu: fakturovat lze i dalšímu klientovi
+            // projektu / případu. Skutečnou bránou je vazba výkazů níže —
+            // každý vybraný výkaz musí nést tohoto klienta i tento spis, a ty
+            // vznikly jen přes ověřený výběr (resolveVisibleMatterSelection).
+            additionalClientSubjectIds: [subjectId],
           },
         );
       } catch {
