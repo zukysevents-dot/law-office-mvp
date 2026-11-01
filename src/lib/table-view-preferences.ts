@@ -60,7 +60,7 @@ export const tableViewConfigs = {
       { id: "description", label: "Popis", defaultVisible: true },
       { id: "legalArea", label: "Právní oblast", defaultVisible: true },
       { id: "billingStatus", label: "Billing status", defaultVisible: true },
-      { id: "approvalStatus", label: "Approval status", defaultVisible: true },
+      { id: "approvalStatus", label: "Stav schválení", defaultVisible: true },
       { id: "createdAt", label: "Vytvořeno", defaultVisible: false },
       { id: "updatedAt", label: "Aktualizováno", defaultVisible: false },
     ],

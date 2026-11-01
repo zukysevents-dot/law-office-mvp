@@ -46,6 +46,7 @@ import { officeWorkDate } from "@/lib/hr/attendance-calc";
 import { getOrgUserOptions } from "@/lib/org-users";
 import { filterFormKey, firstParam } from "@/lib/search-params";
 import {
+  approvalStatusDescriptions,
   approvalStatusLabels,
   billingStatusLabels,
   internalTaskCategoryLabels,
@@ -53,7 +54,7 @@ import {
   options,
 } from "@/lib/labels";
 import { getPrisma } from "@/lib/prisma";
-import { billingStatusTone } from "@/lib/status-tones";
+import { approvalStatusTone, billingStatusTone } from "@/lib/status-tones";
 import {
   getCurrentTableView,
   getDefaultTableView,
@@ -685,7 +686,7 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
                   ))}
               </SelectInput>
             </Field>
-            {result.data.canApprove ? <Field label="Approval status">
+            {result.data.canApprove ? <Field label="Stav schválení">
               <SelectInput name="approvalStatus" defaultValue={approvalStatus}>
                 <option value="">Vše</option>
                 {options.approvalStatuses.map((status) => (
@@ -810,9 +811,11 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
                     ) : null}
                     {visibleColumnSet.has("approvalStatus") ? (
                       <td>
-                        <Badge tone="blue">
-                          {approvalStatusLabels[log.approvalStatus]}
-                        </Badge>
+                        <span title={approvalStatusDescriptions[log.approvalStatus]}>
+                          <Badge tone={approvalStatusTone(log.approvalStatus)}>
+                            {approvalStatusLabels[log.approvalStatus]}
+                          </Badge>
+                        </span>
                       </td>
                     ) : null}
                     {visibleColumnSet.has("createdAt") ? (

@@ -59,6 +59,7 @@ import {
 } from "@/lib/hours-plan";
 import { officeWorkDate } from "@/lib/hr/attendance-calc";
 import {
+  approvalStatusDescriptions,
   approvalStatusLabels,
   billingStatusLabels,
   caseStatusLabels,
@@ -93,6 +94,7 @@ import {
 } from "@/lib/tasks/task-people";
 import { redactBirthNumberQuery } from "@/lib/subjects/birth-number";
 import {
+  approvalStatusTone,
   billingStatusTone,
   deadlineTypeTone,
   taskStatusTone,
@@ -402,7 +404,13 @@ function renderWorkLogCell(
         </Badge>
       );
     case "approvalStatus":
-      return <Badge tone="blue">{approvalStatusLabels[log.approvalStatus]}</Badge>;
+      return (
+        <span title={approvalStatusDescriptions[log.approvalStatus]}>
+          <Badge tone={approvalStatusTone(log.approvalStatus)}>
+            {approvalStatusLabels[log.approvalStatus]}
+          </Badge>
+        </span>
+      );
     default:
       return "—";
   }

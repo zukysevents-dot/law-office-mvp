@@ -346,10 +346,21 @@ export const billingStatusLabels: Record<BillingStatus, string> = {
 
 export const approvalStatusLabels: Record<ApprovalStatus, string> = {
   DRAFT: "Koncept",
-  SUBMITTED: "Odesláno",
+  SUBMITTED: "Čeká na schválení",
   APPROVED: "Schváleno",
   REJECTED: "Zamítnuto",
-  ADJUSTED: "Upraveno",
+  ADJUSTED: "Upraveno, čeká na schválení",
+};
+
+// Vysvětlení stavu schválení výkazu (nápověda u štítku).
+export const approvalStatusDescriptions: Record<ApprovalStatus, string> = {
+  DRAFT:
+    "Koncept – výkaz neprochází schvalováním k fakturaci (např. interní nefakturovatelné hodiny).",
+  SUBMITTED:
+    "Výkaz je vykázaný a čeká, až ho schvalovatel schválí do fakturačních podkladů.",
+  APPROVED: "Schváleno do fakturačních podkladů – výkaz lze vyfakturovat.",
+  REJECTED: "Schvalovatel výkaz zamítl – nebude se fakturovat.",
+  ADJUSTED: "Schválený výkaz byl upraven a znovu čeká na schválení.",
 };
 
 export const projectStatusLabels: Record<ProjectStatus, string> = {

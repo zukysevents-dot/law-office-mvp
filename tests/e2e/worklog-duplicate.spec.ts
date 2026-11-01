@@ -90,7 +90,7 @@ test.describe("duplikace výkazu práce", () => {
       .filter({ hasNotText: copy });
     await expect(original).toHaveCount(1);
     await expect(original).toContainText("15. 07. 2026");
-    await expect(rowWith(page, copy)).toContainText("Odesláno");
+    await expect(rowWith(page, copy)).toContainText("Čeká na schválení");
   });
 
   test("zavření dialogu Esc vrátí URL bez parametru duplicate", async ({ page }) => {
