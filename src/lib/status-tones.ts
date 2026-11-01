@@ -14,6 +14,7 @@ import type {
   TaskDeadlineType,
   TaskStatus,
 } from "@/generated/prisma/enums";
+import { isDueToday, isPastDueDate } from "@/lib/due-date";
 
 export function amlRiskLevelTone(level: AmlRiskLevel): BadgeTone {
   const tones: Record<AmlRiskLevel, BadgeTone> = {
@@ -86,6 +87,8 @@ export function taskStatusRowClass(status: TaskStatus): string {
   return classes[status] ?? "";
 }
 
+// Termín je den (UTC půlnoc): po termínu až od následujícího dne kanceláře
+// (Europe/Prague), v den termínu je „dnes" — viz lib/due-date.ts.
 export function isTaskOverdue(
   deadline: Date | string | null | undefined,
   status: TaskStatus,
@@ -95,7 +98,32 @@ export function isTaskOverdue(
     return false;
   }
 
-  return new Date(deadline).getTime() < now.getTime();
+  return isPastDueDate(deadline, now);
+}
+
+export function isTaskDueToday(
+  deadline: Date | string | null | undefined,
+  status: TaskStatus,
+  now = new Date(),
+): boolean {
+  if (!deadline || status === "COMPLETED") {
+    return false;
+  }
+
+  return isDueToday(deadline, now);
+}
+
+// Stav termínu úkolu pro zvýraznění: „overdue" / „today", jinak (budoucí
+// termín, bez termínu, splněný úkol) null.
+export function taskDueDateState(
+  deadline: Date | string | null | undefined,
+  status: TaskStatus,
+  now = new Date(),
+): "overdue" | "today" | null {
+  if (isTaskOverdue(deadline, status, now)) {
+    return "overdue";
+  }
+  return isTaskDueToday(deadline, status, now) ? "today" : null;
 }
 
 export function billingStatusTone(status: BillingStatus): BadgeTone {

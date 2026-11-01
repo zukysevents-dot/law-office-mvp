@@ -21,7 +21,7 @@ export function TaskStatusLegend() {
         </span>
       ))}
       <span className="rounded-md border border-red-200 bg-red-50 px-2 py-1 font-semibold text-red-800">
-        Červený termín = po termínu
+        Červený termín: „Dnes“ = končí dnes, „Po termínu“ = od následujícího dne
       </span>
     </div>
   );

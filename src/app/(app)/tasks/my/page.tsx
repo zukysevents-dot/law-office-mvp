@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Save } from "lucide-react";
 
 import { updateTaskStatus } from "@/app/actions/tasks";
+import { DueDateText } from "@/components/due-date-text";
 import { Field, SelectInput, TextInput } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
 import { RowClickNav } from "@/components/row-click-nav";
@@ -19,7 +20,7 @@ import {
 } from "@/generated/prisma/enums";
 import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
-import { formatDateUtc } from "@/lib/format";
+import { overdueBefore } from "@/lib/due-date";
 import {
   myTaskRoleFilterLabels,
   myTaskRoleLabels,
@@ -46,7 +47,7 @@ import {
 import { getPrisma } from "@/lib/prisma";
 import { hrefWithout } from "@/lib/search-params";
 import {
-  isTaskOverdue,
+  taskDueDateState,
   taskDeadlineTypeTone,
   taskStatusRowClass,
   taskStatusTone,
@@ -162,7 +163,7 @@ export default async function MyTasksPage({ searchParams }: MyTasksProps) {
             : undefined,
           overdueOnly
             ? {
-                deadline: { lt: now },
+                deadline: { lt: overdueBefore(now) },
                 status: { not: TaskStatus.COMPLETED },
               }
             : undefined,
@@ -353,21 +354,18 @@ export default async function MyTasksPage({ searchParams }: MyTasksProps) {
                           {taskDeadlineTypeLabels[task.deadlineType]}
                         </Badge>
                       </td>
-                      <td
-                        className={
-                          isTaskOverdue(task.deadline, task.status, now)
-                            ? "font-semibold text-red-700"
-                            : undefined
-                        }
-                      >
-                        {formatDateUtc(task.deadline)}
+                      <td>
+                        <DueDateText
+                          date={task.deadline}
+                          state={taskDueDateState(task.deadline, task.status, now)}
+                        />
                         {task.postponeCount > 0 ? (
                           <Badge tone="amber" className="ml-2 whitespace-nowrap">
                             odloženo {task.postponeCount}×
                           </Badge>
                         ) : null}
                       </td>
-                      <td className="min-w-72">
+                      <td className="min-w-64">
                         {task.canWork ? (
                           <form action={updateTaskStatus} className="grid gap-2">
                             <input type="hidden" name="taskId" value={task.id} />

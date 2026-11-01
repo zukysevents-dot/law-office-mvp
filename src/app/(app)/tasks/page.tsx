@@ -10,6 +10,7 @@ import {
 
 import { updateTaskStatus } from "@/app/actions/tasks";
 import { CascadingMatterSelect } from "@/components/cascading-matter-select";
+import { DueDateText } from "@/components/due-date-text";
 import { ColumnVisibilityPanel } from "@/components/column-visibility-panel";
 import { Field, SelectInput, TextInput } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
@@ -37,6 +38,7 @@ import { summarizeLabels } from "@/lib/assignments";
 import { getCurrentUser } from "@/lib/auth";
 import { statusCount } from "@/lib/dashboard/task-counts";
 import { safeQuery } from "@/lib/db-safe";
+import { overdueBefore } from "@/lib/due-date";
 import { formatDate, formatDateUtc } from "@/lib/format";
 import {
   options,
@@ -58,7 +60,7 @@ import {
   type TaskFormOptions,
 } from "@/lib/tasks/task-form-options.server";
 import {
-  isTaskOverdue,
+  taskDueDateState,
   taskDeadlineTypeTone,
   taskStatusRowClass,
   taskStatusTone,
@@ -281,7 +283,7 @@ export default async function TasksPage({ searchParams }: TasksProps) {
           // done. Don't clobber an explicit status filter if one is also set.
           ...(overdueOnly
             ? {
-                deadline: { lt: now },
+                deadline: { lt: overdueBefore(now) },
                 ...(status ? {} : { status: { not: TaskStatus.COMPLETED } }),
               }
             : {}),
@@ -373,7 +375,7 @@ export default async function TasksPage({ searchParams }: TasksProps) {
           where: {
             ...activeWhere,
             status: { not: TaskStatus.COMPLETED },
-            deadline: { lt: now },
+            deadline: { lt: overdueBefore(now) },
           },
         }),
       ]);
@@ -633,7 +635,7 @@ export default async function TasksPage({ searchParams }: TasksProps) {
                     className={`${taskStatusRowClass(task.status)} cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-emerald-900`}
                   >
                     {visibleColumnSet.has("title") ? (
-                      <td className="max-w-xs">
+                      <td className="min-w-40 max-w-xs">
                         <Link
                           href={`/tasks/${task.id}`}
                           className="font-medium text-emerald-950 hover:underline"
@@ -680,7 +682,7 @@ export default async function TasksPage({ searchParams }: TasksProps) {
                       <td>{task.responsibleUser?.name ?? "—"}</td>
                     ) : null}
                     {visibleColumnSet.has("status") ? (
-                      <td className="min-w-80">
+                      <td className="min-w-64">
                         {task.canWork ? (
                           <form action={updateTaskStatus} className="grid min-w-0 gap-2">
                             <input type="hidden" name="taskId" value={task.id} />
@@ -736,14 +738,11 @@ export default async function TasksPage({ searchParams }: TasksProps) {
                       <td>{formatDateUtc(task.startDate)}</td>
                     ) : null}
                     {visibleColumnSet.has("deadline") ? (
-                      <td
-                        className={
-                          isTaskOverdue(task.deadline, task.status, now)
-                            ? "font-semibold text-red-700"
-                            : undefined
-                        }
-                      >
-                        {formatDateUtc(task.deadline)}
+                      <td>
+                        <DueDateText
+                          date={task.deadline}
+                          state={taskDueDateState(task.deadline, task.status, now)}
+                        />
                         {task.postponeCount > 0 ? (
                           <Badge tone="amber" className="ml-2 whitespace-nowrap">
                             odloženo {task.postponeCount}×
