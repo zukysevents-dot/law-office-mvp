@@ -104,6 +104,8 @@ export const auditEntityTypeLabels: Record<string, string> = {
   CalendarFeed: "Outlook kalendář",
   UserHoursPlan: "Plán hodin (KPI)",
   Performance: "Výkonnost",
+  HrNews: "Aktualita",
+  HrPresencePlan: "Plán přítomnosti",
 };
 
 export const auditActionLabels: Record<string, string> = {
