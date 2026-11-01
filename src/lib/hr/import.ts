@@ -10,7 +10,10 @@
 // strict: malformed/duplicate rows throw and the caller imports the batch in a
 // single transaction.
 
-import { computeWorkedHours } from "@/lib/hr/attendance-calc";
+import {
+  computeWorkedHours,
+  officeWallClockToInstant,
+} from "@/lib/hr/attendance-calc";
 
 export type ParsedAttendanceRow = {
   personalNumber: string;
@@ -117,7 +120,7 @@ function parseDate(value: string, line: number): Date {
   return parsed;
 }
 
-function parseWallClock(value: string, date: string, line: number, field: string) {
+function parseWallClock(value: string, workDate: Date, line: number, field: string) {
   const match = TIME_RE.exec(value);
   if (!match) {
     throw new Error(
@@ -130,9 +133,8 @@ function parseWallClock(value: string, date: string, line: number, field: string
   if (hour > 23 || minute > 59 || second > 59) {
     throw new Error(`Řádek ${line}: neplatný čas „${field}".`);
   }
-  return new Date(
-    `${date}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:${String(second).padStart(2, "0")}.000Z`,
-  );
+  // Terminal times are Prague wall-clock, like the punches the app stores.
+  return officeWallClockToInstant(workDate, hour, minute, second);
 }
 
 function headerMap(columns: string[]): Map<AttendanceColumn, number> | null {
@@ -209,8 +211,8 @@ export function parseAttendanceCsv(csv: string): ParsedAttendanceRow[] {
       if (!checkInValue || !checkOutValue) {
         throw new Error(`Řádek ${line}: chybí příchod nebo odchod.`);
       }
-      checkIn = parseWallClock(checkInValue, dateValue, line, "příchod");
-      checkOut = parseWallClock(checkOutValue, dateValue, line, "odchod");
+      checkIn = parseWallClock(checkInValue, workDate, line, "příchod");
+      checkOut = parseWallClock(checkOutValue, workDate, line, "odchod");
       if (checkOut.getTime() === checkIn.getTime()) {
         throw new Error(`Řádek ${line}: příchod a odchod nesmí být stejný.`);
       }
