@@ -24,7 +24,9 @@ import {
 } from "@/lib/form";
 import { computeAbsenceHours } from "@/lib/hr/absence-calc";
 import {
+  applyPunch,
   computeWorkedHours,
+  normalizeAttendanceHours,
   officeWallClockToInstant,
   officeWorkDate,
 } from "@/lib/hr/attendance-calc";
@@ -379,15 +381,21 @@ export async function recordAttendance(formData: FormData) {
   }
 
   const workDate = requiredDate(formData, "workDate");
-  const breakHours = optionalNumber(formData, "breakHours") ?? 0;
   const checkInTime = optionalTimeOfDay(formData, "checkIn");
   const checkOutTime = optionalTimeOfDay(formData, "checkOut");
   const note = clampText(optionalString(formData, "note"), MAX_TEXT);
 
   const existing = await prisma.hrAttendanceRecord.findUnique({
     where: { employeeId_workDate: { employeeId, workDate } },
-    select: { checkIn: true, checkOut: true },
+    select: { checkIn: true, checkOut: true, breakHours: true },
   });
+
+  // Přestávka jde zadat po 0,1 h (i 0,25 h); ukládá se na setiny hodiny.
+  // Prázdné pole ponechá už zaznamenanou přestávku — jinak by ruční doplnění
+  // zapomenutého odchodu smazalo přestávku napočítanou z píchaček (oběd).
+  const breakHours =
+    normalizeAttendanceHours(optionalNumber(formData, "breakHours")) ??
+    Number(existing?.breakHours ?? 0);
 
   const checkIn = checkInTime
     ? officeWallClockToInstant(workDate, checkInTime.hour, checkInTime.minute)
@@ -396,7 +404,8 @@ export async function recordAttendance(formData: FormData) {
     ? officeWallClockToInstant(workDate, checkOutTime.hour, checkOutTime.minute)
     : (existing?.checkOut ?? null);
 
-  let workedHours = optionalNumber(formData, "workedHours") ?? 0;
+  let workedHours =
+    normalizeAttendanceHours(optionalNumber(formData, "workedHours")) ?? 0;
   if (checkIn && checkOut) {
     if (checkOutTime && checkOut.getTime() === checkIn.getTime()) {
       throw new Error("Příchod a odchod nesmí být stejný.");
@@ -412,6 +421,9 @@ export async function recordAttendance(formData: FormData) {
     }
     if (checkOut <= checkIn) {
       throw new Error("Odchod musí být po příchodu.");
+    }
+    if (breakHours >= (checkOut.getTime() - checkIn.getTime()) / 3_600_000) {
+      throw new Error("Přestávka musí být kratší než doba mezi příchodem a odchodem.");
     }
     workedHours = computeWorkedHours(checkIn, checkOut, breakHours);
   }
@@ -482,48 +494,69 @@ export async function punchAttendance(formData: FormData) {
 
   const existing = await prisma.hrAttendanceRecord.findUnique({
     where: key,
-    select: { checkIn: true, checkOut: true, breakHours: true },
+    select: {
+      id: true,
+      checkIn: true,
+      checkOut: true,
+      breakHours: true,
+      workedHours: true,
+    },
   });
 
-  // Předpoklady ověříme před transakcí (čtou `existing`).
-  if (direction === "in" && existing?.checkIn) {
-    throw new Error("Příchod už je dnes zaznamenaný.");
+  // Během dne jde opakovaně příchod/odchod (např. oběd): příchod po odchodu
+  // den znovu otevře a doba mimo kancelář se přičte k přestávce (applyPunch).
+  const transition = applyPunch(
+    existing
+      ? {
+          checkIn: existing.checkIn,
+          checkOut: existing.checkOut,
+          breakHours: Number(existing.breakHours),
+          workedHours: Number(existing.workedHours),
+        }
+      : null,
+    direction,
+    now,
+  );
+  if (!transition.ok) {
+    throw new Error(transition.error);
   }
-  if (direction === "out") {
-    if (!existing?.checkIn) {
-      throw new Error("Nejdřív zaznamenejte příchod.");
-    }
-    if (existing.checkOut) {
-      throw new Error("Odchod už je dnes zaznamenaný.");
-    }
-  }
+  const next = transition.state;
 
   try {
     await prisma.$transaction(async (tx) => {
-      if (direction === "in") {
-        await tx.hrAttendanceRecord.upsert({
-          where: key,
-          update: { checkIn: now, source: HrAttendanceSource.MANUAL },
-          create: {
+      if (!existing) {
+        await tx.hrAttendanceRecord.create({
+          data: {
             organizationId,
             employeeId: employee.id,
             workDate,
-            checkIn: now,
+            checkIn: next.checkIn,
             source: HrAttendanceSource.MANUAL,
             createdById: currentUser.id,
           },
         });
       } else {
-        const breakHours = Number(existing?.breakHours ?? 0);
-        const workedHours = computeWorkedHours(
-          existing!.checkIn!,
-          now,
-          breakHours,
-        );
-        await tx.hrAttendanceRecord.update({
-          where: key,
-          data: { checkOut: now, workedHours },
+        // Optimistický zámek: zapíše se jen proti stavu, ze kterého jsme
+        // počítali — dvojklik ani souběžný ruční zápis přestávku nezdvojí.
+        const updated = await tx.hrAttendanceRecord.updateMany({
+          where: {
+            id: existing.id,
+            checkIn: existing.checkIn,
+            checkOut: existing.checkOut,
+          },
+          data: {
+            checkIn: next.checkIn,
+            checkOut: next.checkOut,
+            breakHours: next.breakHours,
+            workedHours: next.workedHours,
+            source: HrAttendanceSource.MANUAL,
+          },
         });
+        if (updated.count !== 1) {
+          throw new Error(
+            "Docházka se mezitím změnila — obnovte stránku a zkuste to znovu.",
+          );
+        }
       }
       await tx.auditLog.create({
         data: {
@@ -532,12 +565,26 @@ export async function punchAttendance(formData: FormData) {
           action: direction === "in" ? "PUNCH_IN" : "PUNCH_OUT",
           changedById: currentUser.id,
           organizationId: currentUser.organizationId,
-          newValue: auditJson({ workDate: workDate.toISOString() }),
+          oldValue: existing
+            ? auditJson({
+                checkIn: existing.checkIn?.toISOString() ?? null,
+                checkOut: existing.checkOut?.toISOString() ?? null,
+                breakHours: Number(existing.breakHours),
+              })
+            : undefined,
+          newValue: auditJson({
+            workDate: workDate.toISOString(),
+            at: now.toISOString(),
+            checkIn: next.checkIn?.toISOString() ?? null,
+            checkOut: next.checkOut?.toISOString() ?? null,
+            breakHours: next.breakHours,
+            workedHours: next.workedHours,
+          }),
         },
       });
     });
   } catch (error) {
-    // Souběžný dvojklik: druhý příchod narazí na @@unique — přelož na hlášku.
+    // Souběžný dvojklik: druhý první příchod narazí na @@unique — přelož na hlášku.
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === "P2002"

@@ -1060,6 +1060,127 @@ export function hrAbsenceVisibilityWhere(
   return andWhere(org, { employee: { is: { userId } } });
 }
 
+// --- HR aktuality a plánování přítomnosti ------------------------------------
+
+// Zveřejňování, úprava a archivace aktualit („Přidává aktuality“, výchozí
+// ADMIN/PARTNER, rozšiřitelné přes matici a výjimky uživatelů).
+export function canManageHrNews(user: PermissionInput): boolean {
+  return hasPermission(user, "function.manageNews");
+}
+
+export function assertCanManageHrNews(user: PermissionInput) {
+  if (!canManageHrNews(user)) {
+    throw new Error("Nemáte oprávnění spravovat aktuality.");
+  }
+}
+
+// Aktuality URČENÉ uživateli: celé kanceláři, jeho roli (role z členství), nebo
+// jemu jako vybranému příjemci. Používá dashboard i čtení pro ne-správce.
+// Fail-closed bez org / id / role.
+export function hrNewsTargetWhere(
+  user: PermissionInput,
+): Prisma.HrNewsWhereInput {
+  const org = orgClause(user);
+  const userId = userIdOf(user);
+  const role = roleOf(user);
+  if (!org || !userId || !isKnownRole(role)) {
+    return denyWhere<Prisma.HrNewsWhereInput>();
+  }
+  return andWhere(org, {
+    OR: [
+      { audience: "ALL" },
+      { audience: "ROLES", audienceRoles: { has: role } },
+      { audience: "USERS", recipients: { some: { userId } } },
+    ],
+  });
+}
+
+// Stránka Aktuality: správce aktualit vidí všechny v kanceláři (aby je mohl
+// upravit), ostatní jen určené jim a vlastní.
+export function hrNewsVisibilityWhere(
+  user: PermissionInput,
+): Prisma.HrNewsWhereInput {
+  const org = orgClause(user);
+  if (!org) {
+    return denyWhere<Prisma.HrNewsWhereInput>();
+  }
+  if (canManageHrNews(user)) {
+    return org;
+  }
+  const userId = userIdOf(user);
+  if (!userId) {
+    return denyWhere<Prisma.HrNewsWhereInput>();
+  }
+  return andWhere(org, {
+    OR: [hrNewsTargetWhere(user), { createdById: userId }],
+  });
+}
+
+// Plán přítomnosti je týmový přehled („kdo kdy bude v kanceláři“): v rámci
+// kanceláře ho čte každý s modulem HR (modul hlídá stránka/akce). Zapisovat
+// smí jen vlastní plán; správce HR i plán kolegů (canEditHrPresencePlan).
+export function hrPresencePlanVisibilityWhere(
+  user: PermissionInput,
+): Prisma.HrPresencePlanWhereInput {
+  return orgClause(user) ?? denyWhere<Prisma.HrPresencePlanWhereInput>();
+}
+
+export function canEditHrPresencePlan(
+  user: PermissionInput,
+  employee: { userId?: string | null } | null | undefined,
+): boolean {
+  if (!employee) {
+    return false;
+  }
+  if (canManageHr(user)) {
+    return true;
+  }
+  const userId = userIdOf(user);
+  return Boolean(userId) && employee.userId === userId;
+}
+
+export function assertCanEditHrPresencePlan(
+  user: PermissionInput,
+  employee: { userId?: string | null } | null | undefined,
+) {
+  if (!canEditHrPresencePlan(user, employee)) {
+    throw new Error("Plán přítomnosti můžete upravit jen sobě.");
+  }
+}
+
+// Lidé v týmovém přehledu přítomnosti: aktivní karty v kanceláři. Volající
+// vybírá JEN jména — citlivé údaje karty zůstávají za hrEmployeeVisibilityWhere.
+export function hrTeamDirectoryWhere(
+  user: PermissionInput,
+): Prisma.HrEmployeeWhereInput {
+  const org = orgClause(user);
+  if (!org) {
+    return denyWhere<Prisma.HrEmployeeWhereInput>();
+  }
+  return andWhere(org, { archivedAt: null, active: true });
+}
+
+// Absence v týmovém přehledu: kolegové vidí jen SCHVÁLENÉ absence (typ jim
+// maskuje src/lib/hr/presence.ts), vlastní a správce HR i čekající žádosti.
+export function hrTeamAbsenceCalendarWhere(
+  user: PermissionInput,
+): Prisma.HrAbsenceRequestWhereInput {
+  const org = orgClause(user);
+  const userId = userIdOf(user);
+  if (!org || !userId) {
+    return denyWhere<Prisma.HrAbsenceRequestWhereInput>();
+  }
+  if (canManageHr(user)) {
+    return andWhere(org, { status: { in: ["APPROVED", "PENDING"] } });
+  }
+  return andWhere(org, {
+    OR: [
+      { status: "APPROVED" },
+      { status: "PENDING", employee: { is: { userId } } },
+    ],
+  });
+}
+
 // Court hearings share the deadline scope (one "Lhůty a soudní jednání" row).
 export function courtHearingVisibilityWhere(
   user: PermissionInput,

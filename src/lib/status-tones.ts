@@ -1,4 +1,5 @@
 import type { BadgeTone } from "@/components/ui/badge";
+import type { PresenceKind } from "@/lib/hr/presence";
 import type {
   AmlRiskLevel,
   ApprovalStatus,
@@ -183,6 +184,19 @@ export function hrAbsenceStatusTone(status: HrAbsenceStatus): BadgeTone {
   };
 
   return tones[status];
+}
+
+// Plánování přítomnosti (HR → Plánování).
+export function presenceKindTone(kind: PresenceKind): BadgeTone {
+  const tones: Record<PresenceKind, BadgeTone> = {
+    OFFICE: "green",
+    HOME_OFFICE: "blue",
+    OUT_OF_OFFICE: "purple",
+    ABSENCE: "amber",
+    NONE: "neutral",
+  };
+
+  return tones[kind];
 }
 
 // % plnění KPI hodin: ≥ 100 % zelená, ≥ 75 % jantarová, jinak červená.

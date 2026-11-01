@@ -19,6 +19,7 @@ import { StatCard } from "@/components/stat-card";
 import { HoursKpiChart, type HoursKpiSummary } from "@/components/hours-kpi-chart";
 import { HoursKpiTabs } from "@/components/hours-kpi-tabs";
 import { DashboardWidgetGrid } from "@/components/dashboard-widget-grid";
+import { HrNewsWidget } from "@/components/hr-news-widget";
 import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
@@ -900,6 +901,8 @@ function renderWidget(widget: DashboardWidgetView, data: DashboardData) {
           )}
         </Section>
       );
+    case DashboardWidgetType.HR_NEWS:
+      return <HrNewsWidget title={widget.title} />;
     case DashboardWidgetType.CALENDAR_PREVIEW:
       return (
         <CalendarView

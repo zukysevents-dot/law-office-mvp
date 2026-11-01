@@ -211,6 +211,7 @@ enum DashboardWidgetType {
   CALENDAR_PREVIEW
   WEEKLY_HOURS_CHART
   DEADLINES_PREVIEW
+  HR_NEWS
 }
 
 enum DashboardWidgetSize {
@@ -439,6 +440,9 @@ model User {
   matterComments              MatterComment[]           @relation("MatterCommentAuthor")
   authoredWorkFeedback        WorkFeedback[]            @relation("WorkFeedbackAuthor")
   receivedWorkFeedback        WorkFeedback[]            @relation("WorkFeedbackRecipient")
+  createdHrNews               HrNews[]                  @relation("HrNewsCreatedBy")
+  updatedHrNews               HrNews[]                  @relation("HrNewsUpdatedBy")
+  hrNewsRecipients            HrNewsRecipient[]         @relation("HrNewsRecipientUser")
 
   @@map("users")
 }
@@ -1472,6 +1476,9 @@ model Organization {
   userPermissionOverrides   UserPermissionOverride[]
   matterComments            MatterComment[]
   workFeedback              WorkFeedback[]
+  hrNews                    HrNews[]
+  hrNewsRecipients          HrNewsRecipient[]
+  hrPresencePlans           HrPresencePlan[]
 
   @@index([status])
   @@map("organizations")
@@ -2526,6 +2533,7 @@ model HrEmployee {
   attendanceRecords HrAttendanceRecord[]
   absenceRequests   HrAbsenceRequest[]
   leaveBalances     HrLeaveBalance[]
+  presencePlans     HrPresencePlan[]
 
   @@unique([organizationId, personalNumber])
   @@index([organizationId])
@@ -2693,4 +2701,88 @@ model WorkFeedback {
   @@index([taskId])
   @@index([workLogId])
   @@map("workFeedback")
+}
+
+// --- HR: Aktuality a plánování přítomnosti ----------------------------------
+
+// Komu je aktualita určena: celé kanceláři, vybraným rolím, nebo vybraným lidem
+// (řádky HrNewsRecipient). Viditelnost hlídá hrNewsTargetWhere (permissions.ts).
+enum HrNewsAudience {
+  ALL
+  ROLES
+  USERS
+}
+
+// Plán přítomnosti na den. Nepřítomnost (dovolená, nemoc…) se sem nezadává —
+// bere se ze žádostí o absenci (HrAbsenceRequest), aby se nic nezadávalo dvakrát.
+enum HrPresenceStatus {
+  OFFICE // v kanceláři
+  HOME_OFFICE // home office
+  OUT_OF_OFFICE // mimo kancelář (jednání, soud, služební cesta)
+}
+
+// Aktualita v HR (nový kolega, výpadek elektřiny, teambuilding…). Prostý text,
+// zalomení řádků se zachovávají. Přidávají ji lidé s funkcí „Přidává aktuality“.
+model HrNews {
+  id             String         @id @default(cuid())
+  organizationId String
+  title          String
+  body           String
+  audience       HrNewsAudience @default(ALL)
+  // Jen pro audience = ROLES: role (z členství v kanceláři), kterým je určena.
+  audienceRoles  UserRole[]     @default([])
+  pinned         Boolean        @default(false)
+  // Volitelně: poslední den (date-only, včetně), kdy se zobrazuje na dashboardu.
+  visibleUntil   DateTime?
+  createdById    String?
+  updatedById    String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  archivedAt     DateTime?
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User?             @relation("HrNewsCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy    User?             @relation("HrNewsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  recipients   HrNewsRecipient[]
+
+  @@index([organizationId, archivedAt])
+  @@map("hrNews")
+}
+
+// Konkrétní příjemce aktuality (audience = USERS).
+model HrNewsRecipient {
+  id             String   @id @default(cuid())
+  organizationId String
+  newsId         String
+  userId         String
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  news         HrNews       @relation(fields: [newsId], references: [id], onDelete: Cascade)
+  user         User         @relation("HrNewsRecipientUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([newsId, userId])
+  @@index([organizationId])
+  @@index([userId])
+  @@map("hrNewsRecipients")
+}
+
+// Plán přítomnosti zaměstnance na jeden den (kdy tu budu a kdy ne).
+model HrPresencePlan {
+  id             String           @id @default(cuid())
+  organizationId String
+  employeeId     String
+  date           DateTime // date-only (UTC midnight)
+  status         HrPresenceStatus
+  note           String?
+  createdById    String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee     HrEmployee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, date])
+  @@index([organizationId, date])
+  @@map("hrPresencePlans")
 }
