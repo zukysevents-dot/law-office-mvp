@@ -202,6 +202,33 @@ table {
   position: relative;
 }
 
+/* Long lists (testování 19. 10.): the horizontal scrollbar used to sit under
+   the LAST row, so a wide table meant scrolling down, sideways and back up.
+   From tablet width up the scroller is bounded to the viewport height — its
+   bottom edge (and scrollbar) is on screen as soon as the table is in view —
+   and the header row sticks to its top while the rows scroll. Short tables
+   are unaffected (they never reach the cap). Phones keep the natural page
+   flow and swipe sideways. In the base layer so per-table utilities (e.g.
+   the permission matrix's sticky first column with its own z-index) win. */
+@layer base {
+  @media (min-width: 768px) {
+    .table-scroll {
+      max-height: calc(100dvh - 2rem);
+      overflow: auto;
+    }
+
+    .table-scroll > table > thead th {
+      position: sticky;
+      top: 0;
+      /* Above sticky body content (e.g. z-10 group labels / first column of
+         the permission matrix), below a sticky header corner (z-20). */
+      z-index: 15;
+      /* border-collapse borders do not travel with a sticky cell. */
+      box-shadow: inset 0 -1px 0 var(--line);
+    }
+  }
+}
+
 th {
   background: var(--iv-bg);
   color: var(--iv-ink);
