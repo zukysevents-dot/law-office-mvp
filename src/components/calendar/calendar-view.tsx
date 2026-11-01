@@ -153,7 +153,7 @@ function subscribeOutlookToggle(callback: () => void) {
 }
 
 const SCOPE_HINTS: Record<CalendarScope, string> = {
-  mine: "Úkoly, které řešíte, máte na ně dohled nebo za ně odpovídáte, a lhůty a jednání, za které odpovídáte.",
+  mine: "Úkoly, které řešíte, máte na ně dohled nebo za ně odpovídáte, lhůty a jednání, za které odpovídáte, a nepřidělené, které jste založili nebo jsou na vašem spisu.",
   team: "Totéž pro všechny členy vašeho týmu.",
   all: "Vše, co v kanceláři smíte vidět.",
 };

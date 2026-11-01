@@ -211,7 +211,9 @@ table {
    flow and swipe sideways. In the base layer so per-table utilities (e.g.
    the permission matrix's sticky first column with its own z-index) win. */
 @layer base {
-  @media (min-width: 768px) {
+  /* screen only: in print the height cap would clip every row past the
+     first page. */
+  @media screen and (min-width: 768px) {
     .table-scroll {
       max-height: calc(100dvh - 2rem);
       overflow: auto;

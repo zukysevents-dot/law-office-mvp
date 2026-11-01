@@ -55,6 +55,12 @@ export type CalendarPeopleFilters = {
  * for; a deadline / court hearing they are responsible for, directly or as
  * the case's responsible lawyer (the same people the reminders go to). The
  * mere creator of a delegated task does not get it in their calendar.
+ *
+ * Nobody-owned items must not vanish from every personal calendar (only the
+ * office view would show them — a missed procedural deadline is the firm's
+ * liability): a task with no solver/responsible person stays with its
+ * creator; a deadline / hearing with no responsible person stays with its
+ * creator and with the people assigned to its case.
  */
 export function calendarPeopleFilters(
   userIds: readonly string[],
@@ -66,18 +72,34 @@ export function calendarPeopleFilters(
         { assignedToId: ids },
         { responsibleUserId: ids },
         { assignees: { some: { userId: ids } } },
+        {
+          assignedToId: null,
+          responsibleUserId: null,
+          assignees: { none: {} },
+          createdById: ids,
+        },
       ],
     },
     deadline: {
       OR: [
         { responsibleUserId: ids },
         { case: { is: { responsibleUserId: ids } } },
+        { responsibleUserId: null, createdById: ids },
+        {
+          responsibleUserId: null,
+          case: { is: { assignees: { some: { userId: ids } } } },
+        },
       ],
     },
     hearing: {
       OR: [
         { responsibleUserId: ids },
         { case: { is: { responsibleUserId: ids } } },
+        { responsibleUserId: null, createdById: ids },
+        {
+          responsibleUserId: null,
+          case: { is: { assignees: { some: { userId: ids } } } },
+        },
       ],
     },
   };

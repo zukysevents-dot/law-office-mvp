@@ -35,24 +35,37 @@ test("resolveCalendarScope: default mine, a forbidden scope falls back to it", (
   assert.equal(resolveCalendarScope(["all"], ["mine", "all"]), "mine");
 });
 
-test("calendarPeopleFilters: tasks by solver/supervisor/responsible, not by creator", () => {
+test("calendarPeopleFilters: tasks by solver/supervisor/responsible, not by creator of a delegated task", () => {
+  const ids = { in: ["u1", "u2"] };
   const filters = calendarPeopleFilters(["u1", "u2"]);
   assert.deepEqual(filters.task, {
     OR: [
-      { assignedToId: { in: ["u1", "u2"] } },
-      { responsibleUserId: { in: ["u1", "u2"] } },
-      { assignees: { some: { userId: { in: ["u1", "u2"] } } } },
+      { assignedToId: ids },
+      { responsibleUserId: ids },
+      { assignees: { some: { userId: ids } } },
+      // Unowned task (nobody solves it) stays with its creator only.
+      {
+        assignedToId: null,
+        responsibleUserId: null,
+        assignees: { none: {} },
+        createdById: ids,
+      },
     ],
   });
-  assert.equal(JSON.stringify(filters.task).includes("createdById"), false);
 });
 
-test("calendarPeopleFilters: deadlines and hearings by responsible person or case lawyer", () => {
+test("calendarPeopleFilters: deadlines and hearings by responsible person or case lawyer; unowned stay with creator and case team", () => {
+  const ids = { in: ["u1"] };
   const filters = calendarPeopleFilters(["u1"]);
   const expected = {
     OR: [
-      { responsibleUserId: { in: ["u1"] } },
-      { case: { is: { responsibleUserId: { in: ["u1"] } } } },
+      { responsibleUserId: ids },
+      { case: { is: { responsibleUserId: ids } } },
+      { responsibleUserId: null, createdById: ids },
+      {
+        responsibleUserId: null,
+        case: { is: { assignees: { some: { userId: ids } } } },
+      },
     ],
   };
   assert.deepEqual(filters.deadline, expected);
