@@ -313,7 +313,7 @@ export default async function HrAttendancePage({ searchParams }: PageProps) {
                   min="0"
                   max="24"
                   step="0.1"
-                  defaultValue="0"
+                  placeholder="0"
                 />
               </Field>
             </div>
@@ -322,7 +322,7 @@ export default async function HrAttendancePage({ searchParams }: PageProps) {
               a odchodu. Když vyplníte oba, odpracované hodiny se dopočítají
               automaticky (minus přestávka). Přestávku zadejte v hodinách
               i po desetinách (0,1 h = 6 min, 0,5 h = 30 min). Prázdné pole
-              ponechá už zaznamenaný čas.
+              ponechá už zaznamenaný čas i přestávku.
             </p>
             <Field label="Poznámka (volitelné)">
               <TextInput name="note" />

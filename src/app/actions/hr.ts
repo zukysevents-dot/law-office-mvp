@@ -381,17 +381,21 @@ export async function recordAttendance(formData: FormData) {
   }
 
   const workDate = requiredDate(formData, "workDate");
-  // Přestávka jde zadat po 0,1 h (i 0,25 h); ukládá se na setiny hodiny.
-  const breakHours =
-    normalizeAttendanceHours(optionalNumber(formData, "breakHours")) ?? 0;
   const checkInTime = optionalTimeOfDay(formData, "checkIn");
   const checkOutTime = optionalTimeOfDay(formData, "checkOut");
   const note = clampText(optionalString(formData, "note"), MAX_TEXT);
 
   const existing = await prisma.hrAttendanceRecord.findUnique({
     where: { employeeId_workDate: { employeeId, workDate } },
-    select: { checkIn: true, checkOut: true },
+    select: { checkIn: true, checkOut: true, breakHours: true },
   });
+
+  // Přestávka jde zadat po 0,1 h (i 0,25 h); ukládá se na setiny hodiny.
+  // Prázdné pole ponechá už zaznamenanou přestávku — jinak by ruční doplnění
+  // zapomenutého odchodu smazalo přestávku napočítanou z píchaček (oběd).
+  const breakHours =
+    normalizeAttendanceHours(optionalNumber(formData, "breakHours")) ??
+    Number(existing?.breakHours ?? 0);
 
   const checkIn = checkInTime
     ? officeWallClockToInstant(workDate, checkInTime.hour, checkInTime.minute)
