@@ -436,6 +436,9 @@ model User {
   permissionOverrides         UserPermissionOverride[]  @relation("UserPermissionOverrideUser")
   updatedUserPermissions      UserPermissionOverride[]  @relation("UserPermissionOverrideUpdatedBy")
   updatedRolePermissions      RolePermissionOverride[]  @relation("RolePermissionOverrideUpdatedBy")
+  matterComments              MatterComment[]           @relation("MatterCommentAuthor")
+  authoredWorkFeedback        WorkFeedback[]            @relation("WorkFeedbackAuthor")
+  receivedWorkFeedback        WorkFeedback[]            @relation("WorkFeedbackRecipient")
 
   @@map("users")
 }
@@ -771,6 +774,7 @@ model Project {
   contactPersons     ContactPerson[]
   assignees          ProjectAssignee[]
   teamAssignments    ProjectTeamAssignment[]
+  comments           MatterComment[]
 
   @@index([organizationId])
   @@index([mainSubjectId])
@@ -811,6 +815,7 @@ model Case {
   contactPersons   ContactPerson[]
   assignees        CaseAssignee[]
   teamAssignments  CaseTeamAssignment[]
+  comments         MatterComment[]
 
   @@unique([projectId, fileNumber])
   @@index([organizationId])
@@ -863,6 +868,7 @@ model Task {
   comments        TaskComment[]
   workLogs        WorkLog[]
   assignees       TaskAssignee[]
+  workFeedback    WorkFeedback[]
 
   @@index([organizationId])
   @@index([projectId])
@@ -1006,13 +1012,14 @@ model WorkLog {
   updatedAt         DateTime              @updatedAt
   archivedAt        DateTime?
 
-  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  subject      Subject?      @relation(fields: [subjectId], references: [id], onDelete: SetNull)
-  project      Project?      @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  case         Case?         @relation(fields: [caseId], references: [id], onDelete: SetNull)
-  task         Task?         @relation(fields: [taskId], references: [id], onDelete: SetNull)
-  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  subject      Subject?       @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  project      Project?       @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  case         Case?          @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  task         Task?          @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  user         User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
   invoiceLines InvoiceLine[]
+  workFeedback WorkFeedback[]
 
   @@index([organizationId])
   @@index([subjectId])
@@ -1463,6 +1470,8 @@ model Organization {
   userInvitationTokens      UserInvitationToken[]
   rolePermissionOverrides   RolePermissionOverride[]
   userPermissionOverrides   UserPermissionOverride[]
+  matterComments            MatterComment[]
+  workFeedback              WorkFeedback[]
 
   @@index([status])
   @@map("organizations")
@@ -2624,4 +2633,64 @@ model HrLeaveBalance {
   @@index([organizationId])
   @@index([employeeId])
   @@map("hrLeaveBalances")
+}
+
+// Komentáře u projektu nebo případu – záznamy komunikace (např. evidence
+// telefonátů: „Dne … voláno na KSBR …“). Patří buď projektu, nebo případu
+// (právě jedno z projectId / caseId). Text je omezený formát z
+// src/lib/rich-text.ts (**tučně**, __podtrženo__, *kurzíva*). Vidí ho každý, kdo
+// vidí projekt/případ (matterCommentVisibilityWhere); upravit a archivovat
+// („smazat“) ho smí jen autor.
+model MatterComment {
+  id             String    @id @default(cuid())
+  organizationId String
+  projectId      String?
+  caseId         String?
+  authorId       String?
+  body           String
+  createdAt      DateTime  @default(now())
+  // Poslední úprava textu autorem (null = neupraveno).
+  editedAt       DateTime?
+  archivedAt     DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  project      Project?     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  case         Case?        @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  author       User?        @relation("MatterCommentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([projectId, createdAt])
+  @@index([caseId, createdAt])
+  @@index([authorId])
+  @@map("matterComments")
+}
+
+// Zpětná vazba kolegy k dosavadní práci jiného uživatele (Práce → Zpětná
+// vazba). Vidí ji jen autor a příjemce, ADMIN/PARTNER celou kancelář
+// (workFeedbackVisibilityWhere). Volitelný křížový odkaz na úkol a/nebo výkaz
+// práce; jejich obsah se zobrazí jen tomu, kdo je sám smí vidět.
+model WorkFeedback {
+  id             String    @id @default(cuid())
+  organizationId String
+  authorId       String?
+  recipientId    String
+  body           String
+  taskId         String?
+  workLogId      String?
+  createdAt      DateTime  @default(now())
+  editedAt       DateTime?
+  archivedAt     DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  author       User?        @relation("WorkFeedbackAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  recipient    User         @relation("WorkFeedbackRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  task         Task?        @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  workLog      WorkLog?     @relation(fields: [workLogId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([authorId])
+  @@index([recipientId])
+  @@index([taskId])
+  @@index([workLogId])
+  @@map("workFeedback")
 }

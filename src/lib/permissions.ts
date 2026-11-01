@@ -1086,6 +1086,75 @@ export function subjectVisibilityWhere(
   return scopedWhere(user, "scope.subjects", assignedSubjectWhere);
 }
 
+// --- Komentáře u projektů/případů a zpětná vazba ------------------------------
+
+// Komentáře (záznamy komunikace) dědí viditelnost svého projektu / případu:
+// kdo vidí projekt, vidí jeho komentáře. Fail-closed bez kanceláře.
+export function matterCommentVisibilityWhere(
+  user: PermissionInput,
+): Prisma.MatterCommentWhereInput {
+  const org = orgClause(user);
+  if (!org) {
+    return denyWhere<Prisma.MatterCommentWhereInput>();
+  }
+  return andWhere(org, {
+    OR: [
+      { project: { is: projectVisibilityWhere(user) } },
+      { case: { is: caseVisibilityWhere(user) } },
+    ],
+  });
+}
+
+// Zpětnou vazbu celé kanceláře vidí ADMIN a PARTNER; ostatní jen tu, kterou
+// napsali, nebo která byla určena jim.
+export function canViewAllWorkFeedback(user: PermissionInput) {
+  return Boolean(orgIdOf(user)) && (isAdmin(user) || isPartner(user));
+}
+
+export function workFeedbackVisibilityWhere(
+  user: PermissionInput,
+): Prisma.WorkFeedbackWhereInput {
+  const org = orgClause(user);
+  if (!org || !isKnownRole(roleOf(user))) {
+    return denyWhere<Prisma.WorkFeedbackWhereInput>();
+  }
+  if (canViewAllWorkFeedback(user)) {
+    return org;
+  }
+  const userId = userIdOf(user);
+  if (!userId) {
+    return denyWhere<Prisma.WorkFeedbackWhereInput>();
+  }
+  return andWhere(org, { OR: [{ authorId: userId }, { recipientId: userId }] });
+}
+
+type AuthoredRecord = {
+  authorId?: string | null;
+  organizationId?: string | null;
+};
+
+// Komentář i zpětnou vazbu upravuje a archivuje („maže“) jen jejich autor
+// v rámci své kanceláře — ani ADMIN/PARTNER nepřepisují cizí text.
+export function canEditAuthoredEntry(
+  user: PermissionInput,
+  record: AuthoredRecord | null | undefined,
+) {
+  if (!record || !record.organizationId || orgMismatch(user, record)) {
+    return false;
+  }
+  const userId = userIdOf(user);
+  return Boolean(userId) && record.authorId === userId;
+}
+
+export function assertCanEditAuthoredEntry(
+  user: PermissionInput,
+  record: AuthoredRecord | null | undefined,
+) {
+  if (!canEditAuthoredEntry(user, record)) {
+    throw new Error("Upravit nebo smazat záznam může jen jeho autor.");
+  }
+}
+
 // In-memory view check for an already loaded record. Query-layer visibility
 // (*VisibilityWhere) is authoritative; this mirrors it for the fields a record
 // carries (relations like tasks/work-logs aren't loaded, so a narrowed scope
