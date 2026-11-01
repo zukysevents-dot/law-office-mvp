@@ -32,6 +32,8 @@ import {
 } from "@/lib/tasks/task-people";
 import { AccessDenied } from "@/components/access-denied";
 import { moduleAccessDenial } from "@/lib/module-access.server";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { namedSelectOption } from "@/lib/searchable-select";
 
 export const dynamic = "force-dynamic";
 
@@ -149,26 +151,25 @@ export default async function TaskEditPage({ params }: TaskEditProps) {
             </Field>
             <div className="grid gap-4 md:grid-cols-2">
               <Field label="Projekt">
-                <SelectInput name="projectId" defaultValue={task.projectId ?? ""}>
-                  <option value="">Bez projektu</option>
-                  {projects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.name}
-                    </option>
-                  ))}
-                </SelectInput>
+                <SearchableSelect
+                  name="projectId"
+                  defaultValue={task.projectId ?? ""}
+                  placeholder="Bez projektu"
+                  options={projects.map(namedSelectOption)}
+                />
               </Field>
               <Field label="Případ">
-                <SelectInput name="caseId" defaultValue={task.caseId ?? ""}>
-                  <option value="">Bez případu</option>
-                  {cases.map((legalCase) => (
-                    <option key={legalCase.id} value={legalCase.id}>
-                      {legalCase.name}
-                      {legalCase.fileNumber ? `, ${legalCase.fileNumber}` : ""}
-                      {legalCase.project ? ` / ${legalCase.project.name}` : ""}
-                    </option>
-                  ))}
-                </SelectInput>
+                <SearchableSelect
+                  name="caseId"
+                  defaultValue={task.caseId ?? ""}
+                  placeholder="Bez případu"
+                  options={cases.map((legalCase) => ({
+                    value: legalCase.id,
+                    label: `${legalCase.name}${
+                      legalCase.fileNumber ? `, ${legalCase.fileNumber}` : ""
+                    }${legalCase.project ? ` / ${legalCase.project.name}` : ""}`,
+                  }))}
+                />
               </Field>
             </div>
             <TaskPeopleFields

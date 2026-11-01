@@ -7,6 +7,7 @@ import {
   expectNoErrorPage,
   openCommandPalette,
   pageAs,
+  pickOption,
   submitAndAwaitAction,
 } from "./support/helpers";
 
@@ -293,19 +294,22 @@ test.describe("praktikant a matice oprávnění", () => {
     const form = page.getByRole("dialog", { name: "Nový výkaz práce" });
     await expect(form).toBeVisible();
     await expect(form.getByLabel("Sazba")).toHaveCount(0);
-    // Label obaluje i <option>, proto výběr přes roli a jméno, ne getByLabel.
-    await form
-      .getByRole("combobox", { name: "Subjekt", exact: true })
-      .selectOption({ label: "ABC s.r.o., IČO 12345678" });
-    await form
-      .getByRole("combobox", { name: "Projekt", exact: true })
-      .selectOption({ label: "Soudní spor ABC" });
-    await form
-      .getByRole("combobox", { name: "Případ", exact: true })
-      .selectOption({ label: "Žaloba na zaplacení / Soudní spor ABC" });
-    await form
-      .getByRole("combobox", { name: "Úkol", exact: true })
-      .selectOption({ label: "Připravit vyjádření k žalobě" });
+        await pickOption(
+      form.getByRole("combobox", { name: "Subjekt", exact: true }),
+      "ABC s.r.o., IČO 12345678",
+    );
+    await pickOption(
+      form.getByRole("combobox", { name: "Projekt", exact: true }),
+      "Soudní spor ABC",
+    );
+    await pickOption(
+      form.getByRole("combobox", { name: "Případ", exact: true }),
+      "Žaloba na zaplacení / Soudní spor ABC",
+    );
+    await pickOption(
+      form.getByRole("combobox", { name: "Úkol", exact: true }),
+      "Připravit vyjádření k žalobě",
+    );
     await form.getByLabel("Hodiny").fill("0.5");
     await form.getByLabel("Popis práce").fill(description);
     await submitAndAwaitAction(
@@ -436,9 +440,10 @@ test.describe("praktikant a matice oprávnění", () => {
       await page.goto("/projects");
       const projectForm = page.locator("#new-project");
       await projectForm.getByLabel("Název projektu").fill(projectName);
-      await projectForm
-        .getByRole("combobox", { name: "Klient", exact: true })
-        .selectOption({ label: `${client}, IČO 76543218` });
+      await pickOption(
+        projectForm.getByRole("combobox", { name: "Klient", exact: true }),
+        `${client}, IČO 76543218`,
+      );
       await projectForm.getByRole("button", { name: "Vytvořit projekt" }).click();
       await expect(page).toHaveURL(/\/projects\/[a-z0-9]+$/);
       const projectPath = new URL(page.url()).pathname;
@@ -582,12 +587,14 @@ test.describe("praktikant a matice oprávnění", () => {
       await intern.getByRole("link", { name: "Nový výkaz" }).click();
       const form = intern.getByRole("dialog", { name: "Nový výkaz práce" });
       await expect(form).toBeVisible();
-      await form
-        .getByRole("combobox", { name: "Subjekt", exact: true })
-        .selectOption({ label: `${client}, IČO 76543218` });
-      await form
-        .getByRole("combobox", { name: "Projekt", exact: true })
-        .selectOption({ label: projectName });
+      await pickOption(
+        form.getByRole("combobox", { name: "Subjekt", exact: true }),
+        `${client}, IČO 76543218`,
+      );
+      await pickOption(
+        form.getByRole("combobox", { name: "Projekt", exact: true }),
+        projectName,
+      );
       await form.getByLabel("Hodiny").fill("0.5");
       await form.getByLabel("Popis práce").fill(description);
       await submitAndAwaitAction(
@@ -1025,12 +1032,14 @@ test.describe("praktikant a matice oprávnění", () => {
     await intern.goto("/work-logs");
     await intern.getByRole("link", { name: "Nový výkaz" }).click();
     const form = intern.getByRole("dialog", { name: "Nový výkaz práce" });
-    await form
-      .getByRole("combobox", { name: "Subjekt", exact: true })
-      .selectOption({ label: "ABC s.r.o., IČO 12345678" });
-    await form
-      .getByRole("combobox", { name: "Projekt", exact: true })
-      .selectOption({ label: "Soudní spor ABC" });
+    await pickOption(
+      form.getByRole("combobox", { name: "Subjekt", exact: true }),
+      "ABC s.r.o., IČO 12345678",
+    );
+    await pickOption(
+      form.getByRole("combobox", { name: "Projekt", exact: true }),
+      "Soudní spor ABC",
+    );
     await form.getByLabel("Hodiny").fill("0.5");
     await form.getByLabel("Popis práce").fill(description);
     await submitAndAwaitAction(

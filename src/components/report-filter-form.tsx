@@ -3,6 +3,8 @@ import { Button } from "@/components/ui/button";
 import { legalAreaOptions } from "@/lib/labels";
 import type { ReportFilterOptions } from "@/lib/reporting/options";
 import type { ReportFilters } from "@/lib/reporting/filters";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { namedSelectOption, subjectSelectOption } from "@/lib/searchable-select";
 
 // Shared GET filter form for every report view. Submits to the current page,
 // preserving the selection via the report querystring.
@@ -17,35 +19,31 @@ export function ReportFilterForm({
     <form className="grid gap-4">
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         <Field label="Subjekt">
-          <SelectInput name="subjectId" defaultValue={filters.subjectId}>
-            <option value="">Všechny subjekty</option>
-            {options.subjects.map((subject) => (
-              <option key={subject.id} value={subject.id}>
-                {subject.name}
-                {subject.ico ? `, IČO ${subject.ico}` : ""}
-              </option>
-            ))}
-          </SelectInput>
+          <SearchableSelect
+            name="subjectId"
+            defaultValue={filters.subjectId}
+            placeholder="Všechny subjekty"
+            options={options.subjects.map(subjectSelectOption)}
+          />
         </Field>
         <Field label="Projekt">
-          <SelectInput name="projectId" defaultValue={filters.projectId}>
-            <option value="">Všechny projekty</option>
-            {options.projects.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.name}
-              </option>
-            ))}
-          </SelectInput>
+          <SearchableSelect
+            name="projectId"
+            defaultValue={filters.projectId}
+            placeholder="Všechny projekty"
+            options={options.projects.map(namedSelectOption)}
+          />
         </Field>
         <Field label="Případ">
-          <SelectInput name="caseId" defaultValue={filters.caseId}>
-            <option value="">Všechny případy</option>
-            {options.cases.map((legalCase) => (
-              <option key={legalCase.id} value={legalCase.id}>
-                {legalCase.name} / {legalCase.project.name}
-              </option>
-            ))}
-          </SelectInput>
+          <SearchableSelect
+            name="caseId"
+            defaultValue={filters.caseId}
+            placeholder="Všechny případy"
+            options={options.cases.map((legalCase) => ({
+              value: legalCase.id,
+              label: `${legalCase.name} / ${legalCase.project.name}`,
+            }))}
+          />
         </Field>
         <Field label="Pracovník">
           <SelectInput name="userId" defaultValue={filters.userId}>

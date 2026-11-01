@@ -6,7 +6,9 @@ import { Star, UserPlus, X } from "lucide-react";
 import { chipClass, removeButtonClass } from "@/components/assignee-chip-styles";
 import { Field, SelectInput } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { countLabel } from "@/lib/plural";
+import { namedSelectOption } from "@/lib/searchable-select";
 
 type Person = { id: string; name: string };
 
@@ -26,7 +28,7 @@ export const TASK_PEOPLE_HELP =
 // úkolu (nový úkol i úprava). Tým se při výběru rozbalí na své aktivní členy
 // (tým samotný se k úkolu neukládá). Odesílá skrytá pole assigneeIds
 // (opakovaně, hlavní první), supervisorIds a primaryAssigneeId; odpovědná
-// osoba zůstává select „responsibleUserId“. Server data normalizuje znovu
+// osoba je vyhledávací výběr „responsibleUserId“. Server data normalizuje znovu
 // (normalizeTaskPeople), tady jde jen o pohodlné ovládání.
 export function TaskPeopleFields({
   users,
@@ -330,18 +332,13 @@ export function TaskPeopleFields({
 
       <div className="grid gap-4 md:grid-cols-2">
         <Field label="Odpovědná osoba">
-          <SelectInput
+          <SearchableSelect
             name="responsibleUserId"
             value={responsibleUserId}
-            onChange={(event) => changeResponsible(event.target.value)}
-          >
-            <option value="">{responsibleEmptyLabel}</option>
-            {users.map((user) => (
-              <option key={user.id} value={user.id}>
-                {user.name}
-              </option>
-            ))}
-          </SelectInput>
+            onValueChange={changeResponsible}
+            placeholder={responsibleEmptyLabel}
+            options={users.map(namedSelectOption)}
+          />
         </Field>
         <p className="self-end text-sm text-stone-600">{TASK_PEOPLE_HELP}</p>
       </div>

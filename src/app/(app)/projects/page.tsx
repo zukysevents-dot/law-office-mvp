@@ -50,6 +50,8 @@ import {
 import type { TableViewState } from "@/lib/table-view-preferences";
 import { AccessDenied } from "@/components/access-denied";
 import { moduleAccessDenial } from "@/lib/module-access.server";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { namedSelectOption, subjectSelectOption } from "@/lib/searchable-select";
 
 export const dynamic = "force-dynamic";
 
@@ -200,14 +202,12 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
             </div>
           </Field>
           <Field label="Klient">
-            <SelectInput name="subjectId" defaultValue={subjectId}>
-              <option value="">Všichni klienti</option>
-              {result.data.subjects.map((subject) => (
-                <option key={subject.id} value={subject.id}>
-                  {subject.name}
-                </option>
-              ))}
-            </SelectInput>
+            <SearchableSelect
+              name="subjectId"
+              defaultValue={subjectId}
+              placeholder="Všichni klienti"
+              options={result.data.subjects.map(namedSelectOption)}
+            />
           </Field>
           <AssigneeFilterField
             value={assignee}
@@ -354,25 +354,19 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
           </div>
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Klient">
-              <SelectInput name="mainSubjectId" required>
-                <option value="">Vyberte subjekt</option>
-                {result.data.subjects.map((subject) => (
-                  <option key={subject.id} value={subject.id}>
-                    {subject.name}
-                    {subject.ico ? `, IČO ${subject.ico}` : ""}
-                  </option>
-                ))}
-              </SelectInput>
+              <SearchableSelect
+                name="mainSubjectId"
+                required
+                placeholder="Vyberte subjekt"
+                options={result.data.subjects.map(subjectSelectOption)}
+              />
             </Field>
             <Field label="Odpovědný uživatel">
-              <SelectInput name="responsibleUserId">
-                <option value="">Bez přiřazení</option>
-                {result.data.users.map((user) => (
-                  <option key={user.id} value={user.id}>
-                    {user.name}
-                  </option>
-                ))}
-              </SelectInput>
+              <SearchableSelect
+                name="responsibleUserId"
+                placeholder="Bez přiřazení"
+                options={result.data.users.map(namedSelectOption)}
+              />
             </Field>
           </div>
           <TeamSelectField

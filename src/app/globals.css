@@ -149,6 +149,25 @@ textarea {
   color: var(--foreground);
 }
 
+/* Mizející text v rozbalovacím seznamu: <option> dědil barvu selectu (tmavé
+   --iv-ink). Safari na macOSu kreslí rozbalený select jako nativní menu
+   systému — v tmavém vzhledu (i „Automaticky“ navečer) tmavé — a autorskou
+   barvu textu, pokud není čistě černá, do položek propíše: tmavý text na
+   tmavém menu a na modře zvýrazněné položce pod myší. Čistě černou (= výchozí
+   CanvasText) nechá na systému, který ji podle vzhledu přebarví. Prohlížeče,
+   které seznam kreslí samy (Chrome/Edge na Windows, Firefox), dostanou černou
+   na bílé. Aplikace má jen světlý vzhled → color-scheme: light (+ meta tag
+   z viewportu v root layoutu), aby se ovládací prvky nepřepínaly do tmavého. */
+:root {
+  color-scheme: light;
+}
+
+option,
+optgroup {
+  color: #000;
+  background-color: #fff;
+}
+
 /* App-only mobile rules. Scoped to .app-shell so the landing page (which shares
    globals.css + some leaf components) is never affected. */
 @media (max-width: 640px) {

@@ -6,6 +6,7 @@ import {
   appAlert,
   e2eName,
   expectNoErrorPage,
+  pickOption,
   submitAndAwaitAction,
 } from "./support/helpers";
 
@@ -26,9 +27,10 @@ async function createProject(page: Page, name: string) {
   await page.goto("/projects");
   const form = page.locator("#new-project");
   await form.getByLabel("Název projektu").fill(name);
-  await form
-    .getByRole("combobox", { name: "Klient", exact: true })
-    .selectOption({ label: CLIENT_OPTION });
+  await pickOption(
+    form.getByRole("combobox", { name: "Klient", exact: true }),
+    CLIENT_OPTION,
+  );
   await form.getByRole("button", { name: "Vytvořit projekt" }).click();
   await expect(page).toHaveURL(/\/projects\/[a-z0-9]+$/);
   await expect(page.getByRole("heading", { name, level: 1 })).toBeVisible();

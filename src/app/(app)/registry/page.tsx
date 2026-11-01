@@ -5,7 +5,7 @@ import {
   checkSubjectRegistryNow,
   setSubjectRegistryWatch,
 } from "@/app/actions/registry";
-import { Field, SelectInput } from "@/components/form-field";
+import { Field } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +26,8 @@ import { getPrisma } from "@/lib/prisma";
 import { registryChangeTypeTone } from "@/lib/status-tones";
 import { AccessDenied } from "@/components/access-denied";
 import { moduleAccessDenial } from "@/lib/module-access.server";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { subjectSelectOption } from "@/lib/searchable-select";
 
 export const dynamic = "force-dynamic";
 
@@ -131,15 +133,13 @@ export default async function RegistryPage() {
         {data.canManage && data.available.length > 0 ? (
           <form action={setSubjectRegistryWatch} className="mb-4 flex flex-wrap items-end gap-3">
             <input type="hidden" name="enabled" value="true" />
-            <Field label="Přidat sledovaný subjekt">
-              <SelectInput name="subjectId" required>
-                <option value="">Vyberte subjekt</option>
-                {data.available.map((subject) => (
-                  <option key={subject.id} value={subject.id}>
-                    {subject.name}{subject.ico ? `, IČO ${subject.ico}` : ""}
-                  </option>
-                ))}
-              </SelectInput>
+            <Field label="Přidat sledovaný subjekt" className="w-full max-w-md">
+              <SearchableSelect
+                name="subjectId"
+                required
+                placeholder="Vyberte subjekt"
+                options={data.available.map(subjectSelectOption)}
+              />
             </Field>
             <Button type="submit" pendingLabel="Přidávám…">Přidat sledování</Button>
           </form>

@@ -20,6 +20,7 @@ import { ReferenceForm } from "@/components/reference-form";
 import { Section } from "@/components/section";
 import { SharepointFolderField } from "@/components/sharepoint-folder-field";
 import { SharepointNotice } from "@/components/sharepoint-notice";
+import { SubjectRelationRowActions } from "@/components/subject-relation-row-actions";
 import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
@@ -41,6 +42,7 @@ import {
   taskStatusLabels,
 } from "@/lib/labels";
 import { safeQuery } from "@/lib/db-safe";
+import { isMainClientRelation } from "@/lib/subject-relations";
 import {
   andWhere,
   canManageDeadlines,
@@ -70,6 +72,8 @@ import {
 import { subjectRoleTone } from "@/lib/status-tones";
 import { AccessDenied } from "@/components/access-denied";
 import { canAccessModule, moduleAccessDenial } from "@/lib/module-access.server";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { subjectSelectOption } from "@/lib/searchable-select";
 
 export const dynamic = "force-dynamic";
 
@@ -484,6 +488,11 @@ export default async function CaseDetailPage({
                       <th>Role</th>
                       <th>Poznámka</th>
                       <th>Datum</th>
+                      {canEdit ? (
+                        <th>
+                          <span className="sr-only">Akce</span>
+                        </th>
+                      ) : null}
                     </tr>
                   </thead>
                   <tbody>
@@ -505,6 +514,20 @@ export default async function CaseDetailPage({
                         </td>
                         <td>{relation.note ?? "—"}</td>
                         <td>{formatDate(relation.createdAt)}</td>
+                        {canEdit ? (
+                          <td>
+                            <SubjectRelationRowActions
+                              relationId={relation.id}
+                              subjectName={relation.subject.name}
+                              role={relation.role}
+                              note={relation.note}
+                              locked={isMainClientRelation(
+                                relation,
+                                legalCase.project.mainSubject.id,
+                              )}
+                            />
+                          </td>
+                        ) : null}
                       </tr>
                     ))}
                   </tbody>
@@ -521,15 +544,12 @@ export default async function CaseDetailPage({
                 <input type="hidden" name="projectId" value={legalCase.project.id} />
                 <div className="grid gap-4 md:grid-cols-2">
                   <Field label="Subjekt">
-                    <SelectInput name="subjectId" required>
-                      <option value="">Vyberte subjekt</option>
-                      {subjects.map((subject) => (
-                        <option key={subject.id} value={subject.id}>
-                          {subject.name}
-                          {subject.ico ? `, IČO ${subject.ico}` : ""}
-                        </option>
-                      ))}
-                    </SelectInput>
+                    <SearchableSelect
+                      name="subjectId"
+                      required
+                      placeholder="Vyberte subjekt"
+                      options={subjects.map(subjectSelectOption)}
+                    />
                   </Field>
                   <Field label="Role subjektu">
                     <SelectInput name="role" defaultValue="CLIENT">

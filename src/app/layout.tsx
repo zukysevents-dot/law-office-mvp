@@ -11,6 +11,9 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: "#0e1822",
+  // Jen světlý vzhled: formulářové prvky ani rozbalovací seznamy se nesmí
+  // přepnout do tmavého systémového vzhledu (viz option v globals.css).
+  colorScheme: "light",
 };
 
 export default function RootLayout({

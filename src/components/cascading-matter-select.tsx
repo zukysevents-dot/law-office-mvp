@@ -2,7 +2,11 @@
 
 import { useMemo, useState } from "react";
 
-import { Field, SelectInput } from "@/components/form-field";
+import { Field } from "@/components/form-field";
+import {
+  SearchableSelect,
+  type SearchableSelectOption,
+} from "@/components/ui/searchable-select";
 import {
   casesForSelection,
   groupTasksByMine,
@@ -160,111 +164,108 @@ export function CascadingMatterSelect({
         ? "Vyberte případ"
         : "Bez případu");
 
+  const subjectOptions = useMemo<SearchableSelectOption[]>(
+    () => subjects.map((subject) => ({ value: subject.id, label: subject.name })),
+    [subjects],
+  );
+  const projectOptions = useMemo<SearchableSelectOption[]>(
+    () =>
+      visibleProjects.map((project) => ({ value: project.id, label: project.name })),
+    [visibleProjects],
+  );
+  const caseOptions = useMemo<SearchableSelectOption[]>(
+    () =>
+      visibleCases.map((legalCase) => ({
+        value: legalCase.id,
+        label: legalCase.projectName
+          ? `${legalCase.name} / ${legalCase.projectName}`
+          : legalCase.name,
+      })),
+    [visibleCases],
+  );
+  const taskOptions = useMemo<SearchableSelectOption[]>(
+    () =>
+      groupedTasks.mine.length > 0
+        ? [
+            ...groupedTasks.mine.map((task) => ({
+              value: task.id,
+              label: task.title,
+              group: "Moje úkoly",
+            })),
+            ...groupedTasks.others.map((task) => ({
+              value: task.id,
+              label: task.title,
+              group: "Ostatní úkoly",
+            })),
+          ]
+        : visibleTasks.map((task) => ({ value: task.id, label: task.title })),
+    [groupedTasks, visibleTasks],
+  );
+
+  // Fulltextové hledání ve všech čtyřech výběrech (SearchableSelect); prázdná
+  // volba (např. „Bez projektu“, „Všichni klienti“) zůstává první v seznamu.
   return (
     <div className={wrapperClass}>
       <Field label={subjectLabel}>
-        <SelectInput
+        <SearchableSelect
           name="subjectId"
+          options={subjectOptions}
           value={selection.subjectId}
           required={requireSubject}
-          onChange={(event) => {
-            const value = event.target.value;
+          allowEmpty={!requireSubject}
+          placeholder={subjectEmpty}
+          onValueChange={(value) =>
             setSelection((state) =>
               nextSelectionOnSubjectChange(state, value, lists),
-            );
-          }}
-        >
-          <option value="">{subjectEmpty}</option>
-          {subjects.map((subject) => (
-            <option key={subject.id} value={subject.id}>
-              {subject.name}
-            </option>
-          ))}
-        </SelectInput>
+            )
+          }
+        />
       </Field>
       <Field label={projectLabel}>
-        <SelectInput
+        <SearchableSelect
           name="projectId"
+          options={projectOptions}
           value={selection.projectId}
           required={requireProject}
-          onChange={(event) => {
-            const value = event.target.value;
+          allowEmpty={!requireProject}
+          placeholder={projectEmpty}
+          onValueChange={(value) =>
             setSelection((state) =>
               nextSelectionOnProjectChange(state, value, lists),
-            );
-          }}
-        >
-          <option value="">{projectEmpty}</option>
-          {visibleProjects.map((project) => (
-            <option key={project.id} value={project.id}>
-              {project.name}
-            </option>
-          ))}
-        </SelectInput>
+            )
+          }
+        />
       </Field>
       {includeCase ? (
         <Field label={caseLabel}>
-          <SelectInput
+          <SearchableSelect
             name="caseId"
+            options={caseOptions}
             value={selection.caseId}
             required={requireCase}
-            onChange={(event) => {
-              const value = event.target.value;
+            allowEmpty={!requireCase}
+            placeholder={caseEmpty}
+            onValueChange={(value) =>
               setSelection((state) =>
                 nextSelectionOnCaseChange(state, value, lists),
-              );
-            }}
-          >
-            <option value="">{caseEmpty}</option>
-            {visibleCases.map((legalCase) => (
-              <option key={legalCase.id} value={legalCase.id}>
-                {legalCase.name}
-                {legalCase.projectName ? ` / ${legalCase.projectName}` : ""}
-              </option>
-            ))}
-          </SelectInput>
+              )
+            }
+          />
         </Field>
       ) : null}
       {includeTask ? (
         <Field label="Úkol">
-          <SelectInput
+          <SearchableSelect
             name="taskId"
+            options={taskOptions}
             value={selection.taskId}
-            onChange={(event) => {
-              const value = event.target.value;
+            placeholder={filterMode ? "Všechny úkoly" : "Bez úkolu"}
+            onValueChange={(value) =>
               setSelection((state) =>
                 nextSelectionOnTaskChange(state, value, lists),
-              );
-            }}
-          >
-            <option value="">{filterMode ? "Všechny úkoly" : "Bez úkolu"}</option>
-            {groupedTasks.mine.length > 0 ? (
-              <>
-                <optgroup label="Moje úkoly">
-                  {groupedTasks.mine.map((task) => (
-                    <option key={task.id} value={task.id}>
-                      {task.title}
-                    </option>
-                  ))}
-                </optgroup>
-                {groupedTasks.others.length > 0 ? (
-                  <optgroup label="Ostatní úkoly">
-                    {groupedTasks.others.map((task) => (
-                      <option key={task.id} value={task.id}>
-                        {task.title}
-                      </option>
-                    ))}
-                  </optgroup>
-                ) : null}
-              </>
-            ) : (
-              visibleTasks.map((task) => (
-                <option key={task.id} value={task.id}>
-                  {task.title}
-                </option>
-              ))
-            )}
-          </SelectInput>
+              )
+            }
+          />
         </Field>
       ) : null}
     </div>

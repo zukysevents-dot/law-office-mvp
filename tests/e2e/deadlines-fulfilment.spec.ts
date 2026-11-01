@@ -7,6 +7,7 @@ import {
   e2eName,
   expectNoErrorPage,
   pageAs,
+  pickOption,
   submitAndAwaitAction,
 } from "./support/helpers";
 
@@ -92,12 +93,7 @@ test.describe("Lhůtník – splnění a archivace lhůt", () => {
     await page.goto("/deadlines");
     await expectNoErrorPage(page);
     const form = page.locator("#new-deadline");
-    const caseSelect = form.getByLabel("Případ");
-    const caseValue = await caseSelect
-      .locator("option", { hasText: SEED_CASE })
-      .first()
-      .getAttribute("value");
-    await caseSelect.selectOption(caseValue!);
+    await pickOption(form.getByLabel("Případ"), SEED_CASE);
     await form.getByLabel("Název lhůty").fill(title);
     await form.getByLabel("Termín", { exact: true }).fill(pragueDate(5));
     await submitAndAwaitAction(page, form.getByRole("button", { name: "Vytvořit lhůtu" }));

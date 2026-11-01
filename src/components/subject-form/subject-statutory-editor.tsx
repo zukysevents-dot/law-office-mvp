@@ -3,8 +3,9 @@
 import { useEffect, useRef } from "react";
 import { Plus, Trash2 } from "lucide-react";
 
-import { Field, SelectInput, TextInput } from "@/components/form-field";
+import { Field, TextInput } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { statutoryFunctionSuggestions } from "@/lib/labels";
 
 export type StatutoryRowState = {
@@ -132,23 +133,23 @@ export function SubjectStatutoryEditor({
                 />
               </Field>
               <Field label="Propojený subjekt" className="min-w-0">
-                <SelectInput
+                <SearchableSelect
                   name={`statutory.${row.key}.linkedSubjectId`}
                   value={row.linkedSubjectId}
-                  onChange={(event) =>
-                    update(row.key, { linkedSubjectId: event.target.value })
-                  }
-                >
-                  <option value="">Bez vazby</option>
-                  {linkMissing ? (
-                    <option value={row.linkedSubjectId}>(propojený subjekt)</option>
-                  ) : null}
-                  {linkOptions.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.ico ? `${option.name} (IČO ${option.ico})` : option.name}
-                    </option>
-                  ))}
-                </SelectInput>
+                  placeholder="Bez vazby"
+                  onValueChange={(value) => update(row.key, { linkedSubjectId: value })}
+                  options={[
+                    ...(linkMissing
+                      ? [{ value: row.linkedSubjectId, label: "(propojený subjekt)" }]
+                      : []),
+                    ...linkOptions.map((option) => ({
+                      value: option.id,
+                      label: option.ico
+                        ? `${option.name} (IČO ${option.ico})`
+                        : option.name,
+                    })),
+                  ]}
+                />
               </Field>
               <Field label="Způsob jednání" className="min-w-0 md:col-span-3">
                 <TextInput

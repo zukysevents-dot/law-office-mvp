@@ -40,6 +40,7 @@ import { deadlineStatusTone, deadlineTypeTone } from "@/lib/status-tones";
 import { cn } from "@/lib/utils";
 import { AccessDenied } from "@/components/access-denied";
 import { moduleAccessDenial } from "@/lib/module-access.server";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 
 export const dynamic = "force-dynamic";
 
@@ -425,14 +426,15 @@ export default async function DeadlinesPage({
           <form action={createDeadline} className="grid gap-4">
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <Field label="Případ">
-                <SelectInput name="caseId" required>
-                  <option value="">Vyberte případ</option>
-                  {data.cases.map((legalCase) => (
-                    <option key={legalCase.id} value={legalCase.id}>
-                      {legalCase.name} / {legalCase.project.name}
-                    </option>
-                  ))}
-                </SelectInput>
+                <SearchableSelect
+                  name="caseId"
+                  required
+                  placeholder="Vyberte případ"
+                  options={data.cases.map((legalCase) => ({
+                    value: legalCase.id,
+                    label: `${legalCase.name} / ${legalCase.project.name}`,
+                  }))}
+                />
               </Field>
               <Field label="Název lhůty">
                 <TextInput name="title" required />
