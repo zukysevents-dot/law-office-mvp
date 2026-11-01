@@ -197,3 +197,43 @@ test("a task cannot claim a project different from its case", () => {
     /rozpornou vazbu na projekt a případ/,
   );
 });
+
+test("další klient spisu projde jen s předanými klienty spisu", () => {
+  const facts = {
+    legalCase: { id: "case-1", projectId: "project-1", mainSubjectId: "subject-1" },
+  };
+  // Bez seznamu dalších klientů platí jen hlavní klient projektu.
+  assert.throws(
+    () => resolveMatterSelection({ subjectId: "subject-2", caseId: "case-1" }, facts),
+    /neodpovídá klientovi/,
+  );
+  assert.deepEqual(
+    resolveMatterSelection(
+      { subjectId: "subject-2", caseId: "case-1" },
+      { ...facts, additionalClientSubjectIds: ["subject-2"] },
+    ),
+    {
+      subjectId: "subject-2",
+      projectId: "project-1",
+      caseId: "case-1",
+      taskId: null,
+    },
+  );
+  // Subjekt mimo klienty spisu se odmítne srozumitelnou hláškou.
+  assert.throws(
+    () =>
+      resolveMatterSelection(
+        { subjectId: "subject-3", caseId: "case-1" },
+        { ...facts, additionalClientSubjectIds: ["subject-2"] },
+      ),
+    /není klientem vybraného projektu ani případu/,
+  );
+  // Bez zvoleného subjektu se doplní hlavní klient.
+  assert.equal(
+    resolveMatterSelection(
+      { caseId: "case-1" },
+      { ...facts, additionalClientSubjectIds: ["subject-2"] },
+    ).subjectId,
+    "subject-1",
+  );
+});

@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { getCurrentUser } from "@/lib/auth";
+import { loadMatterClientMaps } from "@/lib/matter-integrity.server";
 import {
   andWhere,
   canViewRates,
@@ -15,12 +16,20 @@ type CurrentUser = Awaited<ReturnType<typeof getCurrentUser>>;
 type PrismaClient = ReturnType<typeof getPrisma>;
 
 export type WorkLogFormSubject = { id: string; name: string; ico: string | null };
-export type WorkLogFormProject = { id: string; name: string; mainSubjectId: string };
+export type WorkLogFormProject = {
+  id: string;
+  name: string;
+  mainSubjectId: string;
+  /** Další klienti projektu (vazby s rolí Klient), viz matter-cascade. */
+  clientSubjectIds?: string[];
+};
 export type WorkLogFormCase = {
   id: string;
   name: string;
   projectId: string;
   project: { name: string };
+  /** Další klienti přímo na případu (vazby s rolí Klient). */
+  clientSubjectIds?: string[];
 };
 export type WorkLogFormTask = {
   id: string;
@@ -126,7 +135,47 @@ export async function loadWorkLogFormOptions(
     await appendArchivedTask(prisma, currentUser, options, includeTaskId);
   }
 
+  const withClients = await withAdditionalClients(prisma, currentUser, options);
+  options.projects = withClients.projects;
+  options.cases = withClients.cases;
+
   return options;
+}
+
+/**
+ * Více klientů na spisu: k projektům a případům doplní další klienty (vazby
+ * s rolí Klient), aby šlo vykázat práci na kteréhokoli z nich (kaskáda
+ * subjekt → projekt → případ, matter-cascade). Nabízí jen subjekty, které
+ * divák vidí (jsou v nabídce subjektů). Formulář nového výkazu i úprava.
+ */
+export async function withAdditionalClients<
+  P extends { id: string; mainSubjectId: string },
+  C extends { id: string },
+>(
+  prisma: PrismaClient,
+  currentUser: CurrentUser,
+  lists: { subjects: Array<{ id: string }>; projects: P[]; cases: C[] },
+): Promise<{
+  projects: Array<P & { clientSubjectIds: string[] }>;
+  cases: Array<C & { clientSubjectIds: string[] }>;
+}> {
+  const maps = await loadMatterClientMaps(prisma, currentUser.organizationId, {
+    projectIds: lists.projects.map((project) => project.id),
+    caseIds: lists.cases.map((legalCase) => legalCase.id),
+  });
+  const visibleSubjects = new Set(lists.subjects.map((subject) => subject.id));
+  const visible = (ids: string[] | undefined, mainSubjectId?: string) =>
+    (ids ?? []).filter((id) => visibleSubjects.has(id) && id !== mainSubjectId);
+  return {
+    projects: lists.projects.map((project) => ({
+      ...project,
+      clientSubjectIds: visible(maps.byProject.get(project.id), project.mainSubjectId),
+    })),
+    cases: lists.cases.map((legalCase) => ({
+      ...legalCase,
+      clientSubjectIds: visible(maps.byCase.get(legalCase.id)),
+    })),
+  };
 }
 
 async function appendArchivedTask(

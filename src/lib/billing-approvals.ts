@@ -103,8 +103,13 @@ export function approvalFilterWhere(
     clauses.push({
       OR: [
         { subjectId: mainSubjectId },
-        { project: { is: { mainSubjectId } } },
-        { case: { is: { project: { is: { mainSubjectId } } } } },
+        // Jen výkazy bez subjektu dědí klienta z projektu / případu; výkaz
+        // vedený na dalšího klienta spisu patří jemu, ne hlavnímu klientovi.
+        { subjectId: null, project: { is: { mainSubjectId } } },
+        {
+          subjectId: null,
+          case: { is: { project: { is: { mainSubjectId } } } },
+        },
       ],
     });
   }

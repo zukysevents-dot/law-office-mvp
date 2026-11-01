@@ -22,12 +22,15 @@ export type CascadingProject = {
   id: string;
   name: string;
   mainSubjectId: string | null;
+  // Další klienti spisu (vazby s rolí Klient), viz src/lib/matter-cascade.ts.
+  clientSubjectIds?: string[];
 };
 export type CascadingCase = {
   id: string;
   name: string;
   projectId: string | null;
   projectName: string;
+  clientSubjectIds?: string[];
 };
 export type CascadingTask = {
   id: string;
@@ -111,8 +114,8 @@ export function CascadingMatterSelect({
   );
 
   const visibleProjects = useMemo(
-    () => projectsForSubject(projects, selection.subjectId),
-    [projects, selection.subjectId],
+    () => projectsForSubject(projects, selection.subjectId, cases),
+    [projects, cases, selection.subjectId],
   );
   const visibleCases = useMemo(
     () => casesForSelection(cases, projects, selection),

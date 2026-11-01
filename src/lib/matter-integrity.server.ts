@@ -1,6 +1,12 @@
 import "server-only";
 
+import { SubjectRole } from "@/generated/prisma/enums";
 import type { getCurrentUser } from "@/lib/auth";
+import {
+  additionalClientsForMatter,
+  groupClientRelations,
+  type MatterClientMaps,
+} from "@/lib/matter-clients";
 import {
   type MatterSelection,
   resolveMatterSelection,
@@ -68,6 +74,50 @@ function taskFact(
 }
 
 /**
+ * Další klienti (SubjectRelation s rolí Klient) daných projektů a případů
+ * v kanceláři. Vazby nesou organizaci jen přes subjekt / projekt, proto se
+ * kancelář váže přes obě strany. Neověřuje viditelnost subjektů — volající
+ * nabídky filtruje viditelnými subjekty a server ověřuje zvolený subjekt sám.
+ */
+export async function loadMatterClientMaps(
+  prisma: Pick<PrismaClient, "subjectRelation">,
+  organizationId: string,
+  { projectIds, caseIds }: { projectIds: string[]; caseIds: string[] },
+): Promise<MatterClientMaps> {
+  if (projectIds.length === 0 && caseIds.length === 0) {
+    return groupClientRelations([]);
+  }
+  const rows = await prisma.subjectRelation.findMany({
+    where: {
+      role: SubjectRole.CLIENT,
+      subject: { is: { organizationId } },
+      OR: [
+        ...(projectIds.length
+          ? [
+              {
+                caseId: null,
+                projectId: { in: projectIds },
+                project: { is: { organizationId } },
+              },
+            ]
+          : []),
+        ...(caseIds.length
+          ? [
+              {
+                caseId: { in: caseIds },
+                case: { is: { organizationId } },
+              },
+            ]
+          : []),
+      ],
+    },
+    orderBy: { createdAt: "asc" },
+    select: { subjectId: true, projectId: true, caseId: true },
+  });
+  return groupClientRelations(rows);
+}
+
+/**
  * Loads every submitted relation through the caller's visibility scope, then
  * resolves and re-loads any parent relation derived from a case/task. The
  * second pass prevents a visible standalone task from becoming a shortcut to
@@ -77,6 +127,15 @@ export async function resolveVisibleMatterSelection(
   prisma: PrismaClient,
   currentUser: CurrentUser,
   selection: MatterSelection,
+  {
+    allowAdditionalClients = false,
+  }: {
+    /**
+     * Výkazy práce: subjekt smí být i další klient spisu (vazba s rolí
+     * Klient na projekt / případ), nejen hlavní klient projektu.
+     */
+    allowAdditionalClients?: boolean;
+  } = {},
 ) {
   const requestedProjectId = selection.projectId || null;
   const requestedCaseId = selection.caseId || null;
@@ -160,11 +219,17 @@ export async function resolveVisibleMatterSelection(
     throw new Error("Úkol nenalezen nebo k němu nemáte oprávnění.");
   }
 
-  const tentative = resolveMatterSelection(selection, {
-    project: projectFact(submittedProject),
-    legalCase: caseFact(submittedCase),
-    task: taskFact(task),
-  });
+  // The tentative pass only derives the hierarchy to (re)load; the submitted
+  // subject is checked in the final pass, once the matter's additional
+  // clients are known.
+  const tentative = resolveMatterSelection(
+    allowAdditionalClients ? { ...selection, subjectId: null } : selection,
+    {
+      project: projectFact(submittedProject),
+      legalCase: caseFact(submittedCase),
+      task: taskFact(task),
+    },
+  );
 
   const [project, legalCase, subject] = await Promise.all([
     tentative.projectId === submittedProject?.id
@@ -194,16 +259,40 @@ export async function resolveVisibleMatterSelection(
     throw new Error("Subjekt nenalezen nebo k němu nemáte oprávnění.");
   }
 
+  const mainSubjectId =
+    legalCase?.project.mainSubjectId ?? project?.mainSubjectId ?? null;
+  const additionalClientSubjectIds =
+    allowAdditionalClients &&
+    submittedSubject &&
+    mainSubjectId &&
+    submittedSubject.id !== mainSubjectId
+      ? additionalClientsForMatter(
+          await loadMatterClientMaps(prisma, currentUser.organizationId, {
+            projectIds: tentative.projectId ? [tentative.projectId] : [],
+            caseIds: tentative.caseId ? [tentative.caseId] : [],
+          }),
+          {
+            projectId: tentative.projectId,
+            caseId: tentative.caseId,
+            mainSubjectId,
+          },
+        )
+      : [];
+
   const resolved = resolveMatterSelection(selection, {
     project: projectFact(project),
     legalCase: caseFact(legalCase),
     task: taskFact(task),
+    ...(allowAdditionalClients ? { additionalClientSubjectIds } : {}),
   });
+
+  const resolvedSubject =
+    resolved.subjectId === submittedSubject?.id ? submittedSubject : subject;
 
   return {
     ...resolved,
     caseHourlyRate: legalCase?.hourlyRate ?? null,
     projectHourlyRate: project?.hourlyRate ?? null,
-    subjectHourlyRate: subject?.hourlyRate ?? null,
+    subjectHourlyRate: resolvedSubject?.hourlyRate ?? null,
   };
 }

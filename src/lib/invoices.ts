@@ -182,16 +182,43 @@ export const INVOICE_MATTER_MISMATCH_MESSAGE =
  */
 export function normalizeInvoiceMatter(
   selection: { subjectId: string; projectId: string; caseId: string },
-  projects: Array<{ id: string; mainSubjectId: string | null }>,
-  cases: Array<{ id: string; projectId: string | null; mainSubjectId: string | null }>,
+  projects: Array<{
+    id: string;
+    mainSubjectId: string | null;
+    /** Další klienti s nevyfakturovanými výkazy na projektu (mimo případy). */
+    clientSubjectIds?: string[];
+  }>,
+  cases: Array<{
+    id: string;
+    projectId: string | null;
+    mainSubjectId: string | null;
+    /** Další klienti s nevyfakturovanými výkazy na případu. */
+    clientSubjectIds?: string[];
+  }>,
 ): { projectId: string; caseId: string } {
   if (!selection.subjectId) {
     return { projectId: "", caseId: "" };
   }
+  const isClient = (item: {
+    mainSubjectId: string | null;
+    clientSubjectIds?: string[];
+  }) =>
+    item.mainSubjectId === selection.subjectId ||
+    (item.clientSubjectIds ?? []).includes(selection.subjectId);
   let projectId = "";
   if (selection.projectId) {
     const project = projects.find((item) => item.id === selection.projectId);
-    if (!project || project.mainSubjectId !== selection.subjectId) {
+    // Další klient může mít výkazy jen na některém případu projektu — projekt
+    // pak platí, pokud je klientem projektu nebo některého jeho případu.
+    const clientOfProject =
+      project &&
+      (isClient(project) ||
+        cases.some(
+          (item) =>
+            item.projectId === project.id &&
+            (item.clientSubjectIds ?? []).includes(selection.subjectId),
+        ));
+    if (!project || !clientOfProject) {
       return { projectId: "", caseId: "" };
     }
     projectId = project.id;
@@ -203,7 +230,7 @@ export function normalizeInvoiceMatter(
   if (
     !legalCase ||
     !legalCase.projectId ||
-    legalCase.mainSubjectId !== selection.subjectId ||
+    !isClient(legalCase) ||
     (projectId && legalCase.projectId !== projectId)
   ) {
     return { projectId, caseId: "" };

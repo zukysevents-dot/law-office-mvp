@@ -269,3 +269,38 @@ test("normalizeInvoiceMatter: projekt a případ musí patřit klientovi", () =>
     { projectId: "pA", caseId: "cA" },
   );
 });
+
+test("normalizeInvoiceMatter: další klient spisu (více klientů na případu)", () => {
+  // Projekt pA hlavního klienta A; klient C má výkazy na případu cA2 a klient
+  // D přímo na projektu pA.
+  const projects = [
+    { id: "pA", mainSubjectId: "A", clientSubjectIds: ["D"] },
+    { id: "pB", mainSubjectId: "B" },
+  ];
+  const cases = [
+    { id: "cA1", projectId: "pA", mainSubjectId: "A" },
+    { id: "cA2", projectId: "pA", mainSubjectId: "A", clientSubjectIds: ["C"] },
+  ];
+  assert.deepEqual(
+    normalizeInvoiceMatter({ subjectId: "C", projectId: "pA", caseId: "cA2" }, projects, cases),
+    { projectId: "pA", caseId: "cA2" },
+  );
+  assert.deepEqual(
+    normalizeInvoiceMatter({ subjectId: "C", projectId: "", caseId: "cA2" }, projects, cases),
+    { projectId: "pA", caseId: "cA2" },
+  );
+  // Případ, na kterém klient C nic nemá, se zahodí; projekt zůstane.
+  assert.deepEqual(
+    normalizeInvoiceMatter({ subjectId: "C", projectId: "pA", caseId: "cA1" }, projects, cases),
+    { projectId: "pA", caseId: "" },
+  );
+  assert.deepEqual(
+    normalizeInvoiceMatter({ subjectId: "D", projectId: "pA", caseId: "" }, projects, cases),
+    { projectId: "pA", caseId: "" },
+  );
+  // Klient, který spisu nepatří, neprojde.
+  assert.deepEqual(
+    normalizeInvoiceMatter({ subjectId: "C", projectId: "pB", caseId: "" }, projects, cases),
+    { projectId: "", caseId: "" },
+  );
+});

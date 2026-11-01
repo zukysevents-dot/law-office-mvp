@@ -26,7 +26,10 @@ import {
 } from "@/lib/permissions";
 import { resolveVisibleMatterSelection } from "@/lib/matter-integrity.server";
 import { getPrisma } from "@/lib/prisma";
-import { roundHoursToIncrement } from "@/lib/work-logs/time-rounding";
+import {
+  resolveSubmittedHours,
+  roundHoursToIncrement,
+} from "@/lib/work-logs/time-rounding";
 import { assertCanAccessModule } from "@/lib/module-access.server";
 
 // Internal (non-billable) hours carry an internal category instead of a legal
@@ -87,12 +90,19 @@ export async function createWorkLog(formData: FormData) {
     ? optionalNumber(formData, "hourlyRate")
     : null;
 
-  const matter = await resolveVisibleMatterSelection(prisma, currentUser, {
-    subjectId: optionalString(formData, "subjectId"),
-    projectId: optionalString(formData, "projectId"),
-    caseId: optionalString(formData, "caseId"),
-    taskId: optionalString(formData, "taskId"),
-  });
+  // Subjekt výkazu může být kterýkoli klient spisu (hlavní klient projektu
+  // nebo další subjekt s rolí Klient na projektu / případu).
+  const matter = await resolveVisibleMatterSelection(
+    prisma,
+    currentUser,
+    {
+      subjectId: optionalString(formData, "subjectId"),
+      projectId: optionalString(formData, "projectId"),
+      caseId: optionalString(formData, "caseId"),
+      taskId: optionalString(formData, "taskId"),
+    },
+    { allowAdditionalClients: true },
+  );
   const { subjectId, projectId, caseId, taskId } = matter;
 
   // "Duplikovat": the copy is an ordinary new work log built from the form.
@@ -211,10 +221,6 @@ export async function updateWorkLog(formData: FormData) {
     where: { id: currentUser.organizationId },
     select: { billingTimeIncrementMinutes: true },
   });
-  const hours = roundHoursToIncrement(
-    rawHours,
-    organization.billingTimeIncrementMinutes,
-  );
   // Guard against negative/zero or absurd hour counts (a crafted POST could
   // otherwise yield a negative amountCzk). Upper bound 24 = one day's work.
   if (!(rawHours > 0) || rawHours > 24) {
@@ -225,6 +231,13 @@ export async function updateWorkLog(formData: FormData) {
     where: { id: workLogId },
   });
   assertCanEditRecord(currentUser, "WorkLog", oldWorkLog);
+  // Nezměněné hodiny zůstanou (i když jsou z doby jiného kroku), změněné se
+  // zaokrouhlí na krok kanceláře.
+  const hours = resolveSubmittedHours(
+    rawHours,
+    oldWorkLog.hours,
+    organization.billingTimeIncrementMinutes,
+  );
   // Výkaz zamčený fakturou (vystavenou nebo rozpracovaným retainerovým draftem)
   // nelze editovat — jinak by se rozešel doklad/RetainerInvoicePeriod se
   // skutečnou prací. Uvolní se stornem/smazáním faktury (invoicedAt → null).
@@ -234,12 +247,19 @@ export async function updateWorkLog(formData: FormData) {
     );
   }
 
-  const matter = await resolveVisibleMatterSelection(prisma, currentUser, {
-    subjectId: optionalString(formData, "subjectId"),
-    projectId: optionalString(formData, "projectId"),
-    caseId: optionalString(formData, "caseId"),
-    taskId: optionalString(formData, "taskId"),
-  });
+  // Subjekt výkazu může být kterýkoli klient spisu (hlavní klient projektu
+  // nebo další subjekt s rolí Klient na projektu / případu).
+  const matter = await resolveVisibleMatterSelection(
+    prisma,
+    currentUser,
+    {
+      subjectId: optionalString(formData, "subjectId"),
+      projectId: optionalString(formData, "projectId"),
+      caseId: optionalString(formData, "caseId"),
+      taskId: optionalString(formData, "taskId"),
+    },
+    { allowAdditionalClients: true },
+  );
   const { subjectId, projectId, caseId, taskId } = matter;
 
   // Non rate-viewers cannot change the rate — keep the stored value.

@@ -29,6 +29,7 @@ import {
 import { assertUserInOrg } from "@/lib/org-users";
 import { andWhere, canViewRates } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { resolveSubmittedHours } from "@/lib/work-logs/time-rounding";
 
 function revalidateApprovalSurfaces() {
   revalidatePath("/billing");
@@ -60,8 +61,8 @@ export async function decideWorkLog(formData: FormData) {
     throw new Error("Neplatné rozhodnutí.");
   }
 
-  const hours = requiredNumber(formData, "hours");
-  if (!(hours > 0) || hours > 24) {
+  const submittedHours = requiredNumber(formData, "hours");
+  if (!(submittedHours > 0) || submittedHours > 24) {
     throw new Error("Počet hodin musí být větší než 0 a nejvýše 24.");
   }
   // Rates are partner-level information: an approver without VIEW_RATES never
@@ -95,6 +96,12 @@ export async function decideWorkLog(formData: FormData) {
   if (!decisionWhere) {
     throw new Error("Nemáte oprávnění k tomuto výkazu práce.");
   }
+  // Krok vykazování kanceláře (0,1 / 0,25 h) platí i pro úpravu hodin při
+  // schvalování — stejně jako při vykázání a úpravě výkazu.
+  const organization = await prisma.organization.findUniqueOrThrow({
+    where: { id: currentUser.organizationId },
+    select: { billingTimeIncrementMinutes: true },
+  });
 
   await prisma.$transaction(async (tx) => {
     // Serialize billing decisions with invoice issuance. Once invoicedAt is set,
@@ -113,6 +120,11 @@ export async function decideWorkLog(formData: FormData) {
       );
     }
 
+    const hours = resolveSubmittedHours(
+      submittedHours,
+      oldWorkLog.hours,
+      organization.billingTimeIncrementMinutes,
+    );
     const workLog = await tx.workLog.update({
       where: { id: workLogId },
       data: applyApprovalDecision(oldWorkLog, disposition, {

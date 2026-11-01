@@ -200,6 +200,14 @@ async function main() {
       })
     ).map((subject) => subject.id);
     if (staleSubjectIds.length > 0) {
+      // Faktury e2e subjektů (např. další klient spisu ve
+      // worklog-clients-increment-timer.spec.ts); řádky a platby jdou kaskádou.
+      await prisma.invoice.deleteMany({
+        where: { subjectId: { in: staleSubjectIds } },
+      });
+      await prisma.workLog.deleteMany({
+        where: { subjectId: { in: staleSubjectIds } },
+      });
       await prisma.subjectRelation.deleteMany({
         where: { subjectId: { in: staleSubjectIds } },
       });

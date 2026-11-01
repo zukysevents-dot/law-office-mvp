@@ -24,7 +24,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
-import { ModuleKey } from "@/generated/prisma/enums";
+import { ModuleKey, SubjectRole } from "@/generated/prisma/enums";
 import {
   personAssigneeDisplaySelect,
   teamAssignmentDisplaySelect,
@@ -358,6 +358,19 @@ export default async function CaseDetailPage({
     canManageDocuments: canManageDocumentsFlag,
     portalTargets,
   } = result.data;
+  const additionalClients = legalCase
+    ? [
+        ...new Map(
+          legalCase.subjectRelations
+            .filter(
+              (relation) =>
+                relation.role === SubjectRole.CLIENT &&
+                relation.subject.id !== legalCase.project.mainSubject.id,
+            )
+            .map((relation) => [relation.subject.id, relation.subject]),
+        ).values(),
+      ]
+    : [];
 
   return (
     <>
@@ -424,6 +437,24 @@ export default async function CaseDetailPage({
                 >
                   {legalCase.project.mainSubject.name}
                 </Link>
+                {/* Více klientů na případu: subjekty s rolí Klient — na každého
+                    z nich lze vykázat práci i vystavit fakturu. */}
+                {additionalClients.length > 0 ? (
+                  <p className="mt-1 text-sm text-stone-600">
+                    Další klienti:{" "}
+                    {additionalClients.map((subject, index) => (
+                      <span key={subject.id}>
+                        {index > 0 ? ", " : null}
+                        <Link
+                          href={`/subjects/${subject.id}`}
+                          className="font-medium text-emerald-950 hover:underline"
+                        >
+                          {subject.name}
+                        </Link>
+                      </span>
+                    ))}
+                  </p>
+                ) : null}
               </div>
               <div>
                 <p className="text-xs font-semibold uppercase text-stone-500">
@@ -517,6 +548,10 @@ export default async function CaseDetailPage({
           {canEdit ? (
             <Section title="Přidat subjekt k případu">
               <form action={addCaseSubjectRelation} className="grid gap-4">
+                <p className="text-sm text-stone-600">
+                  Na subjekty s rolí Klient lze k tomuto případu vykazovat práci
+                  a vystavit jim fakturu.
+                </p>
                 <input type="hidden" name="caseId" value={legalCase.id} />
                 <input type="hidden" name="projectId" value={legalCase.project.id} />
                 <div className="grid gap-4 md:grid-cols-2">

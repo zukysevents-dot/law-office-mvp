@@ -24,8 +24,13 @@ import {
   type BulkDecisionState,
 } from "@/lib/billing-approvals";
 import type { ApprovalQueueRow } from "@/lib/billing-approvals.server";
-import { approvalStatusLabels, billingStatusLabels } from "@/lib/labels";
+import {
+  approvalStatusDescriptions,
+  approvalStatusLabels,
+  billingStatusLabels,
+} from "@/lib/labels";
 import { approvalStatusTone, billingStatusTone } from "@/lib/status-tones";
+import { hoursInputStep } from "@/lib/work-logs/time-rounding";
 
 const initialBulkState: BulkDecisionState = { status: "idle" };
 
@@ -95,6 +100,7 @@ export function ApprovalQueue({
   showRates,
   totals,
   capped,
+  timeIncrementMinutes,
 }: {
   rows: ApprovalQueueRow[];
   users: Array<{ id: string; name: string }>;
@@ -103,6 +109,8 @@ export function ApprovalQueue({
   showRates: boolean;
   totals: { count: number; hours: number };
   capped: boolean;
+  /** Krok vykazování kanceláře (6 / 15 min) — krok pole „Hodiny“. */
+  timeIncrementMinutes: number;
 }) {
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [confirm, setConfirm] = useState<BulkMode | null>(null);
@@ -247,9 +255,11 @@ export function ApprovalQueue({
                   <Badge tone={billingStatusTone(row.billingStatus)}>
                     {billingStatusLabels[row.billingStatus]}
                   </Badge>
-                  <Badge tone={approvalStatusTone(row.approvalStatus)}>
-                    {approvalStatusLabels[row.approvalStatus]}
-                  </Badge>
+                  <span title={approvalStatusDescriptions[row.approvalStatus]}>
+                    <Badge tone={approvalStatusTone(row.approvalStatus)}>
+                      {approvalStatusLabels[row.approvalStatus]}
+                    </Badge>
+                  </span>
                 </div>
                 {canApprove ? (
                   <form action={decideWorkLog} className="grid gap-4">
@@ -282,7 +292,7 @@ export function ApprovalQueue({
                           name="hours"
                           type="number"
                           min="0"
-                          step="0.25"
+                          step={hoursInputStep(timeIncrementMinutes, row.hours)}
                           defaultValue={numberValue(row.hours)}
                           required
                         />

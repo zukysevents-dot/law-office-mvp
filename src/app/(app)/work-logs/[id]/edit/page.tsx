@@ -38,6 +38,8 @@ import {
   taskVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { withAdditionalClients } from "@/lib/work-logs/create-form.server";
+import { hoursInputStep } from "@/lib/work-logs/time-rounding";
 import { AccessDenied } from "@/components/access-denied";
 import { moduleAccessDenial } from "@/lib/module-access.server";
 
@@ -106,14 +108,22 @@ async function loadWorkLogEdit(id: string) {
     }),
   ]);
 
+  // Více klientů na spisu: výkaz lze vést i na dalšího klienta projektu /
+  // případu (vazba s rolí Klient).
+  const withClients = await withAdditionalClients(prisma, currentUser, {
+    subjects,
+    projects,
+    cases,
+  });
+
   return {
     workLog:
       workLog && canEditRecord(currentUser, "WorkLog", workLog)
         ? workLog
         : null,
     subjects,
-    projects,
-    cases,
+    projects: withClients.projects,
+    cases: withClients.cases,
     tasks: tasks.map((task) => ({
       id: task.id,
       title: task.title,
@@ -240,6 +250,7 @@ export default async function WorkLogEditPage({ params }: WorkLogEditProps) {
                 name: legalCase.name,
                 projectId: legalCase.projectId,
                 projectName: legalCase.project.name,
+                clientSubjectIds: legalCase.clientSubjectIds,
               }))}
               tasks={tasks}
               includeTask
@@ -265,7 +276,7 @@ export default async function WorkLogEditPage({ params }: WorkLogEditProps) {
                   name="hours"
                   type="number"
                   min="0"
-                  step={timeIncrementMinutes === 6 ? 0.1 : 0.25}
+                  step={hoursInputStep(timeIncrementMinutes, Number(workLog.hours))}
                   defaultValue={numberInputValue(workLog.hours)}
                   required
                 />
