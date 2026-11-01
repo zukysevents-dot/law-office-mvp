@@ -9,6 +9,7 @@ import {
   serializeCalendarEvent,
   type SerializedCalendarEvent,
 } from "@/lib/calendar-events";
+import { resolveCalendarPeopleFilters } from "@/lib/calendar-scope.server";
 import { IcsFetchError, icsErrorMessage } from "@/lib/calendar/ics-errors";
 import { fetchIcsFeed, normalizeIcsUrl, urlHint } from "@/lib/calendar/ics-fetch";
 import { countIcsEvents, parseIcs } from "@/lib/calendar/ics-parse";
@@ -36,6 +37,9 @@ function parseRange(startIso: string, endIso: string) {
  * visibility. Called by the FullCalendar event source on every range change
  * (initial mount, prev/next, view switch) so access control stays server-side.
  *
+ * `scope` = „mine" (default) | „team" | „all" (lib/calendar-scope); a scope
+ * the viewer may not use falls back to „mine".
+ *
  * `startIso`/`endIso` come from FullCalendar's `fetchInfo` (end is exclusive,
  * matching the `lt` bound in the underlying Prisma query). On any DB error we
  * degrade to an empty calendar rather than throwing into the UI.
@@ -43,6 +47,7 @@ function parseRange(startIso: string, endIso: string) {
 export async function fetchCalendarEvents(
   startIso: string,
   endIso: string,
+  scope: string = "mine",
 ): Promise<SerializedCalendarEvent[]> {
   const range = parseRange(startIso, endIso);
   if (!range) {
@@ -53,7 +58,10 @@ export async function fetchCalendarEvents(
   await assertCanAccessModule(currentUser, "module.calendar");
 
   try {
-    const events = await getCalendarEvents(currentUser, range);
+    // „Můj kalendář" by default; team / office only when the viewer has the
+    // right (re-checked here — the client choice is never trusted).
+    const { people } = await resolveCalendarPeopleFilters(currentUser, scope);
+    const events = await getCalendarEvents(currentUser, range, people);
     return events.map(serializeCalendarEvent);
   } catch {
     return [];

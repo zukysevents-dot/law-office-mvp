@@ -12,7 +12,9 @@ import {
   deadlineTypeTone,
   fulfillmentTone,
   workloadLevelTone,
+  isTaskDueToday,
   isTaskOverdue,
+  taskDueDateState,
 } from "./status-tones";
 
 // --- deadlineTypeTone: F4 deadline category → badge colour ------------------
@@ -65,6 +67,37 @@ test("isTaskOverdue: only unfinished tasks before now are overdue", () => {
     false,
   );
   assert.equal(isTaskOverdue(null, TaskStatus.CREATED, now), false);
+});
+
+test("isTaskOverdue: a task due today is not overdue yet (Europe/Prague)", () => {
+  // 21. 7. 2026 14:00 Praha — termín „dnes" je uložený jako UTC půlnoc.
+  const now = new Date("2026-07-21T12:00:00.000Z");
+  assert.equal(
+    isTaskOverdue("2026-07-21T00:00:00.000Z", TaskStatus.IN_PROGRESS, now),
+    false,
+  );
+  assert.equal(
+    isTaskDueToday("2026-07-21T00:00:00.000Z", TaskStatus.IN_PROGRESS, now),
+    true,
+  );
+  assert.equal(
+    isTaskDueToday("2026-07-21T00:00:00.000Z", TaskStatus.COMPLETED, now),
+    false,
+  );
+  assert.equal(
+    isTaskDueToday("2026-07-20T00:00:00.000Z", TaskStatus.IN_PROGRESS, now),
+    false,
+  );
+  // Po pražské půlnoci (UTC je ještě 21. 7.) je včerejší termín po termínu.
+  const afterMidnight = new Date("2026-07-21T22:30:00.000Z");
+  assert.equal(
+    isTaskOverdue("2026-07-21T00:00:00.000Z", TaskStatus.CREATED, afterMidnight),
+    true,
+  );
+  assert.equal(taskDueDateState("2026-07-21T00:00:00.000Z", TaskStatus.CREATED, now), "today");
+  assert.equal(taskDueDateState("2026-07-20T00:00:00.000Z", TaskStatus.CREATED, now), "overdue");
+  assert.equal(taskDueDateState("2026-07-22T00:00:00.000Z", TaskStatus.CREATED, now), null);
+  assert.equal(taskDueDateState("2026-07-20T00:00:00.000Z", TaskStatus.COMPLETED, now), null);
 });
 
 test("fulfillmentTone: ≥100 green, ≥75 amber, else red", () => {

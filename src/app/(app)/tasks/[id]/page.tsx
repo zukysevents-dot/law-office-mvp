@@ -52,10 +52,12 @@ import { buildTaskTimeline } from "@/lib/tasks/timeline";
 import { getPrisma } from "@/lib/prisma";
 import {
   isTaskOverdue,
+  taskDueDateState,
   taskDeadlineTypeTone,
   taskStatusTone,
 } from "@/lib/status-tones";
 import { AccessDenied } from "@/components/access-denied";
+import { DueDateText } from "@/components/due-date-text";
 import {
   canAccessModule,
   moduleAccessDenial,
@@ -382,14 +384,11 @@ export default async function TaskDetailPage({
                 <p className="text-xs font-semibold uppercase text-stone-500">
                   Deadline
                 </p>
-                <p
-                  className={
-                    isTaskOverdue(task.deadline, task.status, now)
-                      ? "font-semibold text-red-700"
-                      : undefined
-                  }
-                >
-                  {formatDateUtc(task.deadline)}
+                <p>
+                  <DueDateText
+                    date={task.deadline}
+                    state={taskDueDateState(task.deadline, task.status, now)}
+                  />
                 </p>
                 {deadlineHistory.changed ? (
                   <p className="text-xs text-stone-600" data-testid="deadline-history">

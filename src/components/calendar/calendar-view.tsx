@@ -31,6 +31,7 @@ import {
   type OutlookEventDetail,
 } from "@/components/calendar/outlook-event-dialog";
 import type { SerializedCalendarEvent } from "@/lib/calendar-events";
+import { calendarScopeLabels, type CalendarScope } from "@/lib/calendar-scope";
 import { requestOutlookRefresh } from "@/lib/calendar/outlook-refresh-client";
 import type {
   OutlookFeedSummary,
@@ -151,19 +152,30 @@ function subscribeOutlookToggle(callback: () => void) {
   };
 }
 
+const SCOPE_HINTS: Record<CalendarScope, string> = {
+  mine: "Úkoly, které řešíte, máte na ně dohled nebo za ně odpovídáte, lhůty a jednání, za které odpovídáte, a nepřidělené, které jste založili nebo jsou na vašem spisu.",
+  team: "Totéž pro všechny členy vašeho týmu.",
+  all: "Vše, co v kanceláři smíte vidět.",
+};
+
 export function CalendarView({
   compact = false,
   title,
   initialView = "dayGridMonth",
   outlook = null,
+  scopeOptions = ["mine"],
 }: {
   compact?: boolean;
   title?: string;
   initialView?: CalendarDefaultView;
   /** The viewer's own Outlook connection (null = feature unavailable). */
   outlook?: OutlookFeedSummary | null;
+  /** Calendar scopes the viewer may switch to (server-computed; „mine" first). */
+  scopeOptions?: CalendarScope[];
 } = {}) {
   const router = useRouter();
+  // Výchozí pohled je vždy „Můj kalendář"; server volbu znovu ověří.
+  const [scope, setScope] = useState<CalendarScope>("mine");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [outlookError, setOutlookError] = useState<string | null>(null);
   const [outlookSummary, setOutlookSummary] = useState(outlook);
@@ -247,7 +259,7 @@ export function CalendarView({
       failure: (error: Error) => void,
     ) => {
       setLoadError(null);
-      fetchCalendarEvents(info.startStr, info.endStr)
+      fetchCalendarEvents(info.startStr, info.endStr, scope)
         .then((events) => success(events.map(toEventInput)))
         .catch((error: unknown) => {
           setLoadError(
@@ -256,7 +268,7 @@ export function CalendarView({
           failure(error instanceof Error ? error : new Error("Calendar load failed"));
         });
     },
-    [],
+    [scope],
   );
 
   const loadOutlook = useCallback(
@@ -277,8 +289,9 @@ export function CalendarView({
   );
 
   const iuriverseSource = useMemo<EventSourceInput>(
-    () => ({ id: "iuriverse", events: loadEvents }),
-    [loadEvents],
+    // A new id per scope → FullCalendar drops the old events and refetches.
+    () => ({ id: `iuriverse-${scope}`, events: loadEvents }),
+    [loadEvents, scope],
   );
 
   const eventSources = useMemo<EventSourceInput[]>(
@@ -323,6 +336,41 @@ export function CalendarView({
       {title ? (
         <h2 className="text-lg font-semibold text-[#0e1822]">{title}</h2>
       ) : null}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        {scopeOptions.length > 1 ? (
+          <div
+            role="group"
+            aria-label="Čí kalendář zobrazit"
+            className="inline-flex flex-wrap rounded-md border border-[#dce4e8] bg-[#f4f7f8] p-0.5"
+          >
+            {scopeOptions.map((option) => {
+              const active = option === scope;
+              return (
+                <button
+                  key={option}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => setScope(option)}
+                  className={`h-9 rounded px-3 text-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#17a2a2] ${
+                    active
+                      ? "bg-[#0e1822] font-semibold text-white"
+                      : "font-medium text-[#0e1822] hover:bg-white"
+                  }`}
+                >
+                  {calendarScopeLabels[option]}
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <span className="text-sm font-semibold text-[#0e1822]">
+            {calendarScopeLabels.mine}
+          </span>
+        )}
+        <span className="text-xs text-[#566673]" data-testid="calendar-scope-hint">
+          {SCOPE_HINTS[scope]}
+        </span>
+      </div>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-[#566673]">
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-full bg-red-300" aria-hidden="true" />

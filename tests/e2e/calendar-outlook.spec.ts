@@ -211,6 +211,8 @@ test("soudní jednání ukazuje v týdnu skutečný čas", async ({ page }) => {
     ),
   );
   await page.goto("/calendar");
+  // Hearing without a responsible person → only in „Celá kancelář".
+  await page.getByRole("button", { name: "Celá kancelář" }).click();
   await showWeek(page);
   await expect(page.locator(".fc-event", { hasText: court })).toContainText("9:30");
 });

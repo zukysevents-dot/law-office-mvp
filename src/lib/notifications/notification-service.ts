@@ -10,6 +10,7 @@ import {
   formatTeamJoinedNotification,
   type RecipientNotice,
 } from "@/lib/assignments";
+import { overdueBefore } from "@/lib/due-date";
 import { taskStatusLabels } from "@/lib/labels";
 import { formatTaskDeadline } from "@/lib/tasks/deadline-history";
 import {
@@ -893,7 +894,8 @@ async function createScheduledDeadlineNotifications(now: Date) {
     where: {
       archivedAt: null,
       status: { not: TaskStatus.COMPLETED },
-      deadline: { gte: now, lte: maxWindow },
+      // Úkol s termínem dnes ještě není po termínu → stále „blíží se".
+      deadline: { gte: overdueBefore(now), lte: maxWindow },
     },
     select: {
       id: true,
@@ -1025,18 +1027,13 @@ async function createScheduledFiledFollowupNotifications(now: Date) {
   return created;
 }
 
-function startOfUtcDay(value: Date) {
-  return new Date(
-    Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()),
-  );
-}
-
 // Úkol po termínu: nedokončený, nearchivovaný úkol, jehož termín (datum, UTC
 // půlnoc) už uplynul — nejvýš TASK_OVERDUE_LOOKBACK_DAYS dní zpět. Jednou na
 // hodnotu termínu (datum termínu v dedupe klíči): posunutí termínu upozornění
 // znovu „natáhne“. Příjemci: řešitelé, dohled a odpovědná osoba.
 export function taskOverdueWindow(now: Date) {
-  const today = startOfUtcDay(now);
+  // Den kanceláře (Europe/Prague), stejně jako seznamy a počty (due-date.ts).
+  const today = overdueBefore(now);
   const from = new Date(today);
   from.setUTCDate(from.getUTCDate() - TASK_OVERDUE_LOOKBACK_DAYS);
   return { from, before: today };
@@ -1105,6 +1102,12 @@ async function createScheduledTaskOverdueNotifications(now: Date) {
 // Only OPEN, non-archived deadlines are watched: a fulfilled (COMPLETED) or
 // archived/cancelled deadline never produces another reminder. dueDate <=
 // maxWindow covers both upcoming (≤30d) and any overdue (dueDate<now).
+// Lhůta je po termínu až od následujícího dne kanceláře (Europe/Prague) —
+// v den termínu chodí ještě „blíží se", ne eskalace „po termínu".
+export function isDeadlineOverdueForReminder(dueDate: Date, now: Date) {
+  return dueDate < overdueBefore(now);
+}
+
 export function deadlineReminderWhere(maxWindow: Date) {
   return {
     archivedAt: null,
@@ -1139,7 +1142,7 @@ async function createScheduledDeadlineReminders(now: Date) {
       deadline.case.responsibleUserId,
     ]);
     const dueLabel = deadline.dueDate.toLocaleDateString("cs-CZ");
-    const overdue = deadline.dueDate < now;
+    const overdue = isDeadlineOverdueForReminder(deadline.dueDate, now);
 
     if (overdue) {
       // One escalation per day while OPEN — date stamp in the dedupe key.
@@ -1147,7 +1150,7 @@ async function createScheduledDeadlineReminders(now: Date) {
       if (recipientIds.length === 0) {
         continue;
       }
-      const day = now.toISOString().slice(0, 10);
+      const day = overdueBefore(now).toISOString().slice(0, 10);
       const result = await queueInternalNotification({
         toUserIds: recipientIds,
         type: NotificationType.DEADLINE_OVERDUE,

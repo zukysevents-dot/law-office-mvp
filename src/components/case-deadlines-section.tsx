@@ -6,7 +6,13 @@ import {
   createCourtHearing,
   createDeadline,
 } from "@/app/actions/deadlines";
+import { DeadlineExtendDialog } from "@/components/deadlines/deadline-extend-dialog";
+import {
+  DeadlineExtensionHistory,
+  type DeadlineExtensionRow,
+} from "@/components/deadlines/deadline-extension-history";
 import { DeadlineFulfilDialog } from "@/components/deadlines/deadline-fulfil-dialog";
+import { DueDateText } from "@/components/due-date-text";
 import { FulfilledDeadlineActions } from "@/components/deadlines/deadline-row-actions";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
 import { Section } from "@/components/section";
@@ -15,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialogButton } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { DeadlineType } from "@/generated/prisma/enums";
+import { dueDateState } from "@/lib/due-date";
 import { formatDateTimeUtc, formatDateUtc } from "@/lib/format";
 import { deadlineStatusLabels, deadlineTypeLabels } from "@/lib/labels";
 import { deadlineStatusTone, deadlineTypeTone } from "@/lib/status-tones";
@@ -29,6 +36,7 @@ type DeadlineRow = {
   completionNote: string | null;
   responsibleUser: { name: string } | null;
   completedBy: { name: string } | null;
+  extensions: DeadlineExtensionRow[];
 };
 
 type HearingRow = {
@@ -42,9 +50,10 @@ type HearingRow = {
 type Member = { id: string; name: string };
 
 // Keep the impure clock out of the render body (react-hooks/purity), mirroring
-// the AML page. An OPEN deadline whose dueDate has passed is rendered as overdue.
-function nowMs(): number {
-  return Date.now();
+// the AML page. An OPEN deadline is „dnes" on its due day and overdue only from
+// the following office day (lib/due-date).
+function currentTime(): Date {
+  return new Date();
 }
 
 export function CaseDeadlinesSection({
@@ -62,7 +71,7 @@ export function CaseDeadlinesSection({
   members: Member[];
   canManage: boolean;
 }) {
-  const now = nowMs();
+  const now = currentTime();
 
   return (
     <>
@@ -82,11 +91,16 @@ export function CaseDeadlinesSection({
               </thead>
               <tbody>
                 {deadlines.map((deadline) => {
-                  const overdue =
-                    deadline.status === "OPEN" &&
-                    deadline.dueDate.getTime() < now;
+                  const dueState =
+                    deadline.status === "OPEN"
+                      ? dueDateState(deadline.dueDate, now)
+                      : null;
+                  const overdue = dueState === "overdue";
                   return (
-                    <tr key={deadline.id}>
+                    <tr
+                      key={deadline.id}
+                      className={dueState === "today" ? "bg-red-50" : undefined}
+                    >
                       <td className="font-medium text-stone-950">
                         {deadline.title}
                       </td>
@@ -95,9 +109,12 @@ export function CaseDeadlinesSection({
                           {deadlineTypeLabels[deadline.type]}
                         </Badge>
                       </td>
-                      <td className={overdue ? "font-semibold text-red-700" : ""}>
-                        {formatDateUtc(deadline.dueDate)}
-                        {overdue ? " (po termínu)" : ""}
+                      <td>
+                        <DueDateText
+                          date={deadline.dueDate}
+                          state={dueState === "upcoming" ? null : dueState}
+                        />
+                        <DeadlineExtensionHistory extensions={deadline.extensions} />
                       </td>
                       <td>
                         <Badge tone={deadlineStatusTone(deadline.status)}>
@@ -128,6 +145,16 @@ export function CaseDeadlinesSection({
                                   title: deadline.title,
                                   dueDateLabel: formatDateUtc(deadline.dueDate),
                                   overdue,
+                                }}
+                              />
+                              <DeadlineExtendDialog
+                                deadline={{
+                                  id: deadline.id,
+                                  title: deadline.title,
+                                  dueDateLabel: formatDateUtc(deadline.dueDate),
+                                  dueDateIso: deadline.dueDate
+                                    .toISOString()
+                                    .slice(0, 10),
                                 }}
                               />
                               <form action={cancelDeadline}>

@@ -13,6 +13,8 @@ import { ArchiveActionForm } from "@/components/archive-action-form";
 import { ArchiveNotice } from "@/components/archive-notice";
 import { AssigneeSection } from "@/components/assignee-section";
 import { CaseDeadlinesSection } from "@/components/case-deadlines-section";
+import { deadlineExtensionsSelect } from "@/components/deadlines/deadline-extension-history";
+import { DueDateText } from "@/components/due-date-text";
 import { CaseDocumentsSection } from "@/components/case-documents-section";
 import {
   MatterCommentsSection,
@@ -73,7 +75,7 @@ import {
   taskPeopleFromRecord,
   taskPeopleSelect,
 } from "@/lib/tasks/task-people";
-import { subjectRoleTone } from "@/lib/status-tones";
+import { subjectRoleTone, taskDueDateState } from "@/lib/status-tones";
 import { AccessDenied } from "@/components/access-denied";
 import { canAccessModule, moduleAccessDenial } from "@/lib/module-access.server";
 
@@ -218,6 +220,7 @@ async function loadCase(id: string) {
             completionNote: true,
             responsibleUser: { select: { name: true } },
             completedBy: { select: { name: true } },
+            extensions: deadlineExtensionsSelect,
           },
         }),
         prisma.courtHearing.findMany({
@@ -629,7 +632,12 @@ export default async function CaseDetailPage({
                           ) || "—"}
                         </td>
                         <td>{taskStatusLabels[task.status]}</td>
-                        <td>{formatDateUtc(task.deadline)}</td>
+                        <td>
+                          <DueDateText
+                            date={task.deadline}
+                            state={taskDueDateState(task.deadline, task.status)}
+                          />
+                        </td>
                       </tr>
                     ))}
                   </tbody>
