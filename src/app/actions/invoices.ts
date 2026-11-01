@@ -4,11 +4,14 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { Prisma } from "@/generated/prisma/client";
-import { InvoiceStatus, ModuleKey, VatMode } from "@/generated/prisma/enums";
+import {
+  InvoiceStatus,
+  SubjectContactType,
+  VatMode,
+} from "@/generated/prisma/enums";
 import { auditJson } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
 import { computeInvoiceTotals, computeLine, round2 } from "@/lib/billing-calc";
-import { assertModuleEnabled } from "@/lib/entitlements";
 import { buildIsdocXml } from "@/lib/export/isdoc";
 import {
   IsdocExportError,
@@ -24,9 +27,11 @@ import {
   areLockedWorkLogsInvoiceable,
   DEFAULT_VAT_RATE,
   formatInvoiceNumber,
+  INVOICE_MATTER_MISMATCH_MESSAGE,
   invoiceLineWorkLogIds,
   vatModeForProfile,
 } from "@/lib/invoices";
+import { resolveMatterSelection } from "@/lib/matter-integrity";
 import { getSmtpTransporter } from "@/lib/notifications/notification-service";
 import {
   andWhere,
@@ -35,6 +40,8 @@ import {
   workLogVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { assertCanAccessModule } from "@/lib/module-access.server";
+import { pickInvoiceRecipient, subjectEmails } from "@/lib/subjects/contacts";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -49,11 +56,15 @@ function toNum(value: unknown): number {
 export async function createInvoiceFromWorkLogs(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  await assertModuleEnabled(currentUser, ModuleKey.BILLING);
+  await assertCanAccessModule(currentUser, "module.billing");
   assertCanManageInvoices(currentUser);
 
   const organizationId = currentUser.organizationId;
   const subjectId = requiredString(formData, "subjectId");
+  // Volitelný spis (projekt / případ) zvoleného klienta. Faktura ho nese a do
+  // faktury smí jen výkazy z tohoto spisu.
+  const requestedProjectId = optionalString(formData, "projectId");
+  const requestedCaseId = optionalString(formData, "caseId");
   // Volitelný fakturující subjekt (jinak hlavní profil kanceláře).
   const issuerId = optionalString(formData, "issuerId");
   // Dedupe: a repeated id in the POST must not trip the count check below
@@ -80,6 +91,65 @@ export async function createInvoiceFromWorkLogs(formData: FormData) {
       throw new Error("Klient nenalezen.");
     }
 
+    // The project/case must belong to this client (org-scoped lookup + the
+    // shared hierarchy resolver: a case back-fills its project). A forged POST
+    // mixing another client's matter fails here.
+    let projectId: string | null = null;
+    let caseId: string | null = null;
+    if (requestedProjectId || requestedCaseId) {
+      const [project, legalCase] = await Promise.all([
+        requestedProjectId
+          ? tx.project.findFirst({
+              where: { id: requestedProjectId, organizationId },
+              select: { id: true, mainSubjectId: true },
+            })
+          : null,
+        requestedCaseId
+          ? tx.case.findFirst({
+              where: { id: requestedCaseId, organizationId },
+              select: {
+                id: true,
+                projectId: true,
+                project: { select: { mainSubjectId: true } },
+              },
+            })
+          : null,
+      ]);
+      if (
+        (requestedProjectId && !project) ||
+        (requestedCaseId && !legalCase)
+      ) {
+        throw new Error(INVOICE_MATTER_MISMATCH_MESSAGE);
+      }
+      let resolved;
+      try {
+        resolved = resolveMatterSelection(
+          {
+            subjectId,
+            projectId: requestedProjectId,
+            caseId: requestedCaseId,
+          },
+          {
+            project,
+            legalCase: legalCase
+              ? {
+                  id: legalCase.id,
+                  projectId: legalCase.projectId,
+                  mainSubjectId: legalCase.project.mainSubjectId,
+                }
+              : null,
+          },
+        );
+      } catch {
+        throw new Error(INVOICE_MATTER_MISMATCH_MESSAGE);
+      }
+      if (resolved.subjectId !== subjectId) {
+        throw new Error(INVOICE_MATTER_MISMATCH_MESSAGE);
+      }
+      projectId = resolved.projectId;
+      caseId = resolved.caseId;
+    }
+
     // Only work-logs the user may see (visibility), belonging to THIS client,
     // approved, billable, and not yet invoiced. workLogVisibilityWhere carries
     // the org clause; binding subjectId is the authoritative gate against a
@@ -88,6 +158,8 @@ export async function createInvoiceFromWorkLogs(formData: FormData) {
       where: andWhere(workLogVisibilityWhere(currentUser), {
         id: { in: workLogIds },
         subjectId,
+        ...(projectId ? { projectId } : {}),
+        ...(caseId ? { caseId } : {}),
         archivedAt: null,
         billingStatus: "BILLABLE",
         approvalStatus: "APPROVED",
@@ -159,6 +231,8 @@ export async function createInvoiceFromWorkLogs(formData: FormData) {
         totalCzk: totals.total,
         createdById: currentUser.id,
         issuerId: issuerId || null,
+        projectId,
+        caseId,
         lines: {
           create: lineInputs.map((li, index) => {
             const r = computeLine(li, vatMode);
@@ -188,6 +262,8 @@ export async function createInvoiceFromWorkLogs(formData: FormData) {
         organizationId: currentUser.organizationId,
         newValue: auditJson({
           subjectId,
+          projectId,
+          caseId,
           status: created.status,
           lineCount: lineInputs.length,
           totalCzk: totals.total,
@@ -209,7 +285,7 @@ export async function createInvoiceFromWorkLogs(formData: FormData) {
 export async function issueInvoice(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  await assertModuleEnabled(currentUser, ModuleKey.BILLING);
+  await assertCanAccessModule(currentUser, "module.billing");
   assertCanManageInvoices(currentUser);
 
   const organizationId = currentUser.organizationId;
@@ -461,7 +537,7 @@ export async function issueInvoice(formData: FormData) {
 export async function cancelInvoice(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  await assertModuleEnabled(currentUser, ModuleKey.BILLING);
+  await assertCanAccessModule(currentUser, "module.billing");
   assertCanManageInvoices(currentUser);
 
   const invoiceId = requiredString(formData, "invoiceId");
@@ -570,7 +646,7 @@ function supplierFromSnapshot(snapshot: unknown) {
 export async function emailInvoice(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  await assertModuleEnabled(currentUser, ModuleKey.BILLING);
+  await assertCanAccessModule(currentUser, "module.billing");
   assertCanManageInvoices(currentUser);
 
   const invoiceId = requiredString(formData, "invoiceId");
@@ -581,7 +657,18 @@ export async function emailInvoice(formData: FormData) {
     where: andWhere(invoiceVisibilityWhere(currentUser), { id: invoiceId }),
     include: {
       lines: { orderBy: { position: "asc" } },
-      subject: { select: { id: true, name: true, email: true } },
+      subject: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          contacts: {
+            where: { type: SubjectContactType.EMAIL },
+            orderBy: { position: "asc" },
+            select: { type: true, value: true, label: true, isPrimary: true },
+          },
+        },
+      },
     },
   });
   if (!invoice) {
@@ -591,7 +678,13 @@ export async function emailInvoice(formData: FormData) {
     throw new Error("E-mailem lze odeslat jen vystavenou fakturu.");
   }
 
-  const subjectEmail = (invoice.subject.email ?? "").trim();
+  const subjectEmail = pickInvoiceRecipient(
+    invoice.subject.contacts,
+    invoice.subject.email,
+  );
+  const knownEmails = subjectEmails(invoice.subject.contacts, invoice.subject.email).map(
+    (email) => email.toLowerCase(),
+  );
   const recipient = (recipientOverride ?? subjectEmail).trim();
   if (!isValidEmail(recipient)) {
     throw new Error(
@@ -600,7 +693,7 @@ export async function emailInvoice(formData: FormData) {
   }
   // Příjemce odlišný od adresy evidované u klienta — auditujeme zvlášť, ať jde
   // dohledat, kam doklad skutečně šel a že šlo o ruční přepis.
-  const recipientOverridden = recipient !== subjectEmail;
+  const recipientOverridden = !knownEmails.includes(recipient.toLowerCase());
 
   // Idempotence: odmítni opakované odeslání těsně po předchozím (dvojí klik /
   // retry akce). Okno je krátké, vědomé pozdější přeposlání zůstává možné.
@@ -729,7 +822,7 @@ export async function emailInvoice(formData: FormData) {
 export async function deleteDraftInvoice(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  await assertModuleEnabled(currentUser, ModuleKey.BILLING);
+  await assertCanAccessModule(currentUser, "module.billing");
   assertCanManageInvoices(currentUser);
 
   const invoiceId = requiredString(formData, "invoiceId");

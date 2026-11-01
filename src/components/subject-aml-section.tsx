@@ -129,7 +129,7 @@ export function SubjectAmlSection({
             <TextArea name="note" defaultValue={assessment?.note ?? ""} />
           </Field>
           <div>
-            <Button type="submit">Uložit hodnocení</Button>
+            <Button type="submit" pendingLabel="Ukládám…">Uložit hodnocení</Button>
           </div>
         </form>
       </Section>

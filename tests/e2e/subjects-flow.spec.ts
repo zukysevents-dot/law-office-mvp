@@ -10,7 +10,7 @@ async function createSubject(
   const form = page.locator("#new-subject");
   await form.getByLabel("Název").fill(values.name);
   if (values.ico) await form.getByLabel("IČO").fill(values.ico);
-  if (values.address) await form.getByLabel("Adresa").fill(values.address);
+  if (values.address) await form.getByLabel("Sídlo", { exact: true }).fill(values.address);
   await form.getByRole("button", { name: "Vytvořit subjekt" }).click();
 }
 
@@ -22,7 +22,7 @@ function uniqueIco() {
 test.describe("subjekty — hledání a filtrování", () => {
   test("vyhledání subjektu podle názvu zúží seznam", async ({ page }) => {
     await page.goto("/subjects");
-    await page.getByPlaceholder("Název nebo IČO").fill("ABC");
+    await page.getByPlaceholder("Název, jméno, IČO, e-mail nebo telefon").fill("ABC");
     await page.getByRole("button", { name: "Hledat", exact: true }).click();
 
     await expect(page).toHaveURL(/q=ABC/);
@@ -33,7 +33,7 @@ test.describe("subjekty — hledání a filtrování", () => {
 
   test("hledání podle IČO najde konkrétní subjekt", async ({ page }) => {
     await page.goto("/subjects");
-    await page.getByPlaceholder("Název nebo IČO").fill("87654321");
+    await page.getByPlaceholder("Název, jméno, IČO, e-mail nebo telefon").fill("87654321");
     await page.getByRole("button", { name: "Hledat", exact: true }).click();
 
     await expect(
@@ -44,7 +44,7 @@ test.describe("subjekty — hledání a filtrování", () => {
   test("hledání bez výsledků ukáže prázdný stav", async ({ page }) => {
     await page.goto("/subjects");
     await page
-      .getByPlaceholder("Název nebo IČO")
+      .getByPlaceholder("Název, jméno, IČO, e-mail nebo telefon")
       .fill("rozhodne-neexistujici-subjekt-xyz");
     await page.getByRole("button", { name: "Hledat", exact: true }).click();
 
@@ -60,7 +60,7 @@ test.describe("subjekty — hledání a filtrování", () => {
       page.getByRole("table").getByRole("link", { name: "XYZ s.r.o." }),
     ).toHaveCount(0);
 
-    await page.getByPlaceholder("Název nebo IČO").fill("");
+    await page.getByPlaceholder("Název, jméno, IČO, e-mail nebo telefon").fill("");
     await page.getByRole("button", { name: "Hledat", exact: true }).click();
 
     await expect(
@@ -102,7 +102,7 @@ test.describe("subjekty — vytvoření", () => {
     await expect(page).toHaveURL(/\/subjects\/[a-z0-9]+$/);
 
     await page.goto("/subjects");
-    await page.getByPlaceholder("Název nebo IČO").fill(name);
+    await page.getByPlaceholder("Název, jméno, IČO, e-mail nebo telefon").fill(name);
     await page.getByRole("button", { name: "Hledat", exact: true }).click();
 
     await expect(page.getByRole("table").getByRole("link", { name })).toBeVisible();

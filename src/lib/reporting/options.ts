@@ -1,6 +1,6 @@
 import {
   andWhere,
-  canViewAllLegalData,
+  canViewTeamReports,
   caseVisibilityWhere,
   projectVisibilityWhere,
   subjectVisibilityWhere,
@@ -48,7 +48,7 @@ export async function loadReportFilterOptions(
       // their own organization); lower roles — and anyone without an active org
       // — can filter reports by themselves only.
       where:
-        canViewAllLegalData(currentUser) && currentUser.organizationId
+        canViewTeamReports(currentUser) && currentUser.organizationId
           ? {
               active: true,
               memberships: {

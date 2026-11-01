@@ -14,7 +14,10 @@ import { formatDate } from "@/lib/format";
 import { amlRiskLevelLabels } from "@/lib/labels";
 import { canManageAml } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { subjectSearchWhere } from "@/lib/subjects/search";
 import { amlRiskLevelTone } from "@/lib/status-tones";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +52,12 @@ export default async function AmlPage({
 }: {
   searchParams: Promise<{ q?: string }>;
 }) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.aml");
+  if (accessDenied) {
+    return <AccessDenied title="AML / KYC" message={accessDenied} />;
+  }
+
   const params = await searchParams;
   const query = (params.q ?? "").trim().slice(0, 100);
 
@@ -79,16 +88,14 @@ export default async function AmlPage({
       }
       const prisma = getPrisma();
       const dueBoundary = reviewDueBoundary();
-      // „Nová kontrola / identifikace": vyhledej zapsaný subjekt dle jména/IČO.
+      // „Nová kontrola / identifikace": vyhledej zapsaný subjekt stejně jako
+      // seznam subjektů (jméno, IČO, kontakty, statutáři, přesné RČ).
       const searchResults = query
         ? await prisma.subject.findMany({
             where: {
               organizationId,
               archivedAt: null,
-              OR: [
-                { name: { contains: query, mode: "insensitive" } },
-                { ico: { contains: query } },
-              ],
+              ...subjectSearchWhere(query),
             },
             orderBy: { name: "asc" },
             take: 20,

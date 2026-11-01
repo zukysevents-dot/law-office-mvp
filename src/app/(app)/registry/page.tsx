@@ -24,6 +24,8 @@ import {
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { registryChangeTypeTone } from "@/lib/status-tones";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +54,12 @@ const emptyData: Data = {
 };
 
 export default async function RegistryPage() {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.registry");
+  if (accessDenied) {
+    return <AccessDenied title="Hlídání rejstříků" message={accessDenied} />;
+  }
+
   const result = await safeQuery<Data>(emptyData, async () => {
     const currentUser = await getCurrentUser();
     const prisma = getPrisma();
@@ -133,7 +141,7 @@ export default async function RegistryPage() {
                 ))}
               </SelectInput>
             </Field>
-            <Button type="submit">Přidat sledování</Button>
+            <Button type="submit" pendingLabel="Přidávám…">Přidat sledování</Button>
           </form>
         ) : null}
         {data.watched.length > 0 ? (

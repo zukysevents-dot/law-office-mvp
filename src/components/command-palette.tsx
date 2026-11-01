@@ -1,45 +1,42 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Search } from "lucide-react";
 
 import { globalSearch, type SearchHit } from "@/app/actions/search";
+import { Dialog } from "@/components/ui/dialog";
 
 /** Event any component can dispatch to open the palette without a keyboard. */
 export const OPEN_SEARCH_EVENT = "iuriverse:open-search";
 
-// F5: ⌘K / Ctrl-K global search. Results come from the globalSearch server
+// F5: ⌘K / Ctrl-K global search, rendered in the shared modal Dialog (closes
+// on ×, Escape and a click outside — the outside click never activates what is
+// underneath). Results come from the globalSearch server
 // action, which enforces per-user visibility — this component only renders them.
 export function CommandPalette() {
-  const dialogRef = useRef<HTMLDialogElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const titleId = useId();
+  const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [isSearching, startTransition] = useTransition();
   const router = useRouter();
 
   useEffect(() => {
-    function open() {
-      const dialog = dialogRef.current;
-      if (dialog && !dialog.open) {
-        dialog.showModal();
-        // showModal() focuses the dialog itself; move to the field so typing works.
-        inputRef.current?.focus();
-      }
+    function openPalette() {
+      setOpen(true);
     }
     function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        open();
+        setOpen(true);
       }
     }
     window.addEventListener("keydown", onKey);
-    window.addEventListener(OPEN_SEARCH_EVENT, open);
+    window.addEventListener(OPEN_SEARCH_EVENT, openPalette);
     return () => {
       window.removeEventListener("keydown", onKey);
-      window.removeEventListener(OPEN_SEARCH_EVENT, open);
+      window.removeEventListener(OPEN_SEARCH_EVENT, openPalette);
     };
   }, []);
 
@@ -58,22 +55,27 @@ export function CommandPalette() {
   // so the effect never has to clear state synchronously.
   const visibleHits = query.trim().length < 2 ? [] : hits;
 
+  // Every close path (×, Escape, click outside, picking a result) goes here.
+  function onOpenChange(next: boolean) {
+    setOpen(next);
+    if (!next) {
+      setQuery("");
+    }
+  }
+
   function go(href: string) {
-    dialogRef.current?.close();
-    setQuery("");
+    onOpenChange(false);
     router.push(href);
   }
 
   return (
-    <dialog
-      ref={dialogRef}
-      aria-labelledby={titleId}
-      className="m-auto w-full max-w-lg rounded-xl border border-[#dce4e8] p-0 shadow-xl backdrop:bg-[#0e1822]/50"
-      onClose={() => setQuery("")}
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Rychlé hledání"
+      size="md"
+      initialFocusRef={inputRef}
     >
-      <h2 id={titleId} className="sr-only">
-        Rychlé hledání
-      </h2>
       <div className="relative border-b border-[#dce4e8] p-3">
         <Search
           className="pointer-events-none absolute left-6 top-1/2 h-4 w-4 -translate-y-1/2 text-[#566673]"
@@ -126,6 +128,6 @@ export function CommandPalette() {
           ))
         )}
       </ul>
-    </dialog>
+    </Dialog>
   );
 }

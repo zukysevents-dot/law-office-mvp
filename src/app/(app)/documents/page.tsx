@@ -29,6 +29,8 @@ import {
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { documentKindTone } from "@/lib/status-tones";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -83,6 +85,12 @@ export default async function DocumentsPage({
 }: {
   searchParams: Promise<{ q?: string; kind?: string }>;
 }) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.documents");
+  if (accessDenied) {
+    return <AccessDenied title="Spisovna" message={accessDenied} />;
+  }
+
   const { q, kind } = await searchParams;
   const search = q?.trim() || "";
   const kindFilter =

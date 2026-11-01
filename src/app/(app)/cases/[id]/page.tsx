@@ -3,8 +3,9 @@ import { notFound } from "next/navigation";
 
 import { archiveCase, restoreCase } from "@/app/actions/cases";
 import {
-  addCaseAssignee,
+  addCaseAssignment,
   removeCaseAssignee,
+  removeCaseTeamAssignment,
 } from "@/app/actions/case-assignees";
 import { shareCase } from "@/app/actions/portal";
 import { addCaseSubjectRelation } from "@/app/actions/subject-relations";
@@ -24,7 +25,13 @@ import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ModuleKey } from "@/generated/prisma/enums";
+import {
+  personAssigneeDisplaySelect,
+  teamAssignmentDisplaySelect,
+} from "@/lib/assignments";
+import { getTeamOptions } from "@/lib/assignments-overview.server";
 import { getCurrentUser } from "@/lib/auth";
+import { getOrgUserOptions } from "@/lib/org-users";
 import { isModuleEnabled } from "@/lib/entitlements";
 import { formatDate, formatDateUtc, formatHours, formatMoney } from "@/lib/format";
 import {
@@ -40,8 +47,10 @@ import {
   canManageDocuments,
   canManagePortal,
   canManageReferences,
-  canViewAllLegalData,
+  canArchiveRecords,
   canEditRecord,
+  canOpenAssignments,
+  canViewRates,
   caseVisibilityWhere,
   courtHearingVisibilityWhere,
   deadlineVisibilityWhere,
@@ -53,7 +62,14 @@ import {
   workLogVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import {
+  formatAssigneeNames,
+  taskPeopleFromRecord,
+  taskPeopleSelect,
+} from "@/lib/tasks/task-people";
 import { subjectRoleTone } from "@/lib/status-tones";
+import { AccessDenied } from "@/components/access-denied";
+import { canAccessModule, moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -66,7 +82,7 @@ async function loadCase(id: string) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
 
-  const [legalCase, subjects, candidateRows] = await Promise.all([
+  const [legalCase, subjects, assigneeCandidates, teamOptions] = await Promise.all([
     prisma.case.findFirst({
       where: andWhere({ id }, caseVisibilityWhere(currentUser)),
       include: {
@@ -75,17 +91,15 @@ async function loadCase(id: string) {
             id: true,
             name: true,
             mainSubject: { select: { id: true, name: true } },
+            // Řešitelé projektu vidí i tento případ — ukazují se jako zdědění.
+            responsibleUser: { select: { name: true } },
+            assignees: personAssigneeDisplaySelect,
+            teamAssignments: teamAssignmentDisplaySelect,
           },
         },
         responsibleUser: { select: { name: true } },
-        assignees: {
-          orderBy: { assignedAt: "asc" },
-          select: {
-            id: true,
-            userId: true,
-            user: { select: { id: true, name: true } },
-          },
-        },
+        assignees: personAssigneeDisplaySelect,
+        teamAssignments: teamAssignmentDisplaySelect,
         subjectRelations: {
           orderBy: { createdAt: "desc" },
           include: {
@@ -115,7 +129,7 @@ async function loadCase(id: string) {
             title: true,
             status: true,
             deadline: true,
-            assignedTo: { select: { name: true } },
+            ...taskPeopleSelect,
           },
         },
         workLogs: {
@@ -144,22 +158,16 @@ async function loadCase(id: string) {
       orderBy: { name: "asc" },
       select: { id: true, name: true, ico: true },
     }),
-    // Kandidáti na řešitele = aktivní členové stejné kanceláře (org-scoped).
-    prisma.organizationMember.findMany({
-      where: {
-        organizationId: currentUser.organizationId ?? undefined,
-        status: "ACTIVE",
-      },
-      orderBy: { user: { name: "asc" } },
-      select: { user: { select: { id: true, name: true } } },
-    }),
+    // Kandidáti na řešitele = aktivní členové a aktivní týmy téže kanceláře.
+    getOrgUserOptions(currentUser),
+    getTeamOptions(prisma, currentUser.organizationId),
   ]);
 
   const deadlinesEnabled =
     legalCase != null &&
-    (await isModuleEnabled(currentUser.organizationId, ModuleKey.DEADLINES));
+    (await canAccessModule(currentUser, "module.deadlines"));
 
-  const [deadlines, hearings, memberRows] = deadlinesEnabled
+  const [deadlines, hearings, memberRows, archivedDeadlineCount] = deadlinesEnabled
     ? await Promise.all([
         prisma.deadline.findMany({
           where: andWhere(
@@ -174,7 +182,10 @@ async function loadCase(id: string) {
             status: true,
             title: true,
             dueDate: true,
+            completedAt: true,
+            completionNote: true,
             responsibleUser: { select: { name: true } },
+            completedBy: { select: { name: true } },
           },
         }),
         prisma.courtHearing.findMany({
@@ -200,12 +211,18 @@ async function loadCase(id: string) {
           orderBy: { user: { name: "asc" } },
           select: { user: { select: { id: true, name: true } } },
         }),
+        prisma.deadline.count({
+          where: andWhere(
+            { caseId: id, archivedAt: { not: null } },
+            deadlineVisibilityWhere(currentUser),
+          ),
+        }),
       ])
-    : [[], [], []];
+    : [[], [], [], 0];
 
   const documentsEnabled =
     legalCase != null &&
-    (await isModuleEnabled(currentUser.organizationId, ModuleKey.DOCUMENTS));
+    (await canAccessModule(currentUser, "module.documents"));
 
   const [documents, templates] = documentsEnabled
     ? await Promise.all([
@@ -254,12 +271,15 @@ async function loadCase(id: string) {
   return {
     legalCase,
     subjects,
-    assigneeCandidates: candidateRows.map((row) => row.user),
-    canArchive: canViewAllLegalData(currentUser),
+    assigneeCandidates,
+    teamOptions,
+    canOpenAssignments: canOpenAssignments(currentUser),
+    canArchive: canArchiveRecords(currentUser),
     canEdit: legalCase ? canEditRecord(currentUser, "Case", legalCase) : false,
     canManageReferences: canManageReferences(currentUser),
     deadlinesEnabled,
     deadlines,
+    archivedDeadlineCount,
     hearings,
     members: memberRows.map((row) => row.user),
     canManageDeadlines: canManageDeadlines(currentUser),
@@ -277,11 +297,14 @@ const emptyCaseDetail: CaseDetailData = {
   legalCase: null,
   subjects: [],
   assigneeCandidates: [],
+  teamOptions: [],
+  canOpenAssignments: false,
   canArchive: false,
   canEdit: false,
   canManageReferences: false,
   deadlinesEnabled: false,
   deadlines: [],
+  archivedDeadlineCount: 0,
   hearings: [],
   members: [],
   canManageDeadlines: false,
@@ -296,6 +319,13 @@ export default async function CaseDetailPage({
   params,
   searchParams,
 }: CaseDetailProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.cases");
+  if (accessDenied) {
+    return <AccessDenied title="Případy" message={accessDenied} />;
+  }
+  const showRates = canViewRates(accessUser);
+
   const { id } = await params;
   const { sharepoint } = await searchParams;
   const result = await safeQuery<CaseDetailData>(
@@ -311,11 +341,14 @@ export default async function CaseDetailPage({
     legalCase,
     subjects,
     assigneeCandidates,
+    teamOptions,
+    canOpenAssignments: showManageLink,
     canArchive,
     canEdit,
     canManageReferences,
     deadlinesEnabled,
     deadlines,
+    archivedDeadlineCount,
     hearings,
     members,
     canManageDeadlines: canManageDeadlinesFlag,
@@ -420,13 +453,25 @@ export default async function CaseDetailPage({
           </Section>
           <AssigneeSection
             title="Řešitelé případu"
-            assignees={legalCase.assignees}
-            candidates={assigneeCandidates}
-            parentField="caseId"
+            kind="case"
             parentId={legalCase.id}
-            addAction={addCaseAssignee}
-            removeAction={removeCaseAssignee}
+            assignees={legalCase.assignees}
+            teams={legalCase.teamAssignments}
+            inherited={{
+              responsibleName: legalCase.project.responsibleUser?.name ?? null,
+              people: legalCase.project.assignees.map((row) => row.user.name),
+              teams: legalCase.project.teamAssignments.map((row) => ({
+                name: row.legalTeam.name,
+                members: row.legalTeam.members.map((member) => member.user.name),
+              })),
+            }}
+            candidates={assigneeCandidates}
+            teamCandidates={teamOptions}
+            addAction={addCaseAssignment}
+            removeUserAction={removeCaseAssignee}
+            removeTeamAction={removeCaseTeamAssignment}
             canEdit={canEdit}
+            manageHref={showManageLink ? "/settings/assignments" : null}
           />
           <Section title="Role subjektů">
             {legalCase.subjectRelations.length > 0 ? (
@@ -500,7 +545,7 @@ export default async function CaseDetailPage({
                   <TextArea name="note" />
                 </Field>
                 <div>
-                  <Button type="submit">Přidat vazbu</Button>
+                  <Button type="submit" pendingLabel="Přidávám…">Přidat vazbu</Button>
                 </div>
               </form>
             </Section>
@@ -509,6 +554,7 @@ export default async function CaseDetailPage({
             <CaseDeadlinesSection
               caseId={legalCase.id}
               deadlines={deadlines}
+              archivedDeadlineCount={archivedDeadlineCount}
               hearings={hearings}
               members={members}
               canManage={canManageDeadlinesFlag}
@@ -521,7 +567,7 @@ export default async function CaseDetailPage({
                   <thead>
                     <tr>
                       <th>Úkol</th>
-                      <th>Řešitel</th>
+                      <th>Řešitelé</th>
                       <th>Stav</th>
                       <th>Deadline</th>
                     </tr>
@@ -537,7 +583,11 @@ export default async function CaseDetailPage({
                             {task.title}
                           </Link>
                         </td>
-                        <td>{task.assignedTo?.name ?? "—"}</td>
+                        <td>
+                          {formatAssigneeNames(
+                            taskPeopleFromRecord(task).assignees,
+                          ) || "—"}
+                        </td>
                         <td>{taskStatusLabels[task.status]}</td>
                         <td>{formatDateUtc(task.deadline)}</td>
                       </tr>
@@ -631,7 +681,7 @@ export default async function CaseDetailPage({
                     <tr>
                       <th>Název</th>
                       <th>Právní odvětví</th>
-                      <th>Hodnota</th>
+                      {showRates ? <th>Hodnota</th> : null}
                       <th>Období</th>
                       <th>Subjekt</th>
                       <th>Popis</th>
@@ -644,7 +694,9 @@ export default async function CaseDetailPage({
                           {reference.title}
                         </td>
                         <td>{reference.legalArea ?? "—"}</td>
-                        <td>{formatMoney(reference.valueCzk)}</td>
+                        {showRates ? (
+                          <td>{formatMoney(reference.valueCzk)}</td>
+                        ) : null}
                         <td>
                           {formatDateUtc(reference.startDate)} –{" "}
                           {reference.endDate

@@ -4,6 +4,10 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { writeAuditLog } from "@/lib/audit";
+import {
+  caseAssignmentInclude,
+  projectAssignmentInclude,
+} from "@/lib/assignments";
 import { getCurrentUser } from "@/lib/auth";
 import { requiredString } from "@/lib/form";
 import {
@@ -69,7 +73,7 @@ export async function provisionSharepointFolder(formData: FormData) {
         name: true,
         sharepointUrl: true,
         responsibleUserId: true,
-        assignees: { select: { userId: true } },
+        ...projectAssignmentInclude,
       },
     });
     assertCanEditRecord(currentUser, "Project", record);
@@ -87,7 +91,7 @@ export async function provisionSharepointFolder(formData: FormData) {
         fileNumber: true,
         sharepointUrl: true,
         responsibleUserId: true,
-        assignees: { select: { userId: true } },
+        ...caseAssignmentInclude,
         project: { select: { id: true, name: true } },
       },
     });

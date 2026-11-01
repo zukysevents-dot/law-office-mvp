@@ -6,6 +6,7 @@ import { csvResponse } from "@/lib/export/csv";
 import { buildPayrollCsv, type PayrollRow } from "@/lib/hr/payroll-export";
 import { assertCanManageHr } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { canAccessModule } from "@/lib/module-access.server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,6 +16,9 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 export async function GET(request: Request) {
   const currentUser = await getCurrentUser();
   await assertModuleEnabled(currentUser, ModuleKey.HR_ATTENDANCE);
+  if (!(await canAccessModule(currentUser, "module.hr"))) {
+    return new Response("Přístup odepřen.", { status: 403 });
+  }
   assertCanManageHr(currentUser);
   const organizationId = currentUser.organizationId;
   if (!organizationId) {

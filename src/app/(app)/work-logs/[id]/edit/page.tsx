@@ -1,3 +1,4 @@
+import { Copy } from "lucide-react";
 import { notFound } from "next/navigation";
 
 import {
@@ -7,7 +8,8 @@ import {
 } from "@/app/actions/work-logs";
 import { ArchiveActionForm } from "@/components/archive-action-form";
 import { ArchiveNotice } from "@/components/archive-notice";
-import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
+import { CascadingMatterSelect } from "@/components/cascading-matter-select";
+import { Field, TextArea, TextInput } from "@/components/form-field";
 import { WorkLogCategoryFields } from "@/components/work-log-category-fields";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
@@ -26,7 +28,7 @@ import { safeQuery } from "@/lib/db-safe";
 import { BillingStatus } from "@/generated/prisma/enums";
 import {
   andWhere,
-  canViewAllLegalData,
+  canArchiveRecords,
   canEditRecord,
   canSetBillableStatus,
   canViewRates,
@@ -36,6 +38,8 @@ import {
   taskVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -62,7 +66,7 @@ async function loadWorkLogEdit(id: string) {
         projectVisibilityWhere(currentUser),
       ),
       orderBy: { name: "asc" },
-      select: { id: true, name: true },
+      select: { id: true, name: true, mainSubjectId: true },
     }),
     prisma.case.findMany({
       where: andWhere(
@@ -70,7 +74,12 @@ async function loadWorkLogEdit(id: string) {
         caseVisibilityWhere(currentUser),
       ),
       orderBy: { name: "asc" },
-      select: { id: true, name: true, project: { select: { name: true } } },
+      select: {
+        id: true,
+        name: true,
+        projectId: true,
+        project: { select: { name: true } },
+      },
     }),
     prisma.task.findMany({
       where: andWhere(
@@ -78,7 +87,18 @@ async function loadWorkLogEdit(id: string) {
         taskVisibilityWhere(currentUser),
       ),
       orderBy: { createdAt: "desc" },
-      select: { id: true, title: true },
+      select: {
+        id: true,
+        title: true,
+        projectId: true,
+        caseId: true,
+        // „Moje úkoly“ ve výběru: hlavní řešitel nebo řádek řešitele/dohledu.
+        assignedToId: true,
+        assignees: {
+          where: { userId: currentUser.id },
+          select: { userId: true },
+        },
+      },
     }),
     prisma.organization.findUnique({
       where: { id: currentUser.organizationId },
@@ -94,8 +114,14 @@ async function loadWorkLogEdit(id: string) {
     subjects,
     projects,
     cases,
-    tasks,
-    canArchive: canViewAllLegalData(currentUser),
+    tasks: tasks.map((task) => ({
+      id: task.id,
+      title: task.title,
+      projectId: task.projectId,
+      caseId: task.caseId,
+      mine: task.assignedToId === currentUser.id || task.assignees.length > 0,
+    })),
+    canArchive: canArchiveRecords(currentUser),
     canViewRates: canViewRates(currentUser),
     canSetBillable: canSetBillableStatus(currentUser),
     timeIncrementMinutes: organization?.billingTimeIncrementMinutes ?? 15,
@@ -117,6 +143,12 @@ const emptyWorkLogEdit: WorkLogEditData = {
 };
 
 export default async function WorkLogEditPage({ params }: WorkLogEditProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.workLogs");
+  if (accessDenied) {
+    return <AccessDenied title="Výkazy práce" message={accessDenied} />;
+  }
+
   const { id } = await params;
   const result = await safeQuery<WorkLogEditData>(
     emptyWorkLogEdit,
@@ -161,6 +193,15 @@ export default async function WorkLogEditPage({ params }: WorkLogEditProps) {
         action={
           <>
             {workLog ? (
+              <ButtonLink
+                href={`/work-logs?duplicate=${encodeURIComponent(workLog.id)}`}
+                variant="secondary"
+              >
+                <Copy className="h-4 w-4" aria-hidden="true" />
+                Duplikovat
+              </ButtonLink>
+            ) : null}
+            {workLog ? (
               canArchive ? (
                 <ArchiveActionForm
                   action={workLog.archivedAt ? restoreWorkLog : archiveWorkLog}
@@ -184,51 +225,32 @@ export default async function WorkLogEditPage({ params }: WorkLogEditProps) {
         <Section>
           <form action={updateWorkLog} className="grid gap-4">
             <input type="hidden" name="id" value={workLog.id} />
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Subjekt">
-                <SelectInput name="subjectId" defaultValue={workLog.subjectId ?? ""}>
-                  <option value="">Bez subjektu</option>
-                  {subjects.map((subject) => (
-                    <option key={subject.id} value={subject.id}>
-                      {subject.name}
-                      {subject.ico ? `, IČO ${subject.ico}` : ""}
-                    </option>
-                  ))}
-                </SelectInput>
-              </Field>
-              <Field label="Projekt">
-                <SelectInput name="projectId" defaultValue={workLog.projectId ?? ""}>
-                  <option value="">Bez projektu</option>
-                  {projects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.name}
-                    </option>
-                  ))}
-                </SelectInput>
-              </Field>
-            </div>
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Případ">
-                <SelectInput name="caseId" defaultValue={workLog.caseId ?? ""}>
-                  <option value="">Bez případu</option>
-                  {cases.map((legalCase) => (
-                    <option key={legalCase.id} value={legalCase.id}>
-                      {legalCase.name} / {legalCase.project.name}
-                    </option>
-                  ))}
-                </SelectInput>
-              </Field>
-              <Field label="Úkol">
-                <SelectInput name="taskId" defaultValue={workLog.taskId ?? ""}>
-                  <option value="">Bez úkolu</option>
-                  {tasks.map((task) => (
-                    <option key={task.id} value={task.id}>
-                      {task.title}
-                    </option>
-                  ))}
-                </SelectInput>
-              </Field>
-            </div>
+            {/* Stejná kaskáda jako u nového výkazu: subjekt → jeho projekty →
+                jejich případy → úkoly; změna nadřazeného vynuluje nepasující. */}
+            <CascadingMatterSelect
+              subjects={subjects.map((subject) => ({
+                id: subject.id,
+                name: subject.ico
+                  ? `${subject.name}, IČO ${subject.ico}`
+                  : subject.name,
+              }))}
+              projects={projects}
+              cases={cases.map((legalCase) => ({
+                id: legalCase.id,
+                name: legalCase.name,
+                projectId: legalCase.projectId,
+                projectName: legalCase.project.name,
+              }))}
+              tasks={tasks}
+              includeTask
+              subjectLabel="Subjekt"
+              subjectPlaceholder="Bez subjektu"
+              defaultSubjectId={workLog.subjectId ?? ""}
+              defaultProjectId={workLog.projectId ?? ""}
+              defaultCaseId={workLog.caseId ?? ""}
+              defaultTaskId={workLog.taskId ?? ""}
+              className="md:grid-cols-2"
+            />
             <div className="grid gap-4 md:grid-cols-3">
               <Field label="Datum práce">
                 <TextInput
@@ -291,7 +313,7 @@ export default async function WorkLogEditPage({ params }: WorkLogEditProps) {
               <TextArea name="description" defaultValue={workLog.description ?? ""} />
             </Field>
             <div className="flex flex-wrap gap-2">
-              <Button type="submit">Uložit výkaz</Button>
+              <Button type="submit" pendingLabel="Ukládám…">Uložit výkaz</Button>
               <ButtonLink href="/work-logs" variant="ghost">
                 Zrušit
               </ButtonLink>

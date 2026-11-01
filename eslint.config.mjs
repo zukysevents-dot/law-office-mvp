@@ -11,6 +11,8 @@ const eslintConfig = defineConfig([
     ".next/**",
     // Build output of the E2E suite (NEXT_DIST_DIR in playwright.config.ts).
     ".next-e2e/**",
+    // Dev server used for manual/UX testing next to a running build (NEXT_DIST_DIR=.next-ux).
+    ".next-ux/**",
     "out/**",
     "build/**",
     "next-env.d.ts",

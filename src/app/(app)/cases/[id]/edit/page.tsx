@@ -7,12 +7,20 @@ import { Section } from "@/components/section";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
+import { caseAssignmentInclude } from "@/lib/assignments";
 import { getCurrentUser } from "@/lib/auth";
 import { caseStatusLabels, options } from "@/lib/labels";
 import { safeQuery } from "@/lib/db-safe";
 import { numberInputValue } from "@/lib/form-values";
-import { andWhere, canEditRecord, projectVisibilityWhere } from "@/lib/permissions";
+import {
+  andWhere,
+  canEditRecord,
+  canViewRates,
+  projectVisibilityWhere,
+} from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +34,7 @@ async function loadCaseEdit(id: string) {
   const [legalCase, projects, users] = await Promise.all([
     prisma.case.findUnique({
       where: { id },
-      include: { assignees: { select: { userId: true } } },
+      include: caseAssignmentInclude,
     }),
     prisma.project.findMany({
       where: andWhere(
@@ -66,6 +74,13 @@ const emptyCaseEdit: CaseEditData = {
 };
 
 export default async function CaseEditPage({ params }: CaseEditProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.cases");
+  if (accessDenied) {
+    return <AccessDenied title="Případy" message={accessDenied} />;
+  }
+  const showRates = canViewRates(accessUser);
+
   const { id } = await params;
   const result = await safeQuery<CaseEditData>(
     emptyCaseEdit,
@@ -145,15 +160,17 @@ export default async function CaseEditPage({ params }: CaseEditProps) {
                 </SelectInput>
               </Field>
             </div>
-            <Field label="Hodinová sazba">
-              <TextInput
-                name="hourlyRate"
-                type="number"
-                min="0"
-                step="0.01"
-                defaultValue={numberInputValue(legalCase.hourlyRate)}
-              />
-            </Field>
+            {showRates ? (
+              <Field label="Hodinová sazba">
+                <TextInput
+                  name="hourlyRate"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  defaultValue={numberInputValue(legalCase.hourlyRate)}
+                />
+              </Field>
+            ) : null}
             <Field label="SharePoint URL">
               <TextInput
                 name="sharepointUrl"
@@ -165,7 +182,7 @@ export default async function CaseEditPage({ params }: CaseEditProps) {
               <TextArea name="note" defaultValue={legalCase.note ?? ""} />
             </Field>
             <div className="flex flex-wrap gap-2">
-              <Button type="submit">Uložit případ</Button>
+              <Button type="submit" pendingLabel="Ukládám…">Uložit případ</Button>
               <ButtonLink href={`/cases/${legalCase.id}`} variant="ghost">
                 Zrušit
               </ButtonLink>

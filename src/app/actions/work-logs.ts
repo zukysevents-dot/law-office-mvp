@@ -14,15 +14,20 @@ import {
   requiredDate,
   requiredNumber,
   requiredString,
+  safeInternalRedirectPath,
 } from "@/lib/form";
+import { stripDialogParams } from "@/lib/search-params";
 import {
+  andWhere,
   assertCanEditRecord,
   canSetBillableStatus,
   canViewRates,
+  workLogVisibilityWhere,
 } from "@/lib/permissions";
 import { resolveVisibleMatterSelection } from "@/lib/matter-integrity.server";
 import { getPrisma } from "@/lib/prisma";
 import { roundHoursToIncrement } from "@/lib/work-logs/time-rounding";
+import { assertCanAccessModule } from "@/lib/module-access.server";
 
 // Internal (non-billable) hours carry an internal category instead of a legal
 // area; the form only renders one of the two, so the unused one isn't submitted
@@ -61,6 +66,7 @@ function resolveHourlyRate({ caseRate, projectRate, subjectRate }: RateInput) {
 export async function createWorkLog(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
+  await assertCanAccessModule(currentUser, "module.workLogs");
   const rawHours = requiredNumber(formData, "hours");
   const organization = await prisma.organization.findUniqueOrThrow({
     where: { id: currentUser.organizationId },
@@ -88,6 +94,20 @@ export async function createWorkLog(formData: FormData) {
     taskId: optionalString(formData, "taskId"),
   });
   const { subjectId, projectId, caseId, taskId } = matter;
+
+  // "Duplikovat": the copy is an ordinary new work log built from the form.
+  // The source ID only goes into the audit trail, and only when the user can
+  // actually see that work log (never a channel to probe foreign IDs).
+  const sourceWorkLogId = optionalString(formData, "sourceWorkLogId");
+  const duplicatedFrom = sourceWorkLogId
+    ? await prisma.workLog.findFirst({
+        where: andWhere(
+          { id: sourceWorkLogId },
+          workLogVisibilityWhere(currentUser),
+        ),
+        select: { id: true },
+      })
+    : null;
 
   const derivedHourlyRate =
     manualHourlyRate ??
@@ -139,16 +159,31 @@ export async function createWorkLog(formData: FormData) {
       newValue: {
         subjectId: workLog.subjectId,
         projectId: workLog.projectId,
+        caseId: workLog.caseId,
+        taskId: workLog.taskId,
         hours: workLog.hours.toString(),
         hourlyRate: workLog.hourlyRate?.toString() ?? null,
         amountCzk: workLog.amountCzk?.toString() ?? null,
         workDate: workLog.workDate.toISOString(),
+        ...(duplicatedFrom ? { duplicatedFromId: duplicatedFrom.id } : {}),
       },
     },
   });
 
   revalidatePath("/work-logs");
-  redirect("/work-logs");
+  if (workLog.taskId) {
+    // „Vykázat práci“ u úkolu: detail úkolu ukáže nový výkaz hned.
+    revalidatePath(`/tasks/${workLog.taskId}`);
+    revalidatePath("/tasks");
+    revalidatePath("/tasks/my");
+  }
+  // Návrat tam, odkud byl dialog otevřen (jen interní cesta → žádný open
+  // redirect), bez parametrů, které by dialog otevřely znovu.
+  redirect(
+    stripDialogParams(
+      safeInternalRedirectPath(optionalString(formData, "returnTo"), "/work-logs"),
+    ),
+  );
 }
 
 function sameNumber(
@@ -169,6 +204,7 @@ function sameNumber(
 export async function updateWorkLog(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
+  await assertCanAccessModule(currentUser, "module.workLogs");
   const workLogId = requiredString(formData, "id");
   const rawHours = requiredNumber(formData, "hours");
   const organization = await prisma.organization.findUniqueOrThrow({

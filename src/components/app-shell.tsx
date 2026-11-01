@@ -4,10 +4,17 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { CommandPalette } from "@/components/command-palette";
 import { FloatingTimer } from "@/components/floating-timer";
 import { NavigationCursor } from "@/components/navigation-cursor";
+import { NavigationProgress } from "@/components/navigation-progress";
 import { getCurrentUser } from "@/lib/auth";
-import { getEnabledModules } from "@/lib/entitlements";
 import { userRoleLabels } from "@/lib/labels";
-import { canManageInvoices, canViewAllLegalData } from "@/lib/permissions";
+import { getAccessibleModules } from "@/lib/module-access.server";
+import {
+  canManageHr,
+  canManageInvoices,
+  canManageOrganization,
+  canManagePermissions,
+  canOpenAssignments,
+} from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 export async function AppShell({ children }: { children: React.ReactNode }) {
@@ -18,14 +25,16 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
     where: { id: currentUser.organizationId },
     select: { billingTimeIncrementMinutes: true },
   });
-  const showAuditLog = canViewAllLegalData(currentUser);
-  // Hide nav items for modules the org hasn't bought (UX only). The authoritative
-  // guard is assertModuleEnabled, wired into each module's pages/actions as that
-  // module ships (BILLING in F1, DEADLINES in F4) — menu hiding is not security.
-  // Spread the Set to a string[]; a Set won't cross the server→client boundary.
-  const enabledModules = [
-    ...(await getEnabledModules(currentUser.organizationId)),
-  ];
+  // Hide nav items the user can't open: module permission from the matrix ∧
+  // the office's entitlement (UX only — every page/action guards itself).
+  const allowedModules = await getAccessibleModules(currentUser);
+  const functions = {
+    manageInvoices: canManageInvoices(currentUser),
+    manageOrganization: canManageOrganization(currentUser),
+    managePermissions: canManagePermissions(currentUser),
+    manageHr: canManageHr(currentUser),
+    manageAssignments: canOpenAssignments(currentUser),
+  };
 
   return (
     <div className="app-shell min-h-screen w-full max-w-full text-foreground lg:flex">
@@ -37,13 +46,13 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
       </a>
       <Suspense fallback={null}>
         <NavigationCursor />
+        <NavigationProgress />
       </Suspense>
       <AppSidebar
-        showAuditLog={showAuditLog}
-        canManageInvoices={canManageInvoices(currentUser)}
+        allowedModules={allowedModules}
+        functions={functions}
         userName={currentUser.name}
         userRole={userRoleLabels[currentUser.role]}
-        enabledModules={enabledModules}
       />
       <main id="app-main" tabIndex={-1} className="min-w-0 flex-1">
         {/* pb-24: the FloatingTimer is fixed to the bottom-right corner and was
@@ -52,9 +61,11 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
           {children}
         </div>
       </main>
-      <FloatingTimer
-        incrementMinutes={organization?.billingTimeIncrementMinutes ?? 15}
-      />
+      {allowedModules.includes("module.workLogs") ? (
+        <FloatingTimer
+          incrementMinutes={organization?.billingTimeIncrementMinutes ?? 15}
+        />
+      ) : null}
       <CommandPalette />
     </div>
   );

@@ -8,6 +8,7 @@ import {
   OrganizationStatus,
 } from "@/generated/prisma/enums";
 import { hasAuthHardeningSchema } from "@/lib/auth-hardening-schema";
+import { loadEffectivePermissions } from "@/lib/permission-store.server";
 import { getPrisma } from "@/lib/prisma";
 import { SESSION_COOKIE, verifySessionPayload } from "@/lib/session";
 
@@ -94,17 +95,22 @@ export const getCurrentUser = cache(async function getCurrentUser() {
   });
 
   if (membership) {
-    // Per-user granty (capability) v rámci aktivní org — přibalíme je na usera,
-    // ať je synchronní can*/assert* helpery v permissions.ts vidí.
-    const grants = await prisma.userCapabilityGrant.findMany({
-      where: { userId: user.id, organizationId: membership.organizationId },
-      select: { capability: true },
+    // Efektivní matice oprávnění (výchozí hodnoty role + výjimky role a
+    // uživatele v kanceláři + starší granty) — vyhodnotí se jednou za request
+    // (cache()) a přibalí na usera, ať ji všechny synchronní can*/assert*/
+    // *VisibilityWhere helpery v permissions.ts čtou bez dalšího dotazu.
+    const { permissions, capabilities } = await loadEffectivePermissions({
+      organizationId: membership.organizationId,
+      userId: user.id,
+      role: membership.role,
+      db: prisma,
     });
     return {
       ...user,
       role: membership.role,
       organizationId: membership.organizationId,
-      capabilities: grants.map((grant) => grant.capability),
+      capabilities,
+      permissions,
     };
   }
 

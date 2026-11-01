@@ -17,6 +17,8 @@ import {
   assertCanManageHr,
   assertCanManagePortal,
   canEditRecord,
+  canWorkOnTask,
+  assertCanWorkOnTask,
   canManageAml,
   canManageDeadlines,
   canManageDocumentTemplates,
@@ -25,7 +27,17 @@ import {
   canManagePortal,
   canManageReferences,
   canManageSubjects,
-  canViewAllLegalData,
+  canManageTeams,
+  canBulkAssign,
+  canOpenAssignments,
+  canApproveWorkLogs,
+  canArchiveRecords,
+  canManageOrganization,
+  canManagePermissions,
+  canManageUsers,
+  canViewAuditLog,
+  canViewTeamReports,
+  assertCanAdministerOrg,
   canViewRecord,
   caseVisibilityWhere,
   courtHearingVisibilityWhere,
@@ -37,12 +49,14 @@ import {
   hrAttendanceVisibilityWhere,
   hrEmployeeVisibilityWhere,
   invoiceVisibilityWhere,
+  privilegedTargetDenial,
   projectVisibilityWhere,
   referenceVisibilityWhere,
   subjectVisibilityWhere,
   taskVisibilityWhere,
   workLogVisibilityWhere,
 } from "./permissions";
+import { resolvePermissions } from "./permission-resolver";
 
 // Users resolved via getCurrentUser() always carry an organizationId; the
 // visibility helpers fail closed (deny) without one. Fixtures must include it so
@@ -56,14 +70,51 @@ const lawyer = { id: "u-lawyer", role: UserRole.LAWYER, organizationId: org };
 const trainee = { id: "u-trainee", role: UserRole.TRAINEE, organizationId: org };
 const intern = { id: "u-intern", role: UserRole.INTERN, organizationId: org };
 
-// --- canViewAllLegalData: only ADMIN/PARTNER see everything ---
-test("canViewAllLegalData: ADMIN and PARTNER true, others false", () => {
-  assert.equal(canViewAllLegalData(admin), true);
-  assert.equal(canViewAllLegalData(partner), true);
-  assert.equal(canViewAllLegalData(lawyer), false);
-  assert.equal(canViewAllLegalData(trainee), false);
-  assert.equal(canViewAllLegalData(intern), false);
-  assert.equal(canViewAllLegalData(null), false);
+// A user whose role was tightened (or widened) in the permission matrix — the
+// same shape getCurrentUser() returns (permissions resolved from overrides).
+function withOverrides(
+  user: { id: string; role: UserRole; organizationId: string },
+  roleOverrides: Array<{ permission: string; value: string }>,
+  userOverrides: Array<{ permission: string; value: string }> = [],
+) {
+  return {
+    ...user,
+    permissions: resolvePermissions({ role: user.role, roleOverrides, userOverrides }),
+  };
+}
+
+// Tvar týmové větve (src/lib/assignments.ts teamMemberWhere).
+function teamMember(userId: string) {
+  return {
+    legalTeam: { is: { archivedAt: null, members: { some: { userId } } } },
+  };
+}
+
+const ASSIGNED_MATTERS = [
+  { permission: "scope.subjects", value: "ASSIGNED" },
+  { permission: "scope.projects", value: "ASSIGNED" },
+  { permission: "scope.cases", value: "ASSIGNED" },
+  { permission: "scope.tasks", value: "ASSIGNED" },
+];
+
+// --- Office-wide functions (formerly canViewAllLegalData): ADMIN/PARTNER by default ---
+test("leadership functions: ADMIN and PARTNER true, others false by default", () => {
+  for (const fn of [
+    canArchiveRecords,
+    canApproveWorkLogs,
+    canManageOrganization,
+    canManagePermissions,
+    canManageUsers,
+    canViewAuditLog,
+    canViewTeamReports,
+  ]) {
+    assert.equal(fn(admin), true, fn.name);
+    assert.equal(fn(partner), true, fn.name);
+    assert.equal(fn(lawyer), false, fn.name);
+    assert.equal(fn(trainee), false, fn.name);
+    assert.equal(fn(intern), false, fn.name);
+    assert.equal(fn(null), false, fn.name);
+  }
 });
 
 // --- Subject/Reference management: office-wide records, leadership only ---
@@ -122,14 +173,18 @@ test("Subject/Reference edit: crafted foreign-org id never expands access", () =
 test("Subject/Reference visibility remains broader than management for LAWYER", () => {
   assert.deepEqual(referenceVisibilityWhere(admin), { organizationId: org });
   assert.deepEqual(subjectVisibilityWhere(admin), { organizationId: org });
+  // New default: every role sees all subjects of the office.
+  assert.deepEqual(subjectVisibilityWhere(lawyer), { organizationId: org });
 
   const referenceWhere = referenceVisibilityWhere(lawyer) as {
     AND?: Array<{ organizationId?: string; OR?: unknown[] }>;
   };
   assert.deepEqual(referenceWhere.AND?.[0], { organizationId: org });
-  assert.equal(referenceWhere.AND?.[1]?.OR?.length, 10);
+  assert.equal(referenceWhere.AND?.[1]?.OR?.length, 13);
 
-  const subjectWhere = subjectVisibilityWhere(lawyer) as {
+  const subjectWhere = subjectVisibilityWhere(
+    withOverrides(lawyer, ASSIGNED_MATTERS),
+  ) as {
     AND?: Array<{ organizationId?: string; OR?: unknown[] }>;
   };
   assert.deepEqual(subjectWhere.AND?.[0], { organizationId: org });
@@ -200,46 +255,69 @@ test("taskVisibilityWhere: missing user → fail-closed deny clause", () => {
   assert.deepEqual(taskVisibilityWhere(null), { id: "__role_denied__" });
 });
 
-test("taskVisibilityWhere: TRAINEE/INTERN scoped to direct assignment only", () => {
-  // andWhere(orgClause, directWhere) → org AND the direct-assignment OR.
-  const expected = {
-    AND: [
-      { organizationId: org },
-      {
-        OR: [
-          { createdById: "u-trainee" },
-          { assignedToId: "u-trainee" },
-          { responsibleUserId: "u-trainee" },
-        ],
-      },
-    ],
-  };
-  assert.deepEqual(taskVisibilityWhere(trainee), expected);
-  assert.deepEqual(taskVisibilityWhere(intern), {
-    AND: [
-      { organizationId: org },
-      {
-        OR: [
-          { createdById: "u-intern" },
-          { assignedToId: "u-intern" },
-          { responsibleUserId: "u-intern" },
-        ],
-      },
-    ],
-  });
+test("default: every role sees all subjects, projects, cases and tasks of its office", () => {
+  for (const user of [admin, partner, lawyer, trainee, intern]) {
+    assert.deepEqual(taskVisibilityWhere(user), { organizationId: org }, user.role);
+    assert.deepEqual(projectVisibilityWhere(user), { organizationId: org }, user.role);
+    assert.deepEqual(caseVisibilityWhere(user), { organizationId: org }, user.role);
+    assert.deepEqual(subjectVisibilityWhere(user), { organizationId: org }, user.role);
+  }
 });
 
-test("taskVisibilityWhere: LAWYER gets a broader OR (direct + responsibility + assignee)", () => {
-  // org-scoped: { AND: [{ organizationId }, { OR: [...7 clauses] }] } — 4
-  // responsibility paths + 3 assignee mirrors (project/case/case→project).
-  const where = taskVisibilityWhere(lawyer) as {
-    AND?: Array<{ organizationId?: string; OR?: unknown[] }>;
-  };
-  assert.ok(Array.isArray(where.AND));
-  assert.deepEqual(where.AND?.[0], { organizationId: org });
-  const orClause = where.AND?.[1];
-  assert.ok(Array.isArray(orClause?.OR));
-  assert.equal(orClause?.OR?.length, 7);
+test("every scoped *VisibilityWhere denies without an org, even with scope ALL", () => {
+  const noOrg = { id: "u-partner", role: UserRole.PARTNER };
+  for (const fn of [
+    taskVisibilityWhere,
+    projectVisibilityWhere,
+    caseVisibilityWhere,
+    subjectVisibilityWhere,
+    workLogVisibilityWhere,
+    invoiceVisibilityWhere,
+    dataMessageVisibilityWhere,
+    deadlineVisibilityWhere,
+    courtHearingVisibilityWhere,
+    documentVisibilityWhere,
+    referenceVisibilityWhere,
+  ]) {
+    assert.deepEqual(fn(noOrg), { id: "__role_denied__" }, fn.name);
+    assert.deepEqual(fn(UserRole.ADMIN), { id: "__role_denied__" }, fn.name);
+  }
+});
+
+test("taskVisibilityWhere: ASSIGNED scope = direct + responsibility + assignee OR", () => {
+  // org-scoped: { AND: [{ organizationId }, { OR: [...10 clauses] }] } — direct,
+  // 3 responsibility paths + 3 assignee mirrors + 3 team mirrors
+  // (project/case/case→project).
+  for (const user of [lawyer, trainee, intern]) {
+    const where = taskVisibilityWhere(
+      withOverrides(user, [{ permission: "scope.tasks", value: "ASSIGNED" }]),
+    ) as {
+      AND?: Array<{ organizationId?: string; OR?: unknown[] }>;
+    };
+    assert.ok(Array.isArray(where.AND));
+    assert.deepEqual(where.AND?.[0], { organizationId: org });
+    const orClause = where.AND?.[1];
+    assert.ok(Array.isArray(orClause?.OR));
+    assert.equal(orClause?.OR?.length, 10);
+    assert.deepEqual(orClause?.OR?.[0], {
+      OR: [
+        { createdById: user.id },
+        { assignedToId: user.id },
+        { responsibleUserId: user.id },
+        // Lidé na úkolu: další řešitelé i dohled úkol vidí.
+        { assignees: { some: { userId: user.id } } },
+      ],
+    });
+  }
+});
+
+test("a per-user override beats the role override", () => {
+  const tightened = withOverrides(
+    intern,
+    [{ permission: "scope.tasks", value: "ASSIGNED" }],
+    [{ permission: "scope.tasks", value: "ALL" }],
+  );
+  assert.deepEqual(taskVisibilityWhere(tightened), { organizationId: org });
 });
 
 test("workLogVisibilityWhere: TRAINEE/INTERN see only their own logs", () => {
@@ -268,8 +346,8 @@ test("dataMessageVisibilityWhere: ADMIN/PARTNER see all messages in their org", 
 });
 
 test("dataMessageVisibilityWhere: LAWYER scoped to own + responsible/assigned-case messages", () => {
-  // org-scoped: { AND: [{ organizationId }, { OR: [...5 clauses] }] } — own +
-  // case/project responsibility + case/project assignee mirrors.
+  // org-scoped: { AND: [{ organizationId }, { OR: [...7 clauses] }] } — own +
+  // case/project responsibility + case/project assignee and team mirrors.
   const expected = {
     AND: [
       { organizationId: org },
@@ -284,6 +362,14 @@ test("dataMessageVisibilityWhere: LAWYER scoped to own + responsible/assigned-ca
               is: { project: { is: { assignees: { some: { userId: "u-lawyer" } } } } },
             },
           },
+          { case: { is: { teamAssignments: { some: teamMember("u-lawyer") } } } },
+          {
+            case: {
+              is: {
+                project: { is: { teamAssignments: { some: teamMember("u-lawyer") } } },
+              },
+            },
+          },
         ],
       },
     ],
@@ -291,7 +377,7 @@ test("dataMessageVisibilityWhere: LAWYER scoped to own + responsible/assigned-ca
   assert.deepEqual(dataMessageVisibilityWhere(lawyer), expected);
 });
 
-test("dataMessageVisibilityWhere: LAWYER OR has exactly the 5 documented branches", () => {
+test("dataMessageVisibilityWhere: LAWYER OR has exactly the 7 documented branches", () => {
   const where = dataMessageVisibilityWhere(lawyer) as {
     AND?: Array<{ organizationId?: string; OR?: unknown[] }>;
   };
@@ -299,7 +385,7 @@ test("dataMessageVisibilityWhere: LAWYER OR has exactly the 5 documented branche
   assert.deepEqual(where.AND?.[0], { organizationId: org });
   const orClause = where.AND?.[1];
   assert.ok(Array.isArray(orClause?.OR));
-  assert.equal(orClause?.OR?.length, 5);
+  assert.equal(orClause?.OR?.length, 7);
 });
 
 test("dataMessageVisibilityWhere: TRAINEE/INTERN see only messages they created", () => {
@@ -376,6 +462,14 @@ test("deadlineVisibilityWhere: LAWYER scoped to own + responsible/assigned-case 
               is: { project: { is: { assignees: { some: { userId: "u-lawyer" } } } } },
             },
           },
+          { case: { is: { teamAssignments: { some: teamMember("u-lawyer") } } } },
+          {
+            case: {
+              is: {
+                project: { is: { teamAssignments: { some: teamMember("u-lawyer") } } },
+              },
+            },
+          },
         ],
       },
     ],
@@ -405,8 +499,8 @@ test("courtHearingVisibilityWhere: ADMIN org-wide; LAWYER scoped", () => {
     AND?: Array<{ organizationId?: string; OR?: unknown[] }>;
   };
   assert.deepEqual(lawyerWhere.AND?.[0], { organizationId: org });
-  // 4 responsibility paths + 2 case/project assignee mirrors.
-  assert.equal(lawyerWhere.AND?.[1]?.OR?.length, 6);
+  // 4 responsibility paths + 2 case/project assignee + 2 team mirrors.
+  assert.equal(lawyerWhere.AND?.[1]?.OR?.length, 8);
 });
 
 // --- F5 documents: management gates + visibility ---
@@ -452,8 +546,8 @@ test("documentVisibilityWhere: LAWYER OR covers created + case + assignee + subj
   };
   assert.deepEqual(where.AND?.[0], { organizationId: org });
   // created + case-responsible + case-project-responsible + case-assignee +
-  // case-project-assignee + subject-visible
-  assert.equal(where.AND?.[1]?.OR?.length, 6);
+  // case-project-assignee + 2 team mirrors + subject-visible
+  assert.equal(where.AND?.[1]?.OR?.length, 8);
 });
 
 test("documentTemplateVisibilityWhere: org-scoped read, fail-closed without org", () => {
@@ -479,22 +573,29 @@ test("canViewRecord: null record is never viewable", () => {
   assert.equal(canViewRecord(lawyer, "Task", null), false);
 });
 
-test("canViewRecord: LAWYER sees own task (direct) and responsible project's task", () => {
-  assert.equal(canViewRecord(lawyer, "Task", { assignedToId: "u-lawyer" }), true);
-  assert.equal(canViewRecord(lawyer, "Task", { assignedToId: "other" }), false);
-  assert.equal(
-    canViewRecord(lawyer, "Task", { project: { responsibleUserId: "u-lawyer" } }),
-    true,
-  );
+test("canViewRecord: default scope ALL → any task/project/case of the office", () => {
+  for (const user of [lawyer, trainee, intern]) {
+    assert.equal(canViewRecord(user, "Task", { assignedToId: "other" }), true);
+    assert.equal(canViewRecord(user, "Project", { responsibleUserId: "other" }), true);
+    assert.equal(canViewRecord(user, "Case", { responsibleUserId: "other" }), true);
+    assert.equal(canViewRecord(user, "Subject", { id: "s" }), true);
+    // Org isolation still applies first.
+    assert.equal(
+      canViewRecord(user, "Task", { organizationId: "org-2", assignedToId: user.id }),
+      false,
+    );
+  }
 });
 
-test("canViewRecord: TRAINEE only sees directly-assigned tasks, not by responsibility", () => {
-  assert.equal(canViewRecord(trainee, "Task", { assignedToId: "u-trainee" }), true);
-  // responsibility on the project does NOT grant a trainee access:
+test("canViewRecord: ASSIGNED scope sees own task and responsible project's task", () => {
+  const narrowed = withOverrides(lawyer, ASSIGNED_MATTERS);
+  assert.equal(canViewRecord(narrowed, "Task", { assignedToId: "u-lawyer" }), true);
+  assert.equal(canViewRecord(narrowed, "Task", { assignedToId: "other" }), false);
   assert.equal(
-    canViewRecord(trainee, "Task", { project: { responsibleUserId: "u-trainee" } }),
-    false,
+    canViewRecord(narrowed, "Task", { project: { responsibleUserId: "u-lawyer" } }),
+    true,
   );
+  assert.equal(canViewRecord(narrowed, "Project", { responsibleUserId: "other" }), false);
 });
 
 test("canViewRecord: WorkLog visible only to its owner (non-senior)", () => {
@@ -696,33 +797,25 @@ function orBranches(where: unknown): unknown[] {
   return and?.[1]?.OR ?? [];
 }
 
-test("projectVisibilityWhere: LAWYER OR adds direct + via-case assignee mirrors", () => {
-  const branches = orBranches(projectVisibilityWhere(lawyer));
-  assert.equal(branches.length, 6);
-  assert.ok(
-    branches.some(
-      (b) => JSON.stringify(b) === JSON.stringify({ assignees: { some: { userId: "u-lawyer" } } }),
-    ),
-  );
+test("projectVisibilityWhere: ASSIGNED scope OR adds direct + via-case assignee mirrors", () => {
+  for (const user of [lawyer, trainee, intern]) {
+    const branches = orBranches(projectVisibilityWhere(withOverrides(user, ASSIGNED_MATTERS)));
+    assert.equal(branches.length, 8);
+    assert.ok(
+      branches.some(
+        (b) => JSON.stringify(b) === JSON.stringify({ assignees: { some: { userId: user.id } } }),
+      ),
+    );
+  }
 });
 
-test("projectVisibilityWhere: TRAINEE sees assigned projects (assignee mirror added)", () => {
-  const branches = orBranches(projectVisibilityWhere(trainee));
-  assert.equal(branches.length, 4);
-  assert.ok(
-    branches.some(
-      (b) => JSON.stringify(b) === JSON.stringify({ assignees: { some: { userId: "u-trainee" } } }),
-    ),
-  );
-});
-
-test("caseVisibilityWhere: LAWYER and TRAINEE gain case + project-assignee paths", () => {
-  assert.equal(orBranches(caseVisibilityWhere(lawyer)).length, 6);
-  assert.equal(orBranches(caseVisibilityWhere(trainee)).length, 4);
+test("caseVisibilityWhere: ASSIGNED scope gains case + project-assignee paths", () => {
+  assert.equal(orBranches(caseVisibilityWhere(withOverrides(lawyer, ASSIGNED_MATTERS))).length, 8);
+  assert.equal(orBranches(caseVisibilityWhere(withOverrides(intern, ASSIGNED_MATTERS))).length, 8);
 });
 
 test("workLogVisibilityWhere: LAWYER OR mirrors assignee on project/case", () => {
-  assert.equal(orBranches(workLogVisibilityWhere(lawyer)).length, 8);
+  assert.equal(orBranches(workLogVisibilityWhere(lawyer)).length, 11);
 });
 
 test("billingApproverWorkLogWhere covers direct, project, and case client", () => {
@@ -733,8 +826,9 @@ test("billingApproverWorkLogWhere covers direct, project, and case client", () =
 });
 
 test("invoiceVisibilityWhere: LAWYER gains assignee paths; juniors stay created-only", () => {
-  // 5 responsibility/ownership paths + 3 assignee mirrors (project/case/case→project).
-  assert.equal(orBranches(invoiceVisibilityWhere(lawyer)).length, 8);
+  // 5 responsibility/ownership paths + 3 assignee + 3 team mirrors
+  // (project/case/case→project).
+  assert.equal(orBranches(invoiceVisibilityWhere(lawyer)).length, 11);
   // Sensitive billing data must NOT widen for juniors — created-only fallback.
   assert.deepEqual(invoiceVisibilityWhere(trainee), {
     AND: [{ organizationId: org }, { createdById: "u-trainee" }],
@@ -795,19 +889,24 @@ test("assertCanManageInvoices: throws without role/grant, passes with grant", ()
   assert.throws(() => assertCanManageInvoices(UserRole.LAWYER), expected);
 });
 
-test("canViewRecord: LAWYER and TRAINEE see a project/case they're assigned to", () => {
-  const projectAssignedToLawyer = { assignees: [{ userId: "u-lawyer" }] };
-  const projectAssignedToTrainee = { assignees: [{ userId: "u-trainee" }] };
-  assert.equal(canViewRecord(lawyer, "Project", projectAssignedToLawyer), true);
-  assert.equal(canViewRecord(trainee, "Project", projectAssignedToTrainee), true);
-  // INTERN is the most restricted role — assignment grants it nothing.
+test("canViewRecord: ASSIGNED scope sees a project/case the user is assigned to", () => {
+  const narrowedLawyer = withOverrides(lawyer, ASSIGNED_MATTERS);
+  const narrowedIntern = withOverrides(intern, ASSIGNED_MATTERS);
   assert.equal(
-    canViewRecord(intern, "Project", { assignees: [{ userId: "u-intern" }] }),
+    canViewRecord(narrowedLawyer, "Project", { assignees: [{ userId: "u-lawyer" }] }),
+    true,
+  );
+  assert.equal(
+    canViewRecord(narrowedIntern, "Project", { assignees: [{ userId: "u-intern" }] }),
+    true,
+  );
+  assert.equal(
+    canViewRecord(narrowedIntern, "Project", { assignees: [{ userId: "other" }] }),
     false,
   );
   // A case is visible to an assignee of its parent project too.
   assert.equal(
-    canViewRecord(trainee, "Case", { project: { assignees: [{ userId: "u-trainee" }] } }),
+    canViewRecord(narrowedIntern, "Case", { project: { assignees: [{ userId: "u-intern" }] } }),
     true,
   );
 });
@@ -831,5 +930,400 @@ test("canEditRecord: LAWYER assignee may edit project/case; TRAINEE assignee may
   assert.equal(
     canEditRecord(lawyer, "Case", { project: { assignees: [{ userId: "u-lawyer" }] } }),
     false,
+  );
+});
+
+// --- Regressions of the permission matrix --------------------------------------
+
+test("LAWYER documents stay ASSIGNED even though subjects default to ALL (no spill-over)", () => {
+  const where = documentVisibilityWhere(lawyer) as {
+    AND?: Array<{ organizationId?: string; OR?: Array<Record<string, unknown>> }>;
+  };
+  assert.deepEqual(where.AND?.[0], { organizationId: org });
+  const subjectBranch = where.AND?.[1]?.OR?.find((branch) => "subject" in branch) as {
+    subject: { is: unknown };
+  };
+  assert.ok(subjectBranch, "subject branch present");
+  // The subject branch must be the assigned-subject builder, not the (ALL)
+  // subjectVisibilityWhere — i.e. never just { organizationId }.
+  assert.notDeepEqual(subjectBranch.subject.is, { organizationId: org });
+  assert.match(JSON.stringify(subjectBranch.subject.is), /u-lawyer/);
+});
+
+test("canEditRecord: TRAINEE can't edit someone else's project, an override grants it", () => {
+  const foreign = { responsibleUserId: "other" };
+  assert.equal(canEditRecord(trainee, "Project", foreign), false);
+  assert.equal(canEditRecord(trainee, "Case", foreign), false);
+  assert.equal(canEditRecord(trainee, "Task", { assignedToId: "other" }), false);
+  const granted = withOverrides(trainee, [], [
+    { permission: "function.editAllMatters", value: "ALLOW" },
+  ]);
+  assert.equal(canEditRecord(granted, "Project", foreign), true);
+  assert.equal(canEditRecord(granted, "Case", foreign), true);
+  assert.equal(canEditRecord(granted, "Task", { assignedToId: "other" }), true);
+  // Work-logs are a separate function.
+  assert.equal(canEditRecord(granted, "WorkLog", { userId: "other" }), false);
+});
+
+test("canEditRecord: denying editAllMatters to PARTNER limits them to their own matters", () => {
+  const limited = withOverrides(partner, [
+    { permission: "function.editAllMatters", value: "DENY" },
+  ]);
+  assert.equal(canEditRecord(limited, "Project", { responsibleUserId: "other" }), false);
+  assert.equal(canEditRecord(limited, "Project", { responsibleUserId: "u-partner" }), true);
+});
+
+test("assertCanAdministerOrg: manageOrganization only within the user's own org", () => {
+  assert.doesNotThrow(() => assertCanAdministerOrg(partner, org));
+  assert.throws(() => assertCanAdministerOrg(partner, "org-2"));
+  assert.throws(() => assertCanAdministerOrg(lawyer, org));
+  const granted = withOverrides(lawyer, [], [
+    { permission: "function.manageOrganization", value: "ALLOW" },
+  ]);
+  assert.doesNotThrow(() => assertCanAdministerOrg(granted, org));
+  assert.throws(() => assertCanAdministerOrg(granted, "org-2"));
+  assert.doesNotThrow(() =>
+    assertCanAdministerOrg({ id: "p", role: UserRole.LAWYER, isPlatformAdmin: true }, "org-2"),
+  );
+});
+
+test("ADMIN can't be locked out by overrides", () => {
+  const admined = withOverrides(admin, [
+    { permission: "function.managePermissions", value: "DENY" },
+    { permission: "scope.tasks", value: "ASSIGNED" },
+  ]);
+  assert.equal(canManagePermissions(admined), true);
+  assert.deepEqual(taskVisibilityWhere(admined), { organizationId: org });
+});
+
+test("tightening a role's module or rate permission takes effect in helpers", () => {
+  const ratesForIntern = withOverrides(intern, [
+    { permission: "function.viewRates", value: "ALLOW" },
+  ]);
+  assert.equal(canViewRates(ratesForIntern), true);
+  assert.equal(canViewRates(intern), false);
+  const noRatesPartner = withOverrides(partner, [
+    { permission: "function.viewRates", value: "DENY" },
+  ]);
+  assert.equal(canViewRates(noRatesPartner), false);
+});
+
+// --- Ochrana před eskalací přes správu uživatelů -------------------------------
+
+const roleTarget = (role: UserRole, roleOverrides: Array<{ permission: string; value: string }> = []) => ({
+  role,
+  permissions: resolvePermissions({ role, roleOverrides }),
+});
+
+test("privilegedTargetDenial: a non-admin with manageUsers can't create or take over an ADMIN", () => {
+  // Koncipient, kterému partner v matici přidal „Spravuje uživatele“.
+  const userManager = withOverrides(trainee, [
+    { permission: "function.manageUsers", value: "ALLOW" },
+  ]);
+  assert.equal(canManageUsers(userManager), true);
+  for (const action of ["assignRole", "resetPassword", "deactivate"] as const) {
+    assert.ok(privilegedTargetDenial(userManager, roleTarget(UserRole.ADMIN), action));
+    assert.ok(privilegedTargetDenial(partner, roleTarget(UserRole.ADMIN), action));
+    // Partner by default holds managePermissions → can't be taken over either.
+    assert.ok(privilegedTargetDenial(userManager, roleTarget(UserRole.PARTNER), action));
+    // Ordinary roles stay manageable.
+    assert.equal(privilegedTargetDenial(userManager, roleTarget(UserRole.LAWYER), action), null);
+    assert.equal(privilegedTargetDenial(userManager, roleTarget(UserRole.INTERN), action), null);
+  }
+  assert.equal(
+    privilegedTargetDenial(userManager, roleTarget(UserRole.ADMIN), "resetPassword"),
+    "Heslo administrátora může změnit jen administrátor.",
+  );
+  assert.equal(
+    privilegedTargetDenial(partner, roleTarget(UserRole.ADMIN), "assignRole"),
+    "Roli Administrátor může přidělit nebo odebrat jen administrátor.",
+  );
+});
+
+test("privilegedTargetDenial: managePermissions holders may act on peers, admins on anyone", () => {
+  // Partner (managePermissions by default) may still create/promote partners.
+  assert.equal(privilegedTargetDenial(partner, roleTarget(UserRole.PARTNER), "assignRole"), null);
+  // A Lawyer whose role was given managePermissions is protected from a
+  // manageUsers-only actor.
+  const userManager = withOverrides(lawyer, [], [
+    { permission: "function.manageUsers", value: "ALLOW" },
+  ]);
+  const lawyerWithMatrix = roleTarget(UserRole.LAWYER, [
+    { permission: "function.managePermissions", value: "ALLOW" },
+  ]);
+  assert.ok(privilegedTargetDenial(userManager, lawyerWithMatrix, "resetPassword"));
+  // A Partner whose managePermissions was revoked is an ordinary target.
+  const plainPartner = roleTarget(UserRole.PARTNER, [
+    { permission: "function.managePermissions", value: "DENY" },
+  ]);
+  assert.equal(privilegedTargetDenial(userManager, plainPartner, "resetPassword"), null);
+  // ADMIN and the platform admin are never limited.
+  assert.equal(privilegedTargetDenial(admin, roleTarget(UserRole.ADMIN), "resetPassword"), null);
+  assert.equal(
+    privilegedTargetDenial(
+      { id: "p", role: UserRole.LAWYER, isPlatformAdmin: true },
+      roleTarget(UserRole.ADMIN),
+      "assignRole",
+    ),
+    null,
+  );
+  // Fail closed for an unknown actor.
+  assert.ok(privilegedTargetDenial(null, roleTarget(UserRole.ADMIN), "assignRole"));
+  assert.ok(privilegedTargetDenial(null, roleTarget(UserRole.PARTNER), "assignRole"));
+});
+
+// --- Týmy jako řešitelé (balík 04): ASSIGNED scope zahrnuje členy týmů ---
+
+function hasBranch(branches: unknown[], expected: unknown) {
+  return branches.some((b) => JSON.stringify(b) === JSON.stringify(expected));
+}
+
+test("projectVisibilityWhere ASSIGNED: team path on the project and via its cases", () => {
+  for (const user of [lawyer, trainee, intern]) {
+    const branches = orBranches(
+      projectVisibilityWhere(withOverrides(user, ASSIGNED_MATTERS)),
+    );
+    assert.ok(hasBranch(branches, { teamAssignments: { some: teamMember(user.id) } }));
+    assert.ok(
+      hasBranch(branches, {
+        cases: { some: { teamAssignments: { some: teamMember(user.id) } } },
+      }),
+    );
+  }
+});
+
+test("caseVisibilityWhere ASSIGNED: team of the case and team of its project", () => {
+  for (const user of [lawyer, trainee, intern]) {
+    const branches = orBranches(
+      caseVisibilityWhere(withOverrides(user, ASSIGNED_MATTERS)),
+    );
+    assert.ok(hasBranch(branches, { teamAssignments: { some: teamMember(user.id) } }));
+    assert.ok(
+      hasBranch(branches, {
+        project: { is: { teamAssignments: { some: teamMember(user.id) } } },
+      }),
+    );
+  }
+});
+
+test("task/workLog/reference/invoice ASSIGNED: 3 team mirrors (project, case, case→project)", () => {
+  const scopes = [
+    { permission: "scope.tasks", value: "ASSIGNED" },
+    { permission: "scope.workLogs", value: "ASSIGNED" },
+    { permission: "scope.references", value: "ASSIGNED" },
+    { permission: "scope.invoices", value: "ASSIGNED" },
+  ];
+  const user = withOverrides(intern, scopes);
+  const team = { teamAssignments: { some: teamMember(intern.id) } };
+  for (const where of [
+    taskVisibilityWhere(user),
+    workLogVisibilityWhere(user),
+    referenceVisibilityWhere(user),
+    invoiceVisibilityWhere(user),
+  ]) {
+    const branches = orBranches(where);
+    assert.ok(hasBranch(branches, { project: { is: team } }));
+    assert.ok(hasBranch(branches, { case: { is: team } }));
+    assert.ok(hasBranch(branches, { case: { is: { project: { is: team } } } }));
+  }
+});
+
+test("dataMessage/deadline/courtHearing/document ASSIGNED: case + case→project team mirrors", () => {
+  const scopes = [
+    { permission: "scope.dataMessages", value: "ASSIGNED" },
+    { permission: "scope.deadlines", value: "ASSIGNED" },
+    { permission: "scope.documents", value: "ASSIGNED" },
+  ];
+  const user = withOverrides(trainee, scopes);
+  const team = { teamAssignments: { some: teamMember(trainee.id) } };
+  for (const where of [
+    dataMessageVisibilityWhere(user),
+    deadlineVisibilityWhere(user),
+    courtHearingVisibilityWhere(user),
+    documentVisibilityWhere(user),
+  ]) {
+    const branches = orBranches(where);
+    assert.ok(hasBranch(branches, { case: { is: team } }));
+    assert.ok(hasBranch(branches, { case: { is: { project: { is: team } } } }));
+  }
+});
+
+test("subjectVisibilityWhere ASSIGNED: client of a project assigned to the user's team", () => {
+  const where = subjectVisibilityWhere(withOverrides(intern, ASSIGNED_MATTERS));
+  const branches = orBranches(where) as Array<{
+    mainProjects?: { some?: { AND?: Array<{ OR?: unknown[] }> } };
+  }>;
+  const mainProjects = branches.find((b) => b.mainProjects)?.mainProjects;
+  const projectBranches = mainProjects?.some?.AND?.[1]?.OR ?? [];
+  assert.ok(
+    hasBranch(projectBranches, { teamAssignments: { some: teamMember(intern.id) } }),
+  );
+});
+
+test("team scope keeps ALL = whole office and denies without an org", () => {
+  assert.deepEqual(projectVisibilityWhere(intern), { organizationId: org });
+  assert.deepEqual(caseVisibilityWhere(lawyer), { organizationId: org });
+  const orgless = { id: "u-x", role: UserRole.INTERN };
+  assert.deepEqual(projectVisibilityWhere(orgless), { id: "__role_denied__" });
+});
+
+const teamWith = (userIds: string[], archivedAt: Date | null = null) => ({
+  legalTeam: { archivedAt, members: userIds.map((userId) => ({ userId })) },
+});
+
+test("canViewRecord: member of an assigned team sees the project, case and task", () => {
+  const narrowed = withOverrides(intern, ASSIGNED_MATTERS);
+  const project = { teamAssignments: [teamWith(["u-intern", "u-lawyer"])] };
+  assert.equal(canViewRecord(narrowed, "Project", project), true);
+  assert.equal(canViewRecord(narrowed, "Case", { teamAssignments: project.teamAssignments }), true);
+  // Případ vidí i člen týmu projektu.
+  assert.equal(canViewRecord(narrowed, "Case", { project }), true);
+  assert.equal(canViewRecord(narrowed, "Task", { case: { project } }), true);
+  assert.equal(canViewRecord(narrowed, "Task", { project }), true);
+});
+
+test("canViewRecord: another team, an archived team or missing rows give no access", () => {
+  const narrowed = withOverrides(intern, ASSIGNED_MATTERS);
+  assert.equal(
+    canViewRecord(narrowed, "Project", { teamAssignments: [teamWith(["u-lawyer"])] }),
+    false,
+  );
+  assert.equal(
+    canViewRecord(narrowed, "Project", {
+      teamAssignments: [teamWith(["u-intern"], new Date())],
+    }),
+    false,
+  );
+  assert.equal(canViewRecord(narrowed, "Project", {}), false);
+  assert.equal(canViewRecord(narrowed, "Project", { teamAssignments: null }), false);
+});
+
+test("canEditRecord: LAWYER in the project's team edits it; TRAINEE in the team does not", () => {
+  const project = { teamAssignments: [teamWith(["u-lawyer", "u-trainee"])] };
+  assert.equal(canEditRecord(lawyer, "Project", project), true);
+  assert.equal(canEditRecord(trainee, "Project", project), false);
+  assert.equal(canEditRecord(lawyer, "Case", { teamAssignments: project.teamAssignments }), true);
+  // Tým projektu nedává editaci případu (zrcadlí přímého řešitele projektu).
+  assert.equal(canEditRecord(lawyer, "Case", { project }), false);
+  // Bez načtených týmových přiřazení fail-closed.
+  assert.equal(canEditRecord(lawyer, "Project", { assignees: [] }), false);
+  assert.equal(
+    canEditRecord(lawyer, "Project", {
+      teamAssignments: [teamWith(["u-lawyer"], new Date())],
+    }),
+    false,
+  );
+});
+
+test("canManageTeams / canBulkAssign / canOpenAssignments follow the default matrix", () => {
+  for (const user of [admin, partner]) {
+    assert.equal(canManageTeams(user), true);
+    assert.equal(canBulkAssign(user), true);
+    assert.equal(canOpenAssignments(user), true);
+  }
+  for (const user of [lawyer, trainee, intern]) {
+    assert.equal(canManageTeams(user), false);
+    assert.equal(canBulkAssign(user), false);
+    assert.equal(canOpenAssignments(user), false);
+  }
+  assert.equal(canBulkAssign({ id: "u-x", role: UserRole.ADMIN }), false);
+  assert.equal(canOpenAssignments(null), false);
+});
+
+test("canBulkAssign: a LAWYER with editAllMatters may bulk-assign, but not manage teams", () => {
+  const widened = withOverrides(lawyer, [
+    { permission: "function.editAllMatters", value: "ALLOW" },
+  ]);
+  assert.equal(canBulkAssign(widened), true);
+  assert.equal(canManageTeams(widened), false);
+  assert.equal(canOpenAssignments(widened), true);
+  const manager = withOverrides(trainee, [
+    { permission: "function.manageOrganization", value: "ALLOW" },
+  ]);
+  assert.equal(canManageTeams(manager), true);
+  assert.equal(canBulkAssign(manager), false);
+  assert.equal(canOpenAssignments(manager), true);
+});
+
+// --- Lidé na úkolu: další řešitelé a dohled ----------------------------------
+
+const supervisorRow = (userId: string) => ({ userId, role: "SUPERVISOR" });
+const assigneeRow = (userId: string) => ({ userId, role: "ASSIGNEE" });
+
+test("canViewRecord: ASSIGNED scope — supervisor and extra assignee rows see the task", () => {
+  const narrowed = withOverrides(trainee, ASSIGNED_MATTERS);
+  assert.equal(
+    canViewRecord(narrowed, "Task", { assignees: [supervisorRow("u-trainee")] }),
+    true,
+  );
+  assert.equal(
+    canViewRecord(narrowed, "Task", { assignees: [assigneeRow("u-trainee")] }),
+    true,
+  );
+  assert.equal(
+    canViewRecord(narrowed, "Task", { assignees: [supervisorRow("other")] }),
+    false,
+  );
+});
+
+test("canEditRecord: extra assignee may edit the task, supervisor may not", () => {
+  for (const user of [lawyer, trainee, intern]) {
+    assert.equal(
+      canEditRecord(user, "Task", {
+        organizationId: org,
+        assignedToId: "other",
+        assignees: [assigneeRow("other"), assigneeRow(user.id)],
+      }),
+      true,
+    );
+    assert.equal(
+      canEditRecord(user, "Task", {
+        organizationId: org,
+        assignedToId: "other",
+        assignees: [supervisorRow(user.id)],
+      }),
+      false,
+    );
+  }
+});
+
+test("canWorkOnTask: supervisor may comment/change status, strangers and other orgs may not", () => {
+  const task = {
+    organizationId: org,
+    assignedToId: "other",
+    assignees: [assigneeRow("other"), supervisorRow("u-trainee")],
+  };
+  assert.equal(canWorkOnTask(trainee, task), true);
+  assert.equal(canWorkOnTask(intern, task), false);
+  assert.equal(canWorkOnTask(trainee, { ...task, organizationId: "org-2" }), false);
+  assert.equal(canWorkOnTask(trainee, null), false);
+  // Bez načtených řádků (fail-closed) dohled neprojde.
+  assert.equal(
+    canWorkOnTask(trainee, { organizationId: org, assignedToId: "other" }),
+    false,
+  );
+  // Kdo smí upravovat, smí i pracovat (řešitel, editAllMatters).
+  assert.equal(canWorkOnTask(intern, { ...task, assignedToId: "u-intern" }), true);
+  assert.equal(canWorkOnTask(admin, task), true);
+  const granted = withOverrides(intern, [], [
+    { permission: "function.editAllMatters", value: "ALLOW" },
+  ]);
+  assert.equal(canWorkOnTask(granted, task), true);
+  assert.throws(
+    () => assertCanWorkOnTask(intern, task),
+    /Nemáte oprávnění pracovat s tímto úkolem/,
+  );
+  assert.doesNotThrow(() => assertCanWorkOnTask(trainee, task));
+});
+
+test("projectVisibilityWhere / caseVisibilityWhere: task mirror covers task people", () => {
+  const narrowed = withOverrides(lawyer, ASSIGNED_MATTERS);
+  assert.match(
+    JSON.stringify(projectVisibilityWhere(narrowed)),
+    /"tasks":\{"some":\{"OR":\[[^\]]*"assignees":\{"some":\{"userId":"u-lawyer"\}\}/,
+  );
+  assert.match(
+    JSON.stringify(caseVisibilityWhere(narrowed)),
+    /"assignees":\{"some":\{"userId":"u-lawyer"\}\}\}\]\}\}/,
   );
 });

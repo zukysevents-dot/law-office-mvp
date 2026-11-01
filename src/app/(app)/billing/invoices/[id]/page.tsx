@@ -9,6 +9,7 @@ import { recordPayment } from "@/app/actions/payments";
 import { markInvoiceSent, sendReminder } from "@/app/actions/reminders";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
 import { InvoiceEmailForm } from "@/components/invoice-email-form";
+import { pickInvoiceRecipient, subjectEmails } from "@/lib/subjects/contacts";
 import { PageHeader } from "@/components/page-header";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import { Section } from "@/components/section";
@@ -37,6 +38,8 @@ import {
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { invoiceStatusTone } from "@/lib/status-tones";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +52,12 @@ export default async function InvoiceDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.billing");
+  if (accessDenied) {
+    return <AccessDenied title="Faktura" message={accessDenied} />;
+  }
+
   const { id } = await params;
 
   const result = await safeQuery<InvoiceDetail | null>(null, async () => {
@@ -256,7 +265,10 @@ export default async function InvoiceDetailPage({
               </form>
               <form action={deleteDraftInvoice} className="mt-4">
                 <input type="hidden" name="invoiceId" value={invoice.id} />
-                <ConfirmSubmitButton message="Opravdu chcete tuto rozpracovanou fakturu trvale smazat?">
+                <ConfirmSubmitButton
+                  message="Opravdu chcete tuto rozpracovanou fakturu trvale smazat?"
+                  pendingLabel="Mažu…"
+                >
                   Smazat rozpracovanou fakturu
                 </ConfirmSubmitButton>
               </form>
@@ -268,7 +280,14 @@ export default async function InvoiceDetailPage({
               <Section title="Odeslání klientovi">
                 <InvoiceEmailForm
                   invoiceId={invoice.id}
-                  defaultRecipient={invoice.subject.email ?? ""}
+                  defaultRecipient={pickInvoiceRecipient(
+                    invoice.subject.contacts,
+                    invoice.subject.email,
+                  )}
+                  suggestions={subjectEmails(
+                    invoice.subject.contacts,
+                    invoice.subject.email,
+                  )}
                 />
                 {invoice.status === "ISSUED" ? (
                   <form action={markInvoiceSent} className="mt-4">
@@ -434,7 +453,10 @@ export default async function InvoiceDetailPage({
                   <TextArea name="cancelReason" />
                 </Field>
                 <div>
-                  <ConfirmSubmitButton message="Opravdu chcete tuto vystavenou fakturu stornovat? Tuto akci nelze vzít zpět.">
+                  <ConfirmSubmitButton
+                    message="Opravdu chcete tuto vystavenou fakturu stornovat? Tuto akci nelze vzít zpět."
+                    pendingLabel="Stornuji…"
+                  >
                     Stornovat fakturu
                   </ConfirmSubmitButton>
                 </div>

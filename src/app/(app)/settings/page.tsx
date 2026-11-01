@@ -2,35 +2,39 @@ import Link from "next/link";
 
 import {
   changeOwnPassword,
-  createUser,
-  setUserCapabilities,
   setUserPassword,
   updateCalendarPreference,
   updateNotificationPreference,
-  updateUserHoursPlan,
 } from "@/app/actions/users";
+import { OutlookCalendarPanel } from "@/components/calendar/outlook-calendar-panel";
+import { CreateUserForm } from "@/components/create-user-form";
 import { Field, SelectInput, TextInput } from "@/components/form-field";
+import { HoursPlanForm } from "@/components/hours-plan-form";
 import { PageHeader } from "@/components/page-header";
+import { ResendInvitationButton } from "@/components/resend-invitation-button";
 import { Section } from "@/components/section";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Capability, UserRole } from "@/generated/prisma/enums";
 import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatDateTime } from "@/lib/format";
+import { hoursPlanFromRecord, type HoursPlanTargets } from "@/lib/hours-plan";
 import {
-  capabilityDescriptions,
-  capabilityLabels,
-  capabilityOptions,
-  options,
-  userRoleLabels,
-} from "@/lib/labels";
+  mailConfigStatus,
+  mailDisabledReasonLabel,
+} from "@/lib/mail/mailer";
+import { userRoleLabels } from "@/lib/labels";
 import { getNotificationPreference } from "@/lib/notifications/notification-service";
-import { canViewAllLegalData } from "@/lib/permissions";
+import { canManagePermissions, canManageUsers } from "@/lib/permissions";
+import { loadPrivilegeTargets } from "@/lib/permission-store.server";
 import { getPrisma } from "@/lib/prisma";
+import type { UserRole } from "@/generated/prisma/enums";
 import { calendarViewOptions, normalizeCalendarView } from "@/lib/calendar-view";
+import { getOutlookFeedSummary } from "@/lib/calendar/outlook-feed.server";
+import type { OutlookFeedSummary } from "@/lib/calendar/outlook-summary";
+import { canAccessModule } from "@/lib/module-access.server";
 import { getAresBaseUrl, isAresLookupEnabled } from "@/lib/ares/config";
 import {
   getGraphConfigForOrg,
@@ -45,8 +49,15 @@ type NotificationPreferenceData = Awaited<
   ReturnType<typeof getNotificationPreference>
 >;
 
+type InvitationSummary = {
+  createdAt: Date;
+  sentAt: Date | null;
+  usedAt: Date | null;
+} | null;
+
 type SettingsData = {
   currentUserName: string;
+  currentUserId: string;
   notificationPreference: NotificationPreferenceData | null;
   users: Array<{
     id: string;
@@ -56,14 +67,18 @@ type SettingsData = {
     microsoftId: string | null;
     active: boolean;
     createdAt: Date;
-    hoursPlan: {
-      weeklyHoursTarget: number | null;
-      monthlyHoursTarget: number | null;
-    } | null;
-    capabilities: Capability[];
+    hoursPlan: HoursPlanTargets;
+    invitation: InvitationSummary;
   }>;
   auditLogCount: number;
   allowed: boolean;
+  canManagePermissions: boolean;
+  // Role, které smí aktuální uživatel přidělit novému uživateli, a uživatelé,
+  // kterým smí resetovat heslo (bez eskalace práv — viz privilegedTargetDenial).
+  assignableRoles: UserRole[];
+  resettableUserIds: string[];
+  /** Own Outlook calendar connection (null = calendar module not available). */
+  outlook: OutlookFeedSummary | null;
   integrations: {
     aresEnabled: boolean;
     aresHost: string;
@@ -130,20 +145,38 @@ function PreferenceCheckbox({
   );
 }
 
+function invitationLabel(invitation: InvitationSummary) {
+  if (!invitation) {
+    return "—";
+  }
+  if (invitation.usedAt) {
+    return `Heslo nastaveno ${formatDate(invitation.usedAt)}`;
+  }
+  if (invitation.sentAt) {
+    return `Odesláno ${formatDateTime(invitation.sentAt)}`;
+  }
+  return "Neodesláno";
+}
+
 export default async function SettingsPage() {
   const result = await safeQuery<SettingsData>(
     {
       currentUserName: "",
+      currentUserId: "",
       notificationPreference: null,
       users: [],
       auditLogCount: 0,
       allowed: false,
+      canManagePermissions: false,
+      assignableRoles: [],
+      resettableUserIds: [],
+      outlook: null,
       integrations: envIntegrationStatus(),
     },
     async () => {
       const prisma = getPrisma();
       const currentUser = await getCurrentUser();
-      const allowed = canViewAllLegalData(currentUser);
+      const allowed = canManageUsers(currentUser);
       const [notificationPreference, users, auditLogCount] = await Promise.all([
         getNotificationPreference(currentUser.id),
         allowed
@@ -166,9 +199,17 @@ export default async function SettingsPage() {
                   select: {
                     weeklyHoursTarget: true,
                     monthlyHoursTarget: true,
+                    weeklyBillableHoursTarget: true,
+                    monthlyBillableHoursTarget: true,
                   },
                 },
-                capabilityGrants: { select: { capability: true } },
+                // Latest welcome invitation (column "Pozvánka").
+                invitationTokens: {
+                  where: { organizationId: currentUser.organizationId },
+                  orderBy: { createdAt: "desc" },
+                  take: 1,
+                  select: { createdAt: true, sentAt: true, usedAt: true },
+                },
               },
             })
           : Promise.resolve([]),
@@ -187,27 +228,32 @@ export default async function SettingsPage() {
           : Promise.resolve(0),
       ]);
 
+      const privilegeTargets = allowed
+        ? await loadPrivilegeTargets({
+            actor: currentUser,
+            organizationId: currentUser.organizationId,
+            members: users.map((user) => ({ id: user.id, role: user.role })),
+            db: prisma,
+          })
+        : { assignableRoles: [], manageableUserIds: [] };
+
       return {
         currentUserName: currentUser.name,
+        currentUserId: currentUser.id,
         notificationPreference,
-        users: users.map((user) => ({
+        users: users.map(({ invitationTokens, ...user }) => ({
           ...user,
-          hoursPlan: user.hoursPlan
-            ? {
-                weeklyHoursTarget:
-                  user.hoursPlan.weeklyHoursTarget != null
-                    ? Number(user.hoursPlan.weeklyHoursTarget)
-                    : null,
-                monthlyHoursTarget:
-                  user.hoursPlan.monthlyHoursTarget != null
-                    ? Number(user.hoursPlan.monthlyHoursTarget)
-                    : null,
-              }
-            : null,
-          capabilities: user.capabilityGrants.map((grant) => grant.capability),
+          invitation: invitationTokens[0] ?? null,
+          hoursPlan: hoursPlanFromRecord(user.hoursPlan),
         })),
         auditLogCount,
         allowed,
+        canManagePermissions: canManagePermissions(currentUser),
+        assignableRoles: privilegeTargets.assignableRoles,
+        resettableUserIds: privilegeTargets.manageableUserIds,
+        outlook: (await canAccessModule(currentUser, "module.calendar"))
+          ? await getOutlookFeedSummary(currentUser)
+          : null,
         integrations: await integrationConfigStatus(
           currentUser.organizationId,
         ),
@@ -215,6 +261,11 @@ export default async function SettingsPage() {
     },
   );
   const preference = result.data.notificationPreference;
+  const resettableUserIds = new Set(result.data.resettableUserIds);
+  const resettableUsers = result.data.users.filter((user) =>
+    resettableUserIds.has(user.id),
+  );
+  const mailStatus = mailConfigStatus();
 
   return (
     <>
@@ -244,8 +295,14 @@ export default async function SettingsPage() {
                 ))}
               </SelectInput>
             </Field>
-            <Button type="submit">Uložit kalendář</Button>
+            <Button type="submit" pendingLabel="Ukládám…">Uložit kalendář</Button>
           </form>
+          {result.data.outlook ? (
+            <div className="mt-6 grid max-w-2xl gap-3 border-t border-[#dce4e8] pt-5">
+              <h3 className="text-sm font-semibold text-[#0e1822]">Outlook kalendář</h3>
+              <OutlookCalendarPanel summary={result.data.outlook} />
+            </div>
+          ) : null}
         </Section>
       ) : null}
       {preference ? (
@@ -259,13 +316,28 @@ export default async function SettingsPage() {
               />
               <PreferenceCheckbox
                 name="taskCreatedEmail"
-                label="Nový úkol"
+                label="Nový úkol nebo přidání k úkolu (řešitel i dohled)"
                 defaultChecked={preference.taskCreatedEmail}
               />
               <PreferenceCheckbox
                 name="taskStatusChangedEmail"
                 label="Změna statusu úkolu"
                 defaultChecked={preference.taskStatusChangedEmail}
+              />
+              <PreferenceCheckbox
+                name="taskCommentedEmail"
+                label="Nový komentář k úkolu"
+                defaultChecked={preference.taskCommentedEmail}
+              />
+              <PreferenceCheckbox
+                name="taskOverdueEmail"
+                label="Úkol po termínu (řešitel, dohled i odpovědná osoba)"
+                defaultChecked={preference.taskOverdueEmail}
+              />
+              <PreferenceCheckbox
+                name="taskDeadlineChangedEmail"
+                label="Odložení nebo změna termínu úkolu"
+                defaultChecked={preference.taskDeadlineChangedEmail}
               />
               <PreferenceCheckbox
                 name="taskForReviewEmail"
@@ -302,6 +374,11 @@ export default async function SettingsPage() {
                 label="Změna v rejstříku (ISIR/OR)"
                 defaultChecked={preference.registryChangeEmail}
               />
+              <PreferenceCheckbox
+                name="matterAssignedEmail"
+                label="Přiřazení k projektu nebo případu (osobně nebo přes tým)"
+                defaultChecked={preference.matterAssignedEmail}
+              />
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               <Field label="Upozornit kolik dní před deadlinem">
@@ -333,7 +410,7 @@ export default async function SettingsPage() {
               </Field>
             </div>
             <div>
-              <Button type="submit">Uložit notifikace</Button>
+              <Button type="submit" pendingLabel="Ukládám…">Uložit notifikace</Button>
             </div>
           </form>
         </Section>
@@ -366,6 +443,18 @@ export default async function SettingsPage() {
           později. Zatím je účet chráněn e-mailem a heslem.
         </p>
       </Section>
+      {result.data.canManagePermissions ? (
+        <Section title="Oprávnění">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm leading-6 text-stone-600">
+              Oprávnění rolí a výjimky uživatelů nastavíte v sekci Oprávnění.
+            </p>
+            <ButtonLink href="/settings/permissions" variant="secondary">
+              Otevřít oprávnění
+            </ButtonLink>
+          </div>
+        </Section>
+      ) : null}
       {result.data.allowed ? (
         <>
           <Section title="Stav integrací">
@@ -423,6 +512,21 @@ export default async function SettingsPage() {
                   Nastavit připojení →
                 </Link>
               </div>
+              <div className="rounded-lg border border-stone-200 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="font-semibold text-stone-950">E-mail (SMTP)</h3>
+                  <Badge tone={mailStatus.enabled ? "green" : "amber"}>
+                    {mailStatus.enabled
+                      ? "Odesílání zapnuto"
+                      : "Nenakonfigurováno"}
+                  </Badge>
+                </div>
+                <p className="mt-2 text-sm text-stone-600">
+                  {mailStatus.enabled
+                    ? "Pozvánky nových uživatelů a notifikace se odesílají e-mailem."
+                    : `Bez SMTP aplikace neodešle pozvánky ani notifikace. Důvod: ${mailDisabledReasonLabel(mailStatus.reason)}.`}
+                </p>
+              </div>
             </div>
           </Section>
           <div className="grid gap-4 lg:grid-cols-[1fr_24rem]">
@@ -438,6 +542,15 @@ export default async function SettingsPage() {
                         <th>Microsoft ID</th>
                         <th>Stav</th>
                         <th>Vytvořeno</th>
+                        <th>Pozvánka</th>
+                        <th>
+                          <span className="sr-only">Akce</span>
+                        </th>
+                        {result.data.canManagePermissions ? (
+                          <th>
+                            <span className="sr-only">Oprávnění</span>
+                          </th>
+                        ) : null}
                       </tr>
                     </thead>
                     <tbody>
@@ -457,6 +570,35 @@ export default async function SettingsPage() {
                             </Badge>
                           </td>
                           <td>{formatDate(user.createdAt)}</td>
+                          <td className="text-sm">
+                            {invitationLabel(user.invitation)}
+                          </td>
+                          <td>
+                            <ResendInvitationButton
+                              userId={user.id}
+                              userName={user.name}
+                              disabled={
+                                !user.active ||
+                                user.id === result.data.currentUserId
+                              }
+                              disabledReason={
+                                user.id === result.data.currentUserId
+                                  ? "Sám sobě pozvánku neposíláte."
+                                  : "Neaktivnímu uživateli se pozvánka neposílá."
+                              }
+                            />
+                          </td>
+                          {result.data.canManagePermissions ? (
+                            <td>
+                              <Link
+                                href={`/settings/permissions/users/${user.id}`}
+                                className="text-sm font-medium text-[#0e1822] underline-offset-2 hover:underline"
+                                aria-label={`Oprávnění uživatele ${user.name}`}
+                              >
+                                Oprávnění
+                              </Link>
+                            </td>
+                          ) : null}
                         </tr>
                       ))}
                     </tbody>
@@ -467,53 +609,15 @@ export default async function SettingsPage() {
               )}
             </Section>
             <Section title="Nový uživatel">
-              <form action={createUser} className="grid gap-4">
-                <Field label="Jméno">
-                  <TextInput name="name" required />
-                </Field>
-                <Field label="E-mail">
-                  <TextInput name="email" type="email" required />
-                </Field>
-                <Field label="Počáteční heslo (min. 8 znaků)">
-                  <TextInput
-                    name="password"
-                    type="password"
-                    autoComplete="new-password"
-                    minLength={8}
-                    required
-                  />
-                </Field>
-                <Field label="Role">
-                  <SelectInput name="role" defaultValue="LAWYER">
-                    {options.userRoles.map((role) => (
-                      <option key={role} value={role}>
-                        {userRoleLabels[role]}
-                      </option>
-                    ))}
-                  </SelectInput>
-                </Field>
-                <Field label="Microsoft ID">
-                  <TextInput name="microsoftId" />
-                </Field>
-                <label className="flex items-center gap-2 text-sm font-medium text-stone-700">
-                  <input
-                    type="checkbox"
-                    name="active"
-                    defaultChecked
-                    className="h-4 w-4 rounded border-stone-300 text-emerald-950"
-                  />
-                  Aktivní
-                </label>
-                <Button type="submit">Vytvořit uživatele</Button>
-              </form>
+              <CreateUserForm roles={result.data.assignableRoles} />
             </Section>
           </div>
-          {result.data.users.length > 0 ? (
+          {resettableUsers.length > 0 ? (
             <Section title="Reset hesla uživatele">
               <form action={setUserPassword} className="grid max-w-sm gap-4">
                 <Field label="Uživatel">
                   <SelectInput name="userId">
-                    {result.data.users.map((user) => (
+                    {resettableUsers.map((user) => (
                       <option key={user.id} value={user.id}>
                         {user.name} ({user.email})
                       </option>
@@ -536,114 +640,27 @@ export default async function SettingsPage() {
             </Section>
           ) : null}
           {result.data.users.length > 0 ? (
-            <Section title="Plán hodin pracovníků">
+            <Section
+              id="plan-hodin"
+              title="Plán hodin pracovníků (KPI)"
+              className="scroll-mt-20"
+            >
               <p className="mb-4 text-sm text-stone-600">
-                Týdenní a měsíční cíl vykázaných hodin pro „% plnění“ na
-                výkazech a týdenní graf na dashboardu. Prázdné pole cíl zruší.
+                Cíle vykázaných hodin (KPI) pro % plnění na dashboardu, ve
+                výkazech a na stránce Výkonnost. Fakturovatelné = výkazy
+                označené jako fakturovatelné (i čekající na schválení). Prázdné
+                pole cíl zruší.
               </p>
               <div className="grid gap-3">
                 {result.data.users.map((user) => (
-                  <form
+                  <HoursPlanForm
                     key={user.id}
-                    action={updateUserHoursPlan}
-                    className="grid items-end gap-3 rounded-md border border-stone-200 p-3 sm:grid-cols-[1fr_140px_140px_auto]"
-                  >
-                    <input type="hidden" name="userId" value={user.id} />
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-stone-950">
-                        {user.name}
-                      </p>
-                      <p className="truncate text-xs text-stone-500">
-                        {userRoleLabels[user.role]}
-                      </p>
-                    </div>
-                    <Field label="Týdně (h)">
-                      <TextInput
-                        name="weeklyHoursTarget"
-                        type="number"
-                        min={0}
-                        step="0.5"
-                        defaultValue={user.hoursPlan?.weeklyHoursTarget ?? undefined}
-                      />
-                    </Field>
-                    <Field label="Měsíčně (h)">
-                      <TextInput
-                        name="monthlyHoursTarget"
-                        type="number"
-                        min={0}
-                        step="0.5"
-                        defaultValue={
-                          user.hoursPlan?.monthlyHoursTarget ?? undefined
-                        }
-                      />
-                    </Field>
-                    <Button type="submit" variant="secondary" className="self-end">
-                      Uložit
-                    </Button>
-                  </form>
+                    userId={user.id}
+                    userName={user.name}
+                    roleLabel={userRoleLabels[user.role]}
+                    initial={user.hoursPlan}
+                  />
                 ))}
-              </div>
-            </Section>
-          ) : null}
-          {result.data.users.length > 0 ? (
-            <Section title="Oprávnění uživatelů">
-              <p className="mb-4 text-sm text-stone-600">
-                Granty nad rámec role — např. přístup k fakturaci pro vybrané
-                advokáty nebo zobrazení sazeb. Admin a partner mají plný přístup
-                automaticky dle role.
-              </p>
-              <div className="grid gap-3">
-                {result.data.users.map((user) => {
-                  const fullByRole =
-                    user.role === UserRole.ADMIN ||
-                    user.role === UserRole.PARTNER;
-                  return (
-                    <div
-                      key={user.id}
-                      className="grid gap-3 rounded-md border border-stone-200 p-3 sm:grid-cols-[1fr_auto] sm:items-center"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-stone-950">
-                          {user.name}
-                        </p>
-                        <p className="truncate text-xs text-stone-500">
-                          {userRoleLabels[user.role]}
-                        </p>
-                      </div>
-                      {fullByRole ? (
-                        <Badge tone="green">Plný přístup dle role</Badge>
-                      ) : (
-                        <form
-                          action={setUserCapabilities}
-                          className="flex flex-wrap items-center gap-4"
-                        >
-                          <input type="hidden" name="userId" value={user.id} />
-                          {capabilityOptions.map((capability) => (
-                            <label
-                              key={capability}
-                              className="flex items-center gap-2 text-sm text-stone-700"
-                              title={capabilityDescriptions[capability]}
-                            >
-                              <input
-                                type="checkbox"
-                                name="capabilities"
-                                value={capability}
-                                defaultChecked={user.capabilities.includes(
-                                  capability,
-                                )}
-                                className="h-4 w-4 rounded border-stone-300 text-emerald-950"
-                              />
-                              {capabilityLabels[capability]}
-                            </label>
-                          ))}
-                          <Button type="submit" variant="secondary">
-                            Uložit
-                          </Button>
-                        </form>
-                      )}
-                    </div>
-                  );
-                })}
               </div>
             </Section>
           ) : null}

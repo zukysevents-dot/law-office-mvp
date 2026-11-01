@@ -31,10 +31,13 @@ export function SubjectPortalSection({
   subjectId,
   access,
   shares,
+  defaultEmail,
 }: {
   subjectId: string;
   access: Access;
   shares: Share[];
+  /** Pre-filled address when no access exists yet (the client's primary e-mail). */
+  defaultEmail?: string | null;
 }) {
   const active = access?.status === "ACTIVE";
 
@@ -117,7 +120,7 @@ export function SubjectPortalSection({
               <TextInput
                 name="email"
                 type="email"
-                defaultValue={access?.email ?? ""}
+                defaultValue={access?.email ?? defaultEmail ?? ""}
                 required
               />
             </Field>

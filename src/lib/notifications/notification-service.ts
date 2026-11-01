@@ -1,12 +1,32 @@
-import nodemailer, { type Transporter } from "nodemailer";
-
+import type { Prisma } from "@/generated/prisma/client";
 import {
   DeadlineStatus,
   NotificationStatus,
   NotificationType,
   TaskStatus,
 } from "@/generated/prisma/enums";
+import {
+  formatMatterAssignedNotification,
+  formatTeamJoinedNotification,
+  type RecipientNotice,
+} from "@/lib/assignments";
 import { taskStatusLabels } from "@/lib/labels";
+import { formatTaskDeadline } from "@/lib/tasks/deadline-history";
+import {
+  taskCommentRecipients,
+  taskCreatedRecipients,
+  taskDeadlineSoonRecipients,
+  taskFiledRecipients,
+  taskOverdueRecipients,
+  taskStatusRecipients,
+  type TaskPeopleRecord,
+} from "@/lib/tasks/task-people";
+import {
+  appUrl,
+  emailHtml,
+  getSmtpTransporter,
+  mailConfigStatus,
+} from "@/lib/mail/mailer";
 import { getPrisma } from "@/lib/prisma";
 
 const MAX_ATTEMPTS = 3;
@@ -20,6 +40,12 @@ const LOCK_TIMEOUT_MINUTES = 15;
 // large backlog (esp. long-overdue OPEN deadlines) can't overwhelm one cron run.
 // Dedupe keys make this safe to resume: unsent rows are picked up next run.
 const SCHEDULED_SCAN_LIMIT = 1000;
+// Úkol po termínu: upozorňuje se jen na úkoly, jejichž termín uplynul nejvýš
+// před tolika dny. Produkční bezpečnost: první běh cronu po nasazení nesmí
+// rozeslat e-maily ke všem historicky prošlým úkolům.
+export const TASK_OVERDUE_LOOKBACK_DAYS = 7;
+// Ukázka komentáře v e-mailu.
+const COMMENT_EXCERPT_LENGTH = 300;
 
 export type NotificationPreferenceShape = {
   emailEnabled: boolean;
@@ -35,6 +61,10 @@ export type NotificationPreferenceShape = {
   courtHearingSoonEmail: boolean;
   deadlineWatchDaysBefore: number;
   registryChangeEmail: boolean;
+  matterAssignedEmail: boolean;
+  taskCommentedEmail: boolean;
+  taskOverdueEmail: boolean;
+  taskDeadlineChangedEmail: boolean;
 };
 
 export type NotificationPayload = {
@@ -56,8 +86,6 @@ export type NotificationRunResult = {
   skipped: number;
 };
 
-let smtpTransporter: Transporter | null = null;
-
 const defaultPreference: NotificationPreferenceShape = {
   emailEnabled: true,
   taskCreatedEmail: true,
@@ -72,6 +100,10 @@ const defaultPreference: NotificationPreferenceShape = {
   courtHearingSoonEmail: true,
   deadlineWatchDaysBefore: DEFAULT_DEADLINE_WATCH_DAYS,
   registryChangeEmail: true,
+  matterAssignedEmail: true,
+  taskCommentedEmail: true,
+  taskOverdueEmail: true,
+  taskDeadlineChangedEmail: true,
 };
 
 export function uniqueRecipients(
@@ -135,6 +167,23 @@ export function preferenceAllows(
     return current.registryChangeEmail;
   }
 
+  if (type === NotificationType.MATTER_ASSIGNED) {
+    return current.matterAssignedEmail;
+  }
+
+  if (type === NotificationType.TASK_COMMENTED) {
+    return current.taskCommentedEmail;
+  }
+
+  if (type === NotificationType.TASK_OVERDUE) {
+    return current.taskOverdueEmail;
+  }
+
+  if (type === NotificationType.TASK_DEADLINE_CHANGED) {
+    // Starší řádek preferencí (před migrací načtený bez sloupce) = zapnuto.
+    return current.taskDeadlineChangedEmail ?? true;
+  }
+
   return false;
 }
 
@@ -160,72 +209,13 @@ export function notificationOutcome(
   return { queued: 0, skipped: 0 };
 }
 
-function envFlag(value: string | undefined) {
-  return value?.trim().toLowerCase() === "true";
-}
-
-function envNumber(value: string | undefined, fallback: number) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function appUrl(path: string) {
-  const baseUrl = process.env.APP_BASE_URL?.trim() || "http://127.0.0.1:3001";
-  return `${baseUrl.replace(/\/$/, "")}${path}`;
-}
-
-function emailHtml(body: string) {
-  return body
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("\n", "<br />");
-}
-
-// Exported so the client-portal mailer (F6) reuses the same SMTP configuration
-// and transporter cache — one source of truth for e-mail delivery.
-export function getSmtpTransporter() {
-  if (!envFlag(process.env.EMAIL_NOTIFICATIONS_ENABLED)) {
-    return null;
-  }
-
-  const host = process.env.SMTP_HOST?.trim();
-  const from = process.env.SMTP_FROM?.trim();
-
-  if (!host || !from) {
-    return null;
-  }
-
-  if (!smtpTransporter) {
-    const user = process.env.SMTP_USER?.trim();
-    const pass = process.env.SMTP_PASSWORD?.trim();
-
-    smtpTransporter = nodemailer.createTransport({
-      host,
-      port: envNumber(process.env.SMTP_PORT, 587),
-      secure: envFlag(process.env.SMTP_SECURE),
-      auth: user && pass ? { user, pass } : undefined,
-    });
-  }
-
-  return smtpTransporter;
-}
+// Re-exported for existing callers (invoices, client portal): the transport
+// itself lives in src/lib/mail/mailer.ts — one source of truth for SMTP.
+export { getSmtpTransporter };
 
 function disabledReason() {
-  if (!envFlag(process.env.EMAIL_NOTIFICATIONS_ENABLED)) {
-    return "EMAIL_NOTIFICATIONS_DISABLED";
-  }
-
-  if (!process.env.SMTP_HOST?.trim()) {
-    return "SMTP_HOST_NOT_CONFIGURED";
-  }
-
-  if (!process.env.SMTP_FROM?.trim()) {
-    return "SMTP_FROM_NOT_CONFIGURED";
-  }
-
-  return "SMTP_NOT_CONFIGURED";
+  const config = mailConfigStatus();
+  return config.enabled ? "SMTP_NOT_CONFIGURED" : config.reason;
 }
 
 function formatTaskNotificationBody({
@@ -369,27 +359,131 @@ export async function queueInternalNotification(payload: NotificationPayload) {
   return { queued, skipped };
 }
 
+type TaskNotificationTask = TaskPeopleRecord & { id: string; title: string };
+
+function sumResults(results: ReadonlyArray<{ queued: number; skipped: number }>) {
+  return results.reduce(
+    (sum, entry) => ({
+      queued: sum.queued + entry.queued,
+      skipped: sum.skipped + entry.skipped,
+    }),
+    { queued: 0, skipped: 0 },
+  );
+}
+
+// Nový úkol: řešitelé a odpovědná osoba dostanou „Byl vám přiřazen nový úkol“,
+// dohled zvlášť s vlastním textem. Typ TASK_CREATED (preference taskCreatedEmail).
 export async function queueTaskCreatedNotifications({
   task,
   actorUserId,
 }: {
-  task: {
-    id: string;
-    title: string;
-    shortDescription: string | null;
-    assignedToId: string | null;
-    responsibleUserId: string | null;
-  };
+  task: TaskNotificationTask & { shortDescription: string | null };
   actorUserId: string;
 }) {
+  const { workers, supervisors } = taskCreatedRecipients(task);
+  const message = task.shortDescription
+    ? `Byl vám přiřazen nový úkol: ${task.shortDescription}`
+    : "Byl vám přiřazen nový úkol.";
+  const results = await Promise.all([
+    queueInternalNotification({
+      toUserIds: workers,
+      actorUserId,
+      type: NotificationType.TASK_CREATED,
+      subject: `Nový úkol: ${task.title}`,
+      body: formatTaskNotificationBody({
+        title: task.title,
+        message,
+        taskId: task.id,
+      }),
+      entityType: "Task",
+      entityId: task.id,
+    }),
+    queueInternalNotification({
+      toUserIds: supervisors,
+      actorUserId,
+      type: NotificationType.TASK_CREATED,
+      subject: `Dohled nad novým úkolem: ${task.title}`,
+      body: formatTaskNotificationBody({
+        title: task.title,
+        message:
+          "Byli jste přidáni jako dohled k úkolu. Úkol vidíte, můžete ho komentovat a měnit jeho status.",
+        taskId: task.id,
+      }),
+      entityType: "Task",
+      entityId: task.id,
+    }),
+  ]);
+  return sumResults(results);
+}
+
+// Úprava úkolu přidala nové řešitele / dohled: dostanou jen oni (TASK_CREATED).
+export async function queueTaskPeopleAddedNotifications({
+  task,
+  addedAssigneeIds,
+  addedSupervisorIds,
+  actorUserId,
+}: {
+  task: { id: string; title: string };
+  addedAssigneeIds: readonly string[];
+  addedSupervisorIds: readonly string[];
+  actorUserId: string;
+}) {
+  const results = await Promise.all([
+    queueInternalNotification({
+      toUserIds: [...addedAssigneeIds],
+      actorUserId,
+      type: NotificationType.TASK_CREATED,
+      subject: `Přidání k úkolu: ${task.title}`,
+      body: formatTaskNotificationBody({
+        title: task.title,
+        message: "Byli jste přidáni jako řešitel úkolu.",
+        taskId: task.id,
+      }),
+      entityType: "Task",
+      entityId: task.id,
+    }),
+    queueInternalNotification({
+      toUserIds: [...addedSupervisorIds],
+      actorUserId,
+      type: NotificationType.TASK_CREATED,
+      subject: `Dohled nad úkolem: ${task.title}`,
+      body: formatTaskNotificationBody({
+        title: task.title,
+        message:
+          "Byli jste přidáni jako dohled k úkolu. Úkol vidíte, můžete ho komentovat a měnit jeho status.",
+        taskId: task.id,
+      }),
+      entityType: "Task",
+      entityId: task.id,
+    }),
+  ]);
+  return sumResults(results);
+}
+
+// Nový komentář: řešitelé, dohled, odpovědná osoba a zadavatel (bez autora).
+export async function queueTaskCommentNotifications({
+  task,
+  actorUserId,
+  authorName,
+  comment,
+}: {
+  task: TaskNotificationTask;
+  actorUserId: string;
+  authorName: string;
+  comment: string;
+}) {
+  const excerpt =
+    comment.length > COMMENT_EXCERPT_LENGTH
+      ? `${comment.slice(0, COMMENT_EXCERPT_LENGTH)}…`
+      : comment;
   return queueInternalNotification({
-    toUserIds: [task.assignedToId, task.responsibleUserId],
+    toUserIds: taskCommentRecipients(task),
     actorUserId,
-    type: NotificationType.TASK_CREATED,
-    subject: `Nový úkol: ${task.title}`,
+    type: NotificationType.TASK_COMMENTED,
+    subject: `Nový komentář k úkolu: ${task.title}`,
     body: formatTaskNotificationBody({
       title: task.title,
-      message: task.shortDescription || "Byl vám přiřazen nový úkol.",
+      message: `${authorName}: ${excerpt}`,
       taskId: task.id,
     }),
     entityType: "Task",
@@ -397,31 +491,103 @@ export async function queueTaskCreatedNotifications({
   });
 }
 
+// Přiřazení k projektům/případům (osobně nebo přes tým): jedna notifikace na
+// příjemce — u hromadné akce souhrn. Respektuje preference (matterAssignedEmail)
+// a dedupe klíč (opakované odeslání téhož přiřazení nic nezduplikuje).
+export async function queueMatterAssignedNotifications({
+  notices,
+  actorUserId,
+}: {
+  notices: readonly RecipientNotice[];
+  actorUserId: string;
+}) {
+  const results = await Promise.all(
+    notices
+      .filter((notice) => notice.items.length > 0)
+      .map((notice) => {
+        const { subject, body, dedupeKey } = formatMatterAssignedNotification(
+          notice.items,
+          appUrl,
+        );
+        const [first] = notice.items;
+        return queueInternalNotification({
+          toUserId: notice.recipientId,
+          actorUserId,
+          type: NotificationType.MATTER_ASSIGNED,
+          subject,
+          body,
+          entityType: first.matter.kind === "project" ? "Project" : "Case",
+          entityId: first.matter.id,
+          dedupeKey,
+        });
+      }),
+  );
+  return results.reduce(
+    (sum, entry) => ({
+      queued: sum.queued + entry.queued,
+      skipped: sum.skipped + entry.skipped,
+    }),
+    { queued: 0, skipped: 0 },
+  );
+}
+
+// Nový člen týmu: dozví se, ke kterým záznamům mu tým dává přístup.
+export async function queueTeamJoinedNotification({
+  recipientUserId,
+  actorUserId,
+  team,
+}: {
+  recipientUserId: string;
+  actorUserId: string;
+  team: { id: string; name: string; projectCount: number; caseCount: number };
+}) {
+  const { subject, body } = formatTeamJoinedNotification(
+    {
+      teamName: team.name,
+      projectCount: team.projectCount,
+      caseCount: team.caseCount,
+    },
+    appUrl,
+  );
+  return queueInternalNotification({
+    toUserId: recipientUserId,
+    actorUserId,
+    type: NotificationType.MATTER_ASSIGNED,
+    subject,
+    body,
+    entityType: "LegalTeam",
+    // Bez dedupe klíče: každé (znovu)přidání do týmu je nová událost.
+    entityId: team.id,
+  });
+}
+
+// Změna statusu: řešitelé, dohled, odpovědná osoba a zadavatel (bez aktéra).
+// Poznámka ke změně jde do těla téhož e-mailu (žádný druhý e-mail o komentáři).
 export async function queueTaskStatusNotifications({
   task,
   oldStatus,
   newStatus,
   actorUserId,
+  note,
 }: {
-  task: {
-    id: string;
-    title: string;
+  task: TaskNotificationTask & {
     createdById: string | null;
-    assignedToId: string | null;
     responsibleUserId: string | null;
   };
   oldStatus: TaskStatus;
   newStatus: TaskStatus;
   actorUserId: string;
+  note?: string | null;
 }) {
+  const statusMessage = `Status se změnil z "${taskStatusLabels[oldStatus]}" na "${taskStatusLabels[newStatus]}".`;
   await queueInternalNotification({
-    toUserIds: [task.assignedToId, task.responsibleUserId, task.createdById],
+    toUserIds: taskStatusRecipients(task),
     actorUserId,
     type: NotificationType.TASK_STATUS_CHANGED,
     subject: `Změna statusu úkolu: ${task.title}`,
     body: formatTaskNotificationBody({
       title: task.title,
-      message: `Status se změnil z "${taskStatusLabels[oldStatus]}" na "${taskStatusLabels[newStatus]}".`,
+      message: note ? `${statusMessage}\nKomentář: ${note}` : statusMessage,
       taskId: task.id,
     }),
     entityType: "Task",
@@ -442,6 +608,126 @@ export async function queueTaskStatusNotifications({
       entityId: task.id,
     });
   }
+}
+
+export type TaskDeadlineChangeMode = "postpone" | "edit";
+
+// Text e-mailu o odložení / změně termínu (čistá funkce, unit test).
+export function formatTaskDeadlineChangedNotification({
+  title,
+  oldDeadline,
+  newDeadline,
+  reason,
+  actorName,
+  mode,
+}: {
+  title: string;
+  oldDeadline: Date | null;
+  newDeadline: Date | null;
+  reason?: string | null;
+  actorName: string;
+  mode: TaskDeadlineChangeMode;
+}) {
+  const from = formatTaskDeadline(oldDeadline);
+  const to = formatTaskDeadline(newDeadline);
+  const postponed =
+    Boolean(oldDeadline && newDeadline) &&
+    (newDeadline as Date).getTime() > (oldDeadline as Date).getTime();
+  let sentence: string;
+  if (mode === "postpone") {
+    sentence = `Termín úkolu byl odložen z ${from} na ${to}.`;
+  } else if (oldDeadline && newDeadline) {
+    sentence = postponed
+      ? `Termín úkolu byl při úpravě odložen z ${from} na ${to}.`
+      : `Termín úkolu byl při úpravě změněn z ${from} na ${to}.`;
+  } else if (newDeadline) {
+    sentence = `Úkolu byl nastaven termín ${to}.`;
+  } else {
+    sentence = `Termín úkolu (${from}) byl odstraněn.`;
+  }
+  const lines = [sentence];
+  if (reason) {
+    lines.push(`Důvod: ${reason}`);
+  }
+  lines.push(`${mode === "postpone" ? "Odložil(a)" : "Změnil(a)"}: ${actorName}.`);
+  return {
+    subject:
+      mode === "postpone"
+        ? `Odložení úkolu: ${title}`
+        : `Změna termínu úkolu: ${title}`,
+    message: lines.join("\n"),
+  };
+}
+
+// Odložení nebo změna termínu: řešitelé, dohled, odpovědná osoba a zadavatel
+// (bez autora změny). Bez dedupe klíče — každé odložení je nová událost.
+export async function queueTaskDeadlineChangedNotifications({
+  task,
+  oldDeadline,
+  newDeadline,
+  reason,
+  actorUserId,
+  actorName,
+  mode,
+}: {
+  task: TaskNotificationTask;
+  oldDeadline: Date | null;
+  newDeadline: Date | null;
+  reason?: string | null;
+  actorUserId: string;
+  actorName: string;
+  mode: TaskDeadlineChangeMode;
+}) {
+  const { subject, message } = formatTaskDeadlineChangedNotification({
+    title: task.title,
+    oldDeadline,
+    newDeadline,
+    reason,
+    actorName,
+    mode,
+  });
+  return queueInternalNotification({
+    toUserIds: taskStatusRecipients(task),
+    actorUserId,
+    type: NotificationType.TASK_DEADLINE_CHANGED,
+    subject,
+    body: formatTaskNotificationBody({ title: task.title, message, taskId: task.id }),
+    entityType: "Task",
+    entityId: task.id,
+  });
+}
+
+// Po změně termínu úkolu (v transakci té změny):
+//  (a) nevyřízená upozornění „blíží se deadline“ / „po termínu“ na starý termín
+//      se už neodešlou (SKIPPED, lastError TASK_DEADLINE_CHANGED);
+//  (b) dedupe klíč připomínky „blíží se deadline“ (bez data v klíči) se uvolní,
+//      takže plánovač připomínku k NOVÉMU termínu znovu zařadí. Řádek zůstává
+//      jako historie. Formát klíče se nemění (žádná vlna duplicit po nasazení).
+// Klíč „po termínu“ datum obsahuje (taskOverdueDedupeKey), uvolňovat ho netřeba.
+export async function rearmTaskDeadlineNotifications(
+  tx: Prisma.TransactionClient,
+  taskId: string,
+) {
+  await tx.notification.updateMany({
+    where: {
+      entityType: "Task",
+      entityId: taskId,
+      status: NotificationStatus.PENDING,
+      type: {
+        in: [NotificationType.TASK_DEADLINE_SOON, NotificationType.TASK_OVERDUE],
+      },
+    },
+    data: { status: NotificationStatus.SKIPPED, lastError: "TASK_DEADLINE_CHANGED" },
+  });
+  await tx.notification.updateMany({
+    where: {
+      entityType: "Task",
+      entityId: taskId,
+      type: NotificationType.TASK_DEADLINE_SOON,
+      dedupeKey: { not: null },
+    },
+    data: { dedupeKey: null },
+  });
 }
 
 export async function sendPendingNotifications(limit = DEFAULT_SEND_LIMIT) {
@@ -615,16 +901,14 @@ async function createScheduledDeadlineNotifications(now: Date) {
       deadline: true,
       assignedToId: true,
       responsibleUserId: true,
+      assignees: { select: { userId: true, role: true } },
     },
   });
   const preferenceCache = new Map<string, NotificationPreferenceShape>();
   let created = 0;
 
   for (const task of tasks) {
-    const recipientIds = uniqueRecipients([
-      task.assignedToId,
-      task.responsibleUserId,
-    ]);
+    const recipientIds = uniqueRecipients(taskDeadlineSoonRecipients(task));
 
     // Per-recipient reminder window first, then one batched queue call.
     const eligible: string[] = [];
@@ -680,6 +964,7 @@ async function createScheduledFiledFollowupNotifications(now: Date) {
       createdById: true,
       assignedToId: true,
       responsibleUserId: true,
+      assignees: { select: { userId: true, role: true } },
       statusHistory: {
         where: { newStatus: TaskStatus.FILED },
         orderBy: { createdAt: "desc" },
@@ -698,11 +983,7 @@ async function createScheduledFiledFollowupNotifications(now: Date) {
       continue;
     }
 
-    const recipientIds = uniqueRecipients([
-      task.assignedToId,
-      task.responsibleUserId,
-      task.createdById,
-    ]);
+    const recipientIds = uniqueRecipients(taskFiledRecipients(task));
 
     const eligible: string[] = [];
     for (const recipientId of recipientIds) {
@@ -744,6 +1025,76 @@ async function createScheduledFiledFollowupNotifications(now: Date) {
   return created;
 }
 
+function startOfUtcDay(value: Date) {
+  return new Date(
+    Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()),
+  );
+}
+
+// Úkol po termínu: nedokončený, nearchivovaný úkol, jehož termín (datum, UTC
+// půlnoc) už uplynul — nejvýš TASK_OVERDUE_LOOKBACK_DAYS dní zpět. Jednou na
+// hodnotu termínu (datum termínu v dedupe klíči): posunutí termínu upozornění
+// znovu „natáhne“. Příjemci: řešitelé, dohled a odpovědná osoba.
+export function taskOverdueWindow(now: Date) {
+  const today = startOfUtcDay(now);
+  const from = new Date(today);
+  from.setUTCDate(from.getUTCDate() - TASK_OVERDUE_LOOKBACK_DAYS);
+  return { from, before: today };
+}
+
+export function taskOverdueDedupeKey(taskId: string, deadline: Date) {
+  return `task:${taskId}:overdue:${deadline.toISOString().slice(0, 10)}`;
+}
+
+async function createScheduledTaskOverdueNotifications(now: Date) {
+  const prisma = getPrisma();
+  const { from, before } = taskOverdueWindow(now);
+  const tasks = await prisma.task.findMany({
+    where: {
+      archivedAt: null,
+      status: { not: TaskStatus.COMPLETED },
+      deadline: { gte: from, lt: before },
+    },
+    orderBy: { deadline: "asc" },
+    take: SCHEDULED_SCAN_LIMIT,
+    select: {
+      id: true,
+      title: true,
+      deadline: true,
+      assignedToId: true,
+      responsibleUserId: true,
+      assignees: { select: { userId: true, role: true } },
+    },
+  });
+  let created = 0;
+
+  for (const task of tasks) {
+    if (!task.deadline) {
+      continue;
+    }
+    const recipientIds = uniqueRecipients(taskOverdueRecipients(task));
+    if (recipientIds.length === 0) {
+      continue;
+    }
+    const result = await queueInternalNotification({
+      toUserIds: recipientIds,
+      type: NotificationType.TASK_OVERDUE,
+      subject: `Úkol je po termínu: ${task.title}`,
+      body: formatTaskNotificationBody({
+        title: task.title,
+        message: `Termín úkolu uplynul ${task.deadline.toLocaleDateString("cs-CZ", { timeZone: "UTC" })}.`,
+        taskId: task.id,
+      }),
+      entityType: "Task",
+      entityId: task.id,
+      dedupeKey: taskOverdueDedupeKey(task.id, task.deadline),
+    });
+    created += result.queued + result.skipped;
+  }
+
+  return created;
+}
+
 // F4 / L-5: reminders for watched deadlines (Deadline). Two flavours from one
 // scan of OPEN, non-archived deadlines:
 //   • DEADLINE_SOON — once, when within the recipient's watch window.
@@ -751,18 +1102,24 @@ async function createScheduledFiledFollowupNotifications(now: Date) {
 //     DAY (date in the dedupe key) while the deadline stays OPEN past its date.
 // A missed procedural deadline is the lawyer's liability, so overdue keeps
 // nagging rather than firing a single easily-missed alert.
+// Only OPEN, non-archived deadlines are watched: a fulfilled (COMPLETED) or
+// archived/cancelled deadline never produces another reminder. dueDate <=
+// maxWindow covers both upcoming (≤30d) and any overdue (dueDate<now).
+export function deadlineReminderWhere(maxWindow: Date) {
+  return {
+    archivedAt: null,
+    status: DeadlineStatus.OPEN,
+    dueDate: { lte: maxWindow },
+  } satisfies Prisma.DeadlineWhereInput;
+}
+
 async function createScheduledDeadlineReminders(now: Date) {
   const prisma = getPrisma();
   const maxWindow = new Date(now);
   maxWindow.setDate(maxWindow.getDate() + 30);
 
-  // dueDate <= maxWindow covers both upcoming (≤30d) and any overdue (dueDate<now).
   const deadlines = await prisma.deadline.findMany({
-    where: {
-      archivedAt: null,
-      status: DeadlineStatus.OPEN,
-      dueDate: { lte: maxWindow },
-    },
+    where: deadlineReminderWhere(maxWindow),
     orderBy: { dueDate: "asc" },
     take: SCHEDULED_SCAN_LIMIT,
     select: {
@@ -923,18 +1280,28 @@ async function createScheduledCourtHearingReminders(now: Date) {
 
 export async function runScheduledNotifications(limit = DEFAULT_SEND_LIMIT) {
   const now = new Date();
-  const [deadlineCreated, filedCreated, watchedCreated, hearingCreated] =
-    await Promise.all([
-      createScheduledDeadlineNotifications(now),
-      createScheduledFiledFollowupNotifications(now),
-      createScheduledDeadlineReminders(now),
-      createScheduledCourtHearingReminders(now),
-    ]);
+  const [
+    deadlineCreated,
+    filedCreated,
+    watchedCreated,
+    hearingCreated,
+    overdueCreated,
+  ] = await Promise.all([
+    createScheduledDeadlineNotifications(now),
+    createScheduledFiledFollowupNotifications(now),
+    createScheduledDeadlineReminders(now),
+    createScheduledCourtHearingReminders(now),
+    createScheduledTaskOverdueNotifications(now),
+  ]);
   const sendResult = await sendPendingNotifications(limit);
 
   return {
     created:
-      deadlineCreated + filedCreated + watchedCreated + hearingCreated,
+      deadlineCreated +
+      filedCreated +
+      watchedCreated +
+      hearingCreated +
+      overdueCreated,
     ...sendResult,
   } satisfies NotificationRunResult;
 }

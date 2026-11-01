@@ -154,7 +154,7 @@ export function e2eName(label: string) {
  * dialog actually opens instead of guessing a delay.
  */
 export async function openCommandPalette(page: Page) {
-  const palette = page.getByRole("dialog");
+  const palette = page.getByRole("dialog", { name: "Rychlé hledání" });
   await expect(async () => {
     await page.keyboard.press("ControlOrMeta+k");
     await expect(palette).toBeVisible({ timeout: 1_000 });

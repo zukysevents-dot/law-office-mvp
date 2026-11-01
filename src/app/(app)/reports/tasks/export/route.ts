@@ -11,7 +11,12 @@ import {
 } from "@/lib/labels";
 import { andWhere, taskVisibilityWhere } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import {
+  taskPeopleFromRecord,
+  taskPeopleSelect,
+} from "@/lib/tasks/task-people";
 import { writeAuditLog } from "@/lib/audit";
+import { canAccessModule } from "@/lib/module-access.server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,9 +32,10 @@ const HEADERS = [
   "Status",
   "Priorita",
   "Typ lhůty",
-  "Řešitel",
+  "Řešitelé",
+  "Dohled",
   "Odpovědná osoba",
-  "Vytvořil",
+  "Zadavatel",
   "Začátek",
   "Deadline",
 ];
@@ -42,9 +48,10 @@ const XLSX_COLUMNS: XlsxColumn[] = [
   { header: "Status", key: "status", width: 18 },
   { header: "Priorita", key: "priority", width: 14 },
   { header: "Typ lhůty", key: "deadlineType", width: 16 },
-  { header: "Řešitel", key: "assignedTo", width: 20 },
+  { header: "Řešitelé", key: "assignees", width: 28 },
+  { header: "Dohled", key: "supervisors", width: 24 },
   { header: "Odpovědná osoba", key: "responsibleUser", width: 20 },
-  { header: "Vytvořil", key: "createdBy", width: 20 },
+  { header: "Zadavatel", key: "createdBy", width: 20 },
   { header: "Začátek", key: "startDate", width: 12 },
   { header: "Deadline", key: "deadline", width: 12 },
 ];
@@ -60,10 +67,19 @@ const exportInclude = {
       project: { select: { mainSubject: { select: { name: true } } } },
     },
   },
-  assignedTo: { select: { name: true } },
+  // Řešitelé (hlavní první) a dohled.
+  ...taskPeopleSelect,
   responsibleUser: { select: { name: true } },
   createdBy: { select: { name: true } },
 } as const;
+
+function peopleCells(task: Parameters<typeof taskPeopleFromRecord>[0]) {
+  const people = taskPeopleFromRecord(task);
+  return {
+    assignees: people.assignees.map((person) => person.name).join(", "),
+    supervisors: people.supervisors.map((person) => person.name).join(", "),
+  };
+}
 
 type ExportTask = {
   project: { name: string; mainSubject: { name: string } } | null;
@@ -76,9 +92,7 @@ type ExportTask = {
 
 function subjectName(task: ExportTask) {
   return (
-    task.project?.mainSubject.name ??
-    task.case?.project.mainSubject.name ??
-    ""
+    task.project?.mainSubject.name ?? task.case?.project.mainSubject.name ?? ""
   );
 }
 
@@ -88,9 +102,11 @@ function dateCell(value: Date | null) {
 
 export async function GET(request: NextRequest) {
   const currentUser = await getCurrentUser();
-  const format = request.nextUrl.searchParams.get("format") === "csv"
-    ? "csv"
-    : "xlsx";
+  if (!(await canAccessModule(currentUser, "module.reports"))) {
+    return new Response("Přístup odepřen.", { status: 403 });
+  }
+  const format =
+    request.nextUrl.searchParams.get("format") === "csv" ? "csv" : "xlsx";
 
   let rows;
   try {
@@ -118,20 +134,24 @@ export async function GET(request: NextRequest) {
   if (format === "csv") {
     const body = buildCsvBody(
       HEADERS,
-      rows.map((row) => [
-        row.title,
-        subjectName(row),
-        row.project?.name ?? "",
-        formatCaseLabel(row.case, ""),
-        taskStatusLabels[row.status],
-        taskPriorityLabels[row.priority],
-        taskDeadlineTypeLabels[row.deadlineType],
-        row.assignedTo?.name ?? "",
-        row.responsibleUser?.name ?? "",
-        row.createdBy?.name ?? "",
-        dateCell(row.startDate),
-        dateCell(row.deadline),
-      ]),
+      rows.map((row) => {
+        const people = peopleCells(row);
+        return [
+          row.title,
+          subjectName(row),
+          row.project?.name ?? "",
+          formatCaseLabel(row.case, ""),
+          taskStatusLabels[row.status],
+          taskPriorityLabels[row.priority],
+          taskDeadlineTypeLabels[row.deadlineType],
+          people.assignees,
+          people.supervisors,
+          row.responsibleUser?.name ?? "",
+          row.createdBy?.name ?? "",
+          dateCell(row.startDate),
+          dateCell(row.deadline),
+        ];
+      }),
     );
     return csvResponse("ukoly.csv", body);
   }
@@ -139,6 +159,7 @@ export async function GET(request: NextRequest) {
   const buffer = await buildXlsx(
     XLSX_COLUMNS,
     rows.map((row) => ({
+      ...peopleCells(row),
       title: row.title,
       subject: subjectName(row),
       project: row.project?.name ?? "",
@@ -146,7 +167,6 @@ export async function GET(request: NextRequest) {
       status: taskStatusLabels[row.status],
       priority: taskPriorityLabels[row.priority],
       deadlineType: taskDeadlineTypeLabels[row.deadlineType],
-      assignedTo: row.assignedTo?.name ?? "",
       responsibleUser: row.responsibleUser?.name ?? "",
       createdBy: row.createdBy?.name ?? "",
       startDate: dateCell(row.startDate),

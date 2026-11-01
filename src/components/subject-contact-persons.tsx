@@ -108,7 +108,7 @@ export function SubjectContactPersons({
               <TextInput name="phone" />
             </Field>
             <Field label="Role">
-              <TextInput name="role" placeholder="zaměstnanec, jednatel…" />
+              <TextInput name="role" placeholder="zaměstnanec, asistentka, účetní…" />
             </Field>
           </div>
           <div className="grid gap-4 md:grid-cols-2">
@@ -137,7 +137,7 @@ export function SubjectContactPersons({
             <TextArea name="note" />
           </Field>
           <div>
-            <Button type="submit">Přidat kontaktní osobu</Button>
+            <Button type="submit" pendingLabel="Přidávám…">Přidat kontaktní osobu</Button>
           </div>
         </form>
       ) : null}

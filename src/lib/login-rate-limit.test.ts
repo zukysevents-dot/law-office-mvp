@@ -9,6 +9,10 @@ import {
   LOGIN_RATE_LIMIT_MAX_PER_IP,
   normalizeLoginIdentifier,
   orderedThrottleLockKeys,
+  PASSWORD_SETUP_LOCK_SCOPE,
+  PASSWORD_SETUP_RATE_LIMIT_MAX_PER_IP,
+  PASSWORD_SETUP_RATE_LIMIT_MAX_PER_TOKEN,
+  passwordSetupLedgerKeys,
   shouldCleanupAuthLedgers,
 } from "./login-rate-limit";
 
@@ -71,4 +75,25 @@ test("advisory lock order is deterministic and cleanup is probabilistic", () => 
   assert.deepEqual(keys, [...keys].sort());
   assert.equal(shouldCleanupAuthLedgers(0), true);
   assert.equal(shouldCleanupAuthLedgers(0.5), false);
+});
+
+test("password-setup attempts use their own ledger buckets and lock scope", () => {
+  const keys = passwordSetupLedgerKeys("10.0.0.1", "abc123");
+  // Namespaced IP: never counted against the staff-login IP budget.
+  assert.equal(keys.ipAddress, "setup:10.0.0.1");
+  assert.notEqual(keys.identifierHash, hashLoginIdentifier("abc123"));
+  assert.equal(keys.identifierHash, passwordSetupLedgerKeys("10.0.0.2", "abc123").identifierHash);
+
+  const lockKeys = orderedThrottleLockKeys(
+    PASSWORD_SETUP_LOCK_SCOPE,
+    keys.ipAddress,
+    keys.identifierHash,
+  );
+  assert.ok(lockKeys.every((key) => key.startsWith("password-setup:")));
+  assert.notDeepEqual(
+    lockKeys,
+    orderedThrottleLockKeys("login", keys.ipAddress, keys.identifierHash),
+  );
+  assert.equal(PASSWORD_SETUP_RATE_LIMIT_MAX_PER_TOKEN, 5);
+  assert.equal(PASSWORD_SETUP_RATE_LIMIT_MAX_PER_IP, 30);
 });

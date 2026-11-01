@@ -3,7 +3,8 @@ import {
   createRetainer,
   generateRetainerInvoice,
 } from "@/app/actions/retainers";
-import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
+import { CascadingMatterSelect } from "@/components/cascading-matter-select";
+import { Field, TextArea, TextInput } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
 import { Badge } from "@/components/ui/badge";
@@ -21,33 +22,48 @@ import { assertModuleEnabled } from "@/lib/entitlements";
 import { formatDate, formatHours, formatMoney } from "@/lib/format";
 import { canManageInvoices } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
-type RetainerRow = RetainerAgreement & { subject: { name: string } };
+type RetainerRow = RetainerAgreement & {
+  subject: { name: string };
+  project: { name: string } | null;
+};
 
 type RetainersData = {
   allowed: boolean;
   retainers: RetainerRow[];
   subjects: Pick<Subject, "id" | "name">[];
+  projects: Array<{ id: string; name: string; mainSubjectId: string }>;
 };
 
 export default async function RetainersPage() {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.billing");
+  if (accessDenied) {
+    return <AccessDenied title="Paušály" message={accessDenied} />;
+  }
+
   const result = await safeQuery<RetainersData>(
-    { allowed: false, retainers: [], subjects: [] },
+    { allowed: false, retainers: [], subjects: [], projects: [] },
     async () => {
       const currentUser = await getCurrentUser();
       await assertModuleEnabled(currentUser, ModuleKey.BILLING);
       // Fakturace jen pro ADMIN/PARTNER + grant MANAGE_INVOICES (revize ř.77).
       const allowed = canManageInvoices(currentUser);
       if (!allowed) {
-        return { allowed: false, retainers: [], subjects: [] };
+        return { allowed: false, retainers: [], subjects: [], projects: [] };
       }
       const prisma = getPrisma();
-      const [retainers, subjects] = await Promise.all([
+      const [retainers, subjects, projects] = await Promise.all([
         prisma.retainerAgreement.findMany({
           where: { organizationId: currentUser.organizationId },
-          include: { subject: { select: { name: true } } },
+          include: {
+            subject: { select: { name: true } },
+            project: { select: { name: true } },
+          },
           orderBy: [{ active: "desc" }, { createdAt: "desc" }],
           take: 500,
         }),
@@ -57,12 +73,23 @@ export default async function RetainersPage() {
           orderBy: { name: "asc" },
           take: 500,
         }),
+        prisma.project.findMany({
+          where: { organizationId: currentUser.organizationId, archivedAt: null },
+          select: { id: true, name: true, mainSubjectId: true },
+          orderBy: { name: "asc" },
+          take: 1000,
+        }),
       ]);
-      return { allowed: true, retainers, subjects };
+      return { allowed: true, retainers, subjects, projects };
     },
   );
 
-  const data = result.data ?? { allowed: false, retainers: [], subjects: [] };
+  const data = result.data ?? {
+    allowed: false,
+    retainers: [],
+    subjects: [],
+    projects: [],
+  };
 
   return (
     <>
@@ -80,7 +107,7 @@ export default async function RetainersPage() {
       {result.databaseReady && !data.allowed ? (
         <Section title="Přístup odepřen">
           <p className="text-sm text-stone-600">
-            Paušály mohou spravovat advokáti, partneři a administrátoři.
+            Paušály spravují jen uživatelé s oprávněním „Spravuje fakturaci“. O přístup požádejte administrátora kanceláře (Nastavení → Oprávnění).
           </p>
         </Section>
       ) : null}
@@ -106,6 +133,7 @@ export default async function RetainersPage() {
                       <tr key={retainer.id}>
                         <td className="font-medium text-stone-950">
                           {retainer.subject.name}
+                          {retainer.project ? ` / ${retainer.project.name}` : ""}
                         </td>
                         <td className="text-right">
                           {formatMoney(retainer.monthlyFeeCzk)}
@@ -184,15 +212,20 @@ export default async function RetainersPage() {
           <Section title="Nový paušál">
             {data.subjects.length > 0 ? (
               <form action={createRetainer} className="grid gap-4 sm:max-w-2xl">
-                <Field label="Klient">
-                  <SelectInput name="subjectId" required>
-                    {data.subjects.map((subject) => (
-                      <option key={subject.id} value={subject.id}>
-                        {subject.name}
-                      </option>
-                    ))}
-                  </SelectInput>
-                </Field>
+                {/* Klient → volitelně jen jeho projekt (paušál pak fakturuje
+                    jen výkazy projektu). */}
+                <CascadingMatterSelect
+                  subjects={data.subjects}
+                  projects={data.projects}
+                  cases={[]}
+                  includeCase={false}
+                  requireSubject
+                  subjectLabel="Klient"
+                  subjectPlaceholder="— vyberte klienta —"
+                  projectLabel="Projekt (volitelné)"
+                  projectPlaceholder="Celý klient"
+                  className="sm:grid-cols-2"
+                />
                 <div className="grid gap-4 sm:grid-cols-3">
                   <Field label="Měsíční paušál (Kč)">
                     <TextInput
@@ -226,7 +259,7 @@ export default async function RetainersPage() {
                   <TextArea name="note" />
                 </Field>
                 <div>
-                  <Button type="submit">Vytvořit paušál</Button>
+                  <Button type="submit" pendingLabel="Vytvářím…">Vytvořit paušál</Button>
                 </div>
               </form>
             ) : (

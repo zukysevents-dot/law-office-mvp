@@ -4,12 +4,11 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { Prisma } from "@/generated/prisma/client";
-import { InvoiceStatus, ModuleKey, VatMode } from "@/generated/prisma/enums";
+import { InvoiceStatus, VatMode } from "@/generated/prisma/enums";
 import { auditJson } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
 import { BILLING_ROW_LIMIT, invoiceableWorkLogWhere } from "@/lib/billing";
 import { computeInvoiceTotals, computeLine, round2 } from "@/lib/billing-calc";
-import { assertModuleEnabled } from "@/lib/entitlements";
 import {
   optionalDate,
   optionalNumber,
@@ -26,6 +25,7 @@ import {
   parseRetainerPeriod,
   retainerPeriodBounds,
 } from "@/lib/retainer-billing";
+import { assertCanAccessModule } from "@/lib/module-access.server";
 
 const DEFAULT_VAT_RATE = 21;
 
@@ -33,11 +33,12 @@ const DEFAULT_VAT_RATE = 21;
 export async function createRetainer(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  await assertModuleEnabled(currentUser, ModuleKey.BILLING);
+  await assertCanAccessModule(currentUser, "module.billing");
   assertCanManageInvoices(currentUser);
 
   const organizationId = currentUser.organizationId;
   const subjectId = requiredString(formData, "subjectId");
+  const projectId = optionalString(formData, "projectId");
   const monthlyFeeCzk = round2(requiredNumber(formData, "monthlyFeeCzk"));
   const includedHours = optionalNumber(formData, "includedHours");
   const vatRate = optionalNumber(formData, "vatRate") ?? DEFAULT_VAT_RATE;
@@ -65,11 +66,21 @@ export async function createRetainer(formData: FormData) {
   if (!subject) {
     throw new Error("Klient nenalezen.");
   }
+  if (projectId) {
+    const project = await prisma.project.findFirst({
+      where: { id: projectId, organizationId, archivedAt: null },
+      select: { mainSubjectId: true },
+    });
+    if (!project || project.mainSubjectId !== subjectId) {
+      throw new Error("Vybraný projekt nepatří zvolenému klientovi.");
+    }
+  }
 
   const created = await prisma.retainerAgreement.create({
     data: {
       organizationId,
       subjectId,
+      projectId,
       monthlyFeeCzk,
       includedHours,
       vatRate,
@@ -86,7 +97,7 @@ export async function createRetainer(formData: FormData) {
       entityId: created.id,
       action: "CREATE",
       changedById: currentUser.id,
-      newValue: auditJson({ subjectId, monthlyFeeCzk }),
+      newValue: auditJson({ subjectId, projectId, monthlyFeeCzk }),
     },
   });
 
@@ -97,7 +108,7 @@ export async function createRetainer(formData: FormData) {
 export async function archiveRetainer(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  await assertModuleEnabled(currentUser, ModuleKey.BILLING);
+  await assertCanAccessModule(currentUser, "module.billing");
   assertCanManageInvoices(currentUser);
 
   const retainerId = requiredString(formData, "retainerId");
@@ -134,7 +145,7 @@ export async function archiveRetainer(formData: FormData) {
 export async function generateRetainerInvoice(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  await assertModuleEnabled(currentUser, ModuleKey.BILLING);
+  await assertCanAccessModule(currentUser, "module.billing");
   assertCanManageInvoices(currentUser);
 
   const organizationId = currentUser.organizationId;

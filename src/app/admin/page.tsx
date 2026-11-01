@@ -69,7 +69,7 @@ export default async function AdminOrganizationsPage() {
             <TextInput name="seatLimit" type="number" min="0" step="1" placeholder="Bez limitu" />
           </Field>
           <div className="md:col-span-3">
-            <Button type="submit">Vytvořit kancelář</Button>
+            <Button type="submit" pendingLabel="Vytvářím…">Vytvořit kancelář</Button>
           </div>
         </form>
       </Section>

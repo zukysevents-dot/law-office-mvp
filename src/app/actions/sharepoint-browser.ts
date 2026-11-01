@@ -3,10 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { ModuleKey } from "@/generated/prisma/enums";
 import { auditJson, writeAuditLog } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
-import { assertModuleEnabled } from "@/lib/entitlements";
 import { optionalString, requiredString } from "@/lib/form";
 import {
   deleteSharepointItemByPath,
@@ -26,6 +24,7 @@ import {
   uniqueSharepointFilename,
 } from "@/lib/microsoft/sharepoint";
 import { assertCanEditRecord, canManageDocuments } from "@/lib/permissions";
+import { assertCanAccessModule } from "@/lib/module-access.server";
 
 // Simple Graph PUT upload strop; větší soubory by potřebovaly upload session.
 const MAX_SHAREPOINT_FILE_BYTES = 4 * 1024 * 1024;
@@ -46,7 +45,7 @@ type Target = {
  */
 async function authorizeFolder(formData: FormData): Promise<Target> {
   const currentUser = await getCurrentUser();
-  await assertModuleEnabled(currentUser, ModuleKey.DOCUMENTS);
+  await assertCanAccessModule(currentUser, "module.documents");
 
   const type = parseEntityType(requiredString(formData, "entityType"));
   if (!type) {

@@ -1,16 +1,12 @@
-import { FileText, Plus } from "lucide-react";
+import { ClipboardCheck, Copy, FileText, Plus } from "lucide-react";
 
-import {
-  archiveWorkLog,
-  createWorkLog,
-  restoreWorkLog,
-} from "@/app/actions/work-logs";
+import { archiveWorkLog, restoreWorkLog } from "@/app/actions/work-logs";
 import { ArchiveActionForm } from "@/components/archive-action-form";
 import { CascadingMatterSelect } from "@/components/cascading-matter-select";
 import { ColumnVisibilityPanel } from "@/components/column-visibility-panel";
-import { WorkLogCategoryFields } from "@/components/work-log-category-fields";
 import { WorkLogCreateDialog } from "@/components/work-log-create-dialog";
-import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
+import { WorkLogCreateForm } from "@/components/work-log-create-form";
+import { Field, SelectInput, TextInput } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +19,12 @@ import {
   archiveFilterValue,
 } from "@/lib/archive-filter";
 import { getCurrentUser } from "@/lib/auth";
+import { approvalFilterQuery } from "@/lib/billing-approvals";
+import {
+  countApprovalQueue,
+  getApprovalAccess,
+} from "@/lib/billing-approvals.server";
+import { isModuleEnabled } from "@/lib/entitlements";
 import { safeQuery } from "@/lib/db-safe";
 import {
   formatCaseLabel,
@@ -31,9 +33,18 @@ import {
   formatHours,
   formatMoney,
 } from "@/lib/format";
-import { DAY_MS, fulfillmentPercent, weekStartUtcMs } from "@/lib/hours-plan";
+import {
+  DAY_MS,
+  EMPTY_HOURS_PLAN,
+  fulfillmentPercent,
+  hoursPlanFromRecord,
+  isBillableKpiHours,
+  officeWeekStartUtcMs,
+  type HoursPlanTargets,
+} from "@/lib/hours-plan";
+import { officeWorkDate } from "@/lib/hr/attendance-calc";
 import { getOrgUserOptions } from "@/lib/org-users";
-import { firstParam } from "@/lib/search-params";
+import { filterFormKey, firstParam } from "@/lib/search-params";
 import {
   approvalStatusLabels,
   billingStatusLabels,
@@ -49,20 +60,27 @@ import {
   restrictTableView,
 } from "@/lib/table-view-preference-service";
 import type { TableViewState } from "@/lib/table-view-preferences";
-import { BillingStatus } from "@/generated/prisma/enums";
+import { BillingStatus, ModuleKey } from "@/generated/prisma/enums";
+import {
+  buildWorkLogDuplicatePrefill,
+  type WorkLogDuplicatePrefill,
+} from "@/lib/work-logs/duplicate";
+import {
+  emptyWorkLogFormOptions,
+  loadWorkLogFormOptions,
+  type WorkLogFormOptions,
+} from "@/lib/work-logs/create-form.server";
 import {
   andWhere,
   billingApproverWorkLogWhere,
-  canViewAllLegalData,
+  canArchiveRecords,
   canEditRecord,
   canSetBillableStatus,
   canViewRates,
-  caseVisibilityWhere,
-  projectVisibilityWhere,
-  subjectVisibilityWhere,
-  taskVisibilityWhere,
   workLogVisibilityWhere,
 } from "@/lib/permissions";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -106,6 +124,7 @@ type WorkLogsPageData = {
     title: string;
     projectId: string | null;
     caseId: string | null;
+    mine: boolean;
   }>;
   users: Array<{ id: string; name: string }>;
   tableView: TableViewState;
@@ -113,18 +132,22 @@ type WorkLogsPageData = {
   canViewRates: boolean;
   canSetBillable: boolean;
   canApprove: boolean;
-  timeIncrementMinutes: number;
+  /** null = no link (not an approver or the billing module is off). */
+  approvalQueueCount: number | null;
+  /** undefined = no ?duplicate, null = source not found / not visible. */
+  duplicatePrefill: WorkLogDuplicatePrefill | null | undefined;
+  formOptions: WorkLogFormOptions;
   // Souhrn hodin přihlášeného uživatele (jeho vlastní výkazy).
   monthSummary: {
     billable: number;
+    approvedBillable: number;
     needsApproval: number;
     internal: number;
     total: number;
   };
   weekHours: number;
   // Cíle z plánu hodin (null = nenastaveno) pro „% plnění".
-  weeklyTarget: number | null;
-  monthlyTarget: number | null;
+  hoursPlan: HoursPlanTargets;
 };
 
 function numberParam(value: string) {
@@ -136,7 +159,17 @@ function numberParam(value: string) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+// Query params that only open the create/duplicate dialog — they must not remount
+// (and so reset) the filter form.
+const WORK_LOG_DIALOG_PARAMS = ["new", "duplicate", "hours"] as const;
+
 export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.workLogs");
+  if (accessDenied) {
+    return <AccessDenied title="Výkazy práce" message={accessDenied} />;
+  }
+
   const params = await searchParams;
   const subjectId = firstParam(params, "subjectId");
   const projectId = firstParam(params, "projectId");
@@ -154,8 +187,12 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
   // The floating timer stops into this form with ?hours=<elapsed> so the most
   // repeated daily action needs zero manual time math.
   const hoursPrefill = firstParam(params, "hours");
+  // "Duplikovat" opens the same dialog prefilled from an existing work log.
+  const duplicateId = firstParam(params, "duplicate");
   const showNewDialog =
-    firstParam(params, "new") === "1" || Boolean(hoursPrefill);
+    firstParam(params, "new") === "1" ||
+    Boolean(hoursPrefill) ||
+    Boolean(duplicateId);
 
   const result = await safeQuery<WorkLogsPageData>(
     {
@@ -170,26 +207,25 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
       canViewRates: false,
       canSetBillable: false,
       canApprove: false,
-      timeIncrementMinutes: 15,
-      monthSummary: { billable: 0, needsApproval: 0, internal: 0, total: 0 },
+      approvalQueueCount: null,
+      duplicatePrefill: undefined,
+      formOptions: emptyWorkLogFormOptions,
+      monthSummary: {
+        billable: 0,
+        approvedBillable: 0,
+        needsApproval: 0,
+        internal: 0,
+        total: 0,
+      },
       weekHours: 0,
-      weeklyTarget: null,
-      monthlyTarget: null,
+      hoursPlan: EMPTY_HOURS_PLAN,
     },
     async () => {
       const prisma = getPrisma();
       const currentUser = await getCurrentUser();
       const tableView = await getCurrentTableView("workLogs");
-      const canApproveAll = canViewAllLegalData(currentUser);
-      const approvalAssignmentCount = canApproveAll
-        ? 0
-        : await prisma.subjectBillingApprover.count({
-            where: {
-              organizationId: currentUser.organizationId,
-              userId: currentUser.id,
-            },
-          });
-      const canApprove = canApproveAll || approvalAssignmentCount > 0;
+      const approvalAccess = await getApprovalAccess(prisma, currentUser);
+      const { canApproveAll, canApprove } = approvalAccess;
       const visibleWorkLogsWhere = canApproveAll
         ? workLogVisibilityWhere(currentUser)
         : canApprove
@@ -203,27 +239,30 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
               },
             )
           : workLogVisibilityWhere(currentUser);
-      // Hranice pro souhrn: aktuální měsíc a aktuální týden (od pondělí).
-      // Týden přes sdílený weekStartUtcMs helper, aby karta „Tento týden" a
-      // týdenní graf na dashboardu počítaly vždy stejný interval (workDate je
-      // uložený na UTC půlnoc, takže UTC hranice je pro výběr správná).
+      // Hranice pro souhrn: aktuální měsíc a aktuální týden (od pondělí) podle
+      // kancelářského dne (Europe/Prague). Týden přes sdílený
+      // officeWeekStartUtcMs, aby karta „Tento týden" a graf na dashboardu
+      // počítaly vždy stejný interval (workDate je uložený na UTC půlnoc).
       const now = new Date();
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-      const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-      const weekStartMs = weekStartUtcMs(now);
+      const officeToday = officeWorkDate(now);
+      const monthStart = new Date(
+        Date.UTC(officeToday.getUTCFullYear(), officeToday.getUTCMonth(), 1),
+      );
+      const nextMonthStart = new Date(
+        Date.UTC(officeToday.getUTCFullYear(), officeToday.getUTCMonth() + 1, 1),
+      );
+      const weekStartMs = officeWeekStartUtcMs(now);
       const weekStart = new Date(weekStartMs);
       const nextWeekStart = new Date(weekStartMs + 7 * DAY_MS);
       const [
         workLogs,
-        subjects,
-        projects,
-        cases,
-        tasks,
+        formOptions,
         users,
         monthGroups,
         weekAgg,
         hoursPlan,
-        organization,
+        approvalQueueCount,
+        duplicateSource,
       ] = await Promise.all([
         prisma.workLog.findMany({
           where: andWhere(
@@ -283,47 +322,12 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
             user: { select: { name: true } },
           },
         }),
-        prisma.subject.findMany({
-          where: andWhere(
-            { archivedAt: null },
-            subjectVisibilityWhere(currentUser),
-          ),
-          orderBy: { name: "asc" },
-          select: { id: true, name: true, ico: true },
-        }),
-        prisma.project.findMany({
-          where: andWhere(
-            { archivedAt: null },
-            projectVisibilityWhere(currentUser),
-          ),
-          orderBy: { name: "asc" },
-          select: { id: true, name: true, mainSubjectId: true },
-        }),
-        prisma.case.findMany({
-          where: andWhere(
-            { archivedAt: null },
-            caseVisibilityWhere(currentUser),
-          ),
-          orderBy: { name: "asc" },
-          select: {
-            id: true,
-            name: true,
-            projectId: true,
-            project: { select: { name: true } },
-          },
-        }),
-        prisma.task.findMany({
-          where: andWhere(
-            { archivedAt: null },
-            taskVisibilityWhere(currentUser),
-          ),
-          orderBy: { createdAt: "desc" },
-          select: { id: true, title: true, projectId: true, caseId: true },
-        }),
+        loadWorkLogFormOptions(prisma, currentUser),
         getOrgUserOptions(currentUser),
         prisma.workLog.groupBy({
           by: ["billingStatus", "approvalStatus"],
           where: {
+            organizationId: currentUser.organizationId,
             userId: currentUser.id,
             archivedAt: null,
             workDate: { gte: monthStart, lt: nextMonthStart },
@@ -332,6 +336,7 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
         }),
         prisma.workLog.aggregate({
           where: {
+            organizationId: currentUser.organizationId,
             userId: currentUser.id,
             archivedAt: null,
             workDate: { gte: weekStart, lt: nextWeekStart },
@@ -340,68 +345,113 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
         }),
         prisma.userHoursPlan.findUnique({
           where: { userId: currentUser.id },
-          select: { weeklyHoursTarget: true, monthlyHoursTarget: true },
+          select: {
+            weeklyHoursTarget: true,
+            monthlyHoursTarget: true,
+            weeklyBillableHoursTarget: true,
+            monthlyBillableHoursTarget: true,
+          },
         }),
-        prisma.organization.findUnique({
-          where: { id: currentUser.organizationId },
-          select: { billingTimeIncrementMinutes: true },
-        }),
+        canApprove &&
+        (await isModuleEnabled(currentUser.organizationId, ModuleKey.BILLING))
+          ? countApprovalQueue(prisma, currentUser, approvalAccess)
+          : null,
+        // Source of "Duplikovat" — same scope as the list (org + visibility /
+        // approver scope), so an unknown or foreign ID simply isn't found.
+        duplicateId
+          ? prisma.workLog.findFirst({
+              where: andWhere({ id: duplicateId }, visibleWorkLogsWhere),
+              select: {
+                subjectId: true,
+                projectId: true,
+                caseId: true,
+                taskId: true,
+                hours: true,
+                hourlyRate: true,
+                billingStatus: true,
+                legalArea: true,
+                internalCategory: true,
+                description: true,
+                workDate: true,
+              },
+            })
+          : null,
       ]);
 
       const sumGroups = (predicate: (group: (typeof monthGroups)[number]) => boolean) =>
         monthGroups
           .filter(predicate)
           .reduce((acc, group) => acc + Number(group._sum.hours ?? 0), 0);
-      const billable = sumGroups(
+      // KPI fakturovatelné = vykázané jako fakturovatelné vč. čekajících na
+      // schválení (isBillableKpiHours); „z toho schváleno" zvlášť.
+      const billable = sumGroups((group) =>
+        isBillableKpiHours(group.billingStatus, group.approvalStatus),
+      );
+      const approvedBillable = sumGroups(
         (group) =>
-          group.billingStatus === BillingStatus.BILLABLE &&
+          isBillableKpiHours(group.billingStatus, group.approvalStatus) &&
           group.approvalStatus === "APPROVED",
       );
-      const needsApproval = monthGroups
-        .filter(
-          (group) =>
-            group.billingStatus === BillingStatus.BILLABLE &&
-            group.approvalStatus !== "APPROVED" &&
-            group.approvalStatus !== "REJECTED",
-        )
-        .reduce((acc, group) => acc + Number(group._sum.hours ?? 0), 0);
+      const needsApproval = sumGroups(
+        (group) =>
+          group.billingStatus === BillingStatus.BILLABLE &&
+          group.approvalStatus !== "APPROVED" &&
+          group.approvalStatus !== "REJECTED",
+      );
       const total = sumGroups(() => true);
-      const internal = total - billable - needsApproval;
+      const internal = Math.max(0, total - billable);
       const monthSummary = {
         billable,
+        approvedBillable,
         needsApproval,
         internal,
         total,
       };
       const weekHours = Number(weekAgg._sum.hours ?? 0);
+      const { subjects, projects, cases, tasks } = formOptions;
+      // Only matters the user can still pick (visible + not archived) are
+      // prefilled; the copy is validated again by createWorkLog.
+      const duplicatePrefill = duplicateId
+        ? duplicateSource
+          ? buildWorkLogDuplicatePrefill(
+              duplicateSource,
+              {
+                subjectIds: new Set(subjects.map((subject) => subject.id)),
+                projectIds: new Set(projects.map((project) => project.id)),
+                caseIds: new Set(cases.map((legalCase) => legalCase.id)),
+                tasks: new Map(
+                  tasks.map((task) => [
+                    task.id,
+                    { projectId: task.projectId, caseId: task.caseId },
+                  ]),
+                ),
+              },
+              canViewRates(currentUser),
+            )
+          : null
+        : undefined;
 
       return {
         workLogs: workLogs.map((workLog) => ({
           ...workLog,
           canEdit: canEditRecord(currentUser, "WorkLog", workLog),
         })),
+        formOptions,
         subjects,
         projects,
         cases,
         tasks,
         users,
         tableView,
-        canArchive: canViewAllLegalData(currentUser),
+        canArchive: canArchiveRecords(currentUser),
         canViewRates: canViewRates(currentUser),
         canSetBillable: canSetBillableStatus(currentUser),
         canApprove,
-        timeIncrementMinutes:
-          organization?.billingTimeIncrementMinutes ?? 15,
+        approvalQueueCount,
+        duplicatePrefill,
         monthSummary,
         weekHours,
-        weeklyTarget:
-          hoursPlan?.weeklyHoursTarget != null
-            ? Number(hoursPlan.weeklyHoursTarget)
-            : null,
-        monthlyTarget:
-          hoursPlan?.monthlyHoursTarget != null
-            ? Number(hoursPlan.monthlyHoursTarget)
-            : null,
+        hoursPlan: hoursPlanFromRecord(hoursPlan),
       };
     },
   );
@@ -413,20 +463,16 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
     tableView = restrictTableView(tableView, ["approvalStatus"]);
   }
   const visibleColumnSet = new Set(tableView.visibleColumns);
-  const billingStatusChoices = [
-    BillingStatus.BILLABLE,
-    BillingStatus.INTERNAL_NON_BILLABLE,
-  ];
-  const defaultBillingStatus = BillingStatus.BILLABLE;
-  const timeIncrementHours = result.data.timeIncrementMinutes === 6 ? 0.1 : 0.25;
   // % plnění týdenního a měsíčního plánu hodin (null = plán nenastaven).
-  const weekPct = fulfillmentPercent(
-    result.data.weekHours,
-    result.data.weeklyTarget,
-  );
+  const { hoursPlan } = result.data;
+  const weekPct = fulfillmentPercent(result.data.weekHours, hoursPlan.weeklyTotal);
   const monthPct = fulfillmentPercent(
     result.data.monthSummary.total,
-    result.data.monthlyTarget,
+    hoursPlan.monthlyTotal,
+  );
+  const monthBillablePct = fulfillmentPercent(
+    result.data.monthSummary.billable,
+    hoursPlan.monthlyBillable,
   );
 
   // Carry the active matter/date filters into the client timesheet (print) view.
@@ -440,7 +486,12 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
     : "/work-logs/timesheet";
   const closeDialogParams = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
-    if (key === "new" || key === "hours" || value === undefined) {
+    if (
+      key === "new" ||
+      key === "hours" ||
+      key === "duplicate" ||
+      value === undefined
+    ) {
       continue;
     }
     for (const item of Array.isArray(value) ? value : [value]) {
@@ -448,6 +499,23 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
     }
   }
   const closeDialogQuery = closeDialogParams.toString();
+  // "Duplikovat" keeps the current filters, so closing the dialog returns to
+  // the same filtered list.
+  const duplicateHref = (id: string) => {
+    const query = new URLSearchParams(closeDialogParams);
+    query.set("duplicate", id);
+    return `/work-logs?${query.toString()}`;
+  };
+  const duplicatePrefill = result.data.duplicatePrefill;
+  const isDuplicate = Boolean(duplicatePrefill);
+  const approvalQuery = approvalFilterQuery({
+    subjectId,
+    projectId,
+    caseId,
+    userId,
+    dateFrom,
+    dateTo,
+  });
   const closeDialogHref = closeDialogQuery
     ? `/work-logs?${closeDialogQuery}`
     : "/work-logs";
@@ -471,9 +539,26 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
     <>
       <PageHeader
         title="Výkazy práce"
-        description="Evidence vykázané práce se sazbou a částkou jako příprava pro budoucí fakturaci."
+        description={
+          result.data.canViewRates
+            ? "Evidence vykázané práce se sazbou a částkou jako příprava pro budoucí fakturaci."
+            : "Evidence vykázané práce a odpracovaného času."
+        }
         action={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            {result.data.approvalQueueCount !== null ? (
+              <ButtonLink
+                href={
+                  approvalQuery
+                    ? `/work-logs/approvals?${approvalQuery}`
+                    : "/work-logs/approvals"
+                }
+                variant="secondary"
+              >
+                <ClipboardCheck className="h-4 w-4" aria-hidden="true" />
+                Ke schválení ({result.data.approvalQueueCount})
+              </ButtonLink>
+            ) : null}
             <ButtonLink href={timesheetHref} variant="secondary">
               <FileText className="h-4 w-4" aria-hidden="true" />
               Výkaz pro klienta
@@ -495,32 +580,37 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
             {
               label: "Tento týden",
               value: result.data.weekHours,
-              target: result.data.weeklyTarget,
+              target: hoursPlan.weeklyTotal,
               pct: weekPct,
+              hint: null,
             },
             {
               label: "Tento měsíc celkem",
               value: result.data.monthSummary.total,
-              target: result.data.monthlyTarget,
+              target: hoursPlan.monthlyTotal,
               pct: monthPct,
+              hint: null,
             },
             {
               label: "Fakturovatelné (měsíc)",
               value: result.data.monthSummary.billable,
-              target: null,
-              pct: null,
+              target: hoursPlan.monthlyBillable,
+              pct: monthBillablePct,
+              hint: `z toho schváleno ${formatHours(result.data.monthSummary.approvedBillable)} h`,
             },
             {
               label: "Ke schválení (měsíc)",
               value: result.data.monthSummary.needsApproval,
               target: null,
               pct: null,
+              hint: null,
             },
             {
               label: "Interní / odpis (měsíc)",
               value: result.data.monthSummary.internal,
               target: null,
               pct: null,
+              hint: null,
             },
           ].map((cell) => (
             <div
@@ -537,12 +627,18 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
                   {cell.pct != null ? ` · ${cell.pct} % plnění` : ""}
                 </p>
               ) : null}
+              {cell.hint ? (
+                <p className="mt-1 text-xs text-[#566673]">{cell.hint}</p>
+              ) : null}
             </div>
           ))}
         </div>
       </Section>
       <Section title="Filtry">
-        <form className="grid gap-4">
+        <form
+          key={filterFormKey(params, WORK_LOG_DIALOG_PARAMS)}
+          className="grid gap-4"
+        >
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <CascadingMatterSelect
               subjects={result.data.subjects.map((subject) => ({
@@ -693,7 +789,9 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
                       <td>{formatMoney(log.amountCzk as never)}</td>
                     ) : null}
                     {visibleColumnSet.has("description") ? (
-                      <td className="max-w-md">{log.description ?? "—"}</td>
+                      <td className="min-w-48 max-w-md whitespace-pre-line break-words">
+                        {log.description ?? "—"}
+                      </td>
                     ) : null}
                     {visibleColumnSet.has("legalArea") ? (
                       <td>
@@ -734,6 +832,14 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
                             Upravit
                           </ButtonLink>
                         ) : null}
+                        <ButtonLink
+                          href={duplicateHref(log.id)}
+                          variant="ghost"
+                          className="h-8 px-3"
+                        >
+                          <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                          Duplikovat
+                        </ButtonLink>
                         {result.data.canArchive ? (
                           <ArchiveActionForm
                             action={log.archivedAt ? restoreWorkLog : archiveWorkLog}
@@ -756,81 +862,24 @@ export default async function WorkLogsPage({ searchParams }: WorkLogsProps) {
       <WorkLogCreateDialog
         open={showNewDialog}
         closeHref={closeDialogHref}
+        title={isDuplicate ? "Duplikovat výkaz práce" : "Nový výkaz práce"}
+        description={
+          duplicatePrefill
+            ? `Kopie výkazu z ${formatDateUtc(duplicatePrefill.sourceDate)}. Upravte datum a popis a uložte jako nový výkaz.`
+            : duplicatePrefill === null
+              ? "Výkaz pro duplikaci nebyl nalezen nebo k němu nemáte přístup."
+              : undefined
+        }
       >
-        <form action={createWorkLog} className="grid gap-4">
-          {/* Cascading subject → project → case → task. Choosing a project/case
-              narrows the task list to only that matter's tasks. */}
-          <CascadingMatterSelect
-            subjects={result.data.subjects.map((subject) => ({
-              id: subject.id,
-              name: subject.ico
-                ? `${subject.name}, IČO ${subject.ico}`
-                : subject.name,
-            }))}
-            projects={result.data.projects}
-            cases={result.data.cases.map((legalCase) => ({
-              id: legalCase.id,
-              name: legalCase.name,
-              projectId: legalCase.projectId,
-              projectName: legalCase.project.name,
-            }))}
-            tasks={result.data.tasks}
-            includeTask
-            subjectLabel="Subjekt"
-          />
-          <div
-            className={
-              result.data.canViewRates
-                ? "grid gap-4 md:grid-cols-3"
-                : "grid gap-4 md:grid-cols-2"
-            }
-          >
-            <Field label="Datum práce">
-              <TextInput
-                name="workDate"
-                type="date"
-                defaultValue={new Date().toISOString().slice(0, 10)}
-                required
-              />
-            </Field>
-            <Field label="Hodiny">
-              <TextInput
-                name="hours"
-                type="number"
-                min="0"
-                step={timeIncrementHours}
-                required
-                defaultValue={hoursPrefill}
-              />
-            </Field>
-            {/* Rate is hidden during reporting for non-partners — it is derived
-                from the case/project and they shouldn't see (or set) pricing. */}
-            {result.data.canViewRates ? (
-              <Field label="Sazba">
-                <TextInput name="hourlyRate" type="number" min="0" step="0.01" />
-              </Field>
-            ) : null}
-          </div>
-          {/* Interní hodiny nabízejí interní kategorie místo právní oblasti. */}
-          <WorkLogCategoryFields
-            billingStatusOptions={billingStatusChoices.map((status) => ({
-              value: status,
-              label: billingStatusLabels[status],
-            }))}
-            defaultBillingStatus={defaultBillingStatus}
-            legalAreas={legalAreaOptions}
-            internalCategories={options.internalTaskCategories.map((category) => ({
-              value: category,
-              label: internalTaskCategoryLabels[category],
-            }))}
-          />
-          <Field label="Popis práce">
-            <TextArea name="description" />
-          </Field>
-          <div className="flex flex-wrap gap-2">
-            <Button type="submit">Vytvořit výkaz</Button>
-          </div>
-        </form>
+        <WorkLogCreateForm
+          formKey={duplicateId || "new"}
+          options={result.data.formOptions}
+          sourceWorkLogId={duplicatePrefill ? duplicateId : undefined}
+          prefill={
+            duplicatePrefill ?? (hoursPrefill ? { hours: hoursPrefill } : null)
+          }
+          submitLabel={isDuplicate ? "Vytvořit kopii výkazu" : "Vytvořit výkaz"}
+        />
       </WorkLogCreateDialog>
     </>
   );

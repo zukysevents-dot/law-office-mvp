@@ -1,6 +1,7 @@
 "use server";
 
 import { getCurrentUser } from "@/lib/auth";
+import { getAccessibleModules } from "@/lib/module-access.server";
 import {
   andWhere,
   caseVisibilityWhere,
@@ -9,6 +10,11 @@ import {
   taskVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import {
+  subjectMatchReasons,
+  subjectSearchInclude,
+  subjectSearchWhere,
+} from "@/lib/subjects/search";
 
 export type SearchHit = {
   type: "subject" | "project" | "case" | "task";
@@ -36,17 +42,33 @@ export async function globalSearch(query: string): Promise<SearchHit[]> {
   const user = await getCurrentUser();
   const prisma = getPrisma();
   const like = { contains: q, mode: "insensitive" as const };
+  // Only search sections the user may open (permission matrix, CORE modules):
+  // a hit would otherwise link to a "Přístup odepřen" page.
+  const modules = new Set(await getAccessibleModules(user));
+  const none = Promise.resolve([]);
 
   const [subjects, projects, cases, tasks] = await Promise.all([
-    prisma.subject.findMany({
-      where: andWhere(subjectVisibilityWhere(user), {
-        archivedAt: null,
-        OR: [{ name: like }, { ico: like }],
-      }),
-      select: { id: true, name: true, ico: true },
+    !modules.has("module.subjects") ? none : prisma.subject.findMany({
+      where: andWhere(
+        subjectVisibilityWhere(user),
+        { archivedAt: null },
+        subjectSearchWhere(q),
+      ),
+      select: {
+        id: true,
+        name: true,
+        ico: true,
+        firstName: true,
+        lastName: true,
+        tradeName: true,
+        email: true,
+        birthNumber: true,
+        ...subjectSearchInclude,
+      },
+      orderBy: { name: "asc" },
       take: 5,
     }),
-    prisma.project.findMany({
+    !modules.has("module.projects") ? none : prisma.project.findMany({
       where: andWhere(projectVisibilityWhere(user), {
         archivedAt: null,
         name: like,
@@ -54,7 +76,7 @@ export async function globalSearch(query: string): Promise<SearchHit[]> {
       select: { id: true, name: true },
       take: 5,
     }),
-    prisma.case.findMany({
+    !modules.has("module.cases") ? none : prisma.case.findMany({
       where: andWhere(caseVisibilityWhere(user), {
         archivedAt: null,
         OR: [{ name: like }, { fileNumber: like }],
@@ -62,7 +84,7 @@ export async function globalSearch(query: string): Promise<SearchHit[]> {
       select: { id: true, name: true, fileNumber: true },
       take: 5,
     }),
-    prisma.task.findMany({
+    !modules.has("module.tasks") ? none : prisma.task.findMany({
       where: andWhere(taskVisibilityWhere(user), {
         archivedAt: null,
         title: like,
@@ -73,13 +95,19 @@ export async function globalSearch(query: string): Promise<SearchHit[]> {
   ]);
 
   return [
-    ...subjects.map((s) => ({
-      type: "subject" as const,
-      id: s.id,
-      label: s.name,
-      sub: s.ico ? `IČO ${s.ico}` : LABELS.subject,
-      href: `/subjects/${s.id}`,
-    })),
+    ...subjects.map((s) => {
+      // The match reason never carries the full birth number (masked) and the
+      // RČ itself is not part of the returned hit.
+      const reasons = subjectMatchReasons(s, q);
+      const base = s.ico ? `IČO ${s.ico}` : LABELS.subject;
+      return {
+        type: "subject" as const,
+        id: s.id,
+        label: s.name,
+        sub: reasons.length > 0 ? `${base} · Shoda: ${reasons[0]}` : base,
+        href: `/subjects/${s.id}`,
+      };
+    }),
     ...projects.map((p) => ({
       type: "project" as const,
       id: p.id,

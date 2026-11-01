@@ -16,6 +16,8 @@ import {
   invoiceVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -69,6 +71,12 @@ export default async function InvoicePrintPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.billing");
+  if (accessDenied) {
+    return <AccessDenied title="Faktura" message={accessDenied} />;
+  }
+
   const { id } = await params;
 
   const result = await safeQuery<PrintData | null>(null, async () => {

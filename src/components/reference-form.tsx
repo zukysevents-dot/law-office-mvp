@@ -107,7 +107,7 @@ export function ReferenceForm({
         <TextArea name="description" />
       </Field>
       <div>
-        <Button type="submit">Uložit referenci</Button>
+        <Button type="submit" pendingLabel="Ukládám…">Uložit referenci</Button>
       </div>
     </form>
   );

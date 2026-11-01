@@ -3,6 +3,10 @@
 import { revalidatePath } from "next/cache";
 
 import { SubjectRole } from "@/generated/prisma/enums";
+import {
+  caseAssignmentInclude,
+  projectAssignmentInclude,
+} from "@/lib/assignments";
 import { getCurrentUser } from "@/lib/auth";
 import { enumValue, optionalString, requiredString } from "@/lib/form";
 import {
@@ -20,7 +24,7 @@ export async function addProjectSubjectRelation(formData: FormData) {
   const role = enumValue(SubjectRole, formData.get("role"), SubjectRole.CLIENT);
   const project = await prisma.project.findUniqueOrThrow({
     where: { id: projectId },
-    include: { assignees: { select: { userId: true } } },
+    include: projectAssignmentInclude,
   });
   assertCanEditRecord(currentUser, "Project", project);
 
@@ -73,7 +77,7 @@ export async function addCaseSubjectRelation(formData: FormData) {
   const role = enumValue(SubjectRole, formData.get("role"), SubjectRole.CLIENT);
   const legalCase = await prisma.case.findUniqueOrThrow({
     where: { id: caseId },
-    include: { assignees: { select: { userId: true } } },
+    include: caseAssignmentInclude,
   });
   assertCanEditRecord(currentUser, "Case", legalCase);
   // projectId is authoritative on the already-authorized case. Never trust the

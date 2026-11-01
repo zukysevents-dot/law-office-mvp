@@ -4,6 +4,9 @@ import { test } from "node:test";
 import { DashboardWidgetType } from "@/generated/prisma/enums";
 
 import {
+  dashboardWidgetModule,
+  filterAllowedWidgets,
+  isDashboardWidgetAllowed,
   getDefaultDashboardColumns,
   getVisibleDashboardColumns,
   isDashboardTableWidget,
@@ -106,4 +109,32 @@ test("getVisibleDashboardColumns: falls back to defaults on empty/invalid config
 
 test("getVisibleDashboardColumns: stat widget has no columns", () => {
   assert.deepEqual(getVisibleDashboardColumns(STAT, { columns: ["x"] }), []);
+});
+
+test("dashboardWidgetModule: every widget type maps to a module", () => {
+  for (const type of Object.values(DashboardWidgetType)) {
+    assert.match(dashboardWidgetModule[type], /^module\./, type);
+  }
+});
+
+test("filterAllowedWidgets: drops widgets of modules the user can't open", () => {
+  const widgets = [
+    { id: "1", type: DashboardWidgetType.ACTIVE_TASKS },
+    { id: "2", type: DashboardWidgetType.PROJECTS_TABLE },
+    { id: "3", type: DashboardWidgetType.WEEKLY_HOURS_CHART },
+    { id: "4", type: DashboardWidgetType.DEADLINES_PREVIEW },
+  ];
+  assert.deepEqual(
+    filterAllowedWidgets(widgets, ["module.tasks", "module.workLogs"]).map((w) => w.id),
+    ["1", "3"],
+  );
+  assert.deepEqual(filterAllowedWidgets(widgets, []), []);
+  assert.equal(
+    isDashboardWidgetAllowed(DashboardWidgetType.PROJECTS_TABLE, ["module.projects"]),
+    true,
+  );
+  assert.equal(
+    isDashboardWidgetAllowed(DashboardWidgetType.PROJECTS_TABLE, ["module.cases"]),
+    false,
+  );
 });

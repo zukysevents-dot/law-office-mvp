@@ -24,6 +24,8 @@ import {
 import { getPrisma } from "@/lib/prisma";
 import { invoiceStatusTone } from "@/lib/status-tones";
 import { firstParam, parseDateBoundary } from "@/lib/search-params";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +36,12 @@ type InvoicesPageProps = {
 };
 
 export default async function InvoicesPage({ searchParams }: InvoicesPageProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.billing");
+  if (accessDenied) {
+    return <AccessDenied title="Faktury" message={accessDenied} />;
+  }
+
   const params = await searchParams;
   const q = firstParam(params, "q");
   const status = firstParam(params, "status");
@@ -92,7 +100,7 @@ export default async function InvoicesPage({ searchParams }: InvoicesPageProps) 
         />
         <Section title="Přístup odepřen">
           <p className="text-sm text-stone-600">
-            Faktury mohou spravovat partneři a administrátoři.
+            Faktury spravují jen uživatelé s oprávněním „Spravuje fakturaci“. O přístup požádejte administrátora kanceláře (Nastavení → Oprávnění).
           </p>
         </Section>
       </>

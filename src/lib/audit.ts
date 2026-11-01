@@ -1,5 +1,6 @@
 import { Prisma } from "@/generated/prisma/client";
 import { getPrisma } from "@/lib/prisma";
+import { maskBirthNumber } from "@/lib/subjects/birth-number";
 
 type AuditInput = {
   organizationId: string;
@@ -11,8 +12,19 @@ type AuditInput = {
   newValue?: Prisma.InputJsonValue | null;
 };
 
+// Sensitive personal data never lands in the audit log (nor its export) in
+// full: every `birthNumber` key, at any depth and in any entity, is masked.
+function auditReplacer(key: string, value: unknown) {
+  if (key === "birthNumber" && typeof value === "string" && value) {
+    return maskBirthNumber(value);
+  }
+  return value;
+}
+
 export function auditJson(value: unknown): Prisma.InputJsonValue {
-  return JSON.parse(JSON.stringify(value ?? null)) as Prisma.InputJsonValue;
+  return JSON.parse(
+    JSON.stringify(value ?? null, auditReplacer),
+  ) as Prisma.InputJsonValue;
 }
 
 export function auditCreateData(

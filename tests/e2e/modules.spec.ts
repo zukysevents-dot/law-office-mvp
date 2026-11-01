@@ -28,12 +28,17 @@ const modules: Array<{
   },
   { route: "/billing", heading: "Fakturace", section: "Položky k fakturaci" },
   { route: "/billing/invoices", heading: "Faktury", section: "Přehled faktur" },
-  { route: "/billing/invoices/new", heading: "Nová faktura", section: "Klient" },
+  { route: "/billing/invoices/new", heading: "Nová faktura", section: "Klient a spis" },
   { route: "/billing/retainers", heading: "Paušály", section: "Přehled paušálů" },
   {
     route: "/billing/approvals",
     heading: "Položky ke schválení",
     section: "Ke schválení",
+  },
+  {
+    route: "/work-logs/approvals",
+    heading: "Položky ke schválení",
+    section: "Filtry",
   },
   { route: "/reports", heading: "Reporty a exporty", section: "Reporty" },
   { route: "/reports/hours", heading: "Měsíční přehled hodin", section: "Filtry" },
@@ -46,6 +51,7 @@ const modules: Array<{
     section: "Filtry",
   },
   { route: "/reports/wip", heading: "Rozpracovanost (WIP)", section: "Filtry" },
+  { route: "/performance", heading: "Výkonnost", section: "Filtry" },
   { route: "/references", heading: "Reference", section: "Seznam referencí" },
   { route: "/deadlines", heading: "Lhůtník", section: "Po termínu" },
   { route: "/calendar", heading: "Kalendář" },
@@ -63,9 +69,19 @@ const modules: Array<{
   { route: "/audit-log", heading: "Audit log", section: "Auditní záznamy" },
   { route: "/settings", heading: "Nastavení", section: "Uživatelé" },
   {
+    route: "/settings/permissions",
+    heading: "Oprávnění",
+    section: "Výjimky pro jednotlivé uživatele",
+  },
+  {
     route: "/settings/organization",
     heading: "Nastavení kanceláře",
     section: "Členové kanceláře",
+  },
+  {
+    route: "/settings/assignments",
+    heading: "Týmy a řešitelé",
+    section: "Řešitelé projektů a případů",
   },
   {
     route: "/settings/billing",

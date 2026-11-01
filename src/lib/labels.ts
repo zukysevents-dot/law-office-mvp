@@ -25,10 +25,13 @@ import {
   RegistryChangeType,
   ReminderLevel,
   SalaryTaxMode,
+  SubjectContactType,
   SubjectRole,
   SubjectType,
   SubscriptionStatus,
+  TaskAssigneeRole,
   TaskDeadlineType,
+  TaskEventType,
   TaskPriority,
   TaskStatus,
   UserRole,
@@ -167,6 +170,13 @@ export const hrAttendanceSourceLabels: Record<HrAttendanceSource, string> = {
   IMPORT: "Import",
 };
 
+// Per-user exception on Nastavení → Oprávnění → výjimky uživatele.
+export const permissionOverrideLabels = {
+  INHERIT: "Podle role",
+  ALLOW: "Povolit",
+  DENY: "Zakázat",
+} as const;
+
 export const moduleKeyLabels: Record<ModuleKey, string> = {
   CORE: "Jádro",
   BILLING: "Fakturace",
@@ -200,11 +210,59 @@ export const userRoleLabels: Record<UserRole, string> = {
 };
 
 export const subjectTypeLabels: Record<SubjectType, string> = {
-  COMPANY: "Společnost",
+  COMPANY: "Právnická osoba",
   PERSON: "Fyzická osoba",
-  ENTREPRENEUR: "Podnikatel",
+  ENTREPRENEUR: "Fyzická osoba podnikatel",
   OTHER: "Jiný subjekt",
 };
+
+export const subjectContactTypeLabels: Record<SubjectContactType, string> = {
+  EMAIL: "E-mail",
+  PHONE: "Telefon",
+  DATA_BOX: "Datová schránka",
+  WEB: "Web",
+  OTHER: "Jiný",
+};
+
+// Label of the value input of one contact row, by contact type.
+export const subjectContactValueLabels: Record<SubjectContactType, string> = {
+  EMAIL: "E-mail",
+  PHONE: "Telefon",
+  DATA_BOX: "ID datové schránky",
+  WEB: "Webová adresa",
+  OTHER: "Kontakt",
+};
+
+// Datalist suggestions — free text is always allowed.
+export const subjectContactLabelSuggestions = [
+  "fakturace",
+  "pracovní",
+  "osobní",
+  "sekretariát",
+];
+
+export const statutoryFunctionSuggestions = [
+  "jednatel",
+  "předseda představenstva",
+  "místopředseda představenstva",
+  "člen představenstva",
+  "statutární ředitel",
+  "člen správní rady",
+  "předseda spolku",
+  "likvidátor",
+];
+
+export const nationalitySuggestions = [
+  "Česká republika",
+  "Slovenská republika",
+  "Německo",
+  "Rakousko",
+  "Polsko",
+  "Ukrajina",
+  "Vietnam",
+  "Spojené království",
+  "Spojené státy americké",
+];
 
 export const subjectRoleLabels: Record<SubjectRole, string> = {
   CLIENT: "Klient",
@@ -235,6 +293,36 @@ export const taskStatusLabels: Record<TaskStatus, string> = {
   FILED: "Podáno",
   COMPLETED: "Dokončeno",
 };
+
+// Události v historii úkolu (TaskEvent) – krátké štítky; plné věty skládá
+// src/lib/tasks/timeline.ts.
+export const taskEventTypeLabels: Record<TaskEventType, string> = {
+  DEADLINE_POSTPONED: "Odložení termínu",
+  DEADLINE_CHANGED: "Změna termínu",
+  DUPLICATED_FROM: "Vytvořeno duplikací",
+  DUPLICATED_TO: "Duplikováno",
+};
+
+export const taskAssigneeRoleLabels: Record<TaskAssigneeRole, string> = {
+  ASSIGNEE: "Řešitel",
+  SUPERVISOR: "Dohled",
+};
+
+// Role přihlášeného uživatele na úkolu („Moje úkoly“): štítek v tabulce
+// a volba filtru „Moje role“. Klíče = MyTaskRole (src/lib/tasks/task-people.ts).
+export const myTaskRoleLabels = {
+  assignee: "Řešitel",
+  supervisor: "Dohled",
+  responsible: "Odpovědná osoba",
+  created: "Zadavatel",
+} as const;
+
+export const myTaskRoleFilterLabels = {
+  assignee: "Řeším",
+  supervisor: "Dohlížím",
+  responsible: "Odpovídám",
+  created: "Zadal jsem",
+} as const;
 
 export const taskPriorityLabels: Record<TaskPriority, string> = {
   LOW: "Nízká",
@@ -329,6 +417,7 @@ export const options = {
   userRoles: Object.values(UserRole),
   organizationStatuses: Object.values(OrganizationStatus),
   subjectTypes: Object.values(SubjectType),
+  subjectContactTypes: Object.values(SubjectContactType),
   subjectRoles: Object.values(SubjectRole),
   feeTypes: Object.values(FeeType),
   taskStatuses: Object.values(TaskStatus),
@@ -345,3 +434,17 @@ export const options = {
   projectStatuses: Object.values(ProjectStatus),
   caseStatuses: Object.values(CaseStatus),
 };
+
+// Stránka Výkonnost (balík 08).
+export const performancePeriodLabels = {
+  week: "Tento týden",
+  month: "Tento měsíc",
+  quarter: "Toto čtvrtletí",
+  custom: "Vlastní",
+} as const;
+
+export const workloadLevelLabels = {
+  LOW: "Nízké",
+  MEDIUM: "Střední",
+  HIGH: "Vysoké",
+} as const;

@@ -1,6 +1,6 @@
 "use server";
 
-import { refresh, revalidatePath } from "next/cache";
+import { revalidatePath } from "next/cache";
 
 import { getCurrentUser } from "@/lib/auth";
 import {
@@ -23,10 +23,11 @@ export async function updateTableViewPreference(formData: FormData) {
 
   await upsertTableViewPreference(currentUser.id, tableKey, selectedColumns);
 
+  // revalidatePath v server action znovu vykreslí aktuální stránku (včetně
+  // filtrů v URL), takže se změněné sloupce projeví hned. Dřív to na Next
+  // 16.2.9 zamrzalo kvůli route-level loading.tsx – viz
+  // src/app/loading-boundaries.test.ts.
   revalidatePath(tableViewConfigs[tableKey].path);
-  // refresh() obnoví klientský router, takže se změněné sloupce projeví hned
-  // a beze ztráty aktuálních filtrů v URL (redirect by je zahodil).
-  refresh();
 }
 
 export async function resetTableViewPreference(formData: FormData) {

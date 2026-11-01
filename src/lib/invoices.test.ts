@@ -9,6 +9,7 @@ import {
   invoiceLineWorkLogIds,
   isDraft,
   isPastDue,
+  normalizeInvoiceMatter,
   resolvePaidStatus,
   vatModeForProfile,
 } from "./invoices";
@@ -220,5 +221,51 @@ test("isPastDue: a draft with no due date is never overdue", () => {
   assert.equal(
     isPastDue({ dueDate: null, status: InvoiceStatus.DRAFT }, NOW),
     false,
+  );
+});
+
+test("normalizeInvoiceMatter: projekt a případ musí patřit klientovi", () => {
+  const projects = [
+    { id: "pA", mainSubjectId: "A" },
+    { id: "pA2", mainSubjectId: "A" },
+    { id: "pB", mainSubjectId: "B" },
+  ];
+  const cases = [
+    { id: "cA", projectId: "pA", mainSubjectId: "A" },
+    { id: "cA2", projectId: "pA2", mainSubjectId: "A" },
+    { id: "cB", projectId: "pB", mainSubjectId: "B" },
+  ];
+  // Cizí projekt zahodí projekt i případ.
+  assert.deepEqual(
+    normalizeInvoiceMatter({ subjectId: "A", projectId: "pB", caseId: "cB" }, projects, cases),
+    { projectId: "", caseId: "" },
+  );
+  // Případ z jiného projektu zahodí jen případ.
+  assert.deepEqual(
+    normalizeInvoiceMatter({ subjectId: "A", projectId: "pA", caseId: "cA2" }, projects, cases),
+    { projectId: "pA", caseId: "" },
+  );
+  // Případ bez projektu doplní projekt.
+  assert.deepEqual(
+    normalizeInvoiceMatter({ subjectId: "A", projectId: "", caseId: "cA2" }, projects, cases),
+    { projectId: "pA2", caseId: "cA2" },
+  );
+  // Případ cizího klienta bez projektu se zahodí.
+  assert.deepEqual(
+    normalizeInvoiceMatter({ subjectId: "A", projectId: "", caseId: "cB" }, projects, cases),
+    { projectId: "", caseId: "" },
+  );
+  // Neznámá ID ani chybějící klient nic nepropustí.
+  assert.deepEqual(
+    normalizeInvoiceMatter({ subjectId: "A", projectId: "nope", caseId: "" }, projects, cases),
+    { projectId: "", caseId: "" },
+  );
+  assert.deepEqual(
+    normalizeInvoiceMatter({ subjectId: "", projectId: "pA", caseId: "cA" }, projects, cases),
+    { projectId: "", caseId: "" },
+  );
+  assert.deepEqual(
+    normalizeInvoiceMatter({ subjectId: "A", projectId: "pA", caseId: "cA" }, projects, cases),
+    { projectId: "pA", caseId: "cA" },
   );
 });

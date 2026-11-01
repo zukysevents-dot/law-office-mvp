@@ -1,25 +1,26 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
+import { ConfirmDialogButton } from "@/components/ui/confirm-dialog";
 
+/**
+ * Danger submit button that asks for confirmation in an in-app dialog first.
+ * Render it inside the <form> it should submit.
+ */
 export function ConfirmSubmitButton({
   children,
   message,
+  pendingLabel,
 }: {
   children: React.ReactNode;
   message: string;
+  pendingLabel?: string;
 }) {
   return (
-    <Button
-      type="submit"
+    <ConfirmDialogButton
+      label={children}
+      message={message}
       variant="danger"
-      onClick={(event) => {
-        if (!window.confirm(message)) {
-          event.preventDefault();
-        }
-      }}
-    >
-      {children}
-    </Button>
+      pendingLabel={pendingLabel}
+    />
   );
 }

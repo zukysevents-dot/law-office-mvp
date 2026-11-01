@@ -6,7 +6,12 @@ import { DatabaseNotice } from "@/components/ui/database-notice";
 import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import { formatHours, formatMoney } from "@/lib/format";
-import { andWhere, canViewAllLegalData, workLogVisibilityWhere } from "@/lib/permissions";
+import {
+  andWhere,
+  canViewRates,
+  canViewTeamReports,
+  workLogVisibilityWhere,
+} from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import {
   REPORT_ROW_LIMIT,
@@ -23,6 +28,8 @@ import {
   type ReportFilterOptions,
 } from "@/lib/reporting/options";
 import { filterQuery, firstParam } from "@/lib/search-params";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -81,6 +88,12 @@ function KpiCard({
 }
 
 export default async function BillabilityReportPage({ searchParams }: PageProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.reports");
+  if (accessDenied) {
+    return <AccessDenied title="KPI fakturovatelnosti" message={accessDenied} />;
+  }
+
   const params = await searchParams;
   const filters = readReportFilters((key) => firstParam(params, key));
 
@@ -90,7 +103,7 @@ export default async function BillabilityReportPage({ searchParams }: PageProps)
       const prisma = getPrisma();
       const currentUser = await getCurrentUser();
 
-      if (!canViewAllLegalData(currentUser)) {
+      if (!canViewTeamReports(currentUser)) {
         return {
           allowed: false,
           kpi: EMPTY_KPI,
@@ -189,10 +202,12 @@ export default async function BillabilityReportPage({ searchParams }: PageProps)
                 value={formatHours(kpi.totalHours)}
                 hint={`${kpi.totalCount} položek`}
               />
-              <KpiCard
-                label="Fakturovatelná částka"
-                value={formatMoney(kpi.billableAmount)}
-              />
+              {canViewRates(accessUser) ? (
+                <KpiCard
+                  label="Fakturovatelná částka"
+                  value={formatMoney(kpi.billableAmount)}
+                />
+              ) : null}
             </div>
           </Section>
         </>

@@ -5,12 +5,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { Prisma } from "@/generated/prisma/client";
-import {
-  Capability,
-  OrganizationMemberStatus,
-  UserRole,
-} from "@/generated/prisma/enums";
-import { auditJson } from "@/lib/audit";
+import { OrganizationMemberStatus, UserRole } from "@/generated/prisma/enums";
+import { auditJson, writeAuditLog } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
 import { ensureEmployeeCard } from "@/lib/hr/employee-card";
 import {
@@ -22,13 +18,36 @@ import {
 } from "@/lib/form";
 import { defaultNotificationPreferenceData } from "@/lib/notifications/notification-service";
 import { assertUserInOrg } from "@/lib/org-users";
-import { hashPassword, verifyPassword } from "@/lib/password";
-import { assertCanManageUsers } from "@/lib/permissions";
+import {
+  hashPassword,
+  MIN_PASSWORD_LENGTH,
+  verifyPassword,
+} from "@/lib/password";
+import {
+  assertCanManageUsers,
+  assertNotPrivilegeEscalation,
+  privilegedTargetDenial,
+} from "@/lib/permissions";
+import {
+  loadEffectivePermissions,
+  loadRolePermissions,
+} from "@/lib/permission-store.server";
 import { getPrisma } from "@/lib/prisma";
+import {
+  sanitizeHoursTarget,
+  validateHoursPlan,
+  type HoursPlanTargets,
+} from "@/lib/hours-plan";
 import { normalizeCalendarView } from "@/lib/calendar-view";
 import { setUserSessionCookie } from "@/lib/session-cookie";
-
-const MIN_PASSWORD_LENGTH = 8;
+import {
+  invitationResultMessage,
+  type InvitationMessage,
+} from "@/lib/user-invitation-messages";
+import {
+  issueAndSendUserInvitation,
+  type InvitationResult,
+} from "@/lib/user-invitations";
 
 function boundedDays(value: number | null, fallback: number) {
   if (!Number.isFinite(value ?? Number.NaN)) {
@@ -38,53 +57,110 @@ function boundedDays(value: number | null, fallback: number) {
   return Math.max(0, Math.min(30, Math.round(value ?? fallback)));
 }
 
-// Map the per-org unique e-mail violation to a readable Czech message instead
-// of a raw Prisma stack trace. Anything else rethrows unchanged.
-function rethrowDuplicateEmail(error: unknown): never {
-  if (
+function isDuplicateEmailError(error: unknown) {
+  return (
     error instanceof Prisma.PrismaClientKnownRequestError &&
     error.code === "P2002"
-  ) {
-    throw new Error("Uživatel s tímto e-mailem už existuje.");
-  }
-  throw error;
+  );
 }
 
-export async function createUser(formData: FormData) {
+export type CreateUserState = {
+  ok: boolean;
+  /** Changes on every submit so the client can re-show the banner. */
+  submittedAt?: number;
+  tone?: InvitationMessage["tone"];
+  message?: string;
+  error?: string;
+  /** Echo of the submitted fields on a validation error (never the password),
+   * so the form doesn't lose what the admin typed. */
+  values?: {
+    name: string;
+    email: string;
+    role: string;
+    microsoftId: string;
+    active: boolean;
+  };
+};
+
+// Admin/partner creates a member of their office. The user + membership are
+// created atomically; then (for an active user) the welcome invitation with a
+// one-time "set your own password" link is e-mailed immediately. If SMTP is
+// not configured or sending fails, the user still exists and the returned
+// message tells the admin why and to hand over the credentials personally.
+export async function createUser(
+  _prev: CreateUserState,
+  formData: FormData,
+): Promise<CreateUserState> {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
   assertCanManageUsers(currentUser);
 
   // Bez aktivní kanceláře nemá smysl uživatele zakládat — členství (a tím i
   // celý účet) musí patřit do konkrétní organizace.
+  const name = String(formData.get("name") ?? "").trim();
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const role = enumValue(UserRole, formData.get("role"), UserRole.LAWYER);
+  const active = checkboxValue(formData, "active");
+  const fail = (error: string): CreateUserState => ({
+    ok: false,
+    submittedAt: Date.now(),
+    error,
+    values: {
+      name,
+      email,
+      role,
+      microsoftId: String(formData.get("microsoftId") ?? ""),
+      active,
+    },
+  });
+
   if (!currentUser.organizationId) {
-    throw new Error("Nejste členem žádné kanceláře.");
+    return fail("Nejste členem žádné kanceláře.");
   }
   const organizationId = currentUser.organizationId;
 
-  const password = String(formData.get("password") ?? "");
-  if (password.length < MIN_PASSWORD_LENGTH) {
-    throw new Error(`Heslo musí mít alespoň ${MIN_PASSWORD_LENGTH} znaků.`);
+  if (!name) {
+    return fail("Vyplňte jméno uživatele.");
+  }
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return fail("Zadejte platný e-mail.");
   }
 
-  const role = enumValue(UserRole, formData.get("role"), UserRole.LAWYER);
+  // Kdo zakládá účet, zná jeho heslo: bez této kontroly by si držitel „Spravuje
+  // uživatele“ založil administrátora (nebo účet s „Spravuje oprávnění“) a
+  // přihlásil se za něj.
+  const roleDenial = privilegedTargetDenial(
+    currentUser,
+    { role, permissions: await loadRolePermissions(organizationId, role) },
+    "assignRole",
+  );
+  if (roleDenial) {
+    return fail(roleDenial);
+  }
+
+  const password = String(formData.get("password") ?? "");
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    return fail(`Heslo musí mít alespoň ${MIN_PASSWORD_LENGTH} znaků.`);
+  }
+
   const passwordHash = await hashPassword(password);
 
   // Uživatel + jeho členství v kanceláři musí vzniknout atomicky — jinak by
   // selhání druhého kroku zanechalo osiřelý účet bez organizace.
-  const created = await prisma
-    .$transaction(async (tx) => {
+  let created;
+  try {
+    created = await prisma.$transaction(async (tx) => {
       const user = await tx.user.create({
         data: {
-          name: requiredString(formData, "name"),
-          email: requiredString(formData, "email").trim().toLowerCase(),
+          name,
+          email,
           role,
           microsoftId: optionalString(formData, "microsoftId"),
           passwordHash,
           // Accounts provisioned by an authenticated firm administrator are a
           // trusted flow.
           emailVerifiedAt: new Date(),
-          active: checkboxValue(formData, "active"),
+          active,
         },
       });
 
@@ -105,26 +181,145 @@ export async function createUser(formData: FormData) {
       });
 
       return user;
-    })
-    .catch(rethrowDuplicateEmail);
+    });
+  } catch (error) {
+    if (isDuplicateEmailError(error)) {
+      return fail("Uživatel s tímto e-mailem už existuje.");
+    }
+    throw error;
+  }
 
-  await prisma.auditLog.create({
-    data: {
-      organizationId: currentUser.organizationId,
-      entityType: "User",
-      entityId: created.id,
-      action: "CREATE",
-      changedById: currentUser.id,
-      newValue: {
-        name: created.name,
-        email: created.email,
-        role: created.role,
-        active: created.active,
-      },
+  await writeAuditLog({
+    organizationId,
+    entityType: "User",
+    entityId: created.id,
+    action: "CREATE",
+    changedById: currentUser.id,
+    newValue: {
+      name: created.name,
+      email: created.email,
+      role: created.role,
+      active: created.active,
     },
   });
 
+  const invitation: InvitationResult = created.active
+    ? await issueAndSendUserInvitation({
+        userId: created.id,
+        organizationId,
+        actor: { id: currentUser.id, name: currentUser.name },
+      })
+    : { status: "INACTIVE" };
+  const result = invitationResultMessage(
+    invitation,
+    { name: created.name, email: created.email },
+    "create",
+  );
+
   revalidatePath("/settings");
+  return {
+    ok: true,
+    submittedAt: Date.now(),
+    tone: result.tone,
+    message: result.message,
+  };
+}
+
+export type ResendInvitationState = {
+  ok: boolean;
+  submittedAt?: number;
+  tone?: InvitationMessage["tone"];
+  message?: string;
+};
+
+// "Znovu poslat pozvánku" on a row of the users table (admin/partner only,
+// own office only). Refused within 60 s of the previous invitation.
+export async function resendUserInvitation(
+  _prev: ResendInvitationState,
+  formData: FormData,
+): Promise<ResendInvitationState> {
+  const prisma = getPrisma();
+  const currentUser = await getCurrentUser();
+  assertCanManageUsers(currentUser);
+
+  if (!currentUser.organizationId) {
+    return {
+      ok: false,
+      submittedAt: Date.now(),
+      tone: "error",
+      message: "Nejste členem žádné kanceláře.",
+    };
+  }
+  const userId = requiredString(formData, "userId");
+  if (userId === currentUser.id) {
+    // UI tlačítko u vlastního řádku zakazuje; tady totéž hlídá server.
+    return {
+      ok: false,
+      submittedAt: Date.now(),
+      tone: "error",
+      message: "Pozvánku nelze poslat sám sobě.",
+    };
+  }
+  // userId přichází z FormData — bez tohoto guardu by šlo poslat pozvánku
+  // uživateli z cizí kanceláře.
+  await assertUserInOrg(userId, currentUser.organizationId);
+
+  const target = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { name: true, email: true },
+  });
+  if (!target) {
+    return {
+      ok: false,
+      submittedAt: Date.now(),
+      tone: "error",
+      message: "Uživatel nebyl nalezen.",
+    };
+  }
+
+  const invitation = await issueAndSendUserInvitation({
+    userId,
+    organizationId: currentUser.organizationId,
+    actor: { id: currentUser.id, name: currentUser.name },
+    dedupe: true,
+  });
+  const result = invitationResultMessage(invitation, target, "resend");
+
+  revalidatePath("/settings");
+  return {
+    ok: invitation.status === "SENT",
+    submittedAt: Date.now(),
+    tone: result.tone,
+    message: result.message,
+  };
+}
+
+async function assertCanResetPasswordOf(
+  currentUser: Awaited<ReturnType<typeof getCurrentUser>>,
+  userId: string,
+) {
+  const membership = await getPrisma().organizationMember.findUnique({
+    where: {
+      organizationId_userId: {
+        organizationId: currentUser.organizationId,
+        userId,
+      },
+    },
+    select: { role: true },
+  });
+  if (!membership) {
+    throw new Error("Uživatel nebyl nalezen.");
+  }
+  const target = await loadEffectivePermissions({
+    organizationId: currentUser.organizationId,
+    userId,
+    role: membership.role,
+  });
+  assertNotPrivilegeEscalation(
+    currentUser,
+    { role: membership.role, permissions: target.permissions },
+    "resetPassword",
+  );
 }
 
 // Admin/partner resets another user's password (e.g. forgotten password).
@@ -143,6 +338,11 @@ export async function setUserPassword(formData: FormData) {
   // organizaci. Bez tohoto guardu by ADMIN/PARTNER mohl resetovat heslo
   // uživatele z cizí kanceláře.
   await assertUserInOrg(userId, currentUser.organizationId);
+
+  // Nové heslo = přihlášení za cílového uživatele. Účet administrátora (nebo
+  // uživatele s „Spravuje oprávnění“) proto smí resetovat jen ten, kdo by tím
+  // nezískal víc práv, než už má.
+  await assertCanResetPasswordOf(currentUser, userId);
 
   await prisma.user.update({
     where: { id: userId },
@@ -204,153 +404,117 @@ export async function changeOwnPassword(formData: FormData) {
   redirect("/settings");
 }
 
-// Kladné hodiny, jinak null. Prázdné pole i zadaná 0 ruší cíl — ukládá se
-// jediná reprezentace „bez cíle" (NULL), konzistentně s fulfillmentPercent,
-// které cíl <= 0 bere jako nenastavený.
-function sanitizeHoursTarget(value: number | null) {
-  if (value == null || !Number.isFinite(value) || value <= 0) {
-    return null;
-  }
+export type HoursPlanFormState = {
+  ok: boolean;
+  message?: string;
+  error?: string;
+  // Mění se při každém odeslání (klient podle ní pozná nový výsledek).
+  version: number;
+  // Uložené (sanitizované) cíle — klient podle nich srovná pole, např. 0 → prázdné
+  // („cíl zrušen“), aniž by čekal na reload.
+  saved?: HoursPlanTargets;
+};
 
-  return value;
-}
+// Admin/partner nastaví plán hodin pracovníka (UserHoursPlan): týdenní a
+// měsíční cíl hodin celkem i fakturovatelných — „% plnění" na výkazech, graf
+// na dashboardu a stránka Výkonnost. Vrací výsledek pro useActionState (chyba
+// se ukáže pod řádkem a zadané hodnoty zůstanou), bez redirectu.
+export async function updateUserHoursPlan(
+  _previous: HoursPlanFormState,
+  formData: FormData,
+): Promise<HoursPlanFormState> {
+  try {
+    const prisma = getPrisma();
+    const currentUser = await getCurrentUser();
+    assertCanManageUsers(currentUser);
 
-// Admin/partner nastaví týdenní/měsíční plán hodin pracovníka (UserHoursPlan)
-// pro „% plnění" na výkazech a týdenní graf na dashboardu.
-export async function updateUserHoursPlan(formData: FormData) {
-  const prisma = getPrisma();
-  const currentUser = await getCurrentUser();
-  assertCanManageUsers(currentUser);
+    const userId = requiredString(formData, "userId");
 
-  const userId = requiredString(formData, "userId");
+    // userId přichází z FormData — assertCanManageUsers ověřuje jen roli, ne
+    // organizaci. Proto explicitně potvrdíme, že cílový uživatel je aktivním
+    // členem stejné kanceláře (jinak by ADMIN/PARTNER mohl zapsat plán
+    // uživateli jiné kanceláře). Uživatel nemá přímé organizationId — řeší se
+    // přes členství.
+    const membership = await prisma.organizationMember.findFirst({
+      where: {
+        userId,
+        organizationId: currentUser.organizationId,
+        status: OrganizationMemberStatus.ACTIVE,
+      },
+      select: { id: true },
+    });
+    if (!membership) {
+      return {
+        ok: false,
+        error: "Uživatel nepatří do vaší kanceláře.",
+        version: Date.now(),
+      };
+    }
 
-  // userId přichází z FormData — assertCanManageUsers ověřuje jen roli, ne
-  // organizaci. Proto explicitně potvrdíme, že cílový uživatel je aktivním
-  // členem stejné kanceláře (jinak by ADMIN/PARTNER mohl zapsat plán uživateli
-  // jiné kanceláře). Uživatel nemá přímé organizationId — řeší se přes členství.
-  const membership = await prisma.organizationMember.findFirst({
-    where: {
-      userId,
-      organizationId: currentUser.organizationId,
-      status: OrganizationMemberStatus.ACTIVE,
-    },
-    select: { id: true },
-  });
-  if (!membership) {
-    throw new Error("Uživatel nepatří do vaší kanceláře.");
-  }
+    const targets: HoursPlanTargets = {
+      weeklyTotal: sanitizeHoursTarget(optionalNumber(formData, "weeklyHoursTarget")),
+      weeklyBillable: sanitizeHoursTarget(
+        optionalNumber(formData, "weeklyBillableHoursTarget"),
+      ),
+      monthlyTotal: sanitizeHoursTarget(optionalNumber(formData, "monthlyHoursTarget")),
+      monthlyBillable: sanitizeHoursTarget(
+        optionalNumber(formData, "monthlyBillableHoursTarget"),
+      ),
+    };
+    const invalid = validateHoursPlan(targets);
+    if (invalid) {
+      return { ok: false, error: invalid, version: Date.now() };
+    }
 
-  const weeklyHoursTarget = sanitizeHoursTarget(
-    optionalNumber(formData, "weeklyHoursTarget"),
-  );
-  const monthlyHoursTarget = sanitizeHoursTarget(
-    optionalNumber(formData, "monthlyHoursTarget"),
-  );
+    const data = {
+      weeklyHoursTarget: targets.weeklyTotal,
+      monthlyHoursTarget: targets.monthlyTotal,
+      weeklyBillableHoursTarget: targets.weeklyBillable,
+      monthlyBillableHoursTarget: targets.monthlyBillable,
+    };
 
-  const previous = await prisma.userHoursPlan.findUnique({
-    where: { userId },
-  });
+    const previous = await prisma.userHoursPlan.findUnique({
+      where: { userId },
+    });
 
-  const plan = await prisma.userHoursPlan.upsert({
-    where: { userId },
-    update: { weeklyHoursTarget, monthlyHoursTarget },
-    create: {
-      userId,
-      organizationId: currentUser.organizationId ?? null,
-      weeklyHoursTarget,
-      monthlyHoursTarget,
-    },
-  });
+    const plan = await prisma.userHoursPlan.upsert({
+      where: { userId },
+      update: data,
+      create: {
+        userId,
+        organizationId: currentUser.organizationId ?? null,
+        ...data,
+      },
+    });
 
-  await prisma.auditLog.create({
-    data: {
+    await writeAuditLog({
       organizationId: currentUser.organizationId,
       entityType: "UserHoursPlan",
       entityId: plan.id,
-      action: "UPDATE",
+      action: previous ? "UPDATE" : "CREATE",
       changedById: currentUser.id,
-      oldValue: previous ? auditJson(previous) : undefined,
+      oldValue: previous ? auditJson(previous) : null,
       newValue: auditJson(plan),
-    },
-  });
+    });
 
-  revalidatePath("/settings");
-  revalidatePath("/work-logs");
-  revalidatePath("/dashboard");
-}
+    revalidatePath("/settings");
+    revalidatePath("/work-logs");
+    revalidatePath("/dashboard");
+    revalidatePath("/performance", "layout");
 
-const ALL_CAPABILITIES = [Capability.MANAGE_INVOICES, Capability.VIEW_RATES];
-
-// Admin/partner nastaví granulární oprávnění (capability granty) uživatele —
-// desired-state save: smaž vše a vytvoř vybrané v jedné transakci (jeden
-// společný „uložit", revize ř.4). Allow-only nad rámec role.
-export async function setUserCapabilities(formData: FormData) {
-  const prisma = getPrisma();
-  const currentUser = await getCurrentUser();
-  assertCanManageUsers(currentUser);
-
-  const userId = requiredString(formData, "userId");
-  const organizationId = currentUser.organizationId;
-
-  // Cross-org guard: cílový uživatel musí být aktivním členem stejné kanceláře.
-  const membership = organizationId
-    ? await prisma.organizationMember.findFirst({
-        where: {
-          userId,
-          organizationId,
-          status: OrganizationMemberStatus.ACTIVE,
-        },
-        select: { id: true },
-      })
-    : null;
-  if (!organizationId || !membership) {
-    throw new Error("Uživatel nepatří do vaší kanceláře.");
+    return {
+      ok: true,
+      message: "Plán hodin uložen.",
+      version: Date.now(),
+      saved: targets,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Uložení se nezdařilo.",
+      version: Date.now(),
+    };
   }
-
-  // Jen platné Capability hodnoty z formuláře (zbytek ignoruj).
-  const selected = formData
-    .getAll("capabilities")
-    .filter((value): value is string => typeof value === "string");
-  const capabilities = ALL_CAPABILITIES.filter((capability) =>
-    selected.includes(capability),
-  );
-
-  const previous = await prisma.userCapabilityGrant.findMany({
-    where: { userId },
-    select: { capability: true },
-  });
-
-  await prisma.$transaction([
-    prisma.userCapabilityGrant.deleteMany({ where: { userId } }),
-    ...(capabilities.length > 0
-      ? [
-          prisma.userCapabilityGrant.createMany({
-            data: capabilities.map((capability) => ({
-              organizationId,
-              userId,
-              capability,
-              grantedById: currentUser.id,
-            })),
-          }),
-        ]
-      : []),
-  ]);
-
-  await prisma.auditLog.create({
-    data: {
-      organizationId: currentUser.organizationId,
-      entityType: "UserCapabilityGrant",
-      entityId: userId,
-      action: "UPDATE",
-      changedById: currentUser.id,
-      oldValue: previous.map((grant) => grant.capability).sort(),
-      newValue: [...capabilities].sort(),
-    },
-  });
-
-  revalidatePath("/settings");
-  revalidatePath("/work-logs");
-  revalidatePath("/billing");
 }
 
 export async function updateNotificationPreference(formData: FormData) {
@@ -366,6 +530,9 @@ export async function updateNotificationPreference(formData: FormData) {
     taskForReviewEmail: checkboxValue(formData, "taskForReviewEmail"),
     taskDeadlineSoonEmail: checkboxValue(formData, "taskDeadlineSoonEmail"),
     taskFiledFollowupEmail: checkboxValue(formData, "taskFiledFollowupEmail"),
+    taskCommentedEmail: checkboxValue(formData, "taskCommentedEmail"),
+    taskOverdueEmail: checkboxValue(formData, "taskOverdueEmail"),
+    taskDeadlineChangedEmail: checkboxValue(formData, "taskDeadlineChangedEmail"),
     deadlineReminderDays: boundedDays(
       optionalNumber(formData, "deadlineReminderDays"),
       1,
@@ -378,6 +545,7 @@ export async function updateNotificationPreference(formData: FormData) {
     deadlineOverdueEmail: checkboxValue(formData, "deadlineOverdueEmail"),
     courtHearingSoonEmail: checkboxValue(formData, "courtHearingSoonEmail"),
     registryChangeEmail: checkboxValue(formData, "registryChangeEmail"),
+    matterAssignedEmail: checkboxValue(formData, "matterAssignedEmail"),
     deadlineWatchDaysBefore: boundedDays(
       optionalNumber(formData, "deadlineWatchDaysBefore"),
       3,

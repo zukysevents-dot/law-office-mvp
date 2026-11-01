@@ -14,7 +14,7 @@ import { ModuleKey } from "@/generated/prisma/enums";
 import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import { assertModuleEnabled } from "@/lib/entitlements";
-import { canViewAllLegalData } from "@/lib/permissions";
+import { canManageOrganization } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -39,7 +39,7 @@ export default async function BillingSettingsPage() {
     async () => {
       const currentUser = await getCurrentUser();
       await assertModuleEnabled(currentUser, ModuleKey.BILLING);
-      if (!canViewAllLegalData(currentUser)) {
+      if (!canManageOrganization(currentUser)) {
         return { allowed: false, profile: null, issuers: [] };
       }
       const prisma = getPrisma();
@@ -81,7 +81,7 @@ export default async function BillingSettingsPage() {
       {result.databaseReady && data && !data.allowed ? (
         <Section title="Přístup odepřen">
           <p className="text-sm text-stone-600">
-            Fakturační údaje může spravovat pouze partner nebo administrátor.
+            Fakturační údaje spravují jen uživatelé s oprávněním „Spravuje nastavení kanceláře“.
           </p>
         </Section>
       ) : null}
@@ -161,7 +161,7 @@ export default async function BillingSettingsPage() {
               />
             </Field>
             <div>
-              <Button type="submit">Uložit fakturační údaje</Button>
+              <Button type="submit" pendingLabel="Ukládám…">Uložit fakturační údaje</Button>
             </div>
           </form>
         </Section>
@@ -249,7 +249,7 @@ export default async function BillingSettingsPage() {
               <span>Subjekt je plátce DPH</span>
             </label>
             <div>
-              <Button type="submit">Přidat fakturující subjekt</Button>
+              <Button type="submit" pendingLabel="Přidávám…">Přidat fakturující subjekt</Button>
             </div>
           </form>
         </Section>

@@ -2,6 +2,11 @@ import Link from "next/link";
 import { Plus, Search } from "lucide-react";
 
 import { createProject } from "@/app/actions/projects";
+import {
+  AssigneeCell,
+  AssigneeFilterField,
+  TeamSelectField,
+} from "@/components/assignee-cell";
 import { ColumnVisibilityPanel } from "@/components/column-visibility-panel";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
@@ -16,6 +21,15 @@ import {
   archivedWhere,
   archiveFilterValue,
 } from "@/lib/archive-filter";
+import {
+  assigneeFilterValue,
+  assigneeLabels,
+  parseAssigneeFilter,
+  personAssigneeDisplaySelect,
+  projectAssigneeFilterWhere,
+  teamAssignmentDisplaySelect,
+} from "@/lib/assignments";
+import { getTeamOptions } from "@/lib/assignments-overview.server";
 import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
 import { formatDate, formatMoney } from "@/lib/format";
@@ -34,11 +48,18 @@ import {
   restrictTableView,
 } from "@/lib/table-view-preference-service";
 import type { TableViewState } from "@/lib/table-view-preferences";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
 type ProjectsPageProps = {
-  searchParams: Promise<{ q?: string; archive?: string; subjectId?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    archive?: string;
+    subjectId?: string;
+    assignee?: string;
+  }>;
 };
 
 type ProjectPageData = {
@@ -53,23 +74,36 @@ type ProjectPageData = {
     updatedAt: Date;
     mainSubject: { name: string };
     responsibleUser: { name: string } | null;
+    assignees: Array<{ user: { name: string } }>;
+    teamAssignments: Array<{ legalTeam: { name: string } }>;
   }>;
   subjects: Array<{ id: string; name: string; ico: string | null }>;
   users: Array<{ id: string; name: string }>;
+  teams: Array<{ id: string; name: string }>;
   tableView: TableViewState;
   canViewRates: boolean;
 };
 
 export default async function ProjectsPage({ searchParams }: ProjectsPageProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.projects");
+  if (accessDenied) {
+    return <AccessDenied title="Projekty" message={accessDenied} />;
+  }
+  const showRates = canViewRates(accessUser);
+
   const params = await searchParams;
   const archive = archiveFilterValue(params.archive);
   const subjectId = params.subjectId ?? "";
   const query = params.q?.trim() ?? "";
+  const assigneeFilter = parseAssigneeFilter(params.assignee);
+  const assignee = assigneeFilterValue(assigneeFilter);
   const result = await safeQuery<ProjectPageData>(
     {
       projects: [],
       subjects: [],
       users: [],
+      teams: [],
       tableView: getDefaultTableView("projects"),
       canViewRates: false,
     },
@@ -77,12 +111,13 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
       const prisma = getPrisma();
       const currentUser = await getCurrentUser();
       const tableView = await getCurrentTableView("projects");
-      const [projects, subjects, users] = await Promise.all([
+      const [projects, subjects, users, teams] = await Promise.all([
         prisma.project.findMany({
           where: andWhere(
             archivedWhere(archive),
             projectVisibilityWhere(currentUser),
             subjectId ? { mainSubjectId: subjectId } : {},
+            projectAssigneeFilterWhere(assigneeFilter, currentUser.id),
             query
               ? {
                   OR: [
@@ -100,6 +135,8 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
           include: {
             mainSubject: { select: { name: true } },
             responsibleUser: { select: { name: true } },
+            assignees: personAssigneeDisplaySelect,
+            teamAssignments: teamAssignmentDisplaySelect,
           },
         }),
         prisma.subject.findMany({
@@ -111,12 +148,14 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
           select: { id: true, name: true, ico: true },
         }),
         getOrgUserOptions(currentUser),
+        getTeamOptions(prisma, currentUser.organizationId),
       ]);
 
       return {
         projects,
         subjects,
         users,
+        teams,
         tableView,
         canViewRates: canViewRates(currentUser),
       };
@@ -170,6 +209,11 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
               ))}
             </SelectInput>
           </Field>
+          <AssigneeFilterField
+            value={assignee}
+            teams={result.data.teams}
+            users={result.data.users}
+          />
           <Field label="Archiv">
             <SelectInput name="archive" defaultValue={archive}>
               {Object.entries(archiveFilterLabels).map(([value, label]) => (
@@ -182,7 +226,7 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
           <Button type="submit" variant="secondary" className="self-end">
             Filtrovat
           </Button>
-          {query || subjectId || archive !== "active" ? (
+          {query || subjectId || assignee || archive !== "active" ? (
             <ButtonLink href="/projects" variant="ghost" className="self-end">
               Zrušit filtry
             </ButtonLink>
@@ -237,6 +281,16 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
                     {visibleColumnSet.has("responsibleUser") ? (
                       <td>{project.responsibleUser?.name ?? "—"}</td>
                     ) : null}
+                    {visibleColumnSet.has("assignees") ? (
+                      <td>
+                        <AssigneeCell
+                          labels={assigneeLabels(
+                            project.teamAssignments,
+                            project.assignees,
+                          )}
+                        />
+                      </td>
+                    ) : null}
                     {visibleColumnSet.has("status") ? (
                       <td>
                         <Badge tone="green">{projectStatusLabels[project.status]}</Badge>
@@ -275,7 +329,11 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
           </div>
           </RowClickNav>
         ) : (
-          <EmptyState>Zatím nejsou založené žádné projekty.</EmptyState>
+          <EmptyState>
+            {query || subjectId || assignee || archive !== "active"
+              ? "Filtru neodpovídá žádný projekt."
+              : "Zatím nejsou založené žádné projekty."}
+          </EmptyState>
         )}
       </Section>
       <Section title="Nový projekt" id="new-project" className="scroll-mt-6">
@@ -317,9 +375,15 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
               </SelectInput>
             </Field>
           </div>
-          <Field label="Hodinová sazba projektu">
-            <TextInput name="hourlyRate" type="number" min="0" step="0.01" />
-          </Field>
+          <TeamSelectField
+            teams={result.data.teams}
+            hint="Členové týmu uvidí projekt hned. Další řešitele přidáte v detailu."
+          />
+          {showRates ? (
+            <Field label="Hodinová sazba projektu">
+              <TextInput name="hourlyRate" type="number" min="0" step="0.01" />
+            </Field>
+          ) : null}
           <Field label="SharePoint URL">
             <TextInput name="sharepointUrl" type="url" />
           </Field>
@@ -327,7 +391,7 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
             <TextArea name="note" />
           </Field>
           <div>
-            <Button type="submit">Vytvořit projekt</Button>
+            <Button type="submit" pendingLabel="Vytvářím…">Vytvořit projekt</Button>
           </div>
         </form>
       </Section>

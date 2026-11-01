@@ -2,10 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 
-import { ModuleKey } from "@/generated/prisma/enums";
 import { auditJson } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
-import { assertModuleEnabled } from "@/lib/entitlements";
 import { requiredString, optionalString } from "@/lib/form";
 import { assertCanManageAml } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
@@ -16,6 +14,8 @@ import {
 } from "@/lib/sanctions/config";
 import { selectCandidates } from "@/lib/sanctions/matching";
 import { normalizeName } from "@/lib/sanctions/normalize";
+import { assertCanAccessModule } from "@/lib/module-access.server";
+import { screeningName } from "@/lib/subjects/person-name";
 
 // AML-5+: run a sanctions screening for a subject. The screening only SUGGESTS
 // candidates for the lawyer to review — it never sets AmlAssessment.hasSanctions
@@ -23,7 +23,7 @@ import { normalizeName } from "@/lib/sanctions/normalize";
 export async function runSanctionsScreening(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  await assertModuleEnabled(currentUser, ModuleKey.AML);
+  await assertCanAccessModule(currentUser, "module.aml");
   assertCanManageAml(currentUser);
 
   const organizationId = currentUser.organizationId;
@@ -34,12 +34,14 @@ export async function runSanctionsScreening(formData: FormData) {
 
   const subject = await prisma.subject.findFirst({
     where: { id: subjectId, organizationId },
-    select: { id: true, name: true },
+    select: { id: true, name: true, type: true, firstName: true, lastName: true },
   });
   if (!subject) {
     throw new Error("Klient nenalezen.");
   }
-  const queryNormalized = normalizeName(subject.name);
+  // Persons are screened by their name without academic titles.
+  const queryName = screeningName(subject);
+  const queryNormalized = normalizeName(queryName);
   if (!queryNormalized) {
     throw new Error("Subjekt nemá jméno, screening nelze spustit.");
   }
@@ -70,7 +72,7 @@ export async function runSanctionsScreening(formData: FormData) {
       data: {
         organizationId,
         subjectId,
-        queryName: subject.name,
+        queryName,
         queryNormalized,
         source: SANCTIONS_SOURCE,
         candidateCount: candidates.length,
@@ -117,7 +119,7 @@ export async function runSanctionsScreening(formData: FormData) {
 export async function decideSanctionsMatch(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  await assertModuleEnabled(currentUser, ModuleKey.AML);
+  await assertCanAccessModule(currentUser, "module.aml");
   assertCanManageAml(currentUser);
 
   const organizationId = currentUser.organizationId;

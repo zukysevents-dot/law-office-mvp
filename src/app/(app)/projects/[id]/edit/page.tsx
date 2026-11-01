@@ -7,6 +7,7 @@ import { Section } from "@/components/section";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
+import { projectAssignmentInclude } from "@/lib/assignments";
 import { getCurrentUser } from "@/lib/auth";
 import { numberInputValue } from "@/lib/form-values";
 import { options, projectStatusLabels } from "@/lib/labels";
@@ -14,9 +15,12 @@ import { safeQuery } from "@/lib/db-safe";
 import {
   andWhere,
   canEditRecord,
+  canViewRates,
   subjectVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +34,7 @@ async function loadProjectEdit(id: string) {
   const [project, subjects, users] = await Promise.all([
     prisma.project.findUnique({
       where: { id },
-      include: { assignees: { select: { userId: true } } },
+      include: projectAssignmentInclude,
     }),
     prisma.subject.findMany({
       where: andWhere(
@@ -68,6 +72,13 @@ const emptyProjectEdit: ProjectEditData = {
 };
 
 export default async function ProjectEditPage({ params }: ProjectEditProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.projects");
+  if (accessDenied) {
+    return <AccessDenied title="Projekty" message={accessDenied} />;
+  }
+  const showRates = canViewRates(accessUser);
+
   const { id } = await params;
   const result = await safeQuery<ProjectEditData>(
     emptyProjectEdit,
@@ -142,15 +153,17 @@ export default async function ProjectEditPage({ params }: ProjectEditProps) {
                 </SelectInput>
               </Field>
             </div>
-            <Field label="Hodinová sazba">
-              <TextInput
-                name="hourlyRate"
-                type="number"
-                min="0"
-                step="0.01"
-                defaultValue={numberInputValue(project.hourlyRate)}
-              />
-            </Field>
+            {showRates ? (
+              <Field label="Hodinová sazba">
+                <TextInput
+                  name="hourlyRate"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  defaultValue={numberInputValue(project.hourlyRate)}
+                />
+              </Field>
+            ) : null}
             <Field label="SharePoint URL">
               <TextInput
                 name="sharepointUrl"
@@ -162,7 +175,7 @@ export default async function ProjectEditPage({ params }: ProjectEditProps) {
               <TextArea name="note" defaultValue={project.note ?? ""} />
             </Field>
             <div className="flex flex-wrap gap-2">
-              <Button type="submit">Uložit projekt</Button>
+              <Button type="submit" pendingLabel="Ukládám…">Uložit projekt</Button>
               <ButtonLink href={`/projects/${project.id}`} variant="ghost">
                 Zrušit
               </ButtonLink>

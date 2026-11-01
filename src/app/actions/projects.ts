@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { ProjectStatus, SubjectRole } from "@/generated/prisma/enums";
 import { setArchived } from "@/lib/archive";
+import { projectAssignmentInclude } from "@/lib/assignments";
 import { auditJson } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
 import {
@@ -13,17 +14,24 @@ import {
   optionalString,
   requiredString,
 } from "@/lib/form";
+import {
+  assignToMatters,
+  resolveAssignee,
+} from "@/lib/matter-assignments.server";
 import { assertUserInOrg } from "@/lib/org-users";
 import {
   andWhere,
   assertCanEditRecord,
+  canViewRates,
   subjectVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { assertCanAccessModule } from "@/lib/module-access.server";
 
 export async function createProject(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
+  await assertCanAccessModule(currentUser, "module.projects");
   const status = enumValue(
     ProjectStatus,
     formData.get("status"),
@@ -32,13 +40,19 @@ export async function createProject(formData: FormData) {
   const mainSubjectId = requiredString(formData, "mainSubjectId");
   const responsibleUserId = optionalString(formData, "responsibleUserId");
   await assertUserInOrg(responsibleUserId, currentUser.organizationId);
+  // Volitelný „Tým řešitelů“: ověřený (aktivní tým kanceláře) ještě před
+  // založením, aby chybný výběr nenechal projekt bez zamýšleného týmu.
+  const legalTeamId = optionalString(formData, "legalTeamId");
+  const team = legalTeamId
+    ? await resolveAssignee(prisma, currentUser, { kind: "team", id: legalTeamId })
+    : null;
 
-  const project = await prisma.$transaction(async (tx) => {
+  const { project, clientName } = await prisma.$transaction(async (tx) => {
     // The main subject must be one the user can see — otherwise a crafted POST
     // could attach (and thereby expose) a subject from another matter/tenant.
     const subject = await tx.subject.findFirst({
       where: andWhere({ id: mainSubjectId }, subjectVisibilityWhere(currentUser)),
-      select: { id: true },
+      select: { id: true, name: true },
     });
     if (!subject) {
       throw new Error("Subjekt nenalezen nebo k němu nemáte oprávnění.");
@@ -51,7 +65,11 @@ export async function createProject(formData: FormData) {
         mainSubjectId,
         responsibleUserId,
         status,
-        hourlyRate: optionalNumber(formData, "hourlyRate"),
+        // Rate only from users who may see rates; otherwise create leaves it
+        // empty and update keeps the stored value.
+        ...(canViewRates(currentUser)
+          ? { hourlyRate: optionalNumber(formData, "hourlyRate") }
+          : {}),
         sharepointUrl: optionalString(formData, "sharepointUrl"),
         note: optionalString(formData, "note"),
       },
@@ -83,8 +101,27 @@ export async function createProject(formData: FormData) {
       },
     });
 
-    return created;
+    return { project: created, clientName: subject.name };
   });
+
+  if (team) {
+    await assignToMatters(
+      prisma,
+      currentUser,
+      [
+        {
+          kind: "project",
+          id: project.id,
+          name: project.name,
+          clientName,
+          organizationId: project.organizationId,
+          projectId: null,
+        },
+      ],
+      team,
+    );
+    revalidatePath("/settings/assignments");
+  }
 
   revalidatePath("/projects");
   redirect(`/projects/${project.id}`);
@@ -93,6 +130,7 @@ export async function createProject(formData: FormData) {
 export async function updateProject(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
+  await assertCanAccessModule(currentUser, "module.projects");
   const projectId = requiredString(formData, "id");
   const status = enumValue(
     ProjectStatus,
@@ -105,7 +143,7 @@ export async function updateProject(formData: FormData) {
 
   const oldProject = await prisma.project.findUniqueOrThrow({
     where: { id: projectId },
-    include: { assignees: { select: { userId: true } } },
+    include: projectAssignmentInclude,
   });
   assertCanEditRecord(currentUser, "Project", oldProject);
   await assertUserInOrg(responsibleUserId, currentUser.organizationId);
@@ -127,7 +165,11 @@ export async function updateProject(formData: FormData) {
       mainSubjectId,
       responsibleUserId,
       status,
-      hourlyRate: optionalNumber(formData, "hourlyRate"),
+      // Rate only from users who may see rates; otherwise create leaves it
+      // empty and update keeps the stored value.
+      ...(canViewRates(currentUser)
+        ? { hourlyRate: optionalNumber(formData, "hourlyRate") }
+        : {}),
       sharepointUrl: optionalString(formData, "sharepointUrl"),
       note: optionalString(formData, "note"),
     },
@@ -140,7 +182,8 @@ export async function updateProject(formData: FormData) {
       action: "UPDATE",
       changedById: currentUser.id,
       organizationId: currentUser.organizationId,
-      oldValue: auditJson(oldProject),
+      // Týmová přiřazení (vč. členů) do auditu úpravy projektu nepatří.
+      oldValue: auditJson({ ...oldProject, teamAssignments: undefined }),
       newValue: auditJson(project),
     },
   });

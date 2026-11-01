@@ -112,9 +112,23 @@ test.describe("aplikační shell a navigace (administrátor)", () => {
     await context.close();
   });
 
+  // Přihlášený uživatel na neexistující cestě dostane skutečnou 404 (anonymní
+  // návštěvník je přesměrován na přihlášení – viz public-pages.spec.ts).
+  test("neexistující cesta po přihlášení zobrazí použitelnou 404", async ({ page }) => {
+    const response = await page.goto("/tato-stranka-neexistuje");
+
+    expect(response?.status()).toBe(404);
+    await expect(
+      page.getByRole("heading", { name: "Tuto stránku jsme nenašli", level: 1 }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "Zpět na dashboard" }),
+    ).toBeVisible();
+  });
+
   test("příkazová paleta se otevře přes ⌘K a zavře Escapem", async ({ page }) => {
     await page.goto("/dashboard");
-    await expect(page.getByRole("dialog")).toBeHidden();
+    await expect(page.getByRole("dialog", { name: "Rychlé hledání" })).toBeHidden();
 
     const palette = await openCommandPalette(page);
     const input = palette.getByPlaceholder("Hledat subjekt, projekt, případ, úkol…");
@@ -158,7 +172,7 @@ test.describe("aplikační shell a navigace (administrátor)", () => {
   // zařízení) nebo bez znalosti zkratky bylo nedostupné.
   test("hledání jde otevřít myší z levého panelu", async ({ page }) => {
     await page.goto("/dashboard");
-    await expect(page.getByRole("dialog")).toBeHidden();
+    await expect(page.getByRole("dialog", { name: "Rychlé hledání" })).toBeHidden();
 
     await page
       .getByRole("navigation", { name: "Hlavní navigace" })

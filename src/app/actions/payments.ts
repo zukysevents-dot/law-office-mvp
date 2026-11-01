@@ -2,11 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 
-import { InvoiceStatus, ModuleKey, PaymentMethod } from "@/generated/prisma/enums";
+import { InvoiceStatus, PaymentMethod } from "@/generated/prisma/enums";
 import { auditJson } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
 import { round2 } from "@/lib/billing-calc";
-import { assertModuleEnabled } from "@/lib/entitlements";
 import {
   enumValue,
   optionalDate,
@@ -21,6 +20,7 @@ import {
   invoiceVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { assertCanAccessModule } from "@/lib/module-access.server";
 
 function toNum(value: unknown): number {
   const n = Number(value);
@@ -33,7 +33,7 @@ function toNum(value: unknown): number {
 export async function recordPayment(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  await assertModuleEnabled(currentUser, ModuleKey.BILLING);
+  await assertCanAccessModule(currentUser, "module.billing");
   assertCanManageInvoices(currentUser);
 
   const invoiceId = requiredString(formData, "invoiceId");

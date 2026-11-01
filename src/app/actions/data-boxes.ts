@@ -28,6 +28,7 @@ import {
   subjectVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import { assertCanAccessModule } from "@/lib/module-access.server";
 
 function isUniqueViolation(error: unknown): boolean {
   return (
@@ -120,7 +121,7 @@ export async function saveDataBoxAccount(formData: FormData) {
 export async function addManualMessage(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  await assertModuleEnabled(currentUser, ModuleKey.DATA_BOXES);
+  await assertCanAccessModule(currentUser, "module.dataBoxes");
   assertCanManageDataBoxes(currentUser);
 
   const organizationId = currentUser.organizationId;
@@ -204,7 +205,7 @@ export async function addManualMessage(formData: FormData) {
 export async function assignToCase(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  await assertModuleEnabled(currentUser, ModuleKey.DATA_BOXES);
+  await assertCanAccessModule(currentUser, "module.dataBoxes");
   assertCanManageDataBoxes(currentUser);
 
   const messageId = requiredString(formData, "messageId");
@@ -282,7 +283,7 @@ export async function assignToCase(formData: FormData) {
 export async function downloadAttachment(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
-  await assertModuleEnabled(currentUser, ModuleKey.DATA_BOXES);
+  await assertCanAccessModule(currentUser, "module.dataBoxes");
   assertCanManageDataBoxes(currentUser);
 
   const attachmentId = requiredString(formData, "attachmentId");

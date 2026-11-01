@@ -43,7 +43,22 @@ async function ensureDatabaseExists() {
   }
 }
 
+// Pojistka: příprava maže data (plány hodin, login pokusy, audit KPI) bez
+// ohledu na prefix. Spustit ji jde jen proti databázi, jejíž název obsahuje
+// „e2e“ — omylem nastavená E2E_DATABASE_URL tak nesmaže vývojová ani
+// produkční data.
+function assertDisposableE2eDatabase() {
+  const url = new URL(E2E_DATABASE_URL);
+  const database = decodeURIComponent(url.pathname.replace(/^\//, ""));
+  if (!/e2e/i.test(database)) {
+    throw new Error(
+      `E2E_DATABASE_URL musí mířit na databázi s „e2e“ v názvu (je „${database}“).`,
+    );
+  }
+}
+
 async function main() {
+  assertDisposableE2eDatabase();
   await ensureDatabaseExists();
 
   run("npx", ["prisma", "migrate", "deploy"]);
@@ -80,6 +95,12 @@ async function main() {
       }
     }
 
+    // Permission matrix: a run interrupted mid-test could leave a role
+    // tightened or a user exception behind. This is the disposable E2E
+    // database only — start every suite from the default matrix.
+    await prisma.rolePermissionOverride.deleteMany({});
+    await prisma.userPermissionOverride.deleteMany({});
+
     // Drop leftovers from previous runs. Only `e2e-` prefixed rows, never seed
     // or developer data.
     const staleTaskIds = (
@@ -96,7 +117,15 @@ async function main() {
       await prisma.taskStatusHistory.deleteMany({
         where: { taskId: { in: staleTaskIds } },
       });
+      // Lidé na úkolu (taskAssignees) zmizí kaskádou s úkolem; jejich audit
+      // (entityType TaskAssignee, entityId = úkol) a notifikace úkolu ne.
       await prisma.auditLog.deleteMany({
+        where: {
+          entityType: { in: ["Task", "TaskAssignee"] },
+          entityId: { in: staleTaskIds },
+        },
+      });
+      await prisma.notification.deleteMany({
         where: { entityType: "Task", entityId: { in: staleTaskIds } },
       });
       await prisma.task.deleteMany({ where: { id: { in: staleTaskIds } } });
@@ -104,6 +133,65 @@ async function main() {
     await prisma.workLog.deleteMany({
       where: { description: { startsWith: E2E_PREFIX } },
     });
+
+    // Teams created by teams-and-assignees / roles specs (`e2e-…`). Deleting a
+    // team cascades to its memberships and project/case team assignments.
+    const staleTeamIds = (
+      await prisma.legalTeam.findMany({
+        where: { name: { startsWith: E2E_PREFIX } },
+        select: { id: true },
+      })
+    ).map((team) => team.id);
+    if (staleTeamIds.length > 0) {
+      await prisma.notification.deleteMany({
+        where: { entityType: "LegalTeam", entityId: { in: staleTeamIds } },
+      });
+      await prisma.auditLog.deleteMany({
+        where: { entityType: "LegalTeam", entityId: { in: staleTeamIds } },
+      });
+      await prisma.legalTeam.deleteMany({ where: { id: { in: staleTeamIds } } });
+    }
+
+    // Projects (and their cases) created by the specs (`e2e-…`). Case →
+    // project is ON DELETE RESTRICT, so cases go first; tasks / work logs on
+    // them would only be SetNull-orphaned, so they are removed explicitly.
+    const staleProjectIds = (
+      await prisma.project.findMany({
+        where: { name: { startsWith: E2E_PREFIX } },
+        select: { id: true },
+      })
+    ).map((project) => project.id);
+    if (staleProjectIds.length > 0) {
+      const staleCaseIds = (
+        await prisma.case.findMany({
+          where: { projectId: { in: staleProjectIds } },
+          select: { id: true },
+        })
+      ).map((row) => row.id);
+      const onMatter = {
+        OR: [
+          { projectId: { in: staleProjectIds } },
+          { caseId: { in: staleCaseIds } },
+        ],
+      };
+      const matterTaskIds = (
+        await prisma.task.findMany({ where: onMatter, select: { id: true } })
+      ).map((task) => task.id);
+      await prisma.workLog.deleteMany({
+        where: { OR: [...onMatter.OR, { taskId: { in: matterTaskIds } }] },
+      });
+      await prisma.taskComment.deleteMany({ where: { taskId: { in: matterTaskIds } } });
+      await prisma.taskStatusHistory.deleteMany({
+        where: { taskId: { in: matterTaskIds } },
+      });
+      await prisma.task.deleteMany({ where: { id: { in: matterTaskIds } } });
+      await prisma.subjectRelation.deleteMany({ where: onMatter });
+      const matterIds = [...staleProjectIds, ...staleCaseIds, ...matterTaskIds];
+      await prisma.notification.deleteMany({ where: { entityId: { in: matterIds } } });
+      await prisma.auditLog.deleteMany({ where: { entityId: { in: matterIds } } });
+      await prisma.case.deleteMany({ where: { id: { in: staleCaseIds } } });
+      await prisma.project.deleteMany({ where: { id: { in: staleProjectIds } } });
+    }
 
     const staleSubjectIds = (
       await prisma.subject.findMany({
@@ -124,8 +212,88 @@ async function main() {
       await prisma.auditLog.deleteMany({
         where: { entityType: "Subject", entityId: { in: staleSubjectIds } },
       });
+      // Contacts / statutory bodies cascade with the subject; their audit rows
+      // are keyed by the child id, so drop them explicitly first.
+      const staleContactIds = (
+        await prisma.subjectContact.findMany({
+          where: { subjectId: { in: staleSubjectIds } },
+          select: { id: true },
+        })
+      ).map((row) => row.id);
+      const staleStatutoryIds = (
+        await prisma.subjectStatutoryBody.findMany({
+          where: { subjectId: { in: staleSubjectIds } },
+          select: { id: true },
+        })
+      ).map((row) => row.id);
+      await prisma.auditLog.deleteMany({
+        where: {
+          OR: [
+            { entityType: "SubjectContact", entityId: { in: staleContactIds } },
+            { entityType: "SubjectStatutoryBody", entityId: { in: staleStatutoryIds } },
+          ],
+        },
+      });
       await prisma.subject.deleteMany({ where: { id: { in: staleSubjectIds } } });
     }
+
+    // Deadlines created by deadlines-fulfilment.spec.ts (+ their audit rows
+    // and queued reminders).
+    const staleDeadlineIds = (
+      await prisma.deadline.findMany({
+        where: { title: { startsWith: E2E_PREFIX } },
+        select: { id: true },
+      })
+    ).map((deadline) => deadline.id);
+    if (staleDeadlineIds.length > 0) {
+      await prisma.auditLog.deleteMany({
+        where: { entityType: "Deadline", entityId: { in: staleDeadlineIds } },
+      });
+      await prisma.notification.deleteMany({
+        where: { entityType: "Deadline", entityId: { in: staleDeadlineIds } },
+      });
+      await prisma.deadline.deleteMany({ where: { id: { in: staleDeadlineIds } } });
+    }
+    await prisma.courtHearing.deleteMany({
+      where: { court: { startsWith: E2E_PREFIX } },
+    });
+
+    // Personal Outlook feeds (calendar-outlook.spec.ts injects them). The
+    // seed has none, so the disposable E2E database starts without any.
+    await prisma.calendarFeed.deleteMany({});
+
+    // Users created by users-invitations.spec.ts (e-mail `e2e-…`). Their
+    // memberships, invitation tokens and personal prefs cascade; audit rows
+    // about them are dropped explicitly (rows they authored are SetNull).
+    const staleUserIds = (
+      await prisma.user.findMany({
+        where: { email: { startsWith: E2E_PREFIX } },
+        select: { id: true },
+      })
+    ).map((user) => user.id);
+    if (staleUserIds.length > 0) {
+      await prisma.auditLog.deleteMany({
+        where: { entityType: "User", entityId: { in: staleUserIds } },
+      });
+      await prisma.user.deleteMany({ where: { id: { in: staleUserIds } } });
+    }
+
+    // KPI a Výkonnost (performance-kpi.spec.ts): plán hodin se v seedu
+    // nenastavuje, testy si ho zapisují samy — každý běh začíná bez plánu.
+    // HR záznamy a dočasné widgety testů nesou prefix `e2e-` (note / id).
+    await prisma.userHoursPlan.deleteMany({});
+    await prisma.hrAttendanceRecord.deleteMany({
+      where: { note: { startsWith: E2E_PREFIX } },
+    });
+    await prisma.hrAbsenceRequest.deleteMany({
+      where: { note: { startsWith: E2E_PREFIX } },
+    });
+    await prisma.dashboardWidget.deleteMany({
+      where: { id: { startsWith: E2E_PREFIX } },
+    });
+    await prisma.auditLog.deleteMany({
+      where: { entityType: { in: ["UserHoursPlan", "Performance"] } },
+    });
 
     // Login throttling is per-IP (30 attempts / 15 min) and every run signs six
     // users in. Start from a clean ledger so a rerun is never rate-limited.

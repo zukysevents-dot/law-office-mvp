@@ -7,6 +7,7 @@ import {
   DashboardWidgetType,
 } from "@/generated/prisma/enums";
 import { getCurrentUser } from "@/lib/auth";
+import { getAccessibleModules } from "@/lib/module-access.server";
 import {
   dashboardTableColumns,
   dashboardWidgetConfigForType,
@@ -15,6 +16,7 @@ import {
   getDefaultDashboardColumns,
   isDashboardTableWidget,
   parseDashboardLayoutPayload,
+  isDashboardWidgetAllowed,
 } from "@/lib/dashboard-widgets";
 import { enumValue, requiredString } from "@/lib/form";
 import { getPrisma } from "@/lib/prisma";
@@ -34,6 +36,9 @@ export async function addDashboardWidget(formData: FormData) {
     formData.get("type"),
     DashboardWidgetType.ACTIVE_TASKS,
   );
+  if (!isDashboardWidgetAllowed(type, await getAccessibleModules(currentUser))) {
+    throw new Error("K modulu tohoto widgetu nemáte přístup.");
+  }
   const maxPosition = await prisma.dashboardWidget.aggregate({
     where: { userId: currentUser.id },
     _max: { position: true },

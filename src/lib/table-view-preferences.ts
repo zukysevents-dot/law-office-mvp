@@ -2,7 +2,14 @@ export type TableColumnDefinition = {
   id: string;
   label: string;
   defaultVisible: boolean;
+  // Kdy sloupec přibyl (ISO datum). Výchozí viditelný sloupec se doplní i
+  // uživatelům, jejichž uložený výběr je starší — výběr uložený později už je
+  // vědomá volba (sloupec mohl schovat) a respektuje se.
+  introducedAt?: string;
 };
+
+// Sloupec „Řešitelé“ (balík 04 – týmy a řešitelé).
+const ASSIGNEES_INTRODUCED_AT = "2026-10-26T00:00:00.000Z";
 
 type TableViewConfig = {
   label: string;
@@ -19,8 +26,9 @@ export const tableViewConfigs = {
       { id: "subject", label: "Klient / subjekt", defaultVisible: true },
       { id: "project", label: "Projekt", defaultVisible: true },
       { id: "case", label: "Případ", defaultVisible: true },
-      { id: "createdBy", label: "Vytvořil", defaultVisible: false },
-      { id: "assignee", label: "Řešitel", defaultVisible: true },
+      { id: "createdBy", label: "Zadavatel", defaultVisible: false },
+      { id: "assignee", label: "Řešitelé", defaultVisible: true },
+      { id: "supervisors", label: "Dohled", defaultVisible: false },
       {
         id: "responsiblePerson",
         label: "Odpovědná osoba",
@@ -49,7 +57,7 @@ export const tableViewConfigs = {
       { id: "hours", label: "Hodiny", defaultVisible: true },
       { id: "hourlyRate", label: "Sazba", defaultVisible: true },
       { id: "amount", label: "Částka", defaultVisible: true },
-      { id: "description", label: "Popis", defaultVisible: false },
+      { id: "description", label: "Popis", defaultVisible: true },
       { id: "legalArea", label: "Právní oblast", defaultVisible: true },
       { id: "billingStatus", label: "Billing status", defaultVisible: true },
       { id: "approvalStatus", label: "Approval status", defaultVisible: true },
@@ -65,7 +73,9 @@ export const tableViewConfigs = {
       { id: "type", label: "Typ", defaultVisible: false },
       { id: "ico", label: "IČO", defaultVisible: true },
       { id: "dic", label: "DIČ", defaultVisible: false },
-      { id: "address", label: "Adresa", defaultVisible: false },
+      { id: "email", label: "E-mail", defaultVisible: false },
+      { id: "phone", label: "Telefon", defaultVisible: false },
+      { id: "address", label: "Adresa / sídlo", defaultVisible: false },
       { id: "legalForm", label: "Právní forma", defaultVisible: false },
       { id: "statutoryBody", label: "Statutární orgán", defaultVisible: false },
       { id: "status", label: "Stav", defaultVisible: true },
@@ -94,6 +104,12 @@ export const tableViewConfigs = {
         label: "Odpovědný uživatel",
         defaultVisible: true,
       },
+      {
+        id: "assignees",
+        label: "Řešitelé",
+        defaultVisible: true,
+        introducedAt: ASSIGNEES_INTRODUCED_AT,
+      },
       { id: "status", label: "Status", defaultVisible: true },
       { id: "hourlyRate", label: "Hodinová sazba", defaultVisible: true },
       { id: "sharePointUrl", label: "SharePoint URL", defaultVisible: true },
@@ -116,6 +132,12 @@ export const tableViewConfigs = {
         id: "responsibleUser",
         label: "Odpovědný uživatel",
         defaultVisible: true,
+      },
+      {
+        id: "assignees",
+        label: "Řešitelé",
+        defaultVisible: true,
+        introducedAt: ASSIGNEES_INTRODUCED_AT,
       },
       { id: "status", label: "Status", defaultVisible: true },
       { id: "sharePointUrl", label: "SharePoint URL", defaultVisible: true },
@@ -178,6 +200,8 @@ export function normalizeVisibleColumns(
   savedColumns: unknown,
   allColumns: readonly TableColumnDefinition[],
   defaultColumns: readonly string[],
+  // Kdy byl výběr naposledy uložen (jen při čtení uložené preference).
+  savedAt?: Date | null,
 ) {
   const availableColumns = allColumns.map((column) => column.id);
   const fallback = defaultColumns.filter((column) =>
@@ -201,6 +225,20 @@ export function normalizeVisibleColumns(
   if (hasStaleColumns) {
     for (const column of fallback) {
       selectedColumns.add(column);
+    }
+  }
+
+  // Nově přidané výchozí sloupce doplnit do výběru uloženého před jejich
+  // zavedením (jinak by je uživatel s uloženým výběrem nikdy neviděl).
+  if (savedAt) {
+    for (const column of allColumns) {
+      if (
+        column.defaultVisible &&
+        column.introducedAt &&
+        savedAt.getTime() < new Date(column.introducedAt).getTime()
+      ) {
+        selectedColumns.add(column.id);
+      }
     }
   }
 

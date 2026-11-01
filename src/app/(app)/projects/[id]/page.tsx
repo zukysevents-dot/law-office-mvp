@@ -3,8 +3,9 @@ import { notFound } from "next/navigation";
 
 import { archiveProject, restoreProject } from "@/app/actions/projects";
 import {
-  addProjectAssignee,
+  addProjectAssignment,
   removeProjectAssignee,
+  removeProjectTeamAssignment,
 } from "@/app/actions/project-assignees";
 import { addProjectSubjectRelation } from "@/app/actions/subject-relations";
 import { ArchiveActionForm } from "@/components/archive-action-form";
@@ -20,7 +21,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { EmptyState } from "@/components/ui/empty-state";
+import {
+  personAssigneeDisplaySelect,
+  teamAssignmentDisplaySelect,
+} from "@/lib/assignments";
+import { getTeamOptions } from "@/lib/assignments-overview.server";
 import { getCurrentUser } from "@/lib/auth";
+import { getOrgUserOptions } from "@/lib/org-users";
 import { formatDate, formatHours, formatMoney } from "@/lib/format";
 import {
   options,
@@ -31,9 +38,11 @@ import {
 import { safeQuery } from "@/lib/db-safe";
 import {
   andWhere,
-  canManageReferences,
-  canViewAllLegalData,
+  canArchiveRecords,
   canEditRecord,
+  canManageReferences,
+  canOpenAssignments,
+  canViewRates,
   caseVisibilityWhere,
   projectVisibilityWhere,
   referenceVisibilityWhere,
@@ -42,7 +51,14 @@ import {
   workLogVisibilityWhere,
 } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
+import {
+  formatAssigneeNames,
+  taskPeopleFromRecord,
+  taskPeopleSelect,
+} from "@/lib/tasks/task-people";
 import { subjectRoleTone } from "@/lib/status-tones";
+import { AccessDenied } from "@/components/access-denied";
+import { moduleAccessDenial } from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -55,20 +71,14 @@ async function loadProject(id: string) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
 
-  const [project, subjects, users] = await Promise.all([
+  const [project, subjects, users, teamOptions] = await Promise.all([
     prisma.project.findFirst({
       where: andWhere({ id }, projectVisibilityWhere(currentUser)),
       include: {
         mainSubject: { select: { id: true, name: true, ico: true } },
         responsibleUser: { select: { name: true } },
-        assignees: {
-          orderBy: { assignedAt: "asc" },
-          select: {
-            id: true,
-            userId: true,
-            user: { select: { id: true, name: true } },
-          },
-        },
+        assignees: personAssigneeDisplaySelect,
+        teamAssignments: teamAssignmentDisplaySelect,
         subjectRelations: {
           orderBy: { createdAt: "desc" },
           include: {
@@ -108,7 +118,7 @@ async function loadProject(id: string) {
             title: true,
             status: true,
             deadline: true,
-            assignedTo: { select: { name: true } },
+            ...taskPeopleSelect,
           },
         },
         workLogs: {
@@ -136,22 +146,18 @@ async function loadProject(id: string) {
       orderBy: { name: "asc" },
       select: { id: true, name: true, ico: true },
     }),
-    // Kandidáti na řešitele = aktivní členové stejné kanceláře (org-scoped).
-    prisma.organizationMember.findMany({
-      where: {
-        organizationId: currentUser.organizationId ?? undefined,
-        status: "ACTIVE",
-      },
-      orderBy: { user: { name: "asc" } },
-      select: { user: { select: { id: true, name: true } } },
-    }),
+    // Kandidáti na řešitele = aktivní členové a aktivní týmy téže kanceláře.
+    getOrgUserOptions(currentUser),
+    getTeamOptions(prisma, currentUser.organizationId),
   ]);
 
   return {
     project,
     subjects,
-    users: users.map((row) => row.user),
-    canArchive: canViewAllLegalData(currentUser),
+    users,
+    teamOptions,
+    canOpenAssignments: canOpenAssignments(currentUser),
+    canArchive: canArchiveRecords(currentUser),
     canEdit: project ? canEditRecord(currentUser, "Project", project) : false,
     canManageReferences: canManageReferences(currentUser),
   };
@@ -163,6 +169,8 @@ const emptyProjectDetail: ProjectDetailData = {
   project: null,
   subjects: [],
   users: [],
+  teamOptions: [],
+  canOpenAssignments: false,
   canArchive: false,
   canEdit: false,
   canManageReferences: false,
@@ -172,6 +180,13 @@ export default async function ProjectDetailPage({
   params,
   searchParams,
 }: ProjectDetailProps) {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.projects");
+  if (accessDenied) {
+    return <AccessDenied title="Projekty" message={accessDenied} />;
+  }
+  const showRates = canViewRates(accessUser);
+
   const { id } = await params;
   const { sharepoint } = await searchParams;
   const result = await safeQuery<ProjectDetailData>(
@@ -187,6 +202,8 @@ export default async function ProjectDetailPage({
     project,
     subjects,
     users,
+    teamOptions,
+    canOpenAssignments: showManageLink,
     canArchive,
     canEdit,
     canManageReferences,
@@ -259,12 +276,14 @@ export default async function ProjectDetailPage({
                 </p>
                 <p>{project.responsibleUser?.name ?? "—"}</p>
               </div>
-              <div>
-                <p className="text-xs font-semibold uppercase text-stone-500">
-                  Hodinová sazba projektu
-                </p>
-                <p>{formatMoney(project.hourlyRate)}</p>
-              </div>
+              {showRates ? (
+                <div>
+                  <p className="text-xs font-semibold uppercase text-stone-500">
+                    Hodinová sazba projektu
+                  </p>
+                  <p>{formatMoney(project.hourlyRate)}</p>
+                </div>
+              ) : null}
               <SharepointFolderField
                 entityType="Project"
                 id={project.id}
@@ -281,13 +300,17 @@ export default async function ProjectDetailPage({
           </Section>
           <AssigneeSection
             title="Řešitelé projektu"
-            assignees={project.assignees}
-            candidates={users}
-            parentField="projectId"
+            kind="project"
             parentId={project.id}
-            addAction={addProjectAssignee}
-            removeAction={removeProjectAssignee}
+            assignees={project.assignees}
+            teams={project.teamAssignments}
+            candidates={users}
+            teamCandidates={teamOptions}
+            addAction={addProjectAssignment}
+            removeUserAction={removeProjectAssignee}
+            removeTeamAction={removeProjectTeamAssignment}
             canEdit={canEdit}
+            manageHref={showManageLink ? "/settings/assignments" : null}
           />
           <Section title="Subjektové vazby projektu">
             {project.subjectRelations.length > 0 ? (
@@ -370,7 +393,7 @@ export default async function ProjectDetailPage({
                   <TextArea name="note" />
                 </Field>
                 <div>
-                  <Button type="submit">Přidat vazbu</Button>
+                  <Button type="submit" pendingLabel="Přidávám…">Přidat vazbu</Button>
                 </div>
               </form>
             </Section>
@@ -415,7 +438,7 @@ export default async function ProjectDetailPage({
                   <thead>
                     <tr>
                       <th>Úkol</th>
-                      <th>Řešitel</th>
+                      <th>Řešitelé</th>
                       <th>Stav</th>
                       <th>Deadline</th>
                     </tr>
@@ -431,7 +454,11 @@ export default async function ProjectDetailPage({
                             {task.title}
                           </Link>
                         </td>
-                        <td>{task.assignedTo?.name ?? "—"}</td>
+                        <td>
+                          {formatAssigneeNames(
+                            taskPeopleFromRecord(task).assignees,
+                          ) || "—"}
+                        </td>
                         <td>{taskStatusLabels[task.status]}</td>
                         <td>{formatDate(task.deadline)}</td>
                       </tr>
@@ -479,7 +506,7 @@ export default async function ProjectDetailPage({
                     <tr>
                       <th>Název</th>
                       <th>Právní odvětví</th>
-                      <th>Hodnota</th>
+                      {showRates ? <th>Hodnota</th> : null}
                       <th>Období</th>
                       <th>Případ</th>
                       <th>Popis</th>
@@ -492,7 +519,9 @@ export default async function ProjectDetailPage({
                           {reference.title}
                         </td>
                         <td>{reference.legalArea ?? "—"}</td>
-                        <td>{formatMoney(reference.valueCzk)}</td>
+                        {showRates ? (
+                          <td>{formatMoney(reference.valueCzk)}</td>
+                        ) : null}
                         <td>
                           {formatDate(reference.startDate)} –{" "}
                           {reference.endDate

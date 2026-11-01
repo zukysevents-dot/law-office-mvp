@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -17,7 +17,9 @@ import {
   FileSpreadsheet,
   FileText,
   FolderOpen,
+  Gauge,
   Inbox,
+  KeyRound,
   Users,
   LayoutDashboard,
   LibraryBig,
@@ -32,7 +34,7 @@ import {
   Settings,
   ShieldAlert,
   ShieldCheck,
-  X,
+  UsersRound,
 } from "lucide-react";
 
 import { logoutAction } from "@/app/actions/auth";
@@ -41,25 +43,34 @@ import {
   IuriverseLogo,
   OrbitMark,
 } from "@/components/landing/iuriverse-logo";
-import { ModuleKey } from "@/generated/prisma/enums";
+import { Dialog } from "@/components/ui/dialog";
+import { SubmitButton } from "@/components/ui/submit-button";
+import type { ModulePermissionKey } from "@/lib/permission-catalog";
 import { cn } from "@/lib/utils";
+
+// Function-level gates for nav items whose page needs more than the module
+// (e.g. invoices need "Spravuje fakturaci"). UX only — pages/actions enforce.
+export type NavFunctionGate =
+  | "manageInvoices"
+  | "manageOrganization"
+  | "managePermissions"
+  | "manageHr"
+  | "manageAssignments";
 
 type NavItem = {
   href: string;
   label: string;
   icon: typeof LayoutDashboard;
-  adminOnly?: boolean;
-  // Gate this item behind a bought module (UX only). Items without `module`
-  // are always visible (CORE).
-  module?: ModuleKey;
-  // Skryj, pokud uživatel nemá oprávnění spravovat faktury (ADMIN/PARTNER nebo
-  // grant MANAGE_INVOICES). UX-only; akce/stránka gatují server-side.
-  requiresInvoiceAccess?: boolean;
+  // Module permission (matrix row "Moduly a sekce"). The server passes the
+  // modules the user may open (permission ∧ office entitlement); items without
+  // `permission` are always visible (dashboard, settings).
+  permission?: ModulePermissionKey;
+  requires?: NavFunctionGate;
 };
 
 // Grouped navigation. Sections give the (now 20+) items a hierarchy instead of
-// one flat scroll. A section whose items are all hidden (module not bought /
-// not admin) is dropped entirely, so the rail never shows an empty header.
+// one flat scroll. A section whose items are all hidden (module not accessible)
+// is dropped entirely, so the rail never shows an empty header.
 type NavSection = {
   title: string;
   items: NavItem[];
@@ -74,73 +85,106 @@ const navSections: NavSection[] = [
         href: "/documents",
         label: "Spisovna",
         icon: FolderOpen,
-        module: ModuleKey.DOCUMENTS,
+        permission: "module.documents",
       },
     ],
   },
   {
     title: "Spisy",
     items: [
-      { href: "/subjects", label: "Subjekty", icon: Building2 },
-      { href: "/conflict-check", label: "Conflict check", icon: ShieldCheck },
-      { href: "/registry", label: "Hlídání rejstříků", icon: Radar },
+      { href: "/subjects", label: "Subjekty", icon: Building2, permission: "module.subjects" },
       {
-        href: "/aml",
-        label: "AML / KYC",
-        icon: ShieldAlert,
-        adminOnly: true,
-        module: ModuleKey.AML,
+        href: "/conflict-check",
+        label: "Conflict check",
+        icon: ShieldCheck,
+        permission: "module.conflictCheck",
       },
-      { href: "/projects", label: "Projekty", icon: BriefcaseBusiness },
-      { href: "/cases", label: "Případy", icon: FileText },
+      { href: "/registry", label: "Hlídání rejstříků", icon: Radar, permission: "module.registry" },
+      { href: "/aml", label: "AML / KYC", icon: ShieldAlert, permission: "module.aml" },
+      {
+        href: "/projects",
+        label: "Projekty",
+        icon: BriefcaseBusiness,
+        permission: "module.projects",
+      },
+      { href: "/cases", label: "Případy", icon: FileText, permission: "module.cases" },
       {
         href: "/data-boxes",
         label: "Datové schránky",
         icon: Inbox,
-        module: ModuleKey.DATA_BOXES,
+        permission: "module.dataBoxes",
       },
     ],
   },
   {
     title: "Práce",
     items: [
-      { href: "/tasks", label: "Úkoly", icon: ListTodo },
-      { href: "/tasks/my", label: "Moje úkoly", icon: ListChecks },
-      { href: "/tasks/archive", label: "Archiv úkolů", icon: Archive },
-      { href: "/work-logs", label: "Výkazy práce", icon: Clock3 },
+      { href: "/tasks", label: "Úkoly", icon: ListTodo, permission: "module.tasks" },
+      { href: "/tasks/my", label: "Moje úkoly", icon: ListChecks, permission: "module.tasks" },
+      { href: "/tasks/archive", label: "Archiv úkolů", icon: Archive, permission: "module.tasks" },
+      { href: "/work-logs", label: "Výkazy práce", icon: Clock3, permission: "module.workLogs" },
       {
         href: "/billing",
         label: "Fakturace",
         icon: Receipt,
-        module: ModuleKey.BILLING,
-        requiresInvoiceAccess: true,
+        permission: "module.billing",
+        requires: "manageInvoices",
       },
-      { href: "/reports", label: "Reporty", icon: BarChart3 },
-      { href: "/references", label: "Reference", icon: LibraryBig },
+      { href: "/reports", label: "Reporty", icon: BarChart3, permission: "module.reports" },
+      { href: "/performance", label: "Výkonnost", icon: Gauge, permission: "module.performance" },
+      { href: "/references", label: "Reference", icon: LibraryBig, permission: "module.references" },
     ],
   },
   {
     title: "Lhůty & dokumenty",
     items: [
-      { href: "/deadlines", label: "Lhůtník", icon: AlarmClock, module: ModuleKey.DEADLINES },
-      { href: "/calendar", label: "Kalendář", icon: CalendarDays, module: ModuleKey.DEADLINES },
-      { href: "/documents/sharepoint", label: "SharePoint", icon: FolderOpen, module: ModuleKey.DOCUMENTS },
+      { href: "/deadlines", label: "Lhůtník", icon: AlarmClock, permission: "module.deadlines" },
+      { href: "/calendar", label: "Kalendář", icon: CalendarDays, permission: "module.calendar" },
+      {
+        href: "/documents/sharepoint",
+        label: "SharePoint",
+        icon: FolderOpen,
+        permission: "module.documents",
+      },
     ],
   },
   {
     title: "HR",
     items: [
-      { href: "/hr/employees", label: "Zaměstnanci", icon: Users, module: ModuleKey.HR_ATTENDANCE },
-      { href: "/hr/attendance", label: "Docházka", icon: CalendarClock, module: ModuleKey.HR_ATTENDANCE },
-      { href: "/hr/absences", label: "Absence", icon: CalendarOff, module: ModuleKey.HR_ATTENDANCE },
-      { href: "/hr/exports", label: "Mzdový export", icon: FileSpreadsheet, module: ModuleKey.HR_ATTENDANCE },
+      { href: "/hr/employees", label: "Zaměstnanci", icon: Users, permission: "module.hr" },
+      { href: "/hr/attendance", label: "Docházka", icon: CalendarClock, permission: "module.hr" },
+      { href: "/hr/absences", label: "Absence", icon: CalendarOff, permission: "module.hr" },
+      {
+        href: "/hr/exports",
+        label: "Mzdový export",
+        icon: FileSpreadsheet,
+        permission: "module.hr",
+        requires: "manageHr",
+      },
     ],
   },
   {
     title: "Správa",
     items: [
-      { href: "/audit-log", label: "Audit log", icon: ScrollText, adminOnly: true },
-      { href: "/settings/organization", label: "Kancelář", icon: Briefcase, adminOnly: true },
+      { href: "/audit-log", label: "Audit log", icon: ScrollText, permission: "module.auditLog" },
+      {
+        href: "/settings/organization",
+        label: "Kancelář",
+        icon: Briefcase,
+        requires: "manageOrganization",
+      },
+      {
+        href: "/settings/assignments",
+        label: "Týmy a řešitelé",
+        icon: UsersRound,
+        requires: "manageAssignments",
+      },
+      {
+        href: "/settings/permissions",
+        label: "Oprávnění",
+        icon: KeyRound,
+        requires: "managePermissions",
+      },
       { href: "/settings", label: "Nastavení", icon: Settings },
     ],
   },
@@ -161,97 +205,44 @@ function getActiveHref(pathname: string, items: NavItem[]) {
 }
 
 export function AppSidebar({
-  showAuditLog,
-  canManageInvoices,
+  allowedModules,
+  functions,
   userName,
   userRole,
-  enabledModules,
 }: {
-  showAuditLog?: boolean;
-  canManageInvoices?: boolean;
+  // Module permission keys the user may open (permission ∧ entitlement).
+  allowedModules?: string[];
+  functions?: Partial<Record<NavFunctionGate, boolean>>;
   userName?: string;
   userRole?: string;
-  enabledModules?: string[];
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const menuButtonRef = useRef<HTMLButtonElement>(null);
-  const mobileNavRef = useRef<HTMLElement>(null);
 
+  // The drawer is a phone/tablet affordance: growing past the lg breakpoint
+  // (rotate, resize) closes it. Esc, ×, click outside, focus trap, focus
+  // return and scroll lock come from the shared Dialog primitive.
   useEffect(() => {
     if (!open) {
       return;
     }
-
-    const nav = mobileNavRef.current;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    const focusableSelector =
-      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
-    const focusFirstItem = window.requestAnimationFrame(() => {
-      nav?.querySelector<HTMLElement>(focusableSelector)?.focus();
-    });
-
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        setOpen(false);
-        menuButtonRef.current?.focus();
-        return;
-      }
-
-      if (event.key !== "Tab" || !nav) {
-        return;
-      }
-
-      const focusableItems = Array.from(
-        nav.querySelectorAll<HTMLElement>(focusableSelector),
-      );
-      if (focusableItems.length === 0) {
-        event.preventDefault();
-        return;
-      }
-
-      const firstItem = focusableItems[0];
-      const lastItem = focusableItems[focusableItems.length - 1];
-      if (event.shiftKey && document.activeElement === firstItem) {
-        event.preventDefault();
-        lastItem.focus();
-      } else if (!event.shiftKey && document.activeElement === lastItem) {
-        event.preventDefault();
-        firstItem.focus();
-      }
-    }
-
     function onResize() {
       if (window.innerWidth >= 1024) {
         setOpen(false);
       }
     }
-
-    document.addEventListener("keydown", onKeyDown);
     window.addEventListener("resize", onResize, { passive: true });
-    return () => {
-      window.cancelAnimationFrame(focusFirstItem);
-      document.body.style.overflow = previousOverflow;
-      document.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("resize", onResize);
-    };
+    return () => window.removeEventListener("resize", onResize);
   }, [open]);
-  // Two independent gates:
-  // - showAuditLog === canViewAllLegalData (ADMIN/PARTNER); same gate covers the
-  //   org-management link, so adminOnly items hide for everyone else.
-  // - enabledModules hides nav items for modules the org hasn't bought. Missing
-  //   prop → empty list → module-gated items hidden (fail-closed UX).
-  const enabled = enabledModules ?? [];
+  // Missing props → empty lists → gated items hidden (fail-closed UX). The
+  // authoritative checks are canAccessModule / assert* on pages and actions.
+  const allowed = allowedModules ?? [];
   const visibleSections = navSections
     .map((section) => ({
       ...section,
       items: section.items.filter((item) => {
-        if (item.adminOnly && !showAuditLog) return false;
-        if (item.module && !enabled.includes(item.module)) return false;
-        if (item.requiresInvoiceAccess && !canManageInvoices) return false;
+        if (item.permission && !allowed.includes(item.permission)) return false;
+        if (item.requires && !functions?.[item.requires]) return false;
         return true;
       }),
     }))
@@ -268,8 +259,7 @@ export function AppSidebar({
         <p className="truncate text-xs text-[#aebecb]">{userRole}</p>
       </div>
       <form action={logoutAction}>
-        <button
-          type="submit"
+        <SubmitButton
           title="Odhlásit se"
           className="flex h-11 w-full min-w-0 items-center gap-3 rounded-md px-3 text-sm font-medium text-[#dbe7ec] transition hover:bg-[#17A2A2]/15 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#17A2A2] lg:h-10 lg:w-11 lg:justify-center lg:px-0 xl:w-auto xl:justify-start xl:px-3"
         >
@@ -277,7 +267,7 @@ export function AppSidebar({
           <span className="min-w-0 truncate lg:sr-only xl:not-sr-only">
             Odhlásit se
           </span>
-        </button>
+        </SubmitButton>
       </form>
     </div>
   );
@@ -387,37 +377,52 @@ export function AppSidebar({
           <Search className="h-6 w-6" aria-hidden="true" />
         </button>
         <button
-          ref={menuButtonRef}
           type="button"
-          onClick={() => setOpen((value) => !value)}
+          onClick={() => setOpen(true)}
           aria-expanded={open}
           aria-controls="mobile-nav"
-          aria-label={open ? "Zavřít menu" : "Otevřít menu"}
+          aria-haspopup="dialog"
+          aria-label="Otevřít menu"
           className="inline-flex h-11 w-11 items-center justify-center rounded-md text-[#dbe7ec] transition hover:bg-[#17A2A2]/15 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#17A2A2]"
         >
-          {open ? (
-            <X className="h-6 w-6" aria-hidden="true" />
-          ) : (
-            <Menu className="h-6 w-6" aria-hidden="true" />
-          )}
+          <Menu className="h-6 w-6" aria-hidden="true" />
         </button>
         </div>
       </div>
       {/* Spacer so page content clears the fixed mobile bar. */}
       <div className="h-16 lg:hidden" aria-hidden="true" />
-      {/* Mobile drawer — full-height panel below the bar, only when open. */}
-      {open ? (
+      {/* Mobile drawer — a full-screen modal Dialog with its own header (logo +
+          × at the toggle's position). While open the page behind, including
+          the top bar, is inert: a stray tap can't activate anything there. */}
+      <Dialog
+        open={open}
+        onOpenChange={setOpen}
+        title="Menu"
+        size="full"
+        closeLabel="Zavřít menu"
+        panelId="mobile-nav"
+        tone="dark"
+        className="lg:hidden"
+        header={
+          <Link
+            href="/dashboard"
+            onClick={() => setOpen(false)}
+            className="flex h-12 min-w-0 items-center overflow-hidden rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--iv-teal-bright)]"
+            aria-label="IURIVERSE"
+          >
+            <IuriverseLogo tone="light" className="gap-2" markClassName="h-8 w-8" />
+          </Link>
+        }
+      >
         <nav
-          ref={mobileNavRef}
-          id="mobile-nav"
           aria-label="Hlavní navigace"
-          className="fixed inset-x-0 top-16 bottom-0 z-40 flex flex-col gap-1 overflow-y-auto bg-[var(--iv-deep)] p-3 lg:hidden"
+          className="flex min-h-full flex-col gap-1 border-t border-white/10 p-3"
         >
           {searchTrigger}
           {navContent}
           {accountFooter}
         </nav>
-      ) : null}
+      </Dialog>
 
       {/* Desktop rail — unchanged from lg up. */}
       <div className="hidden lg:fixed lg:top-0 lg:flex lg:h-screen lg:w-20 lg:flex-col xl:w-72">

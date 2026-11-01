@@ -26,15 +26,23 @@ export function Button({
   disabled,
   type,
   showPendingIndicator = true,
+  pendingLabel,
+  pending: pendingOverride,
   children,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: ButtonVariant;
   showPendingIndicator?: boolean;
+  /** Text shown instead of the children while the parent form submits
+   * (e.g. "Ukládám…", "Vytvářím…", "Odesílám…", "Mažu…"). */
+  pendingLabel?: string;
+  /** Explicit pending state for buttons driven by useActionState/useTransition
+   * outside a <form> status context. Defaults to useFormStatus().pending. */
+  pending?: boolean;
 }) {
-  const { pending } = useFormStatus();
+  const { pending: formPending } = useFormStatus();
   const isSubmit = type === undefined || type === "submit";
-  const isPending = isSubmit && pending;
+  const isPending = pendingOverride ?? (isSubmit && formPending);
   const isDisabled = disabled || isPending;
 
   return (
@@ -56,7 +64,7 @@ export function Button({
           aria-hidden="true"
         />
       ) : null}
-      {children}
+      {isPending && pendingLabel ? pendingLabel : children}
     </button>
   );
 }

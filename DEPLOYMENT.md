@@ -132,6 +132,10 @@ Veřejná produkční registrace vyžaduje ověření e-mailu. Proto musí být 
 SMTP relay i `SMTP_USER`/`SMTP_PASSWORD`. Bez funkčního SMTP se z bezpečnostních
 důvodů účet nevytvoří.
 
+Stejné SMTP posílá i uvítací pozvánky nově založeným uživatelům a upozornění na
+nové členy kanceláře — viz [`deploy/DEPLOY.md`](deploy/DEPLOY.md), sekce
+„E-mail (SMTP) – pozvánky a notifikace“.
+
 ## 10. Doporučení pro produkci
 
 - **Oddělené Supabase projekty** pro development a production (žádné míchání dat).

@@ -129,7 +129,12 @@ export function OrganizationOnboarding({ joinError }: { joinError?: string }) {
               required
             />
           </Field>
-          <Button type="submit" variant="ghost" className="w-full">
+          <Button
+            type="submit"
+            variant="ghost"
+            className="w-full"
+            pendingLabel="Připojuji…"
+          >
             Připojit se ke kanceláři
           </Button>
         </form>

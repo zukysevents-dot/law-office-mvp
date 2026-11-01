@@ -15,7 +15,13 @@ import { ButtonLink } from "@/components/ui/button";
 import { DatabaseNotice } from "@/components/ui/database-notice";
 import { getCurrentUser } from "@/lib/auth";
 import { safeQuery } from "@/lib/db-safe";
-import { canViewAllLegalData } from "@/lib/permissions";
+import { canViewRates, canViewTeamReports } from "@/lib/permissions";
+import { reportCopy } from "@/lib/reporting/copy";
+import { AccessDenied } from "@/components/access-denied";
+import {
+  canAccessModule,
+  moduleAccessDenial,
+} from "@/lib/module-access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -98,13 +104,31 @@ const exports: ReportEntry[] = [
 ];
 
 export default async function ReportsPage() {
+  const accessUser = await getCurrentUser();
+  const accessDenied = await moduleAccessDenial(accessUser, "module.reports");
+  if (accessDenied) {
+    return <AccessDenied title="Reporty a exporty" message={accessDenied} />;
+  }
+
   const result = await safeQuery(
-    { canViewPersonReports: false, canViewBillabilityKpi: false },
+    {
+      canViewPersonReports: false,
+      canViewBillabilityKpi: false,
+      canExportReferences: false,
+      canExportTasks: false,
+      showAmounts: false,
+    },
     async () => {
       const currentUser = await getCurrentUser();
       return {
-        canViewPersonReports: canViewAllLegalData(currentUser),
-        canViewBillabilityKpi: canViewAllLegalData(currentUser),
+        canViewPersonReports: canViewTeamReports(currentUser),
+        canViewBillabilityKpi: canViewTeamReports(currentUser),
+        canExportReferences: await canAccessModule(
+          currentUser,
+          "module.references",
+        ),
+        canExportTasks: await canAccessModule(currentUser, "module.tasks"),
+        showAmounts: canViewRates(currentUser),
       };
     },
   );
@@ -121,6 +145,12 @@ export default async function ReportsPage() {
     }
     if (entry.href.startsWith("/reports/wip")) {
       return result.data.canViewPersonReports;
+    }
+    if (entry.href.startsWith("/reports/references/export")) {
+      return result.data.canExportReferences;
+    }
+    if (entry.href.startsWith("/reports/tasks/export")) {
+      return result.data.canExportTasks;
     }
     return true;
   };
@@ -156,7 +186,7 @@ export default async function ReportsPage() {
                     ) : null}
                   </span>
                   <span className="mt-1 block text-sm text-[#566673]">
-                    {entry.description}
+                    {reportCopy(entry.description, result.data.showAmounts)}
                   </span>
                 </span>
               </Link>
@@ -166,7 +196,7 @@ export default async function ReportsPage() {
       </Section>
       <Section title="Exporty">
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {exports.map((entry) => {
+          {exports.filter(allowed).map((entry) => {
             const Icon = entry.icon;
             return (
               <div

@@ -3,6 +3,7 @@ import {
   ApprovalStatus,
   BillingStatus,
   InvoiceStatus,
+  SubjectContactType,
   VatMode,
 } from "@/generated/prisma/enums";
 
@@ -23,6 +24,13 @@ export const invoiceDetailInclude = {
       address: true,
       email: true,
       vatPayer: true,
+      // All e-mails of the client: default recipient (an address labelled
+      // "fakturace" wins) and suggestions in the send form.
+      contacts: {
+        where: { type: SubjectContactType.EMAIL },
+        orderBy: { position: "asc" },
+        select: { type: true, value: true, label: true, isPrimary: true },
+      },
     },
   },
   project: { select: { id: true, name: true } },
@@ -160,4 +168,45 @@ export function isPastDue(
     invoice.dueDate.getTime() < now.getTime() &&
     OVERDUE_STATUSES.includes(invoice.status)
   );
+}
+
+export const INVOICE_MATTER_MISMATCH_MESSAGE =
+  "Vybraný projekt nebo případ nepatří zvolenému klientovi.";
+
+/**
+ * Normalizes the project/case chosen for a new invoice (URL params of the
+ * "Nová faktura" picker) against the client: a project of another client is
+ * dropped together with the case, a case of another project/client is dropped
+ * alone, and a case chosen without a project back-fills its project. Only IDs
+ * from the loaded lists survive, so a stale/forged URL can't reach the form.
+ */
+export function normalizeInvoiceMatter(
+  selection: { subjectId: string; projectId: string; caseId: string },
+  projects: Array<{ id: string; mainSubjectId: string | null }>,
+  cases: Array<{ id: string; projectId: string | null; mainSubjectId: string | null }>,
+): { projectId: string; caseId: string } {
+  if (!selection.subjectId) {
+    return { projectId: "", caseId: "" };
+  }
+  let projectId = "";
+  if (selection.projectId) {
+    const project = projects.find((item) => item.id === selection.projectId);
+    if (!project || project.mainSubjectId !== selection.subjectId) {
+      return { projectId: "", caseId: "" };
+    }
+    projectId = project.id;
+  }
+  if (!selection.caseId) {
+    return { projectId, caseId: "" };
+  }
+  const legalCase = cases.find((item) => item.id === selection.caseId);
+  if (
+    !legalCase ||
+    !legalCase.projectId ||
+    legalCase.mainSubjectId !== selection.subjectId ||
+    (projectId && legalCase.projectId !== projectId)
+  ) {
+    return { projectId, caseId: "" };
+  }
+  return { projectId: legalCase.projectId, caseId: legalCase.id };
 }

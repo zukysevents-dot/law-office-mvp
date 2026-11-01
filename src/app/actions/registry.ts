@@ -8,12 +8,14 @@ import { requiredString } from "@/lib/form";
 import { assertCanEditRecord } from "@/lib/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { runRegistryCheckForSubject } from "@/lib/registry/registry-monitor-service";
+import { assertCanAccessModule } from "@/lib/module-access.server";
 
 // Toggle registry monitoring for a subject. Gated by edit rights on the subject
 // (org isolation enforced by assertCanEditRecord).
 export async function setSubjectRegistryWatch(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
+  await assertCanAccessModule(currentUser, "module.registry");
   const subjectId = requiredString(formData, "subjectId");
   const enabled = requiredString(formData, "enabled") === "true";
 
@@ -48,6 +50,7 @@ export async function setSubjectRegistryWatch(formData: FormData) {
 export async function checkSubjectRegistryNow(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
+  await assertCanAccessModule(currentUser, "module.registry");
   const subjectId = requiredString(formData, "subjectId");
 
   const subject = await prisma.subject.findUniqueOrThrow({
@@ -68,6 +71,7 @@ export async function checkSubjectRegistryNow(formData: FormData) {
 export async function acknowledgeRegistryChange(formData: FormData) {
   const prisma = getPrisma();
   const currentUser = await getCurrentUser();
+  await assertCanAccessModule(currentUser, "module.registry");
   const eventId = requiredString(formData, "eventId");
 
   const event = await prisma.registryChangeEvent.findUniqueOrThrow({
