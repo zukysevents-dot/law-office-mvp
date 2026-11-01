@@ -4,7 +4,10 @@ import { test } from "node:test";
 import { DashboardWidgetType } from "@/generated/prisma/enums";
 
 import {
+  dashboardWidgetHref,
   dashboardWidgetModule,
+  dashboardWidgetTypes,
+  defaultDashboardWidgets,
   filterAllowedWidgets,
   isDashboardWidgetAllowed,
   getDefaultDashboardColumns,
@@ -137,4 +140,18 @@ test("filterAllowedWidgets: drops widgets of modules the user can't open", () =>
     isDashboardWidgetAllowed(DashboardWidgetType.PROJECTS_TABLE, ["module.cases"]),
     false,
   );
+});
+
+// --- HR_NEWS (Aktuality) --------------------------------------------------------
+
+test("widget Aktuality patří k modulu HR, odkazuje na aktuality a je ve výchozím rozložení", () => {
+  assert.equal(dashboardWidgetModule[DashboardWidgetType.HR_NEWS], "module.hr");
+  assert.equal(dashboardWidgetHref(DashboardWidgetType.HR_NEWS), "/hr/news");
+  assert.ok(dashboardWidgetTypes.includes(DashboardWidgetType.HR_NEWS));
+  assert.ok(
+    defaultDashboardWidgets.some((widget) => widget.type === DashboardWidgetType.HR_NEWS),
+  );
+  // Bez modulu HR se nenabízí ani nevykreslí.
+  assert.equal(isDashboardWidgetAllowed(DashboardWidgetType.HR_NEWS, ["module.tasks"]), false);
+  assert.equal(isDashboardWidgetAllowed(DashboardWidgetType.HR_NEWS, ["module.hr"]), true);
 });
