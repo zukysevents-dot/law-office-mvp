@@ -110,7 +110,10 @@ export function RichEntryRowActions({
   archiveMessage: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [openedAt, setOpenedAt] = useState(0);
+  // Verze stavu v okamžiku otevření dialogu: chyba z dřívějšího otevření se
+  // znovu neukáže. Porovnává se verze (ne čas klienta vs. serveru), takže
+  // posunuté hodiny prohlížeče chybu neschovají.
+  const [openedVersion, setOpenedVersion] = useState(0);
   const [state, formAction, isPending] = useActionState(
     async (previous: RichEntryFormState, formData: FormData) => {
       const next = await updateAction(previous, formData);
@@ -130,7 +133,7 @@ export function RichEntryRowActions({
         className="h-8 px-3"
         aria-haspopup="dialog"
         onClick={() => {
-          setOpenedAt(Date.now());
+          setOpenedVersion(state.version);
           setOpen(true);
         }}
       >
@@ -166,7 +169,7 @@ export function RichEntryRowActions({
             rows={6}
             autoFocus
           />
-          {state.error && state.version >= openedAt ? (
+          {state.error && state.version !== openedVersion ? (
             <FormResult state={state} />
           ) : null}
           <div className="flex flex-wrap justify-end gap-2">

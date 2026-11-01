@@ -309,7 +309,7 @@ export default async function FeedbackPage({ searchParams }: FeedbackPageProps) 
           workLogs={workLogOptions}
         />
         <p className="mt-3 text-xs text-[#566673]">
-          Zpětnou vazbu uvidí jen příjemce, vy a partneři kanceláře.
+          Zpětnou vazbu uvidí jen příjemce, vy a partneři či administrátoři kanceláře.
         </p>
       </Section>
       <Section title={listTitles[view]}>
