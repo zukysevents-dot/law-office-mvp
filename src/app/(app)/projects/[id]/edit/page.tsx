@@ -21,6 +21,8 @@ import {
 import { getPrisma } from "@/lib/prisma";
 import { AccessDenied } from "@/components/access-denied";
 import { moduleAccessDenial } from "@/lib/module-access.server";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { subjectSelectOption } from "@/lib/searchable-select";
 
 export const dynamic = "force-dynamic";
 
@@ -126,18 +128,13 @@ export default async function ProjectEditPage({ params }: ProjectEditProps) {
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               <Field label="Klient">
-                <SelectInput
+                <SearchableSelect
                   name="mainSubjectId"
                   defaultValue={project.mainSubjectId}
                   required
-                >
-                  {subjects.map((subject) => (
-                    <option key={subject.id} value={subject.id}>
-                      {subject.name}
-                      {subject.ico ? `, IČO ${subject.ico}` : ""}
-                    </option>
-                  ))}
-                </SelectInput>
+                  placeholder="Vyberte subjekt"
+                  options={subjects.map(subjectSelectOption)}
+                />
               </Field>
               <Field label="Odpovědný uživatel">
                 <SelectInput

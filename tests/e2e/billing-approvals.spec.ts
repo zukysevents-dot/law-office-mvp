@@ -7,6 +7,8 @@ import {
   expectNoErrorPage,
   expectNoHorizontalScroll,
   pageAs,
+  pickerOptionTexts,
+  pickOption,
   submitAndAwaitAction,
   unlabeledFormControls,
 } from "./support/helpers";
@@ -16,13 +18,11 @@ import {
 // seeded data (which is not reset between runs) is never touched.
 const DATE = "2031-02-14";
 
-async function selectByText(select: Locator, text: string) {
-  const value = await select
-    .locator("option", { hasText: text })
-    .first()
-    .getAttribute("value");
-  expect(value, `option „${text}“`).toBeTruthy();
-  await select.selectOption(value!);
+// Klient / projekt / případ jsou vyhledávací comboboxy (SearchableSelect).
+const selectByText = pickOption;
+
+async function hasOption(combobox: Locator, text: string) {
+  return (await pickerOptionTexts(combobox)).some((label) => label.includes(text));
 }
 
 async function createWorkLog(
@@ -107,12 +107,12 @@ test.describe("položky ke schválení", () => {
     const client = page.getByRole("combobox", { name: "Klient" });
     await selectByText(client, "ABC s.r.o.");
     const project = page.getByRole("combobox", { name: "Projekt" });
-    await expect(project.locator("option", { hasText: "Soudní spor ABC" })).toHaveCount(1);
+    expect(await hasOption(project, "Soudní spor ABC")).toBe(true);
     await applyFilters(page, /subjectId=/);
     await expect(cards(page)).toHaveCount(2);
 
     await selectByText(client, "XYZ s.r.o.");
-    await expect(project.locator("option", { hasText: "Soudní spor ABC" })).toHaveCount(0);
+    expect(await hasOption(project, "Soudní spor ABC")).toBe(false);
 
     await page.getByRole("link", { name: "Zrušit filtry" }).click();
     await expect(page).toHaveURL(/\/billing\/approvals$/);

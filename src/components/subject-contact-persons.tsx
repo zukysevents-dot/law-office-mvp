@@ -2,10 +2,12 @@ import {
   createContactPerson,
   removeContactPerson,
 } from "@/app/actions/contact-persons";
-import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
+import { Field, TextArea, TextInput } from "@/components/form-field";
 import { Section } from "@/components/section";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { namedSelectOption } from "@/lib/searchable-select";
 
 type Contact = {
   id: string;
@@ -113,24 +115,21 @@ export function SubjectContactPersons({
           </div>
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Projekt (volitelně)">
-              <SelectInput name="projectId">
-                <option value="">Bez vazby</option>
-                {projects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-              </SelectInput>
+              <SearchableSelect
+                name="projectId"
+                placeholder="Bez vazby"
+                options={projects.map(namedSelectOption)}
+              />
             </Field>
             <Field label="Případ (volitelně)">
-              <SelectInput name="caseId">
-                <option value="">Bez vazby</option>
-                {cases.map((legalCase) => (
-                  <option key={legalCase.id} value={legalCase.id}>
-                    {legalCase.name} / {legalCase.project.name}
-                  </option>
-                ))}
-              </SelectInput>
+              <SearchableSelect
+                name="caseId"
+                placeholder="Bez vazby"
+                options={cases.map((legalCase) => ({
+                  value: legalCase.id,
+                  label: `${legalCase.name} / ${legalCase.project.name}`,
+                }))}
+              />
             </Field>
           </div>
           <Field label="Poznámka">

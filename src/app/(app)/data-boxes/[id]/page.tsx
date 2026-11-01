@@ -33,6 +33,8 @@ import {
   canAccessModule,
   moduleAccessDenial,
 } from "@/lib/module-access.server";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { namedSelectOption } from "@/lib/searchable-select";
 
 export const dynamic = "force-dynamic";
 
@@ -230,27 +232,23 @@ export default async function DataMessageDetailPage({
             <form action={assignToCase} className="grid gap-4 sm:max-w-xl">
               <input type="hidden" name="messageId" value={message.id} />
               <Field label="Spis">
-                <SelectInput name="caseId" defaultValue={message.caseId ?? ""}>
-                  <option value="">— nepřiřazeno —</option>
-                  {data.cases.map((legalCase) => (
-                    <option key={legalCase.id} value={legalCase.id}>
-                      {formatCaseLabel(legalCase)}
-                    </option>
-                  ))}
-                </SelectInput>
+                <SearchableSelect
+                  name="caseId"
+                  defaultValue={message.caseId ?? ""}
+                  placeholder="— nepřiřazeno —"
+                  options={data.cases.map((legalCase) => ({
+                    value: legalCase.id,
+                    label: formatCaseLabel(legalCase),
+                  }))}
+                />
               </Field>
               <Field label="Klient (subjekt)">
-                <SelectInput
+                <SearchableSelect
                   name="subjectId"
                   defaultValue={message.subjectId ?? ""}
-                >
-                  <option value="">— nepřiřazeno —</option>
-                  {data.subjects.map((subject) => (
-                    <option key={subject.id} value={subject.id}>
-                      {subject.name}
-                    </option>
-                  ))}
-                </SelectInput>
+                  placeholder="— nepřiřazeno —"
+                  options={data.subjects.map(namedSelectOption)}
+                />
               </Field>
               <div>
                 <Button type="submit" pendingLabel="Ukládám…">Uložit přiřazení</Button>

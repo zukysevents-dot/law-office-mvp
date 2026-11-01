@@ -2,6 +2,8 @@ import { createReference } from "@/app/actions/references";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { legalAreaOptions } from "@/lib/labels";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { namedSelectOption, subjectSelectOption } from "@/lib/searchable-select";
 
 type Option = {
   id: string;
@@ -54,40 +56,34 @@ export function ReferenceForm({
         <div className="grid gap-4 md:grid-cols-3">
           {!fixedProjectId ? (
             <Field label="Projekt">
-              <SelectInput name="projectId" defaultValue="">
-                <option value="">Bez projektu</option>
-                {projects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-              </SelectInput>
+              <SearchableSelect
+                name="projectId"
+                placeholder="Bez projektu"
+                options={projects.map(namedSelectOption)}
+              />
             </Field>
           ) : null}
           {!fixedCaseId ? (
             <Field label="Případ">
-              <SelectInput name="caseId" defaultValue="">
-                <option value="">Bez případu</option>
-                {cases.map((legalCase) => (
-                  <option key={legalCase.id} value={legalCase.id}>
-                    {legalCase.name}
-                    {legalCase.project ? ` / ${legalCase.project.name}` : ""}
-                  </option>
-                ))}
-              </SelectInput>
+              <SearchableSelect
+                name="caseId"
+                placeholder="Bez případu"
+                options={cases.map((legalCase) => ({
+                  value: legalCase.id,
+                  label: legalCase.project
+                    ? `${legalCase.name} / ${legalCase.project.name}`
+                    : legalCase.name,
+                }))}
+              />
             </Field>
           ) : null}
           {!fixedSubjectId ? (
             <Field label="Subjekt">
-              <SelectInput name="subjectId" defaultValue="">
-                <option value="">Bez subjektu</option>
-                {subjects.map((subject) => (
-                  <option key={subject.id} value={subject.id}>
-                    {subject.name}
-                    {subject.ico ? `, IČO ${subject.ico}` : ""}
-                  </option>
-                ))}
-              </SelectInput>
+              <SearchableSelect
+                name="subjectId"
+                placeholder="Bez subjektu"
+                options={subjects.map(subjectSelectOption)}
+              />
             </Field>
           ) : null}
         </div>

@@ -52,6 +52,8 @@ import {
 import type { TableViewState } from "@/lib/table-view-preferences";
 import { AccessDenied } from "@/components/access-denied";
 import { moduleAccessDenial } from "@/lib/module-access.server";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { namedSelectOption } from "@/lib/searchable-select";
 
 export const dynamic = "force-dynamic";
 
@@ -359,14 +361,13 @@ export default async function CasesPage({ searchParams }: CasesPageProps) {
         <form action={createCase} className="grid gap-4">
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Projekt">
-              <SelectInput name="projectId" defaultValue={projectId} required>
-                <option value="">Vyberte projekt</option>
-                {result.data.projects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-              </SelectInput>
+              <SearchableSelect
+                name="projectId"
+                defaultValue={projectId}
+                required
+                placeholder="Vyberte projekt"
+                options={result.data.projects.map(namedSelectOption)}
+              />
             </Field>
             <Field label="Název případu">
               <TextInput name="name" required />

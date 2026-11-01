@@ -7,6 +7,8 @@ import {
   e2eName,
   expectNoErrorPage,
   pageAs,
+  pickerValue,
+  pickOption,
   submitAndAwaitAction,
 } from "./support/helpers";
 
@@ -74,17 +76,8 @@ function infoValue(page: Page, label: string) {
     .locator("xpath=following-sibling::p[1]");
 }
 
-async function selectByText(select: Locator, text: string) {
-  await expect(async () => {
-    const value = await select
-      .locator("option", { hasText: text })
-      .first()
-      .getAttribute("value", { timeout: 1_000 });
-    expect(value, `option „${text}“`).toBeTruthy();
-    await select.selectOption(value!);
-    await expect(select).toHaveValue(value!, { timeout: 1_000 });
-  }).toPass({ timeout: 15_000 });
-}
+// Výběr klienta/projektu/případu/úkolu je vyhledávací combobox.
+const selectByText = pickOption;
 
 // Výběr osoby v TaskPeopleFields (viz task-people.spec.ts): opakuje se, dokud
 // React nepřevezme výběr.
@@ -270,14 +263,10 @@ test.describe("vykázat práci k úkolu", () => {
     const dialog = page.getByRole("dialog", { name: "Vykázat práci k úkolu" });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText(`Úkol: ${title}.`, { exact: false })).toBeVisible();
-    await expect(dialog.getByLabel("Subjekt").locator("option:checked")).toHaveText(
-      new RegExp(SEED_SUBJECT),
-    );
-    await expect(dialog.getByLabel("Projekt").locator("option:checked")).toHaveText(SEED_PROJECT);
-    await expect(dialog.getByLabel("Případ").locator("option:checked")).toHaveText(
-      new RegExp(SEED_CASE),
-    );
-    await expect(dialog.getByLabel("Úkol")).toHaveValue(taskIdOf(path));
+    await expect(dialog.getByLabel("Subjekt")).toHaveValue(new RegExp(SEED_SUBJECT));
+    await expect(dialog.getByLabel("Projekt")).toHaveValue(SEED_PROJECT);
+    await expect(dialog.getByLabel("Případ")).toHaveValue(new RegExp(SEED_CASE));
+    await expect(pickerValue(dialog.getByLabel("Úkol"))).toHaveValue(taskIdOf(path));
     await expect(dialog.getByLabel("Datum práce")).toHaveValue(pragueToday());
 
     const description = e2eName("vykaz-popis");
@@ -322,7 +311,7 @@ test.describe("vykázat práci k úkolu", () => {
       .click();
     await expect(page).toHaveURL(new RegExp(`/tasks\\?logWork=${taskIdOf(path)}$`));
     const dialog = page.getByRole("dialog", { name: "Vykázat práci k úkolu" });
-    await expect(dialog.getByLabel("Úkol")).toHaveValue(taskIdOf(path));
+    await expect(pickerValue(dialog.getByLabel("Úkol"))).toHaveValue(taskIdOf(path));
     const description = e2eName("vykaz-ze-seznamu");
     await dialog.getByLabel("Hodiny").fill("0.5");
     await dialog.getByLabel("Popis práce").fill(description);
@@ -343,7 +332,7 @@ test.describe("vykázat práci k úkolu", () => {
       await trainee.getByRole("link", { name: "Vykázat práci", exact: true }).click();
       const dialog = trainee.getByRole("dialog", { name: "Vykázat práci k úkolu" });
       await expect(dialog).toBeVisible();
-      await expect(dialog.getByLabel("Úkol")).toHaveValue(taskIdOf(path));
+      await expect(pickerValue(dialog.getByLabel("Úkol"))).toHaveValue(taskIdOf(path));
       await expect(dialog.getByLabel("Sazba")).toHaveCount(0);
       const description = e2eName("vykaz-koncipienta");
       await dialog.getByLabel("Hodiny").fill("1");
@@ -364,10 +353,8 @@ test.describe("vykázat práci k úkolu", () => {
     await completeTask(page, path);
     await page.getByRole("link", { name: "Vykázat práci", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Vykázat práci k úkolu" });
-    await expect(dialog.getByLabel("Úkol")).toHaveValue(taskIdOf(path));
-    await expect(dialog.getByLabel("Případ").locator("option:checked")).toHaveText(
-      new RegExp(SEED_CASE),
-    );
+    await expect(pickerValue(dialog.getByLabel("Úkol"))).toHaveValue(taskIdOf(path));
+    await expect(dialog.getByLabel("Případ")).toHaveValue(new RegExp(SEED_CASE));
     const description = e2eName("vykaz-po-dokonceni");
     await dialog.getByLabel("Hodiny").fill("0.25");
     await dialog.getByLabel("Popis práce").fill(description);
@@ -447,7 +434,7 @@ test.describe("archiv úkolů – filtry", () => {
     await expectCards(page, [A, B, C], []);
 
     await page.goto(`/tasks/archive?q=${encodeURIComponent(tag)}`);
-    await selectByText(page.locator("select[name=projectId]"), SEED_PROJECT);
+    await selectByText(page.getByRole("combobox", { name: "Projekt", exact: true }), SEED_PROJECT);
     await page.getByRole("button", { name: "Filtrovat" }).click();
     await expect(page).toHaveURL(/projectId=/);
     await expectCards(page, [A], [B, C]);

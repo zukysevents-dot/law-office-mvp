@@ -6,6 +6,7 @@ import {
   e2eName,
   expectNoErrorPage,
   pageAs,
+  pickerRowTexts as listTextsWithGroups,
   submitAndAwaitAction,
 } from "./support/helpers";
 
@@ -375,16 +376,17 @@ test("výběr úkolu ve výkazu nabízí nahoře „Moje úkoly“", async ({ br
     const dialog = trainee.getByRole("dialog", { name: "Nový výkaz práce" });
     await expect(dialog).toBeVisible();
     const taskSelect = dialog.getByRole("combobox", { name: "Úkol", exact: true });
-    await expect(
-      taskSelect.locator('optgroup[label="Moje úkoly"] option', { hasText: taskMany }),
-    ).toHaveCount(1);
-    await expect(taskSelect.locator('optgroup[label="Ostatní úkoly"]')).toHaveCount(1);
+    // Seznam je vyhledávací combobox: skupiny jsou nadpisy, „Moje úkoly“ první.
+    // Nadpisy skupin jsou vysázené verzálkami (innerText) → porovnání bez velikosti.
+    const texts = await listTextsWithGroups(taskSelect);
+    const lower = texts.map((text) => text.toLocaleLowerCase("cs"));
+    const others = lower.indexOf("ostatní úkoly");
+    expect(lower[1], "první je prázdná volba, pak „Moje úkoly“").toBe("moje úkoly");
+    expect(others).toBeGreaterThan(1);
+    const mine = texts.slice(2, others);
+    expect(mine.filter((text) => text.includes(taskMany))).toHaveLength(1);
     // Úkol, ze kterého byl koncipient odebrán, už mezi jeho úkoly není.
-    await expect(
-      taskSelect.locator('optgroup[label="Moje úkoly"] option', {
-        hasText: taskSupervised,
-      }),
-    ).toHaveCount(0);
+    expect(mine.filter((text) => text.includes(taskSupervised))).toHaveLength(0);
   } finally {
     await trainee.context().close();
   }

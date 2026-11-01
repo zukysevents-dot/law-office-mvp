@@ -21,6 +21,8 @@ import {
 import { getPrisma } from "@/lib/prisma";
 import { AccessDenied } from "@/components/access-denied";
 import { moduleAccessDenial } from "@/lib/module-access.server";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { namedSelectOption } from "@/lib/searchable-select";
 
 export const dynamic = "force-dynamic";
 
@@ -114,17 +116,13 @@ export default async function CaseEditPage({ params }: CaseEditProps) {
             <input type="hidden" name="id" value={legalCase.id} />
             <div className="grid gap-4 md:grid-cols-2">
               <Field label="Projekt">
-                <SelectInput
+                <SearchableSelect
                   name="projectId"
                   defaultValue={legalCase.projectId}
                   required
-                >
-                  {projects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.name}
-                    </option>
-                  ))}
-                </SelectInput>
+                  placeholder="Vyberte projekt"
+                  options={projects.map(namedSelectOption)}
+                />
               </Field>
               <Field label="Název případu">
                 <TextInput name="name" defaultValue={legalCase.name} required />

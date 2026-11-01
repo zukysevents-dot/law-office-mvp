@@ -3,6 +3,9 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
   e2eName,
   expectNoErrorPage,
+  pickerOptionTexts,
+  pickerValue,
+  pickOption,
   submitAndAwaitAction,
 } from "./support/helpers";
 
@@ -10,17 +13,12 @@ import {
 // „Žaloba na zaplacení“, XYZ s.r.o. (IČO 87654321) žádný projekt nemá.
 const CASE_OPTION = "Žaloba na zaplacení / Soudní spor ABC";
 
-async function selectByText(select: Locator, text: string) {
-  const value = await select
-    .locator("option", { hasText: text })
-    .first()
-    .getAttribute("value");
-  expect(value, `option „${text}“`).toBeTruthy();
-  await select.selectOption(value!);
-}
+// Výběry jsou vyhledávací comboboxy (SearchableSelect).
+const selectByText = pickOption;
 
-function option(select: Locator, text: string) {
-  return select.locator("option", { hasText: text });
+async function optionCount(combobox: Locator, text: string) {
+  return (await pickerOptionTexts(combobox)).filter((label) => label.includes(text))
+    .length;
 }
 
 /** Approved billable work log of ABC / Soudní spor ABC / Žaloba na zaplacení. */
@@ -57,12 +55,12 @@ test.describe("fakturace – klient → projekt → případ", () => {
     const legalCase = page.getByRole("combobox", { name: "Případ" });
 
     await selectByText(subject, "XYZ s.r.o.");
-    await expect(option(project, "Soudní spor ABC")).toHaveCount(0);
-    await expect(option(legalCase, CASE_OPTION)).toHaveCount(0);
+    expect(await optionCount(project, "Soudní spor ABC")).toBe(0);
+    expect(await optionCount(legalCase, CASE_OPTION)).toBe(0);
 
     await selectByText(subject, "ABC s.r.o.");
-    await expect(option(project, "Soudní spor ABC")).toHaveCount(1);
-    await expect(option(legalCase, CASE_OPTION)).toHaveCount(1);
+    expect(await optionCount(project, "Soudní spor ABC")).toBe(1);
+    expect(await optionCount(legalCase, CASE_OPTION)).toBe(1);
 
     // Výběr případu doplní projekt.
     await selectByText(legalCase, "Žaloba na zaplacení");
@@ -110,7 +108,8 @@ test.describe("fakturace – klient → projekt → případ", () => {
     const subject = page.getByRole("combobox", {
       name: "Klient s nevyfakturovanými výkazy",
     });
-    const abcValue = await option(subject, "ABC s.r.o.").first().getAttribute("value");
+    await pickOption(subject, "ABC s.r.o.");
+    const abcValue = await pickerValue(subject).inputValue();
     expect(abcValue).toBeTruthy();
     await page.goto(
       `/billing/invoices/new?subjectId=${abcValue}&projectId=neexistujici&caseId=neexistujici`,
@@ -126,11 +125,10 @@ test.describe("fakturace – klient → projekt → případ", () => {
     const project = page.getByRole("combobox", { name: "Projekt (volitelné)" });
 
     await selectByText(subject, "XYZ s.r.o.");
-    await expect(project.locator("option")).toHaveCount(1);
-    await expect(project.locator("option")).toHaveText("Celý klient");
+    expect(await pickerOptionTexts(project)).toEqual(["Celý klient"]);
 
     await selectByText(subject, "ABC s.r.o.");
-    await expect(option(project, "Soudní spor ABC")).toHaveCount(1);
+    expect(await optionCount(project, "Soudní spor ABC")).toBe(1);
   });
 
   test("úprava výkazu: změna subjektu vynuluje projekt i případ", async ({ page }) => {
@@ -161,6 +159,6 @@ test.describe("fakturace – klient → projekt → případ", () => {
     await selectByText(page.getByRole("combobox", { name: "Subjekt" }), "XYZ s.r.o.");
     await expect(project).toHaveValue("");
     await expect(legalCase).toHaveValue("");
-    await expect(option(project, "Soudní spor ABC")).toHaveCount(0);
+    expect(await optionCount(project, "Soudní spor ABC")).toBe(0);
   });
 });

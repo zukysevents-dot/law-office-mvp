@@ -167,3 +167,60 @@ export async function openMobileMenu(page: Page) {
   await page.getByRole("button", { name: "Otevřít menu" }).click();
   await expect(page.getByRole("navigation", { name: "Hlavní navigace" })).toBeVisible();
 }
+
+// --- Vyhledávací výběr (SearchableSelect) -------------------------------------
+// Velké výběry (subjekt, projekt, případ, úkol) nejsou nativní <select>, ale
+// combobox s fulltextovým hledáním. Viditelné pole ukazuje název vybrané
+// položky, hodnota (id) je ve skrytém inputu se stejným `name` jako dřív.
+
+/** Seznam (listbox) patřící k comboboxu. */
+// Seznam se vykresluje jen otevřený, takže je na stránce nejvýš jeden.
+export function pickerList(combobox: Locator) {
+  return combobox.page().getByRole("listbox");
+}
+
+/** Skrytý input s hodnotou výběru (id vybrané položky, "" = nic). */
+export function pickerValue(combobox: Locator) {
+  return combobox.locator("xpath=..").locator('input[type="hidden"]');
+}
+
+/**
+ * Napíše `text` do výběru a klikne na první položku, která obsahuje `option`
+ * (výchozí = hledaný text; jiný, když se hledá např. bez diakritiky).
+ */
+export async function pickOption(
+  combobox: Locator,
+  text: string,
+  { option: optionName = text }: { option?: string } = {},
+) {
+  await combobox.click();
+  await combobox.fill(text);
+  const option = pickerList(combobox)
+    .getByRole("option", { name: optionName })
+    .first();
+  await expect(option, `položka „${optionName}“`).toBeVisible();
+  await option.click();
+  await expect(pickerList(combobox)).toBeHidden();
+}
+
+/** Texty všech položek otevřeného výběru (bez hledání); seznam pak zavře. */
+export async function pickerOptionTexts(combobox: Locator): Promise<string[]> {
+  await combobox.click();
+  const list = pickerList(combobox);
+  await expect(list).toBeVisible();
+  const texts = await list.getByRole("option").allInnerTexts();
+  await combobox.press("Escape");
+  await expect(list).toBeHidden();
+  return texts.map((text) => text.replace(/\s+/g, " ").trim());
+}
+
+/** Texty všech řádků otevřeného výběru včetně nadpisů skupin; seznam zavře. */
+export async function pickerRowTexts(combobox: Locator): Promise<string[]> {
+  await combobox.click();
+  const list = pickerList(combobox);
+  await expect(list).toBeVisible();
+  const texts = await list.locator("li").allInnerTexts();
+  await combobox.press("Escape");
+  await expect(list).toBeHidden();
+  return texts.map((text) => text.replace(/\s+/g, " ").trim());
+}
