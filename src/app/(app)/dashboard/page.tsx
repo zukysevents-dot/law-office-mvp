@@ -11,8 +11,11 @@ import {
 } from "lucide-react";
 
 import { CalendarView } from "@/components/calendar/calendar-view";
+import { DueDateText } from "@/components/due-date-text";
 import { getOutlookFeedSummary } from "@/lib/calendar/outlook-feed.server";
 import type { OutlookFeedSummary } from "@/lib/calendar/outlook-summary";
+import { getCalendarScopeContext } from "@/lib/calendar-scope.server";
+import type { CalendarScope } from "@/lib/calendar-scope";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
 import { StatCard } from "@/components/stat-card";
@@ -95,8 +98,10 @@ import { redactBirthNumberQuery } from "@/lib/subjects/birth-number";
 import {
   billingStatusTone,
   deadlineTypeTone,
+  taskDueDateState,
   taskStatusTone,
 } from "@/lib/status-tones";
+import { dueDateState, overdueBefore } from "@/lib/due-date";
 import {
   normalizeCalendarView,
   type CalendarDefaultView,
@@ -221,6 +226,7 @@ type DashboardData = {
   canApprove: boolean;
   calendarDefaultView: CalendarDefaultView;
   outlook: OutlookFeedSummary | null;
+  calendarScopes: CalendarScope[];
 };
 
 const fallbackData: DashboardData = {
@@ -256,6 +262,7 @@ const fallbackData: DashboardData = {
   canApprove: false,
   calendarDefaultView: "dayGridMonth",
   outlook: null,
+  calendarScopes: ["mine"],
 };
 
 function subjectFromTask(task: DashboardData["myTasks"][number]) {
@@ -354,7 +361,12 @@ function renderTaskCell(
         </Badge>
       );
     case "deadline":
-      return formatDateUtc(task.deadline);
+      return (
+        <DueDateText
+          date={task.deadline}
+          state={taskDueDateState(task.deadline, task.status)}
+        />
+      );
     case "responsibleUser":
       return task.responsibleUser?.name ?? "—";
     case "assignedTo":
@@ -907,6 +919,7 @@ function renderWidget(widget: DashboardWidgetView, data: DashboardData) {
           title={widget.title}
           initialView={data.calendarDefaultView}
           outlook={data.outlook}
+          scopeOptions={data.calendarScopes}
         />
       );
     case DashboardWidgetType.DEADLINES_PREVIEW:
@@ -938,7 +951,10 @@ function renderWidget(widget: DashboardWidgetView, data: DashboardData) {
                       <Badge tone={deadlineTypeTone(deadline.type)}>
                         {deadlineTypeLabels[deadline.type]}
                       </Badge>
-                      <span>{formatDateUtc(deadline.dueDate)}</span>
+                      <DueDateText
+                        date={deadline.dueDate}
+                        state={dueDateState(deadline.dueDate) === "today" ? "today" : null}
+                      />
                       <span>{deadline.case.name}</span>
                       {deadline.responsibleUser ? (
                         <span>{deadline.responsibleUser.name}</span>
@@ -1058,7 +1074,7 @@ export default async function DashboardPage() {
         can("module.tasks"),
         () =>
           prisma.task.count({
-            where: andWhere(activeTaskWhere, { deadline: { lt: now } }),
+            where: andWhere(activeTaskWhere, { deadline: { lt: overdueBefore(now) } }),
           }),
         0,
       ),
@@ -1265,7 +1281,8 @@ export default async function DashboardPage() {
               {
                 archivedAt: null,
                 status: "OPEN",
-                dueDate: { gte: now },
+                // Lhůta s termínem dnes ještě není po termínu → patří sem.
+                dueDate: { gte: overdueBefore(now) },
               },
               deadlineVisibilityWhere(currentUser),
             ),
@@ -1394,6 +1411,7 @@ export default async function DashboardPage() {
         notificationPreference?.calendarDefaultView,
       ),
       outlook: await getOutlookFeedSummary(currentUser),
+      calendarScopes: (await getCalendarScopeContext(currentUser)).available,
     };
   });
 

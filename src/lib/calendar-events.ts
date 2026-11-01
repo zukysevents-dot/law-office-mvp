@@ -22,6 +22,7 @@ import {
   deadlineVisibilityWhere,
   taskVisibilityWhere,
 } from "@/lib/permissions";
+import type { CalendarPeopleFilters } from "@/lib/calendar-scope";
 import { calendarDeadlineWhere } from "@/lib/deadlines";
 import { getPrisma } from "@/lib/prisma";
 import { deadlineTypeTone, taskDeadlineTypeTone } from "@/lib/status-tones";
@@ -114,6 +115,7 @@ export function serializeCalendarEvent(
 async function getTaskDeadlineEvents(
   user: CalendarUser,
   range: CalendarRange,
+  people: CalendarPeopleFilters | null,
 ): Promise<CalendarEvent[]> {
   const prisma = getPrisma();
   const tasks = await prisma.task.findMany({
@@ -123,6 +125,7 @@ async function getTaskDeadlineEvents(
         deadline: { gte: range.start, lt: range.end },
       },
       taskVisibilityWhere(user),
+      people?.task,
     ),
     orderBy: { deadline: "asc" },
     take: TASK_EVENT_LIMIT,
@@ -179,6 +182,7 @@ async function getTaskDeadlineEvents(
 async function getDeadlineEvents(
   user: CalendarUser,
   range: CalendarRange,
+  people: CalendarPeopleFilters | null,
 ): Promise<CalendarEvent[]> {
   const prisma = getPrisma();
   const deadlines = await prisma.deadline.findMany({
@@ -186,6 +190,7 @@ async function getDeadlineEvents(
       calendarDeadlineWhere(),
       { dueDate: { gte: range.start, lt: range.end } },
       deadlineVisibilityWhere(user),
+      people?.deadline,
     ),
     orderBy: { dueDate: "asc" },
     take: TASK_EVENT_LIMIT,
@@ -226,6 +231,7 @@ async function getDeadlineEvents(
 async function getCourtHearingEvents(
   user: CalendarUser,
   range: CalendarRange,
+  people: CalendarPeopleFilters | null,
 ): Promise<CalendarEvent[]> {
   const prisma = getPrisma();
   const hearings = await prisma.courtHearing.findMany({
@@ -235,6 +241,7 @@ async function getCourtHearingEvents(
         hearingAt: { gte: range.start, lt: range.end },
       },
       courtHearingVisibilityWhere(user),
+      people?.hearing,
     ),
     orderBy: { hearingAt: "asc" },
     take: TASK_EVENT_LIMIT,
@@ -261,17 +268,22 @@ async function getCourtHearingEvents(
   }));
 }
 
-/** Aggregate every calendar source for `user` within `range`, sorted by date. */
+/**
+ * Aggregate every calendar source for `user` within `range`, sorted by date.
+ * `people` narrows to „Můj kalendář" / „Můj tým" (lib/calendar-scope); null =
+ * everything the viewer may see. Visibility is applied in every case.
+ */
 export async function getCalendarEvents(
   user: CalendarUser,
   range: CalendarRange,
+  people: CalendarPeopleFilters | null = null,
 ): Promise<CalendarEvent[]> {
   // Task deadlines + watched deadlines + court hearings (F4). Each source is
   // visibility-scoped independently; future sources (Outlook) merge in here too.
   const [tasks, deadlines, hearings] = await Promise.all([
-    getTaskDeadlineEvents(user, range),
-    getDeadlineEvents(user, range),
-    getCourtHearingEvents(user, range),
+    getTaskDeadlineEvents(user, range, people),
+    getDeadlineEvents(user, range, people),
+    getCourtHearingEvents(user, range, people),
   ]);
 
   return [...tasks, ...deadlines, ...hearings].sort(
