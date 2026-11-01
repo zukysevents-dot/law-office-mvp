@@ -2,7 +2,13 @@ import Link from "next/link";
 import { Plus } from "lucide-react";
 
 import { createDeadline } from "@/app/actions/deadlines";
+import { DeadlineExtendDialog } from "@/components/deadlines/deadline-extend-dialog";
+import {
+  DeadlineExtensionHistory,
+  deadlineExtensionsSelect,
+} from "@/components/deadlines/deadline-extension-history";
 import { DeadlineFulfilDialog } from "@/components/deadlines/deadline-fulfil-dialog";
+import { DueDateText } from "@/components/due-date-text";
 import {
   ArchivedDeadlineActions,
   FulfilledDeadlineActions,
@@ -26,6 +32,7 @@ import {
   normalizeDeadlineListView,
   type DeadlineListView,
 } from "@/lib/deadlines";
+import { dueDateState, overdueBefore } from "@/lib/due-date";
 import { formatDateTime, formatDateTimeUtc, formatDateUtc } from "@/lib/format";
 import { deadlineStatusLabels, deadlineTypeLabels } from "@/lib/labels";
 import {
@@ -49,6 +56,7 @@ const deadlineInclude = {
   case: { select: { id: true, name: true } },
   responsibleUser: { select: { name: true } },
   completedBy: { select: { name: true } },
+  extensions: deadlineExtensionsSelect,
 } satisfies Prisma.DeadlineInclude;
 
 const hearingInclude = {
@@ -93,11 +101,11 @@ const caseLinkClass = "text-[#0e1822] underline-offset-2 hover:underline";
 function ActiveDeadlineTable({
   rows,
   canManage,
-  overdue = false,
+  now,
 }: {
   rows: DeadlineRow[];
   canManage: boolean;
-  overdue?: boolean;
+  now: Date;
 }) {
   return (
     <div className="table-scroll">
@@ -113,8 +121,13 @@ function ActiveDeadlineTable({
           </tr>
         </thead>
         <tbody>
-          {rows.map((deadline) => (
-            <tr key={deadline.id}>
+          {rows.map((deadline) => {
+            const dueState = dueDateState(deadline.dueDate, now);
+            return (
+            <tr
+              key={deadline.id}
+              className={dueState === "today" ? "bg-red-50" : undefined}
+            >
               <td className="font-medium text-stone-950">{deadline.title}</td>
               <td>
                 <Badge tone={deadlineTypeTone(deadline.type)}>
@@ -126,25 +139,41 @@ function ActiveDeadlineTable({
                   {deadline.case.name}
                 </Link>
               </td>
-              <td className={overdue ? "font-semibold text-red-700" : undefined}>
-                {formatDateUtc(deadline.dueDate)}
+              <td>
+                <DueDateText
+                  date={deadline.dueDate}
+                  state={dueState === "upcoming" ? null : dueState}
+                />
+                <DeadlineExtensionHistory extensions={deadline.extensions} />
               </td>
               <td>{deadline.responsibleUser?.name ?? "—"}</td>
               {canManage ? (
                 <td>
-                  <DeadlineFulfilDialog
-                    deadline={{
-                      id: deadline.id,
-                      title: deadline.title,
-                      caseName: deadline.case.name,
-                      dueDateLabel: formatDateUtc(deadline.dueDate),
-                      overdue,
-                    }}
-                  />
+                  <div className="flex flex-wrap gap-2">
+                    <DeadlineFulfilDialog
+                      deadline={{
+                        id: deadline.id,
+                        title: deadline.title,
+                        caseName: deadline.case.name,
+                        dueDateLabel: formatDateUtc(deadline.dueDate),
+                        overdue: dueState === "overdue",
+                      }}
+                    />
+                    <DeadlineExtendDialog
+                      deadline={{
+                        id: deadline.id,
+                        title: deadline.title,
+                        caseName: deadline.case.name,
+                        dueDateLabel: formatDateUtc(deadline.dueDate),
+                        dueDateIso: deadline.dueDate.toISOString().slice(0, 10),
+                      }}
+                    />
+                  </div>
                 </td>
               ) : null}
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -193,7 +222,10 @@ function ClosedDeadlineTable({
                     {deadline.case.name}
                   </Link>
                 </td>
-                <td>{formatDateUtc(deadline.dueDate)}</td>
+                <td>
+                  <span className="whitespace-nowrap">{formatDateUtc(deadline.dueDate)}</span>
+                  <DeadlineExtensionHistory extensions={deadline.extensions} />
+                </td>
                 <td>
                   <Badge tone={deadlineStatusTone(deadline.status)}>
                     {deadlineStatusLabels[deadline.status]}
@@ -294,6 +326,9 @@ export default async function DeadlinesPage({
 
     const prisma = getPrisma();
     const now = new Date();
+    // Lhůta s termínem dnes ještě není po termínu: patří mezi „Blíží se"
+    // (zvýrazněná), „Po termínu" je až od následujícího dne (Europe/Prague).
+    const todayStart = overdueBefore(now);
     const soon = new Date(
       now.getTime() + UPCOMING_WINDOW_DAYS * 24 * 60 * 60 * 1000,
     );
@@ -336,11 +371,11 @@ export default async function DeadlinesPage({
       memberRows,
     ] = await Promise.all([
       view === "active"
-        ? listDeadlines({ ...activeWhere, dueDate: { lt: now } }, { dueDate: "asc" })
+        ? listDeadlines({ ...activeWhere, dueDate: { lt: todayStart } }, { dueDate: "asc" })
         : none,
       view === "active"
         ? listDeadlines(
-            { ...activeWhere, dueDate: { gte: now, lte: soon } },
+            { ...activeWhere, dueDate: { gte: todayStart, lte: soon } },
             { dueDate: "asc" },
           )
         : none,
@@ -403,6 +438,7 @@ export default async function DeadlinesPage({
   });
 
   const data = result.data ?? { ...emptyData, view };
+  const renderNow = new Date();
 
   return (
     <>
@@ -502,7 +538,7 @@ export default async function DeadlinesPage({
         <>
           <Section title="Po termínu">
             {data.overdue.length > 0 ? (
-              <ActiveDeadlineTable rows={data.overdue} canManage={data.canManage} overdue />
+              <ActiveDeadlineTable rows={data.overdue} canManage={data.canManage} now={renderNow} />
             ) : (
               <EmptyState>Žádné lhůty po termínu.</EmptyState>
             )}
@@ -510,7 +546,7 @@ export default async function DeadlinesPage({
 
           <Section title={`Blíží se (do ${UPCOMING_WINDOW_DAYS} dní)`}>
             {data.upcoming.length > 0 ? (
-              <ActiveDeadlineTable rows={data.upcoming} canManage={data.canManage} />
+              <ActiveDeadlineTable rows={data.upcoming} canManage={data.canManage} now={renderNow} />
             ) : (
               <EmptyState>Žádné lhůty v nejbližších dnech.</EmptyState>
             )}
@@ -518,7 +554,7 @@ export default async function DeadlinesPage({
 
           <Section title="Později">
             {data.later.length > 0 ? (
-              <ActiveDeadlineTable rows={data.later} canManage={data.canManage} />
+              <ActiveDeadlineTable rows={data.later} canManage={data.canManage} now={renderNow} />
             ) : (
               <EmptyState>Žádné další naplánované lhůty.</EmptyState>
             )}

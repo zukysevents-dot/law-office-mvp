@@ -7,8 +7,13 @@ import {
   DeadlineStatus,
   DeadlineType,
   NotificationStatus,
+  NotificationType,
 } from "@/generated/prisma/enums";
 import { auditJson } from "@/lib/audit";
+import {
+  parseDeadlineExtension,
+  type DeadlineExtensionInput,
+} from "@/lib/deadline-extension";
 import { parseFulfilledOn } from "@/lib/deadlines";
 import { getCurrentUser } from "@/lib/auth";
 import {
@@ -527,6 +532,126 @@ export async function reopenDeadline(formData: FormData) {
   });
 
   revalidateDeadline(existing.caseId);
+}
+
+// --- Prodloužení lhůty (testování 19. 10.) ------------------------------------
+
+const NOT_EXTENDABLE_ERROR =
+  "Prodloužit lze jen aktivní (nesplněnou, nezrušenou a nearchivovanou) lhůtu.";
+
+// „Prodloužit lhůtu": nový (pozdější) termín + povinný důvod. Každé
+// prodloužení se uloží jako DeadlineExtension (historie u lhůty) a zapíše do
+// auditní stopy (EXTEND). Stejná oprávnění jako úprava lhůty (modul Lhůtník +
+// „Spravuje lhůty") a jen lhůta ve viditelnosti uživatele.
+export async function extendDeadline(
+  _previous: DeadlineActionState,
+  formData: FormData,
+): Promise<DeadlineActionState> {
+  const submittedAt = Date.now();
+  const prisma = getPrisma();
+  const { currentUser, organizationId } = await authorize();
+
+  const deadlineId = requiredString(formData, "deadlineId");
+  const existing = await prisma.deadline.findFirst({
+    where: andWhere({ id: deadlineId }, deadlineVisibilityWhere(currentUser)),
+    select: {
+      id: true,
+      caseId: true,
+      status: true,
+      archivedAt: true,
+      dueDate: true,
+    },
+  });
+  if (!existing) {
+    return { ok: false, error: "Lhůta nenalezena.", submittedAt };
+  }
+  if (existing.status !== DeadlineStatus.OPEN || existing.archivedAt) {
+    return { ok: false, error: NOT_EXTENDABLE_ERROR, submittedAt };
+  }
+
+  let extension: DeadlineExtensionInput;
+  try {
+    extension = parseDeadlineExtension(
+      existing.dueDate,
+      optionalString(formData, "newDueDate"),
+      optionalString(formData, "reason"),
+    );
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Neplatné údaje.",
+      submittedAt,
+    };
+  }
+
+  const applied = await prisma.$transaction(async (tx) => {
+    // Optimistic guard: a parallel extension/edit in another tab must not be
+    // silently overwritten (the reason was written against the old date).
+    const updated = await tx.deadline.updateMany({
+      where: {
+        id: deadlineId,
+        status: DeadlineStatus.OPEN,
+        archivedAt: null,
+        dueDate: existing.dueDate,
+      },
+      data: { dueDate: extension.newDueDate },
+    });
+    if (updated.count !== 1) {
+      return false;
+    }
+
+    const created = await tx.deadlineExtension.create({
+      data: {
+        organizationId,
+        deadlineId,
+        previousDueDate: existing.dueDate,
+        newDueDate: extension.newDueDate,
+        reason: extension.reason,
+        extendedById: currentUser.id,
+      },
+      select: { id: true },
+    });
+
+    // Reminders were queued for the old date: drop the unsent ones and
+    // release the one-shot „blíží se" key so it re-arms for the new date.
+    await skipQueuedDeadlineNotifications(tx, deadlineId, "DEADLINE_EXTENDED");
+    await tx.notification.updateMany({
+      where: {
+        entityType: "Deadline",
+        entityId: deadlineId,
+        type: NotificationType.DEADLINE_SOON,
+        dedupeKey: { not: null },
+      },
+      data: { dedupeKey: null },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        organizationId: currentUser.organizationId,
+        entityType: "Deadline",
+        entityId: deadlineId,
+        action: "EXTEND",
+        changedById: currentUser.id,
+        oldValue: auditJson({ dueDate: existing.dueDate.toISOString() }),
+        newValue: auditJson({
+          dueDate: extension.newDueDate.toISOString(),
+          reason: extension.reason,
+          extensionId: created.id,
+        }),
+      },
+    });
+    return true;
+  });
+
+  revalidateDeadline(existing.caseId);
+  if (!applied) {
+    return {
+      ok: false,
+      error: "Lhůtu mezitím změnil někdo jiný. Zkontrolujte termín a zkuste to znovu.",
+      submittedAt,
+    };
+  }
+  return { ok: true, submittedAt };
 }
 
 // L-3: cancel a deadline (CANCELLED keeps the audit trail; not a hard delete).

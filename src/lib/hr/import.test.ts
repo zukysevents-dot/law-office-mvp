@@ -90,6 +90,22 @@ test("parseAttendanceCsv: supports a night shift ending the next day", () => {
   assert.equal(rows[0].workedHours, 8);
 });
 
+test("parseAttendanceCsv: noční směna přes přechod na zimní čas (25. 10. 2026)", () => {
+  // 24. 10. 22:00 CEST → 25. 10. 06:00 CET: odchod je 06:00 pražského času
+  // (05:00 UTC), ne +24 h od 06:00 CEST; směna má 9 h, protože noc je delší.
+  const rows = parseAttendanceCsv("1001;2026-10-24;22:00;06:00;0");
+  assert.equal(rows[0].checkIn?.toISOString(), "2026-10-24T20:00:00.000Z");
+  assert.equal(rows[0].checkOut?.toISOString(), "2026-10-25T05:00:00.000Z");
+  assert.equal(rows[0].workedHours, 9);
+});
+
+test("parseAttendanceCsv: časy z terminálu jsou pražské (CEST, 19. 10. 2026)", () => {
+  const rows = parseAttendanceCsv("1001;2026-10-19;09:00;17:00;0,5");
+  assert.equal(rows[0].checkIn?.toISOString(), "2026-10-19T07:00:00.000Z");
+  assert.equal(rows[0].checkOut?.toISOString(), "2026-10-19T15:00:00.000Z");
+  assert.equal(rows[0].workedHours, 7.5);
+});
+
 test("parseAttendanceCsv: quoted values and a decimal comma are accepted", () => {
   const rows = parseAttendanceCsv(
     '"osobní číslo";"datum";"odpracováno";"přestávka"\n"1001";"2026-07-21";"7,5";"0,5"',

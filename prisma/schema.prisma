@@ -211,6 +211,7 @@ enum DashboardWidgetType {
   CALENDAR_PREVIEW
   WEEKLY_HOURS_CHART
   DEADLINES_PREVIEW
+  HR_NEWS
 }
 
 enum DashboardWidgetSize {
@@ -415,6 +416,7 @@ model User {
   responsibleDeadlines        Deadline[]                @relation("DeadlineResponsibleUser")
   createdDeadlines            Deadline[]                @relation("DeadlineCreatedBy")
   completedDeadlines          Deadline[]                @relation("DeadlineCompletedBy")
+  deadlineExtensions          DeadlineExtension[]       @relation("DeadlineExtensionBy")
   calendarFeeds               CalendarFeed[]            @relation("CalendarFeedUser")
   responsibleCourtHearings    CourtHearing[]            @relation("CourtHearingResponsibleUser")
   createdCourtHearings        CourtHearing[]            @relation("CourtHearingCreatedBy")
@@ -436,6 +438,12 @@ model User {
   permissionOverrides         UserPermissionOverride[]  @relation("UserPermissionOverrideUser")
   updatedUserPermissions      UserPermissionOverride[]  @relation("UserPermissionOverrideUpdatedBy")
   updatedRolePermissions      RolePermissionOverride[]  @relation("RolePermissionOverrideUpdatedBy")
+  matterComments              MatterComment[]           @relation("MatterCommentAuthor")
+  authoredWorkFeedback        WorkFeedback[]            @relation("WorkFeedbackAuthor")
+  receivedWorkFeedback        WorkFeedback[]            @relation("WorkFeedbackRecipient")
+  createdHrNews               HrNews[]                  @relation("HrNewsCreatedBy")
+  updatedHrNews               HrNews[]                  @relation("HrNewsUpdatedBy")
+  hrNewsRecipients            HrNewsRecipient[]         @relation("HrNewsRecipientUser")
 
   @@map("users")
 }
@@ -771,6 +779,7 @@ model Project {
   contactPersons     ContactPerson[]
   assignees          ProjectAssignee[]
   teamAssignments    ProjectTeamAssignment[]
+  comments           MatterComment[]
 
   @@index([organizationId])
   @@index([mainSubjectId])
@@ -811,6 +820,7 @@ model Case {
   contactPersons   ContactPerson[]
   assignees        CaseAssignee[]
   teamAssignments  CaseTeamAssignment[]
+  comments         MatterComment[]
 
   @@unique([projectId, fileNumber])
   @@index([organizationId])
@@ -863,6 +873,7 @@ model Task {
   comments        TaskComment[]
   workLogs        WorkLog[]
   assignees       TaskAssignee[]
+  workFeedback    WorkFeedback[]
 
   @@index([organizationId])
   @@index([projectId])
@@ -1006,13 +1017,14 @@ model WorkLog {
   updatedAt         DateTime              @updatedAt
   archivedAt        DateTime?
 
-  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  subject      Subject?      @relation(fields: [subjectId], references: [id], onDelete: SetNull)
-  project      Project?      @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  case         Case?         @relation(fields: [caseId], references: [id], onDelete: SetNull)
-  task         Task?         @relation(fields: [taskId], references: [id], onDelete: SetNull)
-  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  subject      Subject?       @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  project      Project?       @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  case         Case?          @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  task         Task?          @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  user         User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
   invoiceLines InvoiceLine[]
+  workFeedback WorkFeedback[]
 
   @@index([organizationId])
   @@index([subjectId])
@@ -1428,6 +1440,7 @@ model Organization {
   amlIdentifications        AmlIdentification[]
   amlAssessments            AmlAssessment[]
   deadlines                 Deadline[]
+  deadlineExtensions        DeadlineExtension[]
   courtHearings             CourtHearing[]
   calendarFeeds             CalendarFeed[]
   documents                 Document[]
@@ -1463,6 +1476,11 @@ model Organization {
   userInvitationTokens      UserInvitationToken[]
   rolePermissionOverrides   RolePermissionOverride[]
   userPermissionOverrides   UserPermissionOverride[]
+  matterComments            MatterComment[]
+  workFeedback              WorkFeedback[]
+  hrNews                    HrNews[]
+  hrNewsRecipients          HrNewsRecipient[]
+  hrPresencePlans           HrPresencePlan[]
 
   @@index([status])
   @@map("organizations")
@@ -2195,12 +2213,13 @@ model Deadline {
   updatedAt           DateTime       @updatedAt
   archivedAt          DateTime?
 
-  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  case              Case         @relation(fields: [caseId], references: [id], onDelete: Cascade)
-  responsibleUser   User?        @relation("DeadlineResponsibleUser", fields: [responsibleUserId], references: [id], onDelete: SetNull)
-  sourceDataMessage DataMessage? @relation("DeadlineSourceDataMessage", fields: [sourceDataMessageId], references: [id], onDelete: SetNull)
-  createdBy         User?        @relation("DeadlineCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  completedBy       User?        @relation("DeadlineCompletedBy", fields: [completedById], references: [id], onDelete: SetNull)
+  organization      Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  case              Case                @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  responsibleUser   User?               @relation("DeadlineResponsibleUser", fields: [responsibleUserId], references: [id], onDelete: SetNull)
+  sourceDataMessage DataMessage?        @relation("DeadlineSourceDataMessage", fields: [sourceDataMessageId], references: [id], onDelete: SetNull)
+  createdBy         User?               @relation("DeadlineCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  completedBy       User?               @relation("DeadlineCompletedBy", fields: [completedById], references: [id], onDelete: SetNull)
+  extensions        DeadlineExtension[]
 
   @@index([organizationId])
   @@index([caseId])
@@ -2210,6 +2229,29 @@ model Deadline {
   @@index([dueDate])
   @@index([sourceDataMessageId])
   @@map("deadlines")
+}
+
+// Prodloužení lhůty (testování 19. 10.): každé prodloužení = řádek s původním
+// a novým termínem, důvodem, kdo a kdy. Deadline.dueDate drží aktuální termín;
+// historie prodloužení se ukazuje u lhůty a zapisuje i do auditní stopy.
+model DeadlineExtension {
+  id              String   @id @default(cuid())
+  organizationId  String
+  deadlineId      String
+  previousDueDate DateTime // termín před prodloužením (UTC půlnoc)
+  newDueDate      DateTime // nový termín (UTC půlnoc)
+  reason          String
+  extendedById    String?
+  createdAt       DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  deadline     Deadline     @relation(fields: [deadlineId], references: [id], onDelete: Cascade)
+  extendedBy   User?        @relation("DeadlineExtensionBy", fields: [extendedById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([deadlineId, createdAt])
+  @@index([extendedById])
+  @@map("deadlineExtensions")
 }
 
 // Osobní Outlook (ICS) kalendář uživatele – jen pro čtení, vidí ho jen jeho
@@ -2517,6 +2559,7 @@ model HrEmployee {
   attendanceRecords HrAttendanceRecord[]
   absenceRequests   HrAbsenceRequest[]
   leaveBalances     HrLeaveBalance[]
+  presencePlans     HrPresencePlan[]
 
   @@unique([organizationId, personalNumber])
   @@index([organizationId])
@@ -2624,4 +2667,148 @@ model HrLeaveBalance {
   @@index([organizationId])
   @@index([employeeId])
   @@map("hrLeaveBalances")
+}
+
+// Komentáře u projektu nebo případu – záznamy komunikace (např. evidence
+// telefonátů: „Dne … voláno na KSBR …“). Patří buď projektu, nebo případu
+// (právě jedno z projectId / caseId). Text je omezený formát z
+// src/lib/rich-text.ts (**tučně**, __podtrženo__, *kurzíva*). Vidí ho každý, kdo
+// vidí projekt/případ (matterCommentVisibilityWhere); upravit a archivovat
+// („smazat“) ho smí jen autor.
+model MatterComment {
+  id             String    @id @default(cuid())
+  organizationId String
+  projectId      String?
+  caseId         String?
+  authorId       String?
+  body           String
+  createdAt      DateTime  @default(now())
+  // Poslední úprava textu autorem (null = neupraveno).
+  editedAt       DateTime?
+  archivedAt     DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  project      Project?     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  case         Case?        @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  author       User?        @relation("MatterCommentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([projectId, createdAt])
+  @@index([caseId, createdAt])
+  @@index([authorId])
+  @@map("matterComments")
+}
+
+// Zpětná vazba kolegy k dosavadní práci jiného uživatele (Práce → Zpětná
+// vazba). Vidí ji jen autor a příjemce, ADMIN/PARTNER celou kancelář
+// (workFeedbackVisibilityWhere). Volitelný křížový odkaz na úkol a/nebo výkaz
+// práce; jejich obsah se zobrazí jen tomu, kdo je sám smí vidět.
+model WorkFeedback {
+  id             String    @id @default(cuid())
+  organizationId String
+  authorId       String?
+  recipientId    String
+  body           String
+  taskId         String?
+  workLogId      String?
+  createdAt      DateTime  @default(now())
+  editedAt       DateTime?
+  archivedAt     DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  author       User?        @relation("WorkFeedbackAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  recipient    User         @relation("WorkFeedbackRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  task         Task?        @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  workLog      WorkLog?     @relation(fields: [workLogId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([authorId])
+  @@index([recipientId])
+  @@index([taskId])
+  @@index([workLogId])
+  @@map("workFeedback")
+}
+
+// --- HR: Aktuality a plánování přítomnosti ----------------------------------
+
+// Komu je aktualita určena: celé kanceláři, vybraným rolím, nebo vybraným lidem
+// (řádky HrNewsRecipient). Viditelnost hlídá hrNewsTargetWhere (permissions.ts).
+enum HrNewsAudience {
+  ALL
+  ROLES
+  USERS
+}
+
+// Plán přítomnosti na den. Nepřítomnost (dovolená, nemoc…) se sem nezadává —
+// bere se ze žádostí o absenci (HrAbsenceRequest), aby se nic nezadávalo dvakrát.
+enum HrPresenceStatus {
+  OFFICE // v kanceláři
+  HOME_OFFICE // home office
+  OUT_OF_OFFICE // mimo kancelář (jednání, soud, služební cesta)
+}
+
+// Aktualita v HR (nový kolega, výpadek elektřiny, teambuilding…). Prostý text,
+// zalomení řádků se zachovávají. Přidávají ji lidé s funkcí „Přidává aktuality“.
+model HrNews {
+  id             String         @id @default(cuid())
+  organizationId String
+  title          String
+  body           String
+  audience       HrNewsAudience @default(ALL)
+  // Jen pro audience = ROLES: role (z členství v kanceláři), kterým je určena.
+  audienceRoles  UserRole[]     @default([])
+  pinned         Boolean        @default(false)
+  // Volitelně: poslední den (date-only, včetně), kdy se zobrazuje na dashboardu.
+  visibleUntil   DateTime?
+  createdById    String?
+  updatedById    String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  archivedAt     DateTime?
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User?             @relation("HrNewsCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy    User?             @relation("HrNewsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  recipients   HrNewsRecipient[]
+
+  @@index([organizationId, archivedAt])
+  @@map("hrNews")
+}
+
+// Konkrétní příjemce aktuality (audience = USERS).
+model HrNewsRecipient {
+  id             String   @id @default(cuid())
+  organizationId String
+  newsId         String
+  userId         String
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  news         HrNews       @relation(fields: [newsId], references: [id], onDelete: Cascade)
+  user         User         @relation("HrNewsRecipientUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([newsId, userId])
+  @@index([organizationId])
+  @@index([userId])
+  @@map("hrNewsRecipients")
+}
+
+// Plán přítomnosti zaměstnance na jeden den (kdy tu budu a kdy ne).
+model HrPresencePlan {
+  id             String           @id @default(cuid())
+  organizationId String
+  employeeId     String
+  date           DateTime // date-only (UTC midnight)
+  status         HrPresenceStatus
+  note           String?
+  createdById    String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee     HrEmployee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, date])
+  @@index([organizationId, date])
+  @@map("hrPresencePlans")
 }

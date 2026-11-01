@@ -36,7 +36,8 @@ import {
 } from "@/lib/performance/load.server";
 import { DAY_MS } from "@/lib/hours-plan";
 import { filterFormKey, firstParam } from "@/lib/search-params";
-import { isTaskOverdue, taskStatusTone, workloadLevelTone } from "@/lib/status-tones";
+import { taskDueDateState, taskStatusTone, workloadLevelTone } from "@/lib/status-tones";
+import { DueDateText } from "@/components/due-date-text";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -273,7 +274,6 @@ export default async function PersonPerformancePage({ params, searchParams }: Pa
               </thead>
               <tbody className="divide-y divide-[#eef2f4]">
                 {data.openTasks.map((task) => {
-                  const overdue = isTaskOverdue(task.deadline, task.status);
                   return (
                     <tr key={task.id}>
                       <td className="px-3 py-2">
@@ -287,14 +287,11 @@ export default async function PersonPerformancePage({ params, searchParams }: Pa
                       <td className="px-3 py-2">
                         <Badge tone={taskStatusTone(task.status)}>{taskStatusLabels[task.status]}</Badge>
                       </td>
-                      <td
-                        className={cn(
-                          "whitespace-nowrap px-3 py-2 tabular-nums",
-                          overdue && "font-semibold text-red-800",
-                        )}
-                      >
-                        {task.deadline ? formatDateUtc(task.deadline) : "—"}
-                        {overdue ? " · po termínu" : ""}
+                      <td className="px-3 py-2 tabular-nums">
+                        <DueDateText
+                          date={task.deadline}
+                          state={taskDueDateState(task.deadline, task.status)}
+                        />
                       </td>
                       <td className="px-3 py-2 text-[#566673]">
                         {task.case

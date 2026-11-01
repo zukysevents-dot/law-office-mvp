@@ -21,6 +21,7 @@ export const dashboardWidgetTypes = [
   DashboardWidgetType.CALENDAR_PREVIEW,
   DashboardWidgetType.WEEKLY_HOURS_CHART,
   DashboardWidgetType.DEADLINES_PREVIEW,
+  DashboardWidgetType.HR_NEWS,
 ] as const;
 
 // Module (permission-matrix row) each widget belongs to. A widget whose
@@ -42,6 +43,7 @@ export const dashboardWidgetModule: Record<DashboardWidgetType, ModulePermission
   [DashboardWidgetType.RECENT_CONFLICT_CHECKS]: "module.conflictCheck",
   [DashboardWidgetType.CALENDAR_PREVIEW]: "module.calendar",
   [DashboardWidgetType.DEADLINES_PREVIEW]: "module.deadlines",
+  [DashboardWidgetType.HR_NEWS]: "module.hr",
 };
 
 export function isDashboardWidgetAllowed(
@@ -85,6 +87,7 @@ export const dashboardWidgetTypeLabels: Record<DashboardWidgetType, string> = {
   [DashboardWidgetType.CALENDAR_PREVIEW]: "Kalendář",
   [DashboardWidgetType.WEEKLY_HOURS_CHART]: "Přehled hodin",
   [DashboardWidgetType.DEADLINES_PREVIEW]: "Blížící se lhůty",
+  [DashboardWidgetType.HR_NEWS]: "Aktuality",
 };
 
 export const dashboardWidgetSizeLabels: Record<DashboardWidgetSize, string> = {
@@ -221,6 +224,8 @@ export function dashboardWidgetHref(
       return "/work-logs";
     case DashboardWidgetType.DEADLINES_PREVIEW:
       return "/deadlines";
+    case DashboardWidgetType.HR_NEWS:
+      return "/hr/news";
     default:
       return undefined;
   }
@@ -328,6 +333,11 @@ export function dashboardWidgetConfigForType(
 }
 
 export const defaultDashboardWidgets = [
+  {
+    type: DashboardWidgetType.HR_NEWS,
+    title: "Aktuality",
+    size: DashboardWidgetSize.FULL,
+  },
   {
     type: DashboardWidgetType.ACTIVE_TASKS,
     title: "Aktivní úkoly",

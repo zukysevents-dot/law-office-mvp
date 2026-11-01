@@ -11,6 +11,7 @@ import {
   preferenceAllows,
   taskOverdueDedupeKey,
   taskOverdueWindow,
+  isDeadlineOverdueForReminder,
   uniqueRecipients,
 } from "./notification-service";
 
@@ -233,6 +234,25 @@ test("taskOverdueWindow: only deadlines before today and within the lookback", (
   // Dnešní termín ještě není po termínu.
   const today = new Date("2026-10-27T00:00:00.000Z");
   assert.equal(today < before, false);
+});
+
+test("taskOverdueWindow: uses the Prague office day around midnight", () => {
+  // 28. 10. 00:30 Praha = 27. 10. 23:30 UTC → termín 27. 10. je už po termínu.
+  const now = new Date("2026-10-27T23:30:00.000Z");
+  const { before } = taskOverdueWindow(now);
+  assert.equal(before.toISOString(), "2026-10-28T00:00:00.000Z");
+});
+
+test("isDeadlineOverdueForReminder: due today is not overdue, yesterday is", () => {
+  const now = new Date("2026-11-01T15:00:00.000Z");
+  assert.equal(
+    isDeadlineOverdueForReminder(new Date("2026-11-01T00:00:00.000Z"), now),
+    false,
+  );
+  assert.equal(
+    isDeadlineOverdueForReminder(new Date("2026-10-31T00:00:00.000Z"), now),
+    true,
+  );
 });
 
 test("taskOverdueDedupeKey: one alert per deadline value", () => {

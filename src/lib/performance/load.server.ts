@@ -11,6 +11,7 @@ import {
   type UserRole,
 } from "@/generated/prisma/enums";
 import type { getCurrentUser } from "@/lib/auth";
+import { overdueBefore } from "@/lib/due-date";
 import { isModuleEnabled } from "@/lib/entitlements";
 import { officeWorkDate } from "@/lib/hr/attendance-calc";
 import {
@@ -130,12 +131,18 @@ function taskWindows(now: Date, period: { fromMs: number; toExclusiveMs: number 
     archivedAt: null,
     status: { not: TaskStatus.COMPLETED },
   };
+  // Termín je den: po termínu až od následujícího dne kanceláře (due-date.ts);
+  // úkol s termínem dnes patří mezi nadcházející.
+  const todayStart = overdueBefore(now);
   return {
     open,
-    overdue: { ...open, deadline: { lt: now } },
+    overdue: { ...open, deadline: { lt: todayStart } },
     upcoming: {
       ...open,
-      deadline: { gte: now, lt: new Date(now.getTime() + UPCOMING_DAYS * DAY_MS) },
+      deadline: {
+        gte: todayStart,
+        lt: new Date(todayStart.getTime() + UPCOMING_DAYS * DAY_MS),
+      },
     },
     // Dokončené se mohou archivovat — archivace se tu neomezuje.
     completed: {
