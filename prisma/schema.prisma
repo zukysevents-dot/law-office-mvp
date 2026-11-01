@@ -415,6 +415,7 @@ model User {
   responsibleDeadlines        Deadline[]                @relation("DeadlineResponsibleUser")
   createdDeadlines            Deadline[]                @relation("DeadlineCreatedBy")
   completedDeadlines          Deadline[]                @relation("DeadlineCompletedBy")
+  deadlineExtensions          DeadlineExtension[]       @relation("DeadlineExtensionBy")
   calendarFeeds               CalendarFeed[]            @relation("CalendarFeedUser")
   responsibleCourtHearings    CourtHearing[]            @relation("CourtHearingResponsibleUser")
   createdCourtHearings        CourtHearing[]            @relation("CourtHearingCreatedBy")
@@ -1428,6 +1429,7 @@ model Organization {
   amlIdentifications        AmlIdentification[]
   amlAssessments            AmlAssessment[]
   deadlines                 Deadline[]
+  deadlineExtensions        DeadlineExtension[]
   courtHearings             CourtHearing[]
   calendarFeeds             CalendarFeed[]
   documents                 Document[]
@@ -2195,12 +2197,13 @@ model Deadline {
   updatedAt           DateTime       @updatedAt
   archivedAt          DateTime?
 
-  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  case              Case         @relation(fields: [caseId], references: [id], onDelete: Cascade)
-  responsibleUser   User?        @relation("DeadlineResponsibleUser", fields: [responsibleUserId], references: [id], onDelete: SetNull)
-  sourceDataMessage DataMessage? @relation("DeadlineSourceDataMessage", fields: [sourceDataMessageId], references: [id], onDelete: SetNull)
-  createdBy         User?        @relation("DeadlineCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  completedBy       User?        @relation("DeadlineCompletedBy", fields: [completedById], references: [id], onDelete: SetNull)
+  organization      Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  case              Case                @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  responsibleUser   User?               @relation("DeadlineResponsibleUser", fields: [responsibleUserId], references: [id], onDelete: SetNull)
+  sourceDataMessage DataMessage?        @relation("DeadlineSourceDataMessage", fields: [sourceDataMessageId], references: [id], onDelete: SetNull)
+  createdBy         User?               @relation("DeadlineCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  completedBy       User?               @relation("DeadlineCompletedBy", fields: [completedById], references: [id], onDelete: SetNull)
+  extensions        DeadlineExtension[]
 
   @@index([organizationId])
   @@index([caseId])
@@ -2210,6 +2213,29 @@ model Deadline {
   @@index([dueDate])
   @@index([sourceDataMessageId])
   @@map("deadlines")
+}
+
+// Prodloužení lhůty (testování 19. 10.): každé prodloužení = řádek s původním
+// a novým termínem, důvodem, kdo a kdy. Deadline.dueDate drží aktuální termín;
+// historie prodloužení se ukazuje u lhůty a zapisuje i do auditní stopy.
+model DeadlineExtension {
+  id              String   @id @default(cuid())
+  organizationId  String
+  deadlineId      String
+  previousDueDate DateTime // termín před prodloužením (UTC půlnoc)
+  newDueDate      DateTime // nový termín (UTC půlnoc)
+  reason          String
+  extendedById    String?
+  createdAt       DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  deadline     Deadline     @relation(fields: [deadlineId], references: [id], onDelete: Cascade)
+  extendedBy   User?        @relation("DeadlineExtensionBy", fields: [extendedById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([deadlineId, createdAt])
+  @@index([extendedById])
+  @@map("deadlineExtensions")
 }
 
 // Osobní Outlook (ICS) kalendář uživatele – jen pro čtení, vidí ho jen jeho

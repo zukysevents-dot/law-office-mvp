@@ -358,9 +358,52 @@ test.describe("Lhůtník – splnění a archivace lhůt", () => {
 
     // Calendar: still shown, greyed + struck through (year list view „Rok":
     // no „+N další" collapsing of a busy day).
+    // The deadline has no responsible person → not in „Můj kalendář" (the
+    // default); the admin switches to the whole office.
     await page.goto("/calendar");
+    await page.getByRole("button", { name: "Celá kancelář" }).click();
     await page.getByRole("button", { name: "Rok", exact: true }).click();
     const event = page.locator(".fc-event-done", { hasText: `Lhůta (splněno): ${title}` });
     await expect(event).toBeVisible({ timeout: 15_000 });
+  });
+
+  // Testování 19. 10.: lhůta s termínem dnes je zvýrazněná, ale ještě není
+  // „po termínu"; prodloužení s důvodem nechá historii u lhůty.
+  test("lhůta dnes není po termínu a prodloužení se zapíše do historie", async ({ page }) => {
+    const todayTitle = e2eName("lhuta-dnes");
+    const lateTitle = e2eName("lhuta-vcera");
+    await insertDeadline({ title: todayTitle, dueInDays: 0 });
+    await insertDeadline({ title: lateTitle, dueInDays: -1 });
+
+    await page.goto("/deadlines");
+    await expectNoErrorPage(page);
+    const overdue = page.locator("section", {
+      has: page.getByRole("heading", { name: "Po termínu" }),
+    });
+    const upcoming = page.locator("section", {
+      has: page.getByRole("heading", { name: "Blíží se (do 30 dní)" }),
+    });
+    await expect(row(upcoming, todayTitle)).toContainText("Dnes");
+    await expect(row(overdue, todayTitle)).toHaveCount(0);
+    await expect(row(overdue, lateTitle)).toContainText("Po termínu");
+
+    const dialog = page.getByRole("dialog", { name: "Prodloužit lhůtu" });
+    await row(overdue, lateTitle).getByRole("button", { name: "Prodloužit…" }).click();
+    await expect(dialog).toContainText(lateTitle);
+    // Reason is required (Czech message from the server).
+    await dialog.getByLabel("Důvod prodloužení").fill("");
+    await submitAndAwaitAction(page, dialog.getByRole("button", { name: "Prodloužit lhůtu" }));
+    await expect(dialog.getByRole("alert")).toContainText("Uveďte důvod prodloužení.");
+
+    await dialog.getByLabel("Nový termín").fill(pragueDate(7));
+    await dialog.getByLabel("Důvod prodloužení").fill("Soud vyhověl žádosti");
+    await submitAndAwaitAction(page, dialog.getByRole("button", { name: "Prodloužit lhůtu" }));
+    await expect(dialog).toBeHidden();
+    await expect(row(overdue, lateTitle)).toHaveCount(0);
+    const extended = row(upcoming, lateTitle);
+    await expect(extended).toContainText("Prodlouženo 1×");
+    await extended.getByText("Prodlouženo 1×").click();
+    await expect(extended).toContainText("Soud vyhověl žádosti");
+    await expect(extended).toContainText("Admin Demo");
   });
 });
