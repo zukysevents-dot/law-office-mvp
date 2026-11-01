@@ -136,17 +136,12 @@ export default async function CaseEditPage({ params }: CaseEditProps) {
                 />
               </Field>
               <Field label="Odpovědný uživatel">
-                <SelectInput
+                <SearchableSelect
                   name="responsibleUserId"
                   defaultValue={legalCase.responsibleUserId ?? ""}
-                >
-                  <option value="">Bez přiřazení</option>
-                  {users.map((user) => (
-                    <option key={user.id} value={user.id}>
-                      {user.name}
-                    </option>
-                  ))}
-                </SelectInput>
+                  placeholder="Bez přiřazení"
+                  options={users.map(namedSelectOption)}
+                />
               </Field>
               <Field label="Stav">
                 <SelectInput name="status" defaultValue={legalCase.status}>

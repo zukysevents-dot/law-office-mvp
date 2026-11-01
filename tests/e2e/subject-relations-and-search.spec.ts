@@ -72,6 +72,12 @@ test.describe("fulltextové hledání ve výběrech", () => {
     await expect(client).toHaveValue(XYZ);
     await expect(pickerValue(client)).not.toHaveValue("");
     await expect(page).toHaveURL(/\/projects$/);
+
+    // Odpovědný uživatel: hledání podle druhého slova jména, bez diakritiky.
+    const responsible = form.getByRole("combobox", { name: "Odpovědný uživatel" });
+    await pickOption(responsible, "advokat demo", { option: "Advokát Demo" });
+    await expect(responsible).toHaveValue("Advokát Demo");
+    await expect(pickerValue(responsible)).not.toHaveValue("");
   });
 
   test("případ ve výkazu: bez diakritiky a podle slova uprostřed", async ({ page }) => {

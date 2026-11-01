@@ -36,7 +36,10 @@ export function SubjectRelationRowActions({
   locked: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const [openedAt, setOpenedAt] = useState(0);
+  // Verze stavu v okamžiku otevření dialogu: chyba z dřívějšího pokusu se po
+  // novém otevření neukáže. (Porovnává se verze, ne čas klienta proti času
+  // serveru — rozjeté hodiny by jinak novou chybu skryly.)
+  const [versionAtOpen, setVersionAtOpen] = useState(initialState.version);
   const [state, formAction] = useActionState(
     async (previous: RelationFormState, formData: FormData) => {
       const next = await updateSubjectRelation(previous, formData);
@@ -56,7 +59,7 @@ export function SubjectRelationRowActions({
         className="h-8 px-3"
         aria-haspopup="dialog"
         onClick={() => {
-          setOpenedAt(Date.now());
+          setVersionAtOpen(state.version);
           setOpen(true);
         }}
       >
@@ -114,7 +117,7 @@ export function SubjectRelationRowActions({
           <Field label="Poznámka">
             <TextArea name="note" defaultValue={note ?? ""} maxLength={RELATION_NOTE_MAX} />
           </Field>
-          {state.error && state.version >= openedAt ? (
+          {state.error && state.version !== versionAtOpen ? (
             <FormResult state={state} />
           ) : null}
           <div className="flex flex-wrap justify-end gap-2">

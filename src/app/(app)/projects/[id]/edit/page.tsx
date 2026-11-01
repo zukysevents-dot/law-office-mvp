@@ -22,7 +22,7 @@ import { getPrisma } from "@/lib/prisma";
 import { AccessDenied } from "@/components/access-denied";
 import { moduleAccessDenial } from "@/lib/module-access.server";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { subjectSelectOption } from "@/lib/searchable-select";
+import { namedSelectOption, subjectSelectOption } from "@/lib/searchable-select";
 
 export const dynamic = "force-dynamic";
 
@@ -137,17 +137,12 @@ export default async function ProjectEditPage({ params }: ProjectEditProps) {
                 />
               </Field>
               <Field label="Odpovědný uživatel">
-                <SelectInput
+                <SearchableSelect
                   name="responsibleUserId"
                   defaultValue={project.responsibleUserId ?? ""}
-                >
-                  <option value="">Bez přiřazení</option>
-                  {users.map((user) => (
-                    <option key={user.id} value={user.id}>
-                      {user.name}
-                    </option>
-                  ))}
-                </SelectInput>
+                  placeholder="Bez přiřazení"
+                  options={users.map(namedSelectOption)}
+                />
               </Field>
             </div>
             {showRates ? (

@@ -362,14 +362,11 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
               />
             </Field>
             <Field label="Odpovědný uživatel">
-              <SelectInput name="responsibleUserId">
-                <option value="">Bez přiřazení</option>
-                {result.data.users.map((user) => (
-                  <option key={user.id} value={user.id}>
-                    {user.name}
-                  </option>
-                ))}
-              </SelectInput>
+              <SearchableSelect
+                name="responsibleUserId"
+                placeholder="Bez přiřazení"
+                options={result.data.users.map(namedSelectOption)}
+              />
             </Field>
           </div>
           <TeamSelectField
